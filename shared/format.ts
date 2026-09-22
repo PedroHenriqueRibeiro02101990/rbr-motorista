@@ -21,6 +21,12 @@ export function initials(nome: string | null | undefined): string {
   return (first + last).toUpperCase()
 }
 
+export const STATUS_COTACAO_LABEL: Record<string, string> = {
+  rascunho: 'Rascunho',
+  enviada: 'Enviada',
+  convertida: 'Convertida',
+}
+
 export const STATUS_OPERACAO_LABEL: Record<string, string> = {
   alocando_motorista: 'Alocando motorista',
   aguardando_liberacao_fiscal: 'Aguardando fiscal',

@@ -3,6 +3,7 @@ import { useAuth } from '@rbr/shared/useAuth'
 import AppShell from './components/AppShell'
 import AuthScreen from './pages/AuthScreen'
 import Inicio from './pages/Inicio'
+import Cotacao from './pages/Cotacao'
 import Operacoes from './pages/Operacoes'
 import Pessoas from './pages/Pessoas'
 import Financeiro from './pages/Financeiro'
@@ -47,6 +48,7 @@ export default function App() {
       <AppShell pessoa={auth.pessoa} onSignOut={auth.signOut}>
         <Routes>
           <Route path="/" element={<Inicio />} />
+          <Route path="/cotacao" element={<Cotacao />} />
           <Route path="/operacoes" element={<Operacoes gestor={auth.pessoa} />} />
           <Route path="/pessoas" element={<Pessoas />} />
           <Route path="/financeiro" element={<Financeiro />} />

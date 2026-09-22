@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
@@ -88,28 +89,11 @@ function badgeBackground(status: StatusOperacao): string {
   return 'var(--rbr-navy)'
 }
 
-const NOVA_OP_INICIAL = {
-  clienteNome: '',
-  cidadeOrigem: '',
-  ufOrigem: '',
-  cidadeDestino: '',
-  ufDestino: '',
-  pesoBrutoKg: '',
-  valorTotal: '',
-  veiculoId: '',
-  motoristaId: '',
-}
-
 export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [operacoes, setOperacoes] = useState<OperacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState<StatusOperacao | 'todas'>('todas')
   const [expandedId, setExpandedId] = useState<string | null>(null)
-
-  const [showNovaOperacao, setShowNovaOperacao] = useState(false)
-  const [novaOperacao, setNovaOperacao] = useState(NOVA_OP_INICIAL)
-  const [criando, setCriando] = useState(false)
-  const [erroNovaOperacao, setErroNovaOperacao] = useState<string | null>(null)
 
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [motoristas, setMotoristas] = useState<Pessoa[]>([])
@@ -403,62 +387,6 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     }
   }
 
-  async function criarOperacao() {
-    setErroNovaOperacao(null)
-    if (!novaOperacao.clienteNome.trim()) {
-      setErroNovaOperacao('Informe o nome do cliente.')
-      return
-    }
-    setCriando(true)
-    try {
-      const { data: cliente, error: erroCliente } = await supabase
-        .from('clientes')
-        .insert({ razao_social: novaOperacao.clienteNome.trim(), origem: 'gestor' })
-        .select()
-        .single()
-      if (erroCliente || !cliente) throw erroCliente ?? new Error('Falha ao criar cliente')
-
-      const { data: cotacao, error: erroCotacao } = await supabase
-        .from('cotacoes')
-        .insert({
-          cliente_id: cliente.id,
-          origem: 'gestor',
-          status: 'convertida',
-          cidade_origem: novaOperacao.cidadeOrigem.trim() || null,
-          uf_origem: novaOperacao.ufOrigem.trim().toUpperCase() || null,
-          cidade_destino: novaOperacao.cidadeDestino.trim() || null,
-          uf_destino: novaOperacao.ufDestino.trim().toUpperCase() || null,
-          peso_bruto_kg: novaOperacao.pesoBrutoKg ? Number(novaOperacao.pesoBrutoKg) : null,
-          valor_total: novaOperacao.valorTotal ? Number(novaOperacao.valorTotal) : null,
-        })
-        .select()
-        .single()
-      if (erroCotacao || !cotacao) throw erroCotacao ?? new Error('Falha ao criar cotação')
-
-      const statusInicial: StatusOperacao =
-        novaOperacao.veiculoId && novaOperacao.motoristaId ? 'aguardando_liberacao_fiscal' : 'alocando_motorista'
-
-      const { error: erroOperacao } = await supabase.from('operacoes').insert({
-        cotacao_id: cotacao.id,
-        cliente_id: cliente.id,
-        origem: 'rbr_direta',
-        status: statusInicial,
-        veiculo_id: novaOperacao.veiculoId || null,
-        pessoa_alocada_id: novaOperacao.motoristaId || null,
-        peso_bruto: novaOperacao.pesoBrutoKg ? Number(novaOperacao.pesoBrutoKg) : null,
-      })
-      if (erroOperacao) throw erroOperacao
-
-      setNovaOperacao(NOVA_OP_INICIAL)
-      setShowNovaOperacao(false)
-      await load()
-    } catch (e) {
-      setErroNovaOperacao(e instanceof Error ? e.message : 'Erro ao criar operação.')
-    } finally {
-      setCriando(false)
-    }
-  }
-
   const lista = (operacoes ?? []).filter((op) => filtro === 'todas' || op.status === filtro)
 
   return (
@@ -478,122 +406,26 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
               </option>
             ))}
           </select>
-          <button
-            onClick={() => {
-              setErroNovaOperacao(null)
-              setShowNovaOperacao((v) => !v)
-            }}
+          <Link
+            to="/cotacao"
             className="text-sm font-bold px-4 py-2 rounded-xl"
             style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
           >
-            {showNovaOperacao ? 'Cancelar' : '+ Nova operação'}
-          </button>
+            + Nova operação
+          </Link>
         </div>
       </div>
 
-      {showNovaOperacao && (
-        <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
-          <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Nova operação</div>
-          {erroNovaOperacao && (
-            <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-              {erroNovaOperacao}
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              placeholder="Nome do cliente *"
-              value={novaOperacao.clienteNome}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, clienteNome: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-            <input
-              placeholder="Valor total (R$)"
-              type="number"
-              value={novaOperacao.valorTotal}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, valorTotal: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <input
-              placeholder="Cidade origem"
-              value={novaOperacao.cidadeOrigem}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, cidadeOrigem: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-            <input
-              placeholder="UF"
-              maxLength={2}
-              value={novaOperacao.ufOrigem}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, ufOrigem: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-            <input
-              placeholder="Cidade destino"
-              value={novaOperacao.cidadeDestino}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, cidadeDestino: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-            <input
-              placeholder="UF"
-              maxLength={2}
-              value={novaOperacao.ufDestino}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, ufDestino: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input
-              placeholder="Peso bruto (kg)"
-              type="number"
-              value={novaOperacao.pesoBrutoKg}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, pesoBrutoKg: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            />
-            <select
-              value={novaOperacao.veiculoId}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, veiculoId: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            >
-              <option value="">Veículo (opcional)</option>
-              {veiculos.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.placa} · {v.tipo_veiculo ?? v.marca_modelo ?? 'Veículo'}
-                </option>
-              ))}
-            </select>
-            <select
-              value={novaOperacao.motoristaId}
-              onChange={(e) => setNovaOperacao((f) => ({ ...f, motoristaId: e.target.value }))}
-              className="border rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ borderColor: 'var(--rbr-border)' }}
-            >
-              <option value="">Motorista (opcional)</option>
-              {motoristas.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            onClick={criarOperacao}
-            disabled={criando}
-            className="self-start text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
-            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-          >
-            {criando ? 'Criando…' : 'Criar operação'}
-          </button>
-        </div>
-      )}
+      <div
+        className="text-xs rounded-xl px-3 py-2.5 flex items-center gap-2"
+        style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
+      >
+        Toda operação nova nasce de uma cotação — feche a proposta em{' '}
+        <Link to="/cotacao" className="font-semibold underline" style={{ color: 'var(--rbr-navy)' }}>
+          Cotação &amp; Funil
+        </Link>{' '}
+        e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
+      </div>
 
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 

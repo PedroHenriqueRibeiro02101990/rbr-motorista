@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { Database } from '@rbr/shared/database.types'
-import { IconHome, IconBox, IconUsers, IconWallet, IconMapPin, IconLogOut } from '@rbr/shared/icons'
+import { IconHome, IconBox, IconUsers, IconWallet, IconMapPin, IconLogOut, IconQuote } from '@rbr/shared/icons'
 import { initials } from '@rbr/shared/format'
 import { IconMenu, IconX, IconFileText, IconAlertTriangle, IconClipboard } from '../icons-local'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
@@ -10,6 +10,7 @@ type Pessoa = Database['public']['Tables']['pessoas']['Row']
 
 const NAV = [
   { to: '/', label: 'Início', Icon: IconHome, end: true },
+  { to: '/cotacao', label: 'Cotação', Icon: IconQuote, end: false },
   { to: '/operacoes', label: 'Operações', Icon: IconBox, end: false },
   { to: '/pessoas', label: 'Pessoas', Icon: IconUsers, end: false },
   { to: '/financeiro', label: 'Financeiro', Icon: IconWallet, end: false },

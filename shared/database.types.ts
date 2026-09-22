@@ -1080,6 +1080,7 @@ export type Database = {
           cidade_origem: string | null
           cliente_id: string | null
           created_at: string
+          distancia_km: number | null
           eixos: number | null
           flag_peso_acima_limiar: boolean
           flag_valor_acima_teto_seguro: boolean
@@ -1116,6 +1117,7 @@ export type Database = {
           cidade_origem?: string | null
           cliente_id?: string | null
           created_at?: string
+          distancia_km?: number | null
           eixos?: number | null
           flag_peso_acima_limiar?: boolean
           flag_valor_acima_teto_seguro?: boolean
@@ -1152,6 +1154,7 @@ export type Database = {
           cidade_origem?: string | null
           cliente_id?: string | null
           created_at?: string
+          distancia_km?: number | null
           eixos?: number | null
           flag_peso_acima_limiar?: boolean
           flag_valor_acima_teto_seguro?: boolean
