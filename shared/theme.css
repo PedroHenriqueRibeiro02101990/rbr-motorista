@@ -1,0 +1,29 @@
+/* RBR Cargo — design tokens (direção navy/gold aprovada no canvas de mobile) */
+:root {
+  --rbr-navy: #1e2761;
+  --rbr-navy-dark: #12173d;
+  --rbr-gold: #b8863b;
+  --rbr-bg: #ffffff;
+  --rbr-border: #eceef4;
+  --rbr-muted: #6b7280;
+  --rbr-muted-bg: #eaedf6;
+  --rbr-positive: #16a34a;
+  --rbr-warning-bg: #f3e9d6;
+  --rbr-danger: #dc2626;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--rbr-bg);
+  color: var(--rbr-navy-dark);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .rbr-display {
+  font-family: 'Sora', sans-serif;
+}
