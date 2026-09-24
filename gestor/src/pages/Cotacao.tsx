@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
-import type { Database } from '@rbr/shared/database.types'
-import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL } from '@rbr/shared/format'
+import type { Database, Json } from '@rbr/shared/database.types'
+import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
 import { IconQuote, IconChevronRight, IconCheck } from '@rbr/shared/icons'
-import { parseNFeXml } from '@rbr/shared/nfeParser'
+import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
+import CatalogoCustos from '../components/CatalogoCustos'
+import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
+import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao } from '../lib/financeiro'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -14,8 +17,89 @@ type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Projeto = Database['public']['Tables']['projetos']['Row']
 type PisoCoeficiente = Database['public']['Tables']['piso_antt_coeficientes']['Row']
+type TipoCusto = Database['public']['Tables']['tipos_custo_adicional']['Row']
+type CustoAdicionalRow = Database['public']['Tables']['cotacao_custos_adicionais']['Row']
+type Fornecedor = Database['public']['Tables']['fornecedores']['Row']
 
 type CotacaoEnriquecida = Cotacao & { clienteNome?: string | null }
+
+type FormaCalculo = 'fixo' | 'por_km' | 'por_dia' | 'por_unidade' | 'pct_valor_nf'
+type Recebedor = 'motorista' | 'fornecedor' | 'governo' | 'rbr'
+
+// Item de custo adicional em edição. Valores como texto (inputs); pct_valor_nf usa "%" (0.1 = 0,1%).
+interface ItemCusto {
+  key: string
+  tipo_id: string
+  descricao: string
+  forma_calculo: FormaCalculo
+  quantidade: string
+  valor_unitario: string
+  recebedor: Recebedor
+  fornecedor_id: string
+}
+
+const FORMA_LABEL: Record<FormaCalculo, { unidade: string; qtd: string }> = {
+  fixo: { unidade: 'Valor (R$)', qtd: 'Qtd.' },
+  por_km: { unidade: 'R$ por km', qtd: 'Km' },
+  por_dia: { unidade: 'R$ por dia', qtd: 'Dias' },
+  por_unidade: { unidade: 'R$ por unidade', qtd: 'Qtd.' },
+  pct_valor_nf: { unidade: '% da NF', qtd: '' },
+}
+
+const RECEBEDOR_LABEL: Record<Recebedor, string> = {
+  motorista: 'Motorista',
+  fornecedor: 'Fornecedor',
+  governo: 'Governo',
+  rbr: 'RBR (interno)',
+}
+
+const SINAL_LABEL: Record<string, string> = {
+  perigosa: 'carga perigosa',
+  superdimensionada: 'carga superdimensionada/indivisível',
+  seguro_excedido: 'valor acima do teto do seguro',
+}
+
+let chaveSeq = 0
+function novaChave() {
+  chaveSeq += 1
+  return `item-${Date.now()}-${chaveSeq}`
+}
+
+function itemDeTipo(t: TipoCusto): ItemCusto {
+  const forma = t.forma_calculo as FormaCalculo
+  return {
+    key: novaChave(),
+    tipo_id: t.id,
+    descricao: '',
+    forma_calculo: forma,
+    quantidade: '1',
+    valor_unitario:
+      t.valor_padrao == null ? '' : forma === 'pct_valor_nf' ? String(Number((t.valor_padrao * 100).toFixed(4))) : String(t.valor_padrao),
+    recebedor: t.recebedor as Recebedor,
+    fornecedor_id: '',
+  }
+}
+
+function itemDeLinha(r: CustoAdicionalRow): ItemCusto {
+  const forma = r.forma_calculo as FormaCalculo
+  return {
+    key: r.id,
+    tipo_id: r.tipo_id,
+    descricao: r.descricao ?? '',
+    forma_calculo: forma,
+    quantidade: String(r.quantidade),
+    valor_unitario: forma === 'pct_valor_nf' ? String(Number((r.valor_unitario * 100).toFixed(4))) : String(r.valor_unitario),
+    recebedor: r.recebedor as Recebedor,
+    fornecedor_id: r.fornecedor_id ?? '',
+  }
+}
+
+// Mesma regra do gatilho trg_fn_custo_adicional_calcula.
+function valorItem(i: ItemCusto, valorNf: number): number {
+  const unit = numOrNull(i.valor_unitario) ?? 0
+  if (i.forma_calculo === 'pct_valor_nf') return round2(valorNf * (unit / 100))
+  return round2(unit * (numOrNull(i.quantidade) ?? 0))
+}
 
 const cardStyle = {
   borderColor: 'var(--rbr-border)',
@@ -31,6 +115,7 @@ const FILTROS: { value: StatusCotacao | 'todas'; label: string }[] = [
   { value: 'rascunho', label: 'Rascunho' },
   { value: 'enviada', label: 'Enviada' },
   { value: 'convertida', label: 'Convertida' },
+  { value: 'perdida', label: 'Perdida' },
 ]
 
 // Tabelas de piso ANTT — usadas só localmente pra escolher a linha certa em
@@ -67,6 +152,16 @@ const FORM_INICIAL = {
   nf_remetente_cnpj: '',
   nf_destinatario_razao_social: '',
   nf_destinatario_cnpj: '',
+  nf_numero: '',
+  nf_serie: '',
+  nf_data_emissao: '',
+  nf_produto_predominante: '',
+  nf_quantidade_volumes: '',
+  nf_remetente_ie: '',
+  nf_destinatario_ie: '',
+  nf_remetente_endereco: null as EnderecoNFe | null,
+  nf_destinatario_endereco: null as EnderecoNFe | null,
+  tomador_papel: '' as '' | 'remetente' | 'destinatario' | 'terceiro',
   cidade_origem: '',
   uf_origem: '',
   cidade_destino: '',
@@ -83,13 +178,24 @@ const FORM_INICIAL = {
   checkbox_carga_indivisivel_manual: false,
   flag_peso_acima_limiar: false,
   flag_valor_acima_teto_seguro: false,
+  // Composição do preço — todos os valores em R$, percentuais em "%" (ex.: "40" = 40%).
+  valor_frete_motorista: '',
   pedagio: '',
-  valor_seguro_tag: '',
-  valor_total: '',
-  lucro_rbr: '',
+  faixa_risco_seguro: '',
+  taxa_seguro_tag_pct: '',
+  aliquota_imposto_pct: '',
+  lucro_pct: '',
+  preco_modo: 'lucro_pct' as PrecoModo,
+  valor_final_manual: '',
   xml_danfe_url: '',
+  // Recebimento do cliente: regra cadastrada ou prazo combinado só nesta negociação.
+  prazo_modo: 'regra' as 'regra' | 'personalizado',
+  condicao_prazo_id: '',
+  prazo_personalizado: null as RegraPrazo | null,
+  forma_recebimento: 'boleto',
 }
 
+type PrecoModo = 'lucro_pct' | 'valor_final'
 type CotacaoFormState = typeof FORM_INICIAL
 
 interface PisoInfo {
@@ -97,8 +203,31 @@ interface PisoInfo {
   calculado: number
 }
 
+interface FaixaSeguro {
+  faixa: string
+  label: string
+  pct: number // fração (0.0015 = 0,15%)
+}
+
+const FAIXAS_SEGURO_PADRAO: FaixaSeguro[] = [
+  { faixa: 'baixo', label: 'Baixo risco', pct: 0.0015 },
+  { faixa: 'medio', label: 'Médio risco', pct: 0.003 },
+  { faixa: 'alto', label: 'Alto risco', pct: 0.009 },
+]
+
+interface RotaCalculada {
+  distancia_km: number
+  duracao_horas: number
+  piso_antt_minimo?: number
+  piso_antt_erro?: string
+}
+
+function normalizar(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 function numOrNull(s: string): number | null {
-  const t = s.trim()
+  const t = s.trim().replace(',', '.')
   if (!t) return null
   const n = Number(t)
   return Number.isFinite(n) ? n : null
@@ -108,8 +237,106 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+// Fração → texto em % pra input (0.4 → "40", 0.0015 → "0.15").
+function fracToPctStr(v: number | null | undefined): string {
+  if (v == null) return ''
+  return String(Number((v * 100).toFixed(4)))
+}
+
+function formatPct(v: number | null | undefined, casas = 2): string {
+  if (v == null) return '—'
+  return `${(v * 100).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas })}%`
+}
+
+interface Composicao {
+  frete: number | null
+  pedagio: number
+  seguroTag: number
+  taxaSeguro: number | null
+  adicionais: number
+  adicionaisMotorista: number
+  totalMotorista: number | null
+  custo: number | null
+  aliquota: number
+  imposto: number | null
+  custoComImposto: number | null
+  lucro: number | null
+  lucroPct: number | null // lucro ÷ (custo + imposto) — o "% de lucro" que o gestor digita
+  margem: number | null // lucro ÷ valor final — base da faixa 26–40%
+  valorFinal: number | null
+  erro: string | null
+}
+
+// Mesma conta do gatilho trg_fn_cotacao_calcula_preco no banco — o banco recalcula ao gravar,
+// então o que a tela mostra e o que fica salvo são sempre o mesmo número.
+//   custo = frete motorista + pedágio + TAG seguro (valor da mercadoria × taxa) + custos adicionais
+//   imposto = alíquota × valor final
+//   lucro = lucro% × (custo + imposto)          ← soma o lucro depois do custo total com imposto
+//   valor final = custo × (1 + L) / (1 − t × (1 + L))
+function calcularComposicao(f: CotacaoFormState, lucroPadrao: number, itens: ItemCusto[]): Composicao {
+  const frete = numOrNull(f.valor_frete_motorista)
+  const pedagio = numOrNull(f.pedagio) ?? 0
+  const valorNf = numOrNull(f.valor_nf) ?? 0
+  const taxaPct = numOrNull(f.taxa_seguro_tag_pct)
+  const taxaSeguro = taxaPct != null ? taxaPct / 100 : null
+  const seguroTag = taxaSeguro != null ? round2(valorNf * taxaSeguro) : 0
+  const aliquota = (numOrNull(f.aliquota_imposto_pct) ?? 0) / 100
+  const adicionais = round2(itens.reduce((s, i) => s + valorItem(i, valorNf), 0))
+  const adicionaisMotorista = round2(
+    itens.filter((i) => i.recebedor === 'motorista').reduce((s, i) => s + valorItem(i, valorNf), 0),
+  )
+  const vazio: Composicao = {
+    frete,
+    pedagio,
+    seguroTag,
+    taxaSeguro,
+    adicionais,
+    adicionaisMotorista,
+    totalMotorista: frete != null ? round2(frete + adicionaisMotorista) : null,
+    custo: null,
+    aliquota,
+    imposto: null,
+    custoComImposto: null,
+    lucro: null,
+    lucroPct: null,
+    margem: null,
+    valorFinal: null,
+    erro: null,
+  }
+  if (frete == null) return vazio
+  const custo = round2(frete + pedagio + seguroTag + adicionais)
+  let valorFinal: number
+  const manual = numOrNull(f.valor_final_manual)
+  if (f.preco_modo === 'valor_final' && manual != null) {
+    if (manual <= 0) return { ...vazio, custo, erro: 'Valor final precisa ser maior que zero.' }
+    valorFinal = round2(manual)
+  } else {
+    const lucroFrac = (numOrNull(f.lucro_pct) ?? lucroPadrao * 100) / 100
+    const fator = 1 + lucroFrac
+    const divisor = 1 - aliquota * fator
+    if (divisor <= 0) {
+      return { ...vazio, custo, erro: 'Com esse lucro % e essa alíquota não dá pra fechar o valor final — revise os percentuais.' }
+    }
+    valorFinal = round2((custo * fator) / divisor)
+  }
+  const imposto = round2(valorFinal * aliquota)
+  const custoComImposto = round2(custo + imposto)
+  const lucro = round2(valorFinal - custo - imposto)
+  return {
+    ...vazio,
+    custo,
+    imposto,
+    custoComImposto,
+    lucro,
+    lucroPct: custoComImposto > 0 ? lucro / custoComImposto : null,
+    margem: valorFinal > 0 ? lucro / valorFinal : null,
+    valorFinal,
+  }
+}
+
 function statusBadgeBg(status: StatusCotacao): string {
   if (status === 'convertida') return 'var(--rbr-positive)'
+  if (status === 'perdida') return 'var(--rbr-danger)'
   if (status === 'enviada') return 'var(--rbr-gold)'
   return 'var(--rbr-muted)'
 }
@@ -117,8 +344,10 @@ function statusBadgeBg(status: StatusCotacao): string {
 function margemBadge(margem: number | null, min: number, max: number): { bg: string; color: string; label: string } {
   if (margem == null) return { bg: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)', label: '—' }
   const label = `${(margem * 100).toFixed(1)}%`
-  if (margem < min) return { bg: '#FBE9E9', color: 'var(--rbr-danger)', label }
-  if (margem > max) return { bg: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)', label }
+  // Mesma tolerância do gatilho trg_fn_cotacao_valida_margem (arredondamento em centavos).
+  const tol = 0.0005
+  if (margem < min - tol) return { bg: '#FBE9E9', color: 'var(--rbr-danger)', label }
+  if (margem > max + tol) return { bg: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)', label }
   return { bg: '#E7F5EC', color: 'var(--rbr-positive)', label }
 }
 
@@ -136,6 +365,39 @@ export default function Cotacao() {
   const [margemMin, setMargemMin] = useState(0.26)
   const [margemMax, setMargemMax] = useState(0.4)
   const [pesoLimiarKg, setPesoLimiarKg] = useState<number | null>(null)
+  // Teto de cobertura por embarque da apólice vigente (Operações → Dados de emissão).
+  const [tetoSeguro, setTetoSeguro] = useState<number | null>(null)
+  const [lucroPadrao, setLucroPadrao] = useState(0.4)
+  const [aliquotaPadrao, setAliquotaPadrao] = useState<number | null>(null)
+  const [faixasSeguro, setFaixasSeguro] = useState<FaixaSeguro[]>(FAIXAS_SEGURO_PADRAO)
+
+  // Custos adicionais
+  const [tiposCusto, setTiposCusto] = useState<TipoCusto[]>([])
+  const [condicoesPrazo, setCondicoesPrazo] = useState<CondicaoPrazo[]>([])
+  const [feriados, setFeriados] = useState<Set<string>>(new Set())
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
+  const [itens, setItens] = useState<ItemCusto[]>([])
+  const [carregandoItens, setCarregandoItens] = useState(false)
+  const [tipoParaAdicionar, setTipoParaAdicionar] = useState('')
+
+  const [showCatalogo, setShowCatalogo] = useState(false)
+
+  // Busca na lista
+  const [busca, setBusca] = useState('')
+
+  // Marcar como perdida
+  const [showPerda, setShowPerda] = useState(false)
+  const [motivoPerda, setMotivoPerda] = useState('')
+  const [detalhePerda, setDetalhePerda] = useState('')
+
+  // Piso já gravado na cotação — usado quando a tela não recalcula (ex.: sem distância).
+  const [pisoSalvo, setPisoSalvo] = useState<number | null>(null)
+  // Cotação antiga (antes da composição de preço): tem valor total salvo mas não tem frete do motorista.
+  const [precoLegado, setPrecoLegado] = useState<{ valorTotal: number | null; lucro: number | null } | null>(null)
+
+  const [rotaCalculando, setRotaCalculando] = useState(false)
+  const [rotaErro, setRotaErro] = useState<string | null>(null)
+  const [rotaResultado, setRotaResultado] = useState<RotaCalculada | null>(null)
 
   const [form, setForm] = useState<CotacaoFormState | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -149,6 +411,7 @@ export default function Cotacao() {
   const [carregandoPiso, setCarregandoPiso] = useState(false)
 
   const [showNovoCliente, setShowNovoCliente] = useState(false)
+  const [novoClienteTipo, setNovoClienteTipo] = useState<'PJ' | 'PF'>('PJ')
   const [novoClienteRazao, setNovoClienteRazao] = useState('')
   const [novoClienteCnpj, setNovoClienteCnpj] = useState('')
   const [criandoCliente, setCriandoCliente] = useState(false)
@@ -173,8 +436,10 @@ export default function Cotacao() {
     setLoading(false)
   }, [])
 
+  // Carrega todos (inclusive inativos) pra conseguir mostrar o nome em cotação antiga;
+  // o seletor só oferece os ativos (ver clientesFiltrados/agenciadoresAtivos).
   const loadClientes = useCallback(async () => {
-    const { data } = await supabase.from('clientes').select('*').order('razao_social', { ascending: true }).limit(500)
+    const { data } = await supabase.from('clientes').select('*').order('razao_social', { ascending: true }).limit(1000)
     setClientes(data ?? [])
   }, [])
 
@@ -188,6 +453,24 @@ export default function Cotacao() {
     setAgenciadores(data ?? [])
   }, [])
 
+  const loadCatalogoCustos = useCallback(async () => {
+    const [{ data: tipos }, { data: forns }] = await Promise.all([
+      supabase.from('tipos_custo_adicional').select('*').order('ordem', { ascending: true }),
+      supabase.from('fornecedores').select('*').eq('status', 'ativo').order('nome', { ascending: true }).limit(500),
+    ])
+    setTiposCusto(tipos ?? [])
+    setFornecedores(forns ?? [])
+  }, [])
+
+  const loadCondicoes = useCallback(async () => {
+    const [{ data }, { data: fer }] = await Promise.all([
+      supabase.from('condicoes_prazo').select('*').eq('ativa', true).in('aplica_a', ['receber', 'ambos']).order('nome'),
+      supabase.from('feriados').select('data'),
+    ])
+    setCondicoesPrazo(data ?? [])
+    setFeriados(new Set((fer ?? []).map((x) => x.data)))
+  }, [])
+
   const loadProjetos = useCallback(async () => {
     const { data } = await supabase.from('projetos').select('*').order('nome', { ascending: true }).limit(300)
     setProjetos(data ?? [])
@@ -197,13 +480,32 @@ export default function Cotacao() {
     const { data } = await supabase
       .from('parametros_sistema')
       .select('chave, valor')
-      .in('chave', ['margem_cotacao_min', 'margem_cotacao_max', 'peso_bruto_limiar_eixo2_kg'])
+      .in('chave', [
+        'margem_cotacao_min',
+        'margem_cotacao_max',
+        'peso_bruto_limiar_eixo2_kg',
+        'lucro_cotacao_padrao',
+        'aliquota_imposto_cotacao_padrao',
+        'tag_seguro_faixas',
+      ])
     for (const row of data ?? []) {
+      if (row.chave === 'tag_seguro_faixas') {
+        if (Array.isArray(row.valor)) {
+          const faixas = (row.valor as unknown as FaixaSeguro[]).filter(
+            (x) => x && typeof x.pct === 'number' && typeof x.label === 'string',
+          )
+          if (faixas.length > 0) setFaixasSeguro(faixas)
+        }
+        continue
+      }
+      if (row.valor === null) continue
       const valor = typeof row.valor === 'number' ? row.valor : Number(row.valor)
       if (!Number.isFinite(valor)) continue
       if (row.chave === 'margem_cotacao_min') setMargemMin(valor)
       else if (row.chave === 'margem_cotacao_max') setMargemMax(valor)
       else if (row.chave === 'peso_bruto_limiar_eixo2_kg') setPesoLimiarKg(valor)
+      else if (row.chave === 'lucro_cotacao_padrao') setLucroPadrao(valor)
+      else if (row.chave === 'aliquota_imposto_cotacao_padrao') setAliquotaPadrao(valor)
     }
   }, [])
 
@@ -213,7 +515,9 @@ export default function Cotacao() {
     loadAgenciadores()
     loadProjetos()
     loadParametros()
-  }, [load, loadClientes, loadAgenciadores, loadProjetos, loadParametros])
+    loadCatalogoCustos()
+    loadCondicoes()
+  }, [load, loadClientes, loadAgenciadores, loadProjetos, loadParametros, loadCatalogoCustos, loadCondicoes])
 
   // Opções de eixos disponíveis pra combinação tabela+tipo de carga — consultado ao
   // vivo (em vez de fixar a matriz na tela) pra nunca ficar desatualizado se a tabela
@@ -297,36 +601,143 @@ export default function Cotacao() {
     }
   }, [form?.peso_bruto_kg, pesoLimiarKg]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const valorTotalNum = form ? numOrNull(form.valor_total) : null
-  const lucroNum = form ? numOrNull(form.lucro_rbr) : null
-  const margemAjustada = valorTotalNum != null && valorTotalNum !== 0 && lucroNum != null ? lucroNum / valorTotalNum : null
-  const margem = margemBadge(margemAjustada, margemMin, margemMax)
+  // Valor da carga acima do teto da apólice (eixo 3) — automático quando existe apólice vigente.
+  useEffect(() => {
+    const hojeIso = new Date().toISOString().slice(0, 10)
+    supabase
+      .from('apolices_seguro')
+      .select('teto_cobertura_por_embarque, vigencia_inicio, vigencia_fim')
+      .order('vigencia_inicio', { ascending: false })
+      .then(({ data }) => {
+        const vigente = (data ?? []).find(
+          (a) => (!a.vigencia_inicio || a.vigencia_inicio <= hojeIso) && (!a.vigencia_fim || a.vigencia_fim >= hojeIso),
+        )
+        setTetoSeguro(vigente?.teto_cobertura_por_embarque ?? null)
+      })
+  }, [])
 
+  useEffect(() => {
+    if (!form || tetoSeguro == null) return
+    const auto = (numOrNull(form.valor_nf) ?? 0) > tetoSeguro
+    if (auto !== form.flag_valor_acima_teto_seguro) {
+      setForm((f) => (f ? { ...f, flag_valor_acima_teto_seguro: auto } : f))
+    }
+  }, [form?.valor_nf, tetoSeguro]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const composicao = useMemo(() => (form ? calcularComposicao(form, lucroPadrao, itens) : null), [form, lucroPadrao, itens])
+  const margemAjustada = composicao?.margem ?? null
+  const margem = margemBadge(margemAjustada, margemMin, margemMax)
+  const pisoReferencia = pisoInfo?.calculado ?? pisoSalvo
+  const freteAbaixoDoPiso =
+    composicao?.frete != null && pisoReferencia != null && composicao.frete < round2(pisoReferencia)
+
+  // Só clientes ativos podem ser escolhidos — exceto o que já está na cotação (pra não sumir ao reabrir).
   const clientesFiltrados = useMemo(() => {
-    const termo = clienteFiltro.trim().toLowerCase()
-    if (!termo) return clientes
-    return clientes.filter(
-      (c) =>
-        (c.razao_social ?? '').toLowerCase().includes(termo) ||
-        (c.nome_fantasia ?? '').toLowerCase().includes(termo) ||
-        (c.cnpj ?? '').includes(termo),
-    )
-  }, [clientes, clienteFiltro])
+    const termo = normalizar(clienteFiltro.trim())
+    const selecionado = form?.cliente_id ?? ''
+    return clientes.filter((c) => {
+      if (c.status !== 'ativo' && c.id !== selecionado) return false
+      if (!termo) return true
+      const digitos = termo.replace(/\D/g, '')
+      return (
+        normalizar(c.razao_social ?? '').includes(termo) ||
+        normalizar(c.nome_fantasia ?? '').includes(termo) ||
+        (digitos !== '' && (c.cnpj ?? '').replace(/\D/g, '').includes(digitos)) ||
+        (digitos !== '' && (c.cpf ?? '').replace(/\D/g, '').includes(digitos))
+      )
+    })
+  }, [clientes, clienteFiltro, form?.cliente_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sugestão do tomador: compara o documento do cliente com o do remetente/destinatário da NF.
+  const tomadorSugerido = useMemo<'' | 'remetente' | 'destinatario' | 'terceiro'>(() => {
+    if (!form?.cliente_id) return ''
+    const cli = clientes.find((c) => c.id === form.cliente_id)
+    const doc = ((cli?.cnpj ?? cli?.cpf) ?? '').replace(/\D/g, '')
+    if (!doc) return ''
+    if (doc === form.nf_remetente_cnpj.replace(/\D/g, '')) return 'remetente'
+    if (doc === form.nf_destinatario_cnpj.replace(/\D/g, '')) return 'destinatario'
+    return 'terceiro'
+  }, [form?.cliente_id, form?.nf_remetente_cnpj, form?.nf_destinatario_cnpj, clientes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const agenciadoresAtivos = useMemo(
+    () => agenciadores.filter((a) => a.status === 'ativo' || a.id === form?.agenciador_id),
+    [agenciadores, form?.agenciador_id], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
+  // Sinais de carga complexa já marcados na cotação → quais custos o sistema sugere.
+  const sinaisAtivos = useMemo(() => {
+    if (!form) return [] as string[]
+    const s: string[] = []
+    if (form.checkbox_carga_perigosa_manual) s.push('perigosa')
+    if (form.flag_peso_acima_limiar || form.checkbox_carga_indivisivel_manual) s.push('superdimensionada')
+    if (form.flag_valor_acima_teto_seguro) s.push('seguro_excedido')
+    return s
+  }, [form])
+
+  const tiposAtivos = useMemo(() => tiposCusto.filter((t) => t.ativo), [tiposCusto])
+
+  const sugestoes = useMemo(() => {
+    const usados = new Set(itens.map((i) => i.tipo_id))
+    return tiposAtivos
+      .filter((t) => !usados.has(t.id) && t.sugerir_quando.some((q) => sinaisAtivos.includes(q)))
+      .map((t) => ({ tipo: t, motivos: t.sugerir_quando.filter((q) => sinaisAtivos.includes(q)) }))
+  }, [tiposAtivos, itens, sinaisAtivos])
+
+  const obrigatoriosFaltando = useMemo(() => {
+    const usados = new Set(itens.map((i) => i.tipo_id))
+    return tiposAtivos.filter((t) => t.obrigatorio && !usados.has(t.id))
+  }, [tiposAtivos, itens])
+
+  const tipoPorId = useMemo(() => new Map(tiposCusto.map((t) => [t.id, t])), [tiposCusto])
 
   const projetosFiltrados = useMemo(() => {
     if (!form || !form.cliente_id) return projetos
     return projetos.filter((p) => !p.cliente_id || p.cliente_id === form.cliente_id)
   }, [projetos, form?.cliente_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function abrirNovaCotacao() {
-    setForm({ ...FORM_INICIAL })
-    setEditingId(null)
-    setEditingStatus('rascunho')
+  function limparAuxiliares() {
     setFormError(null)
     setSuccessMsg(null)
     setXmlError(null)
     setShowNovoCliente(false)
     setClienteFiltro('')
+    setRotaErro(null)
+    setRotaResultado(null)
+    setShowPerda(false)
+    setMotivoPerda('')
+    setDetalhePerda('')
+    setTipoParaAdicionar('')
+  }
+
+  function abrirNovaCotacao() {
+    setForm({
+      ...FORM_INICIAL,
+      lucro_pct: fracToPctStr(lucroPadrao),
+      aliquota_imposto_pct: fracToPctStr(aliquotaPadrao),
+      condicao_prazo_id: condicoesPrazo.find((c) => c.padrao_receber)?.id ?? '',
+    })
+    setEditingId(null)
+    setEditingStatus('rascunho')
+    setPisoSalvo(null)
+    setPrecoLegado(null)
+    // Custos obrigatórios (ex.: pesquisa GR) já entram em toda cotação nova.
+    setItens(tiposCusto.filter((t) => t.ativo && t.obrigatorio).map(itemDeTipo))
+    limparAuxiliares()
+  }
+
+  async function carregarItens(cotacaoId: string) {
+    setCarregandoItens(true)
+    const { data, error } = await supabase
+      .from('cotacao_custos_adicionais')
+      .select('*')
+      .eq('cotacao_id', cotacaoId)
+      .order('created_at', { ascending: true })
+    setCarregandoItens(false)
+    if (error) {
+      setFormError(`Não consegui carregar os custos adicionais: ${error.message}`)
+      return
+    }
+    setItens((data ?? []).map(itemDeLinha))
   }
 
   function abrirEdicao(c: Cotacao) {
@@ -340,6 +751,16 @@ export default function Cotacao() {
       nf_remetente_cnpj: c.nf_remetente_cnpj ?? '',
       nf_destinatario_razao_social: c.nf_destinatario_razao_social ?? '',
       nf_destinatario_cnpj: c.nf_destinatario_cnpj ?? '',
+      nf_numero: c.nf_numero ?? '',
+      nf_serie: c.nf_serie ?? '',
+      nf_data_emissao: c.nf_data_emissao ?? '',
+      nf_produto_predominante: c.nf_produto_predominante ?? '',
+      nf_quantidade_volumes: c.nf_quantidade_volumes != null ? String(c.nf_quantidade_volumes) : '',
+      nf_remetente_ie: c.nf_remetente_ie ?? '',
+      nf_destinatario_ie: c.nf_destinatario_ie ?? '',
+      nf_remetente_endereco: (c.nf_remetente_endereco as EnderecoNFe | null) ?? null,
+      nf_destinatario_endereco: (c.nf_destinatario_endereco as EnderecoNFe | null) ?? null,
+      tomador_papel: (c.tomador_papel as CotacaoFormState['tomador_papel']) ?? '',
       cidade_origem: c.cidade_origem ?? '',
       uf_origem: c.uf_origem ?? '',
       cidade_destino: c.cidade_destino ?? '',
@@ -348,10 +769,7 @@ export default function Cotacao() {
       valor_nf: c.valor_nf != null ? String(c.valor_nf) : '',
       natureza_operacao: c.natureza_operacao ?? '',
       ncms_produtos: c.ncms_produtos && c.ncms_produtos.length > 0 ? c.ncms_produtos.join(', ') : '',
-      // `tabela` não existe em `cotacoes` — não dá pra recuperar a escolhida
-      // anteriormente, então a tela pede pra reselecionar ao reabrir pra editar
-      // (necessário só pra recalcular o piso ANTT; o valor já salvo continua visível).
-      tabela: '',
+      tabela: c.tabela_antt ?? '',
       tipo_carga: c.tipo_carga ?? '',
       eixos: c.eixos != null ? String(c.eixos) : '',
       distancia_km: c.distancia_km != null ? String(c.distancia_km) : '',
@@ -359,20 +777,57 @@ export default function Cotacao() {
       checkbox_carga_indivisivel_manual: c.checkbox_carga_indivisivel_manual,
       flag_peso_acima_limiar: c.flag_peso_acima_limiar,
       flag_valor_acima_teto_seguro: c.flag_valor_acima_teto_seguro,
+      valor_frete_motorista: c.valor_frete_motorista != null ? String(c.valor_frete_motorista) : '',
       pedagio: c.pedagio != null ? String(c.pedagio) : '',
-      valor_seguro_tag: c.valor_seguro_tag != null ? String(c.valor_seguro_tag) : '',
-      valor_total: c.valor_total != null ? String(c.valor_total) : '',
-      lucro_rbr: c.lucro_rbr != null ? String(c.lucro_rbr) : '',
+      faixa_risco_seguro: c.faixa_risco_seguro ?? '',
+      // Cotação antiga só tinha o valor em R$ da TAG — sem a taxa não dá pra reconstruir o %.
+      taxa_seguro_tag_pct: fracToPctStr(c.taxa_seguro_tag_pct),
+      aliquota_imposto_pct: fracToPctStr(c.aliquota_imposto_pct ?? (c.valor_frete_motorista == null ? aliquotaPadrao : null)),
+      lucro_pct: fracToPctStr(c.lucro_pct ?? (c.valor_frete_motorista == null ? lucroPadrao : null)),
+      preco_modo: c.preco_modo === 'valor_final' ? 'valor_final' : 'lucro_pct',
+      valor_final_manual: c.preco_modo === 'valor_final' && c.valor_total != null ? String(c.valor_total) : '',
       xml_danfe_url: c.xml_danfe_url ?? '',
+      prazo_modo: c.prazo_personalizado ? 'personalizado' : 'regra',
+      condicao_prazo_id: c.condicao_prazo_id ?? '',
+      prazo_personalizado: (c.prazo_personalizado as unknown as RegraPrazo | null) ?? null,
+      forma_recebimento: c.forma_recebimento ?? 'boleto',
     })
     setEditingId(c.id)
     setEditingStatus(c.status)
-    setFormError(null)
-    setSuccessMsg(null)
-    setXmlError(null)
-    setShowNovoCliente(false)
-    setClienteFiltro('')
     setPisoInfo(null)
+    setPisoSalvo(c.piso_antt_calculado)
+    setPrecoLegado(
+      c.valor_frete_motorista == null && (c.valor_total != null || c.lucro_rbr != null)
+        ? { valorTotal: c.valor_total, lucro: c.lucro_rbr }
+        : null,
+    )
+    limparAuxiliares()
+    setItens([])
+    carregarItens(c.id)
+  }
+
+  // Cliente já negociou antes? Repete o último prazo combinado com ele.
+  async function sugerirPrazoDoCliente(clienteId: string) {
+    const { data } = await supabase
+      .from('cotacoes')
+      .select('condicao_prazo_id, prazo_personalizado, forma_recebimento')
+      .eq('cliente_id', clienteId)
+      .or('condicao_prazo_id.not.is.null,prazo_personalizado.not.is.null')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const ult = data?.[0]
+    if (!ult) return
+    setForm((f) =>
+      f
+        ? {
+            ...f,
+            prazo_modo: ult.prazo_personalizado ? 'personalizado' : 'regra',
+            condicao_prazo_id: ult.condicao_prazo_id ?? f.condicao_prazo_id,
+            prazo_personalizado: (ult.prazo_personalizado as unknown as RegraPrazo | null) ?? null,
+            forma_recebimento: ult.forma_recebimento ?? f.forma_recebimento,
+          }
+        : f,
+    )
   }
 
   function fecharForm() {
@@ -401,6 +856,15 @@ export default function Cotacao() {
               nf_remetente_cnpj: dados.remetente.cnpj ?? f.nf_remetente_cnpj,
               nf_destinatario_razao_social: dados.destinatario.razaoSocial ?? f.nf_destinatario_razao_social,
               nf_destinatario_cnpj: dados.destinatario.cnpjOuCpf ?? f.nf_destinatario_cnpj,
+              nf_numero: dados.numero ?? f.nf_numero,
+              nf_serie: dados.serie ?? f.nf_serie,
+              nf_data_emissao: dados.dataEmissao ?? f.nf_data_emissao,
+              nf_produto_predominante: dados.produtoPredominante ?? f.nf_produto_predominante,
+              nf_quantidade_volumes: dados.quantidadeVolumes != null ? String(dados.quantidadeVolumes) : f.nf_quantidade_volumes,
+              nf_remetente_ie: dados.remetente.ie ?? f.nf_remetente_ie,
+              nf_destinatario_ie: dados.destinatario.ie ?? f.nf_destinatario_ie,
+              nf_remetente_endereco: dados.remetente.endereco ?? f.nf_remetente_endereco,
+              nf_destinatario_endereco: dados.destinatario.endereco ?? f.nf_destinatario_endereco,
               cidade_origem: dados.remetente.cidade ?? f.cidade_origem,
               uf_origem: dados.remetente.uf ?? f.uf_origem,
               cidade_destino: dados.destinatario.cidade ?? f.cidade_destino,
@@ -417,17 +881,29 @@ export default function Cotacao() {
     }
   }
 
+  // Mesmas regras do cadastro completo de clientes (Cadastros): PJ exige razão social + CNPJ, PF exige nome + CPF.
   async function criarClienteInline() {
     setErroNovoCliente(null)
+    const pf = novoClienteTipo === 'PF'
     if (!novoClienteRazao.trim()) {
-      setErroNovoCliente('Informe a razão social.')
+      setErroNovoCliente(pf ? 'Informe o nome.' : 'Informe a razão social.')
+      return
+    }
+    if (!novoClienteCnpj.trim()) {
+      setErroNovoCliente(pf ? 'Informe o CPF (pessoa física).' : 'Informe o CNPJ (pessoa jurídica).')
       return
     }
     setCriandoCliente(true)
     try {
       const { data, error } = await supabase
         .from('clientes')
-        .insert({ razao_social: novoClienteRazao.trim(), cnpj: novoClienteCnpj.trim() || null, origem: 'gestor' })
+        .insert({
+          tipo_pessoa_doc: novoClienteTipo,
+          razao_social: novoClienteRazao.trim(),
+          cnpj: pf ? null : novoClienteCnpj.trim(),
+          cpf: pf ? novoClienteCnpj.trim() : null,
+          origem: 'gestor',
+        })
         .select()
         .single()
       if (error || !data) throw error ?? new Error('Falha ao criar cliente.')
@@ -443,29 +919,97 @@ export default function Cotacao() {
     }
   }
 
-  function calcularPreco() {
+  // Calculadora opcional: distância real pela rota (OpenStreetMap, grátis). O Qualp segue sendo a
+  // fonte principal — a distância dele pode ser digitada direto no campo.
+  async function calcularRota() {
     if (!form) return
-    setFormError(null)
-    const piso = pisoInfo?.calculado ?? null
-    if (piso == null) {
-      setFormError('Preencha tabela, tipo de carga, eixos e distância pra calcular o piso ANTT antes de usar o cálculo automático.')
+    if (!form.cidade_origem.trim() || !form.uf_origem.trim() || !form.cidade_destino.trim() || !form.uf_destino.trim()) {
+      setRotaErro('Preencha cidade/UF de origem e destino antes de calcular.')
       return
     }
-    const pedagio = numOrNull(form.pedagio) ?? 0
-    const seguro = numOrNull(form.valor_seguro_tag) ?? 0
-    const temTotal = form.valor_total.trim() !== ''
-    const temLucro = form.lucro_rbr.trim() !== ''
-    if (temLucro && !temTotal) {
-      const lucro = numOrNull(form.lucro_rbr) ?? 0
-      const total = piso + pedagio + seguro + lucro
-      setForm((f) => (f ? { ...f, valor_total: String(round2(total)) } : f))
-    } else if (temTotal && !temLucro) {
-      const total = numOrNull(form.valor_total) ?? 0
-      const lucro = total - (piso + pedagio + seguro)
-      setForm((f) => (f ? { ...f, lucro_rbr: String(round2(lucro)) } : f))
-    } else {
-      setFormError('Preencha apenas um dos dois campos (valor total OU lucro RBR) pra calcular o outro automaticamente.')
+    setRotaCalculando(true)
+    setRotaErro(null)
+    setRotaResultado(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('calcular-rota-frete', {
+        body: {
+          cidade_origem: form.cidade_origem.trim(),
+          uf_origem: form.uf_origem.trim().toUpperCase(),
+          cidade_destino: form.cidade_destino.trim(),
+          uf_destino: form.uf_destino.trim().toUpperCase(),
+          tipo_carga: form.tipo_carga || undefined,
+          eixos: form.eixos ? Number(form.eixos) : undefined,
+          tabela: form.tabela || undefined,
+        },
+      })
+      if (error || !data?.sucesso) {
+        setRotaErro(data?.erro ?? error?.message ?? 'Não consegui calcular a rota agora.')
+        return
+      }
+      setRotaResultado(data as RotaCalculada)
+    } catch (e) {
+      setRotaErro(e instanceof Error ? e.message : 'Erro ao chamar o cálculo de rota.')
+    } finally {
+      setRotaCalculando(false)
     }
+  }
+
+  function usarDistanciaCalculada() {
+    if (!rotaResultado) return
+    setForm((f) => (f ? { ...f, distancia_km: String(rotaResultado.distancia_km) } : f))
+  }
+
+  function usarPisoComoFrete() {
+    if (pisoReferencia == null) return
+    setForm((f) => (f ? { ...f, valor_frete_motorista: String(round2(pisoReferencia)) } : f))
+  }
+
+  function escolherFaixaSeguro(faixa: string) {
+    const encontrada = faixasSeguro.find((x) => x.faixa === faixa)
+    setForm((f) =>
+      f
+        ? {
+            ...f,
+            faixa_risco_seguro: faixa,
+            taxa_seguro_tag_pct: encontrada ? fracToPctStr(encontrada.pct) : f.taxa_seguro_tag_pct,
+          }
+        : f,
+    )
+  }
+
+  function editarTaxaSeguro(valor: string) {
+    const n = numOrNull(valor)
+    const casada = n != null ? faixasSeguro.find((x) => Math.abs(x.pct * 100 - n) < 1e-9) : undefined
+    setForm((f) =>
+      f ? { ...f, taxa_seguro_tag_pct: valor, faixa_risco_seguro: casada ? casada.faixa : valor.trim() ? 'personalizada' : '' } : f,
+    )
+  }
+
+  function editarLucroPct(valor: string) {
+    setForm((f) => (f ? { ...f, lucro_pct: valor, preco_modo: 'lucro_pct', valor_final_manual: '' } : f))
+  }
+
+  function editarValorFinal(valor: string) {
+    setForm((f) =>
+      f
+        ? valor.trim() === ''
+          ? { ...f, preco_modo: 'lucro_pct', valor_final_manual: '' }
+          : { ...f, preco_modo: 'valor_final', valor_final_manual: valor }
+        : f,
+    )
+  }
+
+  function voltarParaLucroPct() {
+    setForm((f) =>
+      f
+        ? {
+            ...f,
+            preco_modo: 'lucro_pct',
+            valor_final_manual: '',
+            lucro_pct: composicao?.lucroPct != null ? fracToPctStr(Number(composicao.lucroPct.toFixed(4))) : f.lucro_pct,
+          }
+        : f,
+    )
   }
 
   function montarPatch(f: CotacaoFormState): CotacaoUpdate {
@@ -474,7 +1018,38 @@ export default function Cotacao() {
       .map((s) => s.trim())
       .filter(Boolean)
     const flagPeso = pesoLimiarKg != null ? (f.peso_bruto_kg.trim() !== '' && (numOrNull(f.peso_bruto_kg) ?? 0) >= pesoLimiarKg) : f.flag_peso_acima_limiar
+    const comp = calcularComposicao(f, lucroPadrao, itens)
+    const taxaPct = numOrNull(f.taxa_seguro_tag_pct)
+    const aliqPct = numOrNull(f.aliquota_imposto_pct)
+    const lucroPctDigitado = numOrNull(f.lucro_pct)
+    const modoValorFinal = f.preco_modo === 'valor_final' && numOrNull(f.valor_final_manual) != null
+
+    // Preço: só mexe nos campos de resultado quando o frete do motorista foi informado. Numa cotação
+    // antiga (sem frete do motorista), mantém o valor que já estava salvo até alguém preencher o frete.
+    const preco: CotacaoUpdate =
+      comp.frete == null && precoLegado
+        ? {}
+        : {
+            valor_total: comp.valorFinal,
+            lucro_rbr: comp.lucro,
+            valor_imposto: comp.imposto,
+            margem_ajustada: comp.margem,
+            lucro_pct: modoValorFinal
+              ? comp.lucroPct
+              : lucroPctDigitado != null
+                ? lucroPctDigitado / 100
+                : lucroPadrao,
+            preco_modo: modoValorFinal ? 'valor_final' : 'lucro_pct',
+          }
+
     return {
+      ...preco,
+      valor_frete_motorista: comp.frete,
+      faixa_risco_seguro: f.faixa_risco_seguro || null,
+      taxa_seguro_tag_pct: taxaPct != null ? taxaPct / 100 : null,
+      valor_seguro_tag: taxaPct != null ? comp.seguroTag : precoLegado ? undefined : null,
+      aliquota_imposto_pct: aliqPct != null ? aliqPct / 100 : null,
+      tabela_antt: f.tabela || null,
       cliente_id: f.cliente_id || null,
       origem: f.origem.trim() || 'gestor',
       agenciador_id: f.origem === 'agenciador' ? f.agenciador_id || null : null,
@@ -484,6 +1059,16 @@ export default function Cotacao() {
       nf_remetente_cnpj: f.nf_remetente_cnpj.trim() || null,
       nf_destinatario_razao_social: f.nf_destinatario_razao_social.trim() || null,
       nf_destinatario_cnpj: f.nf_destinatario_cnpj.trim() || null,
+      nf_numero: f.nf_numero.trim() || null,
+      nf_serie: f.nf_serie.trim() || null,
+      nf_data_emissao: f.nf_data_emissao || null,
+      nf_produto_predominante: f.nf_produto_predominante.trim() || null,
+      nf_quantidade_volumes: numOrNull(f.nf_quantidade_volumes),
+      nf_remetente_ie: f.nf_remetente_ie.trim() || null,
+      nf_destinatario_ie: f.nf_destinatario_ie.trim() || null,
+      nf_remetente_endereco: f.nf_remetente_endereco as unknown as Json,
+      nf_destinatario_endereco: f.nf_destinatario_endereco as unknown as Json,
+      tomador_papel: f.tomador_papel || null,
       cidade_origem: f.cidade_origem.trim() || null,
       uf_origem: f.uf_origem.trim().toUpperCase() || null,
       cidade_destino: f.cidade_destino.trim() || null,
@@ -500,13 +1085,71 @@ export default function Cotacao() {
       flag_peso_acima_limiar: flagPeso,
       flag_valor_acima_teto_seguro: f.flag_valor_acima_teto_seguro,
       pedagio: numOrNull(f.pedagio),
-      valor_seguro_tag: numOrNull(f.valor_seguro_tag),
-      piso_antt_calculado: pisoInfo?.calculado ?? null,
-      valor_total: numOrNull(f.valor_total),
-      lucro_rbr: numOrNull(f.lucro_rbr),
-      margem_ajustada: margemAjustada,
+      piso_antt_calculado: pisoInfo != null ? round2(pisoInfo.calculado) : pisoSalvo,
       xml_danfe_url: f.xml_danfe_url.trim() || null,
+      condicao_prazo_id: f.prazo_modo === 'regra' ? f.condicao_prazo_id || null : null,
+      prazo_personalizado: f.prazo_modo === 'personalizado' && f.prazo_personalizado ? (f.prazo_personalizado as unknown as Json) : null,
+      forma_recebimento: f.forma_recebimento || 'boleto',
     }
+  }
+
+  function itensParaBanco() {
+    return itens.map((i) => {
+      const unit = numOrNull(i.valor_unitario) ?? 0
+      return {
+        tipo_id: i.tipo_id,
+        descricao: i.descricao.trim(),
+        forma_calculo: i.forma_calculo,
+        quantidade: i.forma_calculo === 'pct_valor_nf' ? 1 : numOrNull(i.quantidade) ?? 0,
+        valor_unitario: i.forma_calculo === 'pct_valor_nf' ? unit / 100 : unit,
+        recebedor: i.recebedor,
+        fornecedor_id: i.recebedor === 'fornecedor' ? i.fornecedor_id : '',
+      }
+    })
+  }
+
+  function validarItens(): string | null {
+    for (const i of itens) {
+      if (numOrNull(i.valor_unitario) != null && (numOrNull(i.valor_unitario) ?? 0) < 0) return 'Custo adicional com valor negativo.'
+      if (i.forma_calculo !== 'pct_valor_nf' && (numOrNull(i.quantidade) ?? 0) < 0) return 'Custo adicional com quantidade negativa.'
+    }
+    return null
+  }
+
+  // Grava cotação + lista de custos adicionais e devolve a linha final (já recalculada pelo banco).
+  async function gravarTudo(extra: CotacaoUpdate = {}): Promise<Cotacao> {
+    if (!form) throw new Error('Formulário vazio.')
+    if (form.prazo_modo === 'personalizado') {
+      const r = form.prazo_personalizado
+      if (!r || !r.parcelas.length) throw new Error('Defina ao menos uma parcela no prazo de recebimento.')
+      const soma = r.parcelas.reduce((s, p) => s + (Number(p.percentual) || 0), 0)
+      if (r.parcelas.some((p) => !(Number(p.percentual) > 0) || !(Number(p.dias) >= 0))) throw new Error('Prazo de recebimento: cada parcela precisa de % maior que zero e dias 0 ou mais.')
+      if (Math.abs(soma - 100) > 0.01) throw new Error(`Prazo de recebimento: as parcelas somam ${soma.toLocaleString('pt-BR')}% — precisam somar 100%.`)
+      if (r.modo === 'fechamento_mensal' && !r.dia_fixo) throw new Error('Prazo de recebimento: informe o dia do vencimento do fechamento mensal.')
+    }
+    const patch = montarPatch(form)
+    let id = editingId
+    if (!id) {
+      const { data, error } = await supabase.from('cotacoes').insert(patch).select().single()
+      if (error || !data) throw error ?? new Error('Falha ao criar cotação.')
+      id = data.id
+      setEditingId(data.id)
+    } else {
+      const { error } = await supabase.from('cotacoes').update(patch).eq('id', id)
+      if (error) throw error
+    }
+    const { error: errItens } = await supabase.rpc('salvar_custos_adicionais_cotacao', {
+      p_cotacao_id: id,
+      p_itens: itensParaBanco(),
+    })
+    if (errItens) throw errItens
+    if (Object.keys(extra).length > 0) {
+      const { error } = await supabase.from('cotacoes').update(extra).eq('id', id)
+      if (error) throw error
+    }
+    const { data: final, error: errFinal } = await supabase.from('cotacoes').select('*').eq('id', id).single()
+    if (errFinal || !final) throw errFinal ?? new Error('Falha ao reler a cotação.')
+    return final
   }
 
   async function salvar() {
@@ -517,20 +1160,22 @@ export default function Cotacao() {
       setFormError('Selecione ou cadastre um cliente antes de salvar.')
       return
     }
+    if (composicao?.erro) {
+      setFormError(composicao.erro)
+      return
+    }
+    const erroItens = validarItens()
+    if (erroItens) {
+      setFormError(erroItens)
+      return
+    }
     setSaving(true)
     try {
-      const patch = montarPatch(form)
-      if (editingId) {
-        const { error } = await supabase.from('cotacoes').update(patch).eq('id', editingId)
-        if (error) throw error
-        setSuccessMsg('Cotação atualizada com sucesso.')
-      } else {
-        const { data, error } = await supabase.from('cotacoes').insert(patch).select().single()
-        if (error || !data) throw error ?? new Error('Falha ao criar cotação.')
-        setEditingId(data.id)
-        setEditingStatus(data.status)
-        setSuccessMsg('Cotação criada com sucesso.')
-      }
+      const eraNova = !editingId
+      const final = await gravarTudo()
+      setEditingStatus(final.status)
+      sincronizarComBanco(final)
+      setSuccessMsg(eraNova ? 'Cotação criada com sucesso.' : 'Cotação atualizada com sucesso.')
       await load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Erro ao salvar cotação.')
@@ -539,21 +1184,46 @@ export default function Cotacao() {
     }
   }
 
+  // Depois de gravar, o banco é quem manda: confere que o valor final gravado bate com o da tela.
+  function sincronizarComBanco(c: Cotacao) {
+    setPisoSalvo(c.piso_antt_calculado)
+    if (c.valor_frete_motorista != null) setPrecoLegado(null)
+    const telaFinal = composicao?.valorFinal ?? null
+    if (c.valor_total != null && telaFinal != null && Math.abs(c.valor_total - telaFinal) >= 0.01) {
+      setFormError(
+        `Atenção: o valor final gravado no banco (${formatMoney(c.valor_total)}) ficou diferente do mostrado na tela (${formatMoney(telaFinal)}). Reabra a cotação pra conferir.`,
+      )
+    }
+  }
+
+  // Enviar grava tudo que está na tela (inclusive custos adicionais) e marca como enviada.
   async function enviar() {
-    if (!editingId) return
-    setSaving(true)
+    if (!form || !editingId) return
     setFormError(null)
     setSuccessMsg(null)
-    const { error } = await supabase.from('cotacoes').update({ status: 'enviada' }).eq('id', editingId)
-    setSaving(false)
-    if (error) {
-      setFormError(error.message)
+    if (composicao?.erro) {
+      setFormError(composicao.erro)
       return
     }
-    setEditingStatus('enviada')
-    setSuccessMsg('Cotação marcada como enviada.')
-    await load()
+    const erroItens = validarItens()
+    if (erroItens) {
+      setFormError(erroItens)
+      return
+    }
+    setSaving(true)
+    try {
+      const final = await gravarTudo({ status: 'enviada' })
+      sincronizarComBanco(final)
+      setEditingStatus('enviada')
+      setSuccessMsg('Cotação salva e marcada como enviada.')
+      await load()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Erro ao enviar cotação.')
+    } finally {
+      setSaving(false)
+    }
   }
+
 
   async function converter() {
     if (!form || !editingId) return
@@ -563,11 +1233,33 @@ export default function Cotacao() {
       setFormError('Selecione um cliente antes de converter em operação.')
       return
     }
+    if (composicao?.frete == null || composicao.valorFinal == null) {
+      setFormError('Preencha o frete do motorista (e o restante da composição do preço) antes de converter em operação.')
+      return
+    }
+    if (composicao.erro) {
+      setFormError(composicao.erro)
+      return
+    }
+    if (freteAbaixoDoPiso) {
+      setFormError(
+        `O frete do motorista (${formatMoney(composicao.frete)}) está abaixo do piso mínimo ANTT (${formatMoney(pisoReferencia)}). Pela lei o motorista não pode receber menos que o piso — o CIOT é rejeitado. Ajuste antes de converter.`,
+      )
+      return
+    }
+    if (obrigatoriosFaltando.length > 0) {
+      setFormError(`Custo obrigatório faltando: ${obrigatoriosFaltando.map((t) => t.nome).join(', ')}.`)
+      return
+    }
+    const erroItens = validarItens()
+    if (erroItens) {
+      setFormError(erroItens)
+      return
+    }
     setSaving(true)
     try {
-      const patch: CotacaoUpdate = { ...montarPatch(form), status: 'convertida' }
-      const { error } = await supabase.from('cotacoes').update(patch).eq('id', editingId)
-      if (error) throw error
+      const final = await gravarTudo({ status: 'convertida' })
+      sincronizarComBanco(final)
       setEditingStatus('convertida')
       setSuccessMsg('Cotação convertida — operação criada automaticamente.')
       await load()
@@ -578,7 +1270,91 @@ export default function Cotacao() {
     }
   }
 
-  const lista = (cotacoes ?? []).filter((c) => filtro === 'todas' || c.status === filtro)
+  async function marcarPerdida() {
+    if (!editingId) return
+    setFormError(null)
+    setSuccessMsg(null)
+    if (!motivoPerda) {
+      setFormError('Escolha o motivo da perda.')
+      return
+    }
+    setSaving(true)
+    const { error } = await supabase
+      .from('cotacoes')
+      .update({ status: 'perdida', motivo_perda: motivoPerda, motivo_perda_detalhe: detalhePerda.trim() || null })
+      .eq('id', editingId)
+    setSaving(false)
+    if (error) {
+      setFormError(error.message)
+      return
+    }
+    setEditingStatus('perdida')
+    setShowPerda(false)
+    setSuccessMsg('Cotação marcada como perdida.')
+    await load()
+  }
+
+  async function reabrir() {
+    if (!editingId) return
+    setFormError(null)
+    setSuccessMsg(null)
+    setSaving(true)
+    const { error } = await supabase.from('cotacoes').update({ status: 'rascunho' }).eq('id', editingId)
+    setSaving(false)
+    if (error) {
+      setFormError(error.message)
+      return
+    }
+    setEditingStatus('rascunho')
+    setMotivoPerda('')
+    setDetalhePerda('')
+    setSuccessMsg('Cotação reaberta como rascunho.')
+    await load()
+  }
+
+  function adicionarItem(tipoId: string) {
+    const t = tipoPorId.get(tipoId)
+    if (!t) return
+    setItens((lista) => [...lista, itemDeTipo(t)])
+    setTipoParaAdicionar('')
+  }
+
+  function editarItem(key: string, campo: keyof ItemCusto, valor: string) {
+    setItens((lista) => lista.map((i) => (i.key === key ? { ...i, [campo]: valor } : i)))
+  }
+
+  function removerItem(key: string) {
+    setItens((lista) => lista.filter((i) => i.key !== key))
+  }
+
+  const clienteNomePorId = useMemo(
+    () => new Map(clientes.map((c) => [c.id, c.nome_fantasia ?? c.razao_social ?? ''])),
+    [clientes],
+  )
+
+  const lista = useMemo(() => {
+    const termo = normalizar(busca.trim())
+    const digitos = termo.replace(/\D/g, '')
+    return (cotacoes ?? []).filter((c) => {
+      if (filtro !== 'todas' && c.status !== filtro) return false
+      if (!termo) return true
+      const campos = [
+        c.clienteNome ?? clienteNomePorId.get(c.cliente_id ?? '') ?? '',
+        c.cidade_origem ?? '',
+        c.uf_origem ?? '',
+        c.cidade_destino ?? '',
+        c.uf_destino ?? '',
+        c.nf_remetente_razao_social ?? '',
+        c.nf_destinatario_razao_social ?? '',
+      ]
+      if (campos.some((x) => normalizar(x).includes(termo))) return true
+      if (digitos.length >= 4) {
+        const docs = [c.nf_chave_acesso, c.nf_remetente_cnpj, c.nf_destinatario_cnpj].map((x) => (x ?? '').replace(/\D/g, ''))
+        if (docs.some((d) => d.includes(digitos))) return true
+      }
+      return false
+    })
+  }, [cotacoes, filtro, busca, clienteNomePorId])
 
   return (
     <div className="flex flex-col gap-4">
@@ -588,6 +1364,13 @@ export default function Cotacao() {
           Cotação &amp; Funil
         </h1>
         <div className="flex items-center gap-2 flex-wrap">
+          <input
+            placeholder="Buscar cliente, cidade, NF…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="border rounded-xl px-3 py-2 text-sm outline-none"
+            style={{ borderColor: 'var(--rbr-border)', minWidth: 220 }}
+          />
           <select
             value={filtro}
             onChange={(e) => setFiltro(e.target.value as StatusCotacao | 'todas')}
@@ -601,6 +1384,13 @@ export default function Cotacao() {
             ))}
           </select>
           <button
+            onClick={() => setShowCatalogo((v) => !v)}
+            className="text-sm font-bold px-4 py-2 rounded-xl border"
+            style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+          >
+            {showCatalogo ? 'Fechar tabela de custos' : 'Tabela de custos'}
+          </button>
+          <button
             onClick={() => (form ? fecharForm() : abrirNovaCotacao())}
             className="text-sm font-bold px-4 py-2 rounded-xl"
             style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
@@ -613,6 +1403,17 @@ export default function Cotacao() {
       {listError && (
         <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {listError}
+        </div>
+      )}
+
+      {showCatalogo && (
+        <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+          <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Tabela de custos adicionais</div>
+          {tiposCusto.length === 0 ? (
+            <div className="text-xs text-[color:var(--rbr-muted)]">Carregando…</div>
+          ) : (
+            <CatalogoCustos tipos={tiposCusto} onSalvo={loadCatalogoCustos} />
+          )}
         </div>
       )}
 
@@ -647,6 +1448,21 @@ export default function Cotacao() {
             </div>
           )}
 
+          {editingStatus === 'perdida' && (
+            <div className="rounded-xl px-3.5 py-3 flex flex-col gap-1" style={{ background: '#FBE9E9' }}>
+              <div className="text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+                Cotação perdida
+              </div>
+              <div className="text-xs text-[color:var(--rbr-navy-dark)]">
+                Motivo: {MOTIVO_PERDA_LABEL[cotacoes?.find((c) => c.id === editingId)?.motivo_perda ?? ''] ?? '—'}
+                {cotacoes?.find((c) => c.id === editingId)?.motivo_perda_detalhe
+                  ? ` — ${cotacoes?.find((c) => c.id === editingId)?.motivo_perda_detalhe}`
+                  : ''}
+                . Use “Reabrir” pra voltar a trabalhar nela.
+              </div>
+            </div>
+          )}
+
           {editingStatus === 'convertida' && (
             <div className="rounded-xl px-3.5 py-3 flex flex-col gap-1" style={{ background: 'var(--rbr-warning-bg)' }}>
               <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Cotação já convertida</div>
@@ -672,7 +1488,11 @@ export default function Cotacao() {
               />
               <select
                 value={form.cliente_id}
-                onChange={(e) => setForm((f) => (f ? { ...f, cliente_id: e.target.value } : f))}
+                onChange={(e) => {
+                  const id = e.target.value
+                  setForm((f) => (f ? { ...f, cliente_id: id } : f))
+                  if (id && !editingId) sugerirPrazoDoCliente(id)
+                }}
                 className={inputClass}
                 style={{ ...inputStyle, maxWidth: 320 }}
               >
@@ -699,16 +1519,33 @@ export default function Cotacao() {
                     {erroNovoCliente}
                   </div>
                 )}
+                <div className="flex gap-2">
+                  {(['PJ', 'PF'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setNovoClienteTipo(t)}
+                      className="text-xs font-bold px-3 py-1.5 rounded-lg border"
+                      style={
+                        novoClienteTipo === t
+                          ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' }
+                          : { background: '#fff', color: 'var(--rbr-navy)', borderColor: 'var(--rbr-border)' }
+                      }
+                    >
+                      {t === 'PJ' ? 'Pessoa jurídica' : 'Pessoa física'}
+                    </button>
+                  ))}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <input
-                    placeholder="Razão social *"
+                    placeholder={novoClienteTipo === 'PF' ? 'Nome completo *' : 'Razão social *'}
                     value={novoClienteRazao}
                     onChange={(e) => setNovoClienteRazao(e.target.value)}
                     className={inputClass}
                     style={{ ...inputStyle, background: '#fff' }}
                   />
                   <input
-                    placeholder="CNPJ"
+                    placeholder={novoClienteTipo === 'PF' ? 'CPF *' : 'CNPJ *'}
                     value={novoClienteCnpj}
                     onChange={(e) => setNovoClienteCnpj(e.target.value)}
                     className={inputClass}
@@ -724,6 +1561,9 @@ export default function Cotacao() {
                 >
                   {criandoCliente ? 'Criando…' : 'Criar cliente'}
                 </button>
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Cadastro rápido — endereço e contatos podem ser completados depois em Cadastros → Clientes.
+                </div>
               </div>
             )}
           </div>
@@ -754,7 +1594,7 @@ export default function Cotacao() {
                   style={inputStyle}
                 >
                   <option value="">Selecione…</option>
-                  {agenciadores.map((a) => (
+                  {agenciadoresAtivos.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.nome}
                     </option>
@@ -849,6 +1689,91 @@ export default function Cotacao() {
                 className={inputClass}
                 style={inputStyle}
               />
+            </div>
+          </div>
+
+          {/* Dados complementares da NF (vão pra ficha da assessoria: CT-e/MDF-e) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className={labelClass}>Nº da NF</label>
+              <input value={form.nf_numero} onChange={(e) => setForm((f) => (f ? { ...f, nf_numero: e.target.value } : f))} className={inputClass} style={inputStyle} />
+            </div>
+            <div>
+              <label className={labelClass}>Série</label>
+              <input value={form.nf_serie} onChange={(e) => setForm((f) => (f ? { ...f, nf_serie: e.target.value } : f))} className={inputClass} style={inputStyle} />
+            </div>
+            <div>
+              <label className={labelClass}>Emissão da NF</label>
+              <input type="date" value={form.nf_data_emissao} onChange={(e) => setForm((f) => (f ? { ...f, nf_data_emissao: e.target.value } : f))} className={inputClass} style={inputStyle} />
+            </div>
+            <div>
+              <label className={labelClass}>Volumes</label>
+              <input inputMode="decimal" value={form.nf_quantidade_volumes} onChange={(e) => setForm((f) => (f ? { ...f, nf_quantidade_volumes: e.target.value } : f))} className={inputClass} style={inputStyle} />
+            </div>
+            <div className="col-span-2">
+              <label className={labelClass}>Produto predominante</label>
+              <input value={form.nf_produto_predominante} onChange={(e) => setForm((f) => (f ? { ...f, nf_produto_predominante: e.target.value } : f))} className={inputClass} style={inputStyle} />
+            </div>
+            <div>
+              <label className={labelClass}>IE remetente</label>
+              <input value={form.nf_remetente_ie} onChange={(e) => setForm((f) => (f ? { ...f, nf_remetente_ie: e.target.value } : f))} className={inputClass} style={inputStyle} placeholder="ou ISENTO" />
+            </div>
+            <div>
+              <label className={labelClass}>IE destinatário</label>
+              <input value={form.nf_destinatario_ie} onChange={(e) => setForm((f) => (f ? { ...f, nf_destinatario_ie: e.target.value } : f))} className={inputClass} style={inputStyle} placeholder="ou ISENTO" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(['remetente', 'destinatario'] as const).map((parte) => {
+              const campo = parte === 'remetente' ? 'nf_remetente_endereco' : 'nf_destinatario_endereco'
+              const end = form[campo] ?? {
+                logradouro: null, numero: null, complemento: null, bairro: null, municipio: null, codigo_ibge: null, uf: null, cep: null,
+              }
+              const set = (k: keyof EnderecoNFe, v: string) =>
+                setForm((f) => (f ? { ...f, [campo]: { ...(f[campo] ?? end), [k]: v.trim() === '' ? null : v } } : f))
+              return (
+                <div key={parte} className="rounded-lg border p-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
+                    Endereço do {parte === 'remetente' ? 'remetente' : 'destinatário'}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <input placeholder="Logradouro" value={end.logradouro ?? ''} onChange={(e) => set('logradouro', e.target.value)} className={`${inputClass} col-span-3`} style={inputStyle} />
+                    <input placeholder="Nº" value={end.numero ?? ''} onChange={(e) => set('numero', e.target.value)} className={inputClass} style={inputStyle} />
+                    <input placeholder="Complemento" value={end.complemento ?? ''} onChange={(e) => set('complemento', e.target.value)} className={`${inputClass} col-span-2`} style={inputStyle} />
+                    <input placeholder="Bairro" value={end.bairro ?? ''} onChange={(e) => set('bairro', e.target.value)} className={`${inputClass} col-span-2`} style={inputStyle} />
+                    <input placeholder="Município" value={end.municipio ?? ''} onChange={(e) => set('municipio', e.target.value)} className={`${inputClass} col-span-2`} style={inputStyle} />
+                    <input placeholder="UF" maxLength={2} value={end.uf ?? ''} onChange={(e) => set('uf', e.target.value.toUpperCase())} className={inputClass} style={inputStyle} />
+                    <input placeholder="CEP" value={end.cep ?? ''} onChange={(e) => set('cep', e.target.value)} className={inputClass} style={inputStyle} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div>
+            <label className={labelClass}>Quem paga o frete (tomador do CT-e)</label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={form.tomador_papel}
+                onChange={(e) => setForm((f) => (f ? { ...f, tomador_papel: e.target.value as CotacaoFormState['tomador_papel'] } : f))}
+                className={inputClass}
+                style={{ ...inputStyle, maxWidth: 320 }}
+              >
+                <option value="">Selecione…</option>
+                <option value="remetente">Remetente (quem envia)</option>
+                <option value="destinatario">Destinatário (quem recebe)</option>
+                <option value="terceiro">Terceiro — o cliente desta cotação</option>
+              </select>
+              {!form.tomador_papel && tomadorSugerido && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => (f ? { ...f, tomador_papel: tomadorSugerido } : f))}
+                  className="text-[11px] underline font-semibold"
+                >
+                  usar sugestão: {tomadorSugerido === 'remetente' ? 'remetente' : tomadorSugerido === 'destinatario' ? 'destinatário' : 'terceiro (cliente)'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -972,153 +1897,441 @@ export default function Cotacao() {
                 Peso acima do limiar de risco (sem parâmetro cadastrado — marcação manual)
               </label>
             )}
-            <label className="flex items-center gap-2 text-xs font-semibold col-span-2 md:col-span-4">
-              <input
-                type="checkbox"
-                checked={form.flag_valor_acima_teto_seguro}
-                onChange={(e) => setForm((f) => (f ? { ...f, flag_valor_acima_teto_seguro: e.target.checked } : f))}
-              />
-              Valor acima do teto de seguro (marcação manual — não há parâmetro de teto cadastrado hoje em parametros_sistema)
-            </label>
-          </div>
-
-          {/* Piso ANTT */}
-          <div className="rounded-xl p-3.5 flex flex-col gap-3" style={{ background: 'var(--rbr-muted-bg)' }}>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
-              Piso ANTT (mínimo legal)
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <label className={labelClass}>Tabela ANTT</label>
-                <select
-                  value={form.tabela}
-                  onChange={(e) => setForm((f) => (f ? { ...f, tabela: e.target.value, eixos: '' } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
+            {tetoSeguro != null ? (
+              <div className="col-span-2 md:col-span-4 flex items-center gap-2 text-xs font-semibold">
+                <span
+                  className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                  style={{
+                    background: form.flag_valor_acima_teto_seguro ? '#FBE9E9' : 'var(--rbr-muted-bg)',
+                    color: form.flag_valor_acima_teto_seguro ? 'var(--rbr-danger)' : 'var(--rbr-muted)',
+                  }}
                 >
-                  <option value="">Selecione…</option>
-                  {TABELAS.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Tipo de carga</label>
-                <select
-                  value={form.tipo_carga}
-                  onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">Selecione…</option>
-                  {TIPOS_CARGA.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Eixos</label>
-                <select
-                  value={form.eixos}
-                  onChange={(e) => setForm((f) => (f ? { ...f, eixos: e.target.value } : f))}
-                  disabled={eixosOpcoes.length === 0}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">{eixosOpcoes.length === 0 ? 'Escolha tabela e tipo' : 'Selecione…'}</option>
-                  {eixosOpcoes.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Distância (km)</label>
-                <input
-                  type="number"
-                  value={form.distancia_km}
-                  onChange={(e) => setForm((f) => (f ? { ...f, distancia_km: e.target.value } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-[color:var(--rbr-navy-dark)]">Piso ANTT calculado:</span>
-              <span className="text-sm font-bold">
-                {carregandoPiso ? 'calculando…' : pisoInfo ? formatMoney(pisoInfo.calculado) : '—'}
-              </span>
-              {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  Preencha tabela, tipo de carga, eixos e distância pra calcular.
+                  {form.flag_valor_acima_teto_seguro ? 'Valor acima do teto do seguro' : 'Valor dentro do teto do seguro'}
                 </span>
-              )}
-            </div>
+                <span className="text-[11px] font-normal text-[color:var(--rbr-muted)]">
+                  Automático — teto da apólice vigente: {formatMoney(tetoSeguro)} por embarque.
+                </span>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 text-xs font-semibold col-span-2 md:col-span-4">
+                <input
+                  type="checkbox"
+                  checked={form.flag_valor_acima_teto_seguro}
+                  onChange={(e) => setForm((f) => (f ? { ...f, flag_valor_acima_teto_seguro: e.target.checked } : f))}
+                />
+                Valor acima do teto de seguro (marcação manual — cadastre a apólice em Operações → Dados de emissão pra ficar automático)
+              </label>
+            )}
           </div>
 
-          {/* Custos e preço */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Pedágio (R$)</label>
-              <input
-                type="number"
-                value={form.pedagio}
-                onChange={(e) => setForm((f) => (f ? { ...f, pedagio: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
+          {/* Composição do preço */}
+          <div className="rounded-xl border p-3.5 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Composição do preço</div>
+              <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                Pedágio e distância: consultar no Qualp. O valor final atualiza conforme os campos são preenchidos.
+              </div>
             </div>
-            <div>
-              <label className={labelClass}>Seguro TAG (R$)</label>
-              <input
-                type="number"
-                value={form.valor_seguro_tag}
-                onChange={(e) => setForm((f) => (f ? { ...f, valor_seguro_tag: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-          </div>
 
-          <div className="rounded-xl p-3.5 flex flex-col gap-3" style={{ background: 'var(--rbr-muted-bg)' }}>
+            {precoLegado && composicao?.frete == null && (
+              <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
+                Cotação criada antes da composição de preço (valor salvo: {formatMoney(precoLegado.valorTotal)}, lucro{' '}
+                {formatMoney(precoLegado.lucro)}). Preencha o frete do motorista pra recalcular — enquanto isso, o valor antigo
+                fica como está.
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className={labelClass}>Valor total (R$)</label>
+                <label className={labelClass}>Frete do motorista (R$) *</label>
                 <input
                   type="number"
-                  value={form.valor_total}
-                  onChange={(e) => setForm((f) => (f ? { ...f, valor_total: e.target.value } : f))}
+                  min={0}
+                  step="0.01"
+                  value={form.valor_frete_motorista}
+                  onChange={(e) => setForm((f) => (f ? { ...f, valor_frete_motorista: e.target.value } : f))}
                   className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
+                  style={{ ...inputStyle, borderColor: freteAbaixoDoPiso ? 'var(--rbr-danger)' : 'var(--rbr-border)' }}
                 />
+                {freteAbaixoDoPiso ? (
+                  <div className="text-[11px] mt-1 font-semibold" style={{ color: 'var(--rbr-danger)' }}>
+                    Abaixo do piso ANTT ({formatMoney(pisoReferencia)}) — o motorista não pode receber menos que o piso.
+                  </div>
+                ) : pisoReferencia != null ? (
+                  <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)] flex items-center gap-2 flex-wrap">
+                    Piso ANTT de referência: {formatMoney(pisoReferencia)}
+                    <button type="button" onClick={usarPisoComoFrete} className="underline font-semibold">
+                      usar o piso
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div>
-                <label className={labelClass}>Lucro RBR (R$)</label>
+                <label className={labelClass}>Pedágio (R$)</label>
                 <input
                   type="number"
-                  value={form.lucro_rbr}
-                  onChange={(e) => setForm((f) => (f ? { ...f, lucro_rbr: e.target.value } : f))}
+                  min={0}
+                  step="0.01"
+                  value={form.pedagio}
+                  onChange={(e) => setForm((f) => (f ? { ...f, pedagio: e.target.value } : f))}
                   className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
+                  style={inputStyle}
                 />
+                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">Valor da rota no Qualp, pra quantidade de eixos do veículo.</div>
+              </div>
+              <div>
+                <label className={labelClass}>TAG seguro — faixa de risco</label>
+                <div className="flex gap-2">
+                  <select
+                    value={form.faixa_risco_seguro}
+                    onChange={(e) => escolherFaixaSeguro(e.target.value)}
+                    className={inputClass}
+                    style={inputStyle}
+                  >
+                    <option value="">Selecione…</option>
+                    {faixasSeguro.map((x) => (
+                      <option key={x.faixa} value={x.faixa}>
+                        {x.label} — {formatPct(x.pct)}
+                      </option>
+                    ))}
+                    <option value="personalizada">Personalizada</option>
+                  </select>
+                  <div className="relative" style={{ maxWidth: 110 }}>
+                    <input
+                      inputMode="decimal"
+                      placeholder="%"
+                      value={form.taxa_seguro_tag_pct}
+                      onChange={(e) => editarTaxaSeguro(e.target.value)}
+                      className={inputClass}
+                      style={{ ...inputStyle, paddingRight: 24 }}
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+                  </div>
+                </div>
+                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                  {composicao?.taxaSeguro != null
+                    ? numOrNull(form.valor_nf) != null
+                      ? `${formatPct(composicao.taxaSeguro)} × valor da NF (${formatMoney(numOrNull(form.valor_nf))}) = ${formatMoney(composicao.seguroTag)}`
+                      : 'Informe o valor da NF acima — a TAG é calculada sobre ele.'
+                    : 'Percentual aplicado sobre o valor da NF.'}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Imposto — alíquota aproximada</label>
+                <div className="relative" style={{ maxWidth: 160 }}>
+                  <input
+                    inputMode="decimal"
+                    placeholder="ex.: 6"
+                    value={form.aliquota_imposto_pct}
+                    onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, paddingRight: 24 }}
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+                </div>
+                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                  Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
+                  {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Lucro RBR (% sobre o custo com imposto)</label>
+                <div className="relative" style={{ maxWidth: 160 }}>
+                  <input
+                    inputMode="decimal"
+                    value={
+                      form.preco_modo === 'valor_final' && numOrNull(form.valor_final_manual) != null
+                        ? composicao?.lucroPct != null
+                          ? fracToPctStr(Number(composicao.lucroPct.toFixed(4)))
+                          : ''
+                        : form.lucro_pct
+                    }
+                    onChange={(e) => editarLucroPct(e.target.value)}
+                    className={inputClass}
+                    style={{ ...inputStyle, paddingRight: 24 }}
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+                </div>
+                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                  Padrão {formatPct(lucroPadrao, 0)} — somado depois de frete + pedágio + TAG + imposto.
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Valor final ao cliente (R$)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={
+                    form.preco_modo === 'valor_final' && form.valor_final_manual.trim() !== ''
+                      ? form.valor_final_manual
+                      : composicao?.valorFinal != null
+                        ? String(composicao.valorFinal)
+                        : ''
+                  }
+                  onChange={(e) => editarValorFinal(e.target.value)}
+                  placeholder="calculado automaticamente"
+                  className={inputClass}
+                  style={{ ...inputStyle, fontWeight: 700 }}
+                />
+                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)] flex items-center gap-2 flex-wrap">
+                  {form.preco_modo === 'valor_final' && numOrNull(form.valor_final_manual) != null ? (
+                    <>
+                      Valor final fixado à mão — o lucro % é recalculado a partir dele.
+                      <button type="button" onClick={voltarParaLucroPct} className="underline font-semibold">
+                        voltar a calcular pelo % de lucro
+                      </button>
+                    </>
+                  ) : (
+                    'Pode digitar um valor pra negociar (arredondar, por ex.) — o lucro % se ajusta.'
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                type="button"
-                onClick={calcularPreco}
-                className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+
+            {/* Custos adicionais */}
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
+                  Custos adicionais {carregandoItens && '· carregando…'}
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={tipoParaAdicionar}
+                    onChange={(e) => adicionarItem(e.target.value)}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  >
+                    <option value="">+ Adicionar custo…</option>
+                    {tiposAtivos.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {sugestoes.length > 0 && (
+                <div className="rounded-lg px-3 py-2.5 flex flex-col gap-2" style={{ background: 'var(--rbr-warning-bg)' }}>
+                  <div className="text-xs font-semibold text-[color:var(--rbr-navy-dark)]">
+                    Sugerido por causa de {Array.from(new Set(sugestoes.flatMap((x) => x.motivos))).map((m) => SINAL_LABEL[m] ?? m).join(', ')}:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sugestoes.map(({ tipo }) => (
+                      <button
+                        key={tipo.id}
+                        type="button"
+                        onClick={() => adicionarItem(tipo.id)}
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-full border bg-white"
+                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                      >
+                        + {tipo.nome}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {obrigatoriosFaltando.length > 0 && (
+                <div className="text-xs rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                  Obrigatório em toda carga: {obrigatoriosFaltando.map((t) => t.nome).join(', ')}.
+                  {obrigatoriosFaltando.map((t) => (
+                    <button key={t.id} type="button" onClick={() => adicionarItem(t.id)} className="underline font-semibold">
+                      adicionar {t.nome}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {itens.length === 0 && !carregandoItens && (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">Nenhum custo adicional nesta cotação.</div>
+              )}
+
+              {itens.map((i) => {
+                const tipo = tipoPorId.get(i.tipo_id)
+                const rotulo = FORMA_LABEL[i.forma_calculo]
+                const valor = valorItem(i, numOrNull(form.valor_nf) ?? 0)
+                const semValor = numOrNull(i.valor_unitario) == null
+                return (
+                  <div key={i.key} className="rounded-lg border p-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)] flex items-center gap-2">
+                        {tipo?.nome ?? 'Custo'}
+                        {tipo?.obrigatorio && (
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'var(--rbr-muted-bg)' }}>
+                            obrigatório
+                          </span>
+                        )}
+                        <span className="text-[10px] font-semibold text-[color:var(--rbr-muted)]">→ {RECEBEDOR_LABEL[i.recebedor]}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold tabular-nums">{formatMoney(valor)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removerItem(i.key)}
+                          disabled={tipo?.obrigatorio === true && itens.filter((x) => x.tipo_id === i.tipo_id).length === 1}
+                          className="text-[11px] font-semibold underline disabled:opacity-40 disabled:no-underline"
+                          style={{ color: 'var(--rbr-danger)' }}
+                          title={tipo?.obrigatorio ? 'Custo obrigatório em toda carga' : undefined}
+                        >
+                          remover
+                        </button>
+                      </div>
+                    </div>
+                    {tipo?.descricao && <div className="text-[11px] text-[color:var(--rbr-muted)]">{tipo.descricao}</div>}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <div>
+                        <label className={labelClass}>Cálculo</label>
+                        <select
+                          value={i.forma_calculo}
+                          onChange={(e) => editarItem(i.key, 'forma_calculo', e.target.value)}
+                          className={inputClass}
+                          style={inputStyle}
+                        >
+                          <option value="fixo">Valor fixo</option>
+                          <option value="por_km">Por km</option>
+                          <option value="por_dia">Por dia</option>
+                          <option value="por_unidade">Por unidade</option>
+                          <option value="pct_valor_nf">% do valor da NF</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>{rotulo.unidade}</label>
+                        <input
+                          inputMode="decimal"
+                          value={i.valor_unitario}
+                          onChange={(e) => editarItem(i.key, 'valor_unitario', e.target.value)}
+                          className={inputClass}
+                          style={{ ...inputStyle, borderColor: semValor ? 'var(--rbr-gold)' : 'var(--rbr-border)' }}
+                          placeholder={semValor ? 'informar' : undefined}
+                        />
+                      </div>
+                      {i.forma_calculo !== 'pct_valor_nf' ? (
+                        <div>
+                          <label className={labelClass}>{rotulo.qtd}</label>
+                          <input
+                            inputMode="decimal"
+                            value={i.quantidade}
+                            onChange={(e) => editarItem(i.key, 'quantidade', e.target.value)}
+                            className={inputClass}
+                            style={inputStyle}
+                          />
+                          {i.forma_calculo === 'por_km' && numOrNull(form.distancia_km) != null && numOrNull(i.quantidade) !== numOrNull(form.distancia_km) && (
+                            <button
+                              type="button"
+                              onClick={() => editarItem(i.key, 'quantidade', form.distancia_km)}
+                              className="text-[11px] underline font-semibold mt-1"
+                            >
+                              usar distância da rota ({form.distancia_km} km)
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-end text-[11px] text-[color:var(--rbr-muted)] pb-2">
+                          sobre {formatMoney(numOrNull(form.valor_nf))}
+                        </div>
+                      )}
+                      <div>
+                        <label className={labelClass}>Quem recebe</label>
+                        <select
+                          value={i.recebedor}
+                          onChange={(e) => editarItem(i.key, 'recebedor', e.target.value)}
+                          className={inputClass}
+                          style={inputStyle}
+                        >
+                          {(Object.keys(RECEBEDOR_LABEL) as Recebedor[]).map((r) => (
+                            <option key={r} value={r}>
+                              {RECEBEDOR_LABEL[r]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {i.recebedor === 'fornecedor' && (
+                        <select
+                          value={i.fornecedor_id}
+                          onChange={(e) => editarItem(i.key, 'fornecedor_id', e.target.value)}
+                          className={inputClass}
+                          style={inputStyle}
+                        >
+                          <option value="">Fornecedor (opcional — pode definir depois)</option>
+                          {fornecedores.map((fo) => (
+                            <option key={fo.id} value={fo.id}>
+                              {fo.nome ?? fo.razao_social ?? fo.id}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        placeholder="Observação (opcional)"
+                        value={i.descricao}
+                        onChange={(e) => editarItem(i.key, 'descricao', e.target.value)}
+                        className={inputClass}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {composicao?.erro && (
+              <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                {composicao.erro}
+              </div>
+            )}
+
+            {/* Resumo */}
+            <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
+              {[
+                { label: 'Frete do motorista', valor: composicao?.frete ?? null },
+                { label: 'Pedágio', valor: composicao?.frete != null ? composicao.pedagio : null },
+                {
+                  label: `TAG seguro${composicao?.taxaSeguro != null ? ` (${formatPct(composicao.taxaSeguro)} da NF)` : ''}`,
+                  valor: composicao?.frete != null ? composicao.seguroTag : null,
+                },
+                ...(itens.length > 0
+                  ? [{ label: `Custos adicionais (${itens.length})`, valor: composicao?.frete != null ? composicao.adicionais : null }]
+                  : []),
+              ].map((linha) => (
+                <div key={linha.label} className="flex justify-between text-xs">
+                  <span className="text-[color:var(--rbr-navy-dark)]">{linha.label}</span>
+                  <span className="tabular-nums">{formatMoney(linha.valor)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-xs">
+                <span>Imposto ({formatPct(composicao?.aliquota ?? 0)} do valor final)</span>
+                <span className="tabular-nums">{formatMoney(composicao?.imposto ?? null)}</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold border-t pt-1.5" style={{ borderColor: 'var(--rbr-border)' }}>
+                <span>Custo total com imposto</span>
+                <span className="tabular-nums">{formatMoney(composicao?.custoComImposto ?? null)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span>+ Lucro RBR ({formatPct(composicao?.lucroPct ?? null, 1)} sobre o custo com imposto)</span>
+                <span className="tabular-nums" style={{ color: (composicao?.lucro ?? 0) < 0 ? 'var(--rbr-danger)' : undefined }}>
+                  {formatMoney(composicao?.lucro ?? null)}
+                </span>
+              </div>
+              <div
+                className="flex justify-between items-center text-sm font-bold border-t pt-2 mt-0.5 text-[color:var(--rbr-navy-dark)]"
+                style={{ borderColor: 'var(--rbr-border)' }}
               >
-                Calcular (preencha só um dos dois campos acima)
-              </button>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[color:var(--rbr-navy-dark)]">Margem ajustada:</span>
+                <span>Valor final ao cliente</span>
+                <span className="tabular-nums text-base">{formatMoney(composicao?.valorFinal ?? null)}</span>
+              </div>
+              {composicao?.totalMotorista != null && (
+                <div className="flex justify-between text-[11px] text-[color:var(--rbr-muted)] pt-1">
+                  <span>
+                    Total a pagar ao motorista (frete{composicao.adicionaisMotorista > 0 ? ' + adicionais dele' : ''})
+                  </span>
+                  <span className="tabular-nums font-semibold">{formatMoney(composicao.totalMotorista)}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <span className="text-[11px] font-semibold text-[color:var(--rbr-navy-dark)]">Margem sobre o valor final:</span>
                 <span
                   className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
                   style={{ background: margem.bg, color: margem.color }}
@@ -1126,12 +2339,236 @@ export default function Cotacao() {
                   {margem.label}
                 </span>
                 <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  faixa recomendada: {(margemMin * 100).toFixed(0)}% – {(margemMax * 100).toFixed(0)}% (fora da faixa a gravação
-                  continua permitida, mas fica registrada em log de auditoria)
+                  faixa recomendada {(margemMin * 100).toFixed(0)}% – {(margemMax * 100).toFixed(0)}% (fora dela a gravação continua
+                  permitida, mas fica registrada no log de auditoria)
                 </span>
               </div>
             </div>
           </div>
+
+          {/* Recebimento do cliente */}
+          <div className="rounded-xl p-3.5 flex flex-col gap-3 border" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Recebimento do cliente</div>
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    ['regra', 'Regra cadastrada'],
+                    ['personalizado', 'Prazo desta negociação'],
+                  ] as const
+                ).map(([k, l]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() =>
+                      setForm((f) =>
+                        f
+                          ? {
+                              ...f,
+                              prazo_modo: k,
+                              prazo_personalizado:
+                                k === 'personalizado' && !f.prazo_personalizado
+                                  ? (() => {
+                                      const c = condicoesPrazo.find((x) => x.id === f.condicao_prazo_id)
+                                      return c ? regraDeCondicao(c) : { base: 'entrega', modo: 'dias' as const, parcelas: [{ dias: 30, percentual: 100 }], ajustar_dia_util: true }
+                                    })()
+                                  : f.prazo_personalizado,
+                            }
+                          : f,
+                      )
+                    }
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-full border"
+                    style={{
+                      borderColor: form.prazo_modo === k ? 'var(--rbr-navy)' : 'var(--rbr-border)',
+                      background: form.prazo_modo === k ? 'var(--rbr-navy)' : '#fff',
+                      color: form.prazo_modo === k ? '#fff' : 'var(--rbr-navy-dark)',
+                    }}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {form.prazo_modo === 'regra' && (
+                <div className="md:col-span-2">
+                  <label className={labelClass}>Condição de pagamento</label>
+                  <select
+                    value={form.condicao_prazo_id}
+                    onChange={(e) => setForm((f) => (f ? { ...f, condicao_prazo_id: e.target.value } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  >
+                    <option value="">Padrão ({condicoesPrazo.find((c) => c.padrao_receber)?.nome ?? '30 dias após a entrega'})</option>
+                    {condicoesPrazo.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className={form.prazo_modo === 'regra' ? '' : 'md:col-span-3 md:max-w-xs'}>
+                <label className={labelClass}>Forma de recebimento</label>
+                <select
+                  value={form.forma_recebimento}
+                  onChange={(e) => setForm((f) => (f ? { ...f, forma_recebimento: e.target.value } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                >
+                  {['boleto', 'pix', 'transferencia', 'dinheiro', 'cartao', 'outro'].map((k) => (
+                    <option key={k} value={k}>
+                      {FORMA_PAGTO_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {form.prazo_modo === 'personalizado' && form.prazo_personalizado && (
+              <EditorParcelas regra={form.prazo_personalizado} onChange={(r) => setForm((f) => (f ? { ...f, prazo_personalizado: r } : f))} />
+            )}
+            {(() => {
+              const regra =
+                form.prazo_modo === 'personalizado'
+                  ? form.prazo_personalizado
+                  : (() => {
+                      const c = condicoesPrazo.find((x) => x.id === form.condicao_prazo_id) ?? condicoesPrazo.find((x) => x.padrao_receber)
+                      return c ? regraDeCondicao(c) : null
+                    })()
+              if (!regra) return null
+              const total = composicao?.valorFinal ?? null
+              return (
+                <>
+                  <div className="text-[11px] text-[color:var(--rbr-navy-dark)]">{descreverRegra(regra)}</div>
+                  {total != null && total > 0 && (
+                    <PreviaRegra
+                      regra={regra}
+                      feriados={feriados}
+                      total={total}
+                      texto="Previsão se for aprovada hoje (coleta em 2 dias, entrega em 4) — o sistema recalcula com as datas reais da operação:"
+                    />
+                  )}
+                </>
+              )
+            })()}
+          </div>
+
+          {/* Piso ANTT — referência opcional */}
+          <details className="rounded-xl p-3.5" style={{ background: 'var(--rbr-muted-bg)' }} open={Boolean(form.tabela || form.distancia_km)}>
+            <summary className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] cursor-pointer">
+              Piso mínimo ANTT — referência opcional {pisoReferencia != null && `· ${formatMoney(pisoReferencia)}`}
+            </summary>
+            <div className="flex flex-col gap-3 mt-3">
+              <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                Serve pra conferir se o frete do motorista respeita o mínimo legal. A distância pode vir do Qualp (digite no campo) ou da
+                calculadora de rota gratuita abaixo.
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className={labelClass}>Tabela ANTT</label>
+                  <select
+                    value={form.tabela}
+                    onChange={(e) => setForm((f) => (f ? { ...f, tabela: e.target.value, eixos: '' } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  >
+                    <option value="">Selecione…</option>
+                    {TABELAS.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Tipo de carga</label>
+                  <select
+                    value={form.tipo_carga}
+                    onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  >
+                    <option value="">Selecione…</option>
+                    {TIPOS_CARGA.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Eixos</label>
+                  <select
+                    value={form.eixos}
+                    onChange={(e) => setForm((f) => (f ? { ...f, eixos: e.target.value } : f))}
+                    disabled={eixosOpcoes.length === 0}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  >
+                    <option value="">{eixosOpcoes.length === 0 ? 'Escolha tabela e tipo' : 'Selecione…'}</option>
+                    {eixosOpcoes.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Distância (km)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.distancia_km}
+                    onChange={(e) => setForm((f) => (f ? { ...f, distancia_km: e.target.value } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={calcularRota}
+                  disabled={rotaCalculando}
+                  className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                  style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)', background: '#fff' }}
+                >
+                  {rotaCalculando ? 'Calculando rota…' : 'Calcular distância pela rota (grátis)'}
+                </button>
+                {rotaResultado && (
+                  <div className="text-xs flex items-center gap-2 flex-wrap">
+                    <span>
+                      {rotaResultado.distancia_km.toLocaleString('pt-BR')} km · ~{rotaResultado.duracao_horas.toLocaleString('pt-BR')} h
+                    </span>
+                    <button type="button" onClick={usarDistanciaCalculada} className="underline font-semibold">
+                      usar essa distância
+                    </button>
+                    <span className="text-[11px] text-[color:var(--rbr-muted)]">(estimativa OpenStreetMap — pode divergir do Qualp)</span>
+                  </div>
+                )}
+                {rotaErro && (
+                  <span className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
+                    {rotaErro}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[color:var(--rbr-navy-dark)]">Piso ANTT:</span>
+                <span className="text-sm font-bold">
+                  {carregandoPiso
+                    ? 'calculando…'
+                    : pisoInfo
+                      ? formatMoney(pisoInfo.calculado)
+                      : pisoSalvo != null
+                        ? `${formatMoney(pisoSalvo)} (salvo)`
+                        : '—'}
+                </span>
+                {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
+                  <span className="text-[11px] text-[color:var(--rbr-muted)]">Preencha tabela, tipo de carga, eixos e distância pra calcular.</span>
+                )}
+              </div>
+            </div>
+          </details>
 
           {/* Ações */}
           <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -1166,6 +2603,28 @@ export default function Cotacao() {
               </button>
             )}
 
+            {editingId && (editingStatus === 'rascunho' || editingStatus === 'enviada') && (
+              <button
+                onClick={() => setShowPerda((v) => !v)}
+                disabled={saving}
+                className="text-sm font-bold px-4 py-2 rounded-xl border disabled:opacity-60"
+                style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+              >
+                {showPerda ? 'Cancelar' : 'Marcar como perdida'}
+              </button>
+            )}
+
+            {editingId && editingStatus === 'perdida' && (
+              <button
+                onClick={reabrir}
+                disabled={saving}
+                className="text-sm font-bold px-4 py-2 rounded-xl border disabled:opacity-60"
+                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+              >
+                Reabrir cotação
+              </button>
+            )}
+
             {editingStatus === 'convertida' && (
               <Link
                 to="/operacoes"
@@ -1176,6 +2635,44 @@ export default function Cotacao() {
               </Link>
             )}
           </div>
+
+          {showPerda && (editingStatus === 'rascunho' || editingStatus === 'enviada') && (
+            <div className="rounded-xl p-3.5 flex flex-col gap-2.5" style={{ background: '#FBE9E9' }}>
+              <div className="text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+                Por que a cotação foi perdida?
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <select
+                  value={motivoPerda}
+                  onChange={(e) => setMotivoPerda(e.target.value)}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                >
+                  <option value="">Motivo *</option>
+                  {Object.entries(MOTIVO_PERDA_LABEL).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Detalhe (opcional) — ex.: concorrente cobrou R$ 7.900"
+                  value={detalhePerda}
+                  onChange={(e) => setDetalhePerda(e.target.value)}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                />
+              </div>
+              <button
+                onClick={marcarPerdida}
+                disabled={saving}
+                className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+                style={{ background: 'var(--rbr-danger)', color: '#fff' }}
+              >
+                Confirmar perda
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1223,6 +2720,19 @@ export default function Cotacao() {
                   {c.cidade_origem ?? '?'}/{c.uf_origem ?? '?'} → {c.cidade_destino ?? '?'}/{c.uf_destino ?? '?'} · criada em{' '}
                   {formatDateTime(c.created_at)}
                 </div>
+                {c.valor_frete_motorista != null && (
+                  <div className="text-xs text-[color:var(--rbr-muted)] mt-1 tabular-nums">
+                    Motorista {formatMoney(c.valor_total_motorista ?? c.valor_frete_motorista)} · pedágio {formatMoney(c.pedagio ?? 0)}
+                    {c.custos_adicionais_total > 0 && <> · adicionais {formatMoney(c.custos_adicionais_total)}</>} · lucro{' '}
+                    {formatMoney(c.lucro_rbr)}
+                  </div>
+                )}
+                {c.status === 'perdida' && c.motivo_perda && (
+                  <div className="text-xs mt-1" style={{ color: 'var(--rbr-danger)' }}>
+                    Perdida: {MOTIVO_PERDA_LABEL[c.motivo_perda] ?? c.motivo_perda}
+                    {c.motivo_perda_detalhe ? ` — ${c.motivo_perda_detalhe}` : ''}
+                  </div>
+                )}
               </button>
             )
           })}

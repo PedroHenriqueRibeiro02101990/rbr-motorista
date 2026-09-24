@@ -5,6 +5,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, initials, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconQuote } from '@rbr/shared/icons'
 import FrotaMap, { type FrotaMapPonto } from '@rbr/shared/FrotaMap'
+import { StatusCadastro } from '@rbr/shared/cadastro'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -26,7 +27,7 @@ const STATUS_BADGE_STYLE: Record<string, { bg: string; color: string }> = {
   cancelada: { bg: '#FCE8E8', color: 'var(--rbr-danger)' },
 }
 
-export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
+export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRecarregar?: () => void }) {
   const [baseAtiva, setBaseAtiva] = useState<number | null>(null)
   const [comissaoMes, setComissaoMes] = useState<Comissao | null>(null)
   const [cargas, setCargas] = useState<OperacaoComRelacoes[]>([])
@@ -86,9 +87,17 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
     if (opIds.length > 0) {
       const { data: posicoes } = await supabase
         .from('posicoes_gps')
-        .select('*, pessoas(nome), operacoes(clientes(razao_social, nome_fantasia))')
+        .select('*, operacoes(clientes(razao_social, nome_fantasia))')
         .in('operacao_id', opIds)
         .order('capturado_em', { ascending: false })
+
+      // Nome do motorista vem por RPC (o agenciador não lê o cadastro completo — LGPD).
+      const idsPessoas = Array.from(new Set((posicoes ?? []).map((p) => p.pessoa_id)))
+      const nomes = new Map<string, string>()
+      if (idsPessoas.length > 0) {
+        const { data: ns } = await supabase.rpc('nomes_pessoas_relacionadas', { p_ids: idsPessoas })
+        for (const n of ns ?? []) nomes.set(n.id, n.nome)
+      }
 
       const maisRecentePorPessoa = new Map<string, FrotaMapPonto>()
       for (const pos of posicoes ?? []) {
@@ -97,7 +106,7 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
           id: pos.pessoa_id,
           lat: Number(pos.latitude),
           lng: Number(pos.longitude),
-          nome: (pos as any).pessoas?.nome ?? 'Motorista',
+          nome: nomes.get(pos.pessoa_id) ?? 'Motorista',
           subtitulo:
             (pos as any).operacoes?.clientes?.nome_fantasia ?? (pos as any).operacoes?.clientes?.razao_social,
           capturadoEm: pos.capturado_em,
@@ -118,6 +127,7 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
 
   return (
     <div className="px-5 pt-8 md:px-0 md:pt-0 flex flex-col gap-3.5 md:gap-6">
+      <StatusCadastro pessoa={pessoa} onAtualizar={onRecarregar} compacto />
       <div className="flex items-center justify-between">
         <div>
           <div className="rbr-display font-bold text-2xl md:text-3xl leading-tight text-[color:var(--rbr-navy-dark)]">

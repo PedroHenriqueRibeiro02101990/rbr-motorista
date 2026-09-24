@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
+import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
+import DadosEmissao from '../components/operacao/DadosEmissao'
+import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -30,7 +33,8 @@ type CotacaoDetalheAet = {
 
 type OperacaoEnriquecida = Operacao & {
   clienteNome?: string
-  valorContrato?: number | null
+  valorCliente?: number | null
+  valorMotorista?: number | null
   cotacaoDetalhe?: CotacaoDetalheAet | null
 }
 
@@ -63,7 +67,7 @@ function diasDesde(dataIso: string | null | undefined): number | null {
 const FILTROS: { value: StatusOperacao | 'todas'; label: string }[] = [
   { value: 'todas', label: 'Todas' },
   { value: 'alocando_motorista', label: 'Alocando motorista' },
-  { value: 'aguardando_liberacao_fiscal', label: 'Aguardando fiscal' },
+  { value: 'aguardando_liberacao_fiscal', label: 'Aguardando documentos' },
   { value: 'liberada_coleta', label: 'Liberada p/ coleta' },
   { value: 'carregando', label: 'Carregando' },
   { value: 'em_transito', label: 'Em trânsito' },
@@ -92,8 +96,12 @@ function badgeBackground(status: StatusOperacao): string {
 export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [operacoes, setOperacoes] = useState<OperacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [filtro, setFiltro] = useState<StatusOperacao | 'todas'>('todas')
+  const [params] = useSearchParams()
+  // ?status=em_transito (vindo do Início) já abre a lista filtrada.
+  const [filtro, setFiltro] = useState<StatusOperacao | 'todas'>(() => (params.get('status') as StatusOperacao | null) ?? 'todas')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const opDaUrl = params.get('op')
+  const abriuDaUrl = useRef(false)
 
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [motoristas, setMotoristas] = useState<Pessoa[]>([])
@@ -108,15 +116,21 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [copiadoId, setCopiadoId] = useState<string | null>(null)
 
   const [motivoLiberacao, setMotivoLiberacao] = useState('')
+  const [busca, setBusca] = useState('')
+  const [showDadosEmissao, setShowDadosEmissao] = useState(false)
+  const [assessoria, setAssessoria] = useState<AssessoriaContato>({ nome: '', whatsapp: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  // Depois da primeira carga, recarrega em segundo plano — senão cada ação dentro do card
+  // desmontava o painel aberto (perdendo a mensagem de sucesso e o que estava expandido).
+  const primeiraCarga = useRef(true)
   const load = useCallback(async () => {
-    setLoading(true)
+    if (primeiraCarga.current) setLoading(true)
     const { data, error } = await supabase
       .from('operacoes')
       .select(
-        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), cotacoes(valor_total, cidade_origem, uf_origem, cidade_destino, uf_destino, ncms_produtos, natureza_operacao, nf_remetente_razao_social, nf_remetente_cnpj, nf_destinatario_razao_social, nf_destinatario_cnpj)',
+        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), cotacoes(valor_total, valor_total_motorista, valor_frete_motorista, cidade_origem, uf_origem, cidade_destino, uf_destino, ncms_produtos, natureza_operacao, nf_remetente_razao_social, nf_remetente_cnpj, nf_destinatario_razao_social, nf_destinatario_cnpj)',
       )
       .order('updated_at', { ascending: false })
       .limit(300)
@@ -126,17 +140,35 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     const mapeadas: OperacaoEnriquecida[] = (data ?? []).map((op) => ({
       ...op,
       clienteNome: (op as any).clientes?.nome_fantasia ?? (op as any).clientes?.razao_social,
-      valorContrato:
-        (op as any).condicoes_pagamento_operacao?.[0]?.valor_total_contrato ?? (op as any).cotacoes?.valor_total,
+      // Preço do cliente e contrato do motorista são coisas diferentes — antes esta tela misturava os dois.
+      valorCliente: (op as any).cotacoes?.valor_total ?? null,
+      valorMotorista:
+        (op as any).condicoes_pagamento_operacao?.valor_total_contrato ??
+        (op as any).condicoes_pagamento_operacao?.[0]?.valor_total_contrato ??
+        (op as any).cotacoes?.valor_total_motorista ??
+        (op as any).cotacoes?.valor_frete_motorista ??
+        null,
       cotacaoDetalhe: (op as any).cotacoes ?? null,
     }))
     setOperacoes(mapeadas)
     setLoading(false)
+    primeiraCarga.current = false
   }, [])
 
   const carregarVeiculos = useCallback(async () => {
     const { data } = await supabase.from('veiculos').select('*').eq('ativo', true).order('placa', { ascending: true })
     setVeiculos(data ?? [])
+  }, [])
+
+  useEffect(() => {
+    supabase
+      .from('parametros_sistema')
+      .select('valor')
+      .eq('chave', 'assessoria_contato')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.valor) setAssessoria({ nome: '', whatsapp: '', email: '', ...(data.valor as object) })
+      })
   }, [])
 
   useEffect(() => {
@@ -198,6 +230,18 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     }
   }
 
+  // Link vindo do Financeiro (/operacoes?op=<id>): abre e rola até a operação.
+  useEffect(() => {
+    if (!opDaUrl || abriuDaUrl.current || !operacoes) return
+    const alvo = operacoes.find((o) => o.id === opDaUrl)
+    if (!alvo) return
+    abriuDaUrl.current = true
+    setFiltro('todas')
+    toggleExpand(alvo)
+    setTimeout(() => document.getElementById(`op-${alvo.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opDaUrl, operacoes])
+
   async function atualizarOperacao(id: string, patch: Database['public']['Tables']['operacoes']['Update']) {
     setSaving(true)
     setErrorMsg(null)
@@ -219,14 +263,6 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         : `Liberado por ${gestor.nome}`,
     })
     setMotivoLiberacao('')
-  }
-
-  async function reatribuirVeiculo(op: OperacaoEnriquecida, veiculoId: string) {
-    await atualizarOperacao(op.id, { veiculo_id: veiculoId || null })
-  }
-
-  async function reatribuirMotorista(op: OperacaoEnriquecida, pessoaId: string) {
-    await atualizarOperacao(op.id, { pessoa_alocada_id: pessoaId || null })
   }
 
   async function togglePagamentoPosEntrega(op: OperacaoEnriquecida) {
@@ -387,13 +423,37 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     }
   }
 
-  const lista = (operacoes ?? []).filter((op) => filtro === 'todas' || op.status === filtro)
+  const lista = useMemo(() => {
+    const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const termo = norm(busca.trim())
+    return (operacoes ?? []).filter((op) => {
+      if (filtro !== 'todas' && op.status !== filtro) return false
+      if (!termo) return true
+      const cot = op.cotacaoDetalhe
+      const campos = [op.clienteNome ?? '', cot?.cidade_origem ?? '', cot?.cidade_destino ?? '', cot?.uf_origem ?? '', cot?.uf_destino ?? '', op.id.slice(0, 8)]
+      return campos.some((c) => norm(c).includes(termo))
+    })
+  }, [operacoes, filtro, busca])
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Operações</h1>
         <div className="flex items-center gap-2 flex-wrap">
+          <input
+            placeholder="Buscar cliente, cidade, nº…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="border rounded-xl px-3 py-2 text-sm outline-none"
+            style={{ borderColor: 'var(--rbr-border)', minWidth: 200 }}
+          />
+          <button
+            onClick={() => setShowDadosEmissao((v) => !v)}
+            className="text-sm font-bold px-4 py-2 rounded-xl border"
+            style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+          >
+            {showDadosEmissao ? 'Fechar dados de emissão' : 'Dados de emissão'}
+          </button>
           <select
             value={filtro}
             onChange={(e) => setFiltro(e.target.value as StatusOperacao | 'todas')}
@@ -427,6 +487,13 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
       </div>
 
+      {showDadosEmissao && (
+        <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+          <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Dados de emissão</div>
+          <DadosEmissao onSalvo={(a) => setAssessoria(a)} />
+        </div>
+      )}
+
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 
       {!loading && lista.length === 0 && (
@@ -441,7 +508,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
             const isExpanded = expandedId === op.id
             const averbacao = averbacoes[op.id]
             return (
-              <div key={op.id} className="bg-white border rounded-[20px] overflow-hidden" style={cardStyle}>
+              <div key={op.id} id={`op-${op.id}`} className="bg-white border rounded-[20px] overflow-hidden" style={cardStyle}>
                 <button className="w-full text-left p-[18px]" onClick={() => toggleExpand(op)}>
                   <div className="flex items-center justify-between mb-2.5 gap-3 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -462,8 +529,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {op.valorContrato != null && (
-                        <span className="text-sm font-bold">{formatMoney(op.valorContrato)}</span>
+                      {op.valorCliente != null && (
+                        <span className="text-sm font-bold">{formatMoney(op.valorCliente)}</span>
                       )}
                       <IconChevronRight
                         width={16}
@@ -478,7 +545,9 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                   </div>
                   <div className="text-[15px] font-bold mb-1">{op.clienteNome ?? 'Cliente a confirmar'}</div>
                   <div className="text-xs text-[color:var(--rbr-muted)]">
-                    {op.peso_bruto ? `${op.peso_bruto} kg` : 'Peso não informado'} · atualizado em {formatDateTime(op.updated_at)}
+                    {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/
+                    {op.cotacaoDetalhe?.uf_destino ?? '?'} · {op.peso_bruto ? `${op.peso_bruto.toLocaleString('pt-BR')} kg` : 'peso não informado'}
+                    {op.valorMotorista != null ? ` · motorista ${formatMoney(op.valorMotorista)}` : ''} · atualizado em {formatDateTime(op.updated_at)}
                   </div>
                 </button>
 
@@ -831,46 +900,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                         )
                       })()}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1.5">
-                          Veículo alocado
-                        </div>
-                        <select
-                          value={op.veiculo_id ?? ''}
-                          onChange={(e) => reatribuirVeiculo(op, e.target.value)}
-                          disabled={saving}
-                          className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        >
-                          <option value="">Nenhum</option>
-                          {veiculos.map((v) => (
-                            <option key={v.id} value={v.id}>
-                              {v.placa} · {v.tipo_veiculo ?? v.marca_modelo ?? 'Veículo'}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1.5">
-                          Motorista alocado
-                        </div>
-                        <select
-                          value={op.pessoa_alocada_id ?? ''}
-                          onChange={(e) => reatribuirMotorista(op, e.target.value)}
-                          disabled={saving}
-                          className="w-full border rounded-lg px-3 py-2 text-sm outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        >
-                          <option value="">Nenhum</option>
-                          {motoristas.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.nome}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+                    <OperacaoFluxo operacaoId={op.id} gestor={gestor} assessoria={assessoria} onChanged={load} />
 
                     <div className="flex items-center justify-between rounded-xl px-3.5 py-3" style={{ background: 'var(--rbr-muted-bg)' }}>
                       <div>

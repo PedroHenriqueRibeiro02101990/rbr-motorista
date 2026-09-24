@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from '@rbr/shared/useAuth'
 import AppShell from './components/AppShell'
-import AuthScreen from './pages/AuthScreen'
+import { TelaEntrada, TelaNovaSenha } from '@rbr/shared/AuthTelas'
+import { BiometriaGate } from '@rbr/shared/biometria'
 import Inicio from './pages/Inicio'
 import Cotacao from './pages/Cotacao'
 import Operacoes from './pages/Operacoes'
-import Pessoas from './pages/Pessoas'
 import Financeiro from './pages/Financeiro'
 import Mapa from './pages/Mapa'
 import Fiscal from './pages/Fiscal'
@@ -23,8 +23,10 @@ export default function App() {
     )
   }
 
-  if (!auth.session) {
-    return <AuthScreen />
+  if (!auth.session) return <TelaEntrada app="gestor" auth={auth} />
+
+  if (auth.recuperandoSenha) {
+    return <TelaNovaSenha auth={auth} dados={{ nome: auth.pessoa?.nome, documento: auth.pessoa?.cpf ?? undefined, email: auth.session.user.email }} />
   }
 
   if (!auth.pessoa || auth.pessoa.papel !== 'gestor_rbr') {
@@ -44,13 +46,14 @@ export default function App() {
   }
 
   return (
+    <BiometriaGate userId={auth.session.user.id} onUsarSenha={auth.signOut}>
     <BrowserRouter>
       <AppShell pessoa={auth.pessoa} onSignOut={auth.signOut}>
         <Routes>
           <Route path="/" element={<Inicio />} />
           <Route path="/cotacao" element={<Cotacao />} />
           <Route path="/operacoes" element={<Operacoes gestor={auth.pessoa} />} />
-          <Route path="/pessoas" element={<Pessoas />} />
+          <Route path="/pessoas" element={<Navigate to="/cadastros?aba=motoristas" replace />} />
           <Route path="/financeiro" element={<Financeiro />} />
           <Route path="/mapa" element={<Mapa />} />
           <Route path="/fiscal" element={<Fiscal />} />
@@ -60,5 +63,6 @@ export default function App() {
         </Routes>
       </AppShell>
     </BrowserRouter>
+    </BiometriaGate>
   )
 }

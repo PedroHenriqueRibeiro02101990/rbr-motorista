@@ -137,7 +137,15 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
     load()
   }
 
+  // status_ciclo_vida tem 4 valores: só ativo/inativo alternam por aqui — os
+  // outros dois (anonimizado_retencao_fiscal, excluido) são de LGPD e não
+  // podem ser revertidos pela tela.
+  function podeAlternarStatus(c: Cliente) {
+    return c.status === 'ativo' || c.status === 'inativo'
+  }
+
   async function toggleStatus(c: Cliente) {
+    if (!podeAlternarStatus(c)) return
     const next = c.status === 'ativo' ? 'inativo' : 'ativo'
     const { error: err } = await supabase.from('clientes').update({ status: next }).eq('id', c.id)
     if (err) {
@@ -359,7 +367,7 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
                   className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0"
                   style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
                 >
-                  Inativo
+                  {c.status === 'inativo' ? 'Inativo' : c.status === 'excluido' ? 'Excluído' : 'Dados anonimizados'}
                 </span>
               )}
             </div>
@@ -376,26 +384,28 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
                 <IconEdit width={13} height={13} />
                 Editar
               </button>
-              <button
-                onClick={() => toggleStatus(c)}
-                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border"
-                style={{
-                  borderColor: 'var(--rbr-border)',
-                  color: c.status === 'ativo' ? 'var(--rbr-danger)' : 'var(--rbr-positive)',
-                }}
-              >
-                {c.status === 'ativo' ? (
-                  <>
-                    <IconArchive width={13} height={13} />
-                    Inativar
-                  </>
-                ) : (
-                  <>
-                    <IconCheck width={13} height={13} />
-                    Reativar
-                  </>
-                )}
-              </button>
+              {podeAlternarStatus(c) && (
+                <button
+                  onClick={() => toggleStatus(c)}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border"
+                  style={{
+                    borderColor: 'var(--rbr-border)',
+                    color: c.status === 'ativo' ? 'var(--rbr-danger)' : 'var(--rbr-positive)',
+                  }}
+                >
+                  {c.status === 'ativo' ? (
+                    <>
+                      <IconArchive width={13} height={13} />
+                      Inativar
+                    </>
+                  ) : (
+                    <>
+                      <IconCheck width={13} height={13} />
+                      Reativar
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         ))}

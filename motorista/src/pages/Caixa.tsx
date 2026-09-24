@@ -5,29 +5,31 @@ import { formatDate, formatMoney } from '@rbr/shared/format'
 import { IconAlertTriangle } from '../icons-local'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
-type PagamentoMotorista = Database['public']['Tables']['pagamentos_motorista']['Row']
 type AssinaturaMotorista = Database['public']['Tables']['assinaturas_motorista']['Row']
 type BloqueioAcessoVeiculo = Database['public']['Tables']['bloqueios_acesso_veiculo']['Row']
 type FaturaAssinatura = Database['public']['Tables']['faturas_assinatura']['Row']
-type StatusPagamentoMotorista = Database['public']['Enums']['status_pagamento_motorista']
 type StatusFatura = Database['public']['Enums']['status_fatura']
 type StatusAssinatura = Database['public']['Enums']['status_assinatura']
 
-const TIPO_PAGAMENTO_LABEL: Record<string, string> = {
-  adiantamento: 'Adiantamento',
-  saldo: 'Saldo',
-  a_vista: 'À vista',
+type SituacaoRecebimento = 'pago' | 'agendado' | 'previsto' | 'cancelado'
+
+type Recebimento = {
+  id: string
+  descricao: string
+  valor: number
+  valor_pago: number
+  data_vencimento: string
+  data_pagamento: string | null
+  situacao: SituacaoRecebimento
+  vencimento_estimado: boolean
+  rota: string | null
+  operacao_id: string | null
 }
 
-const STATUS_PAGAMENTO_LABEL: Record<StatusPagamentoMotorista, string> = {
-  pendente: 'Pendente',
-  aguardando_confirmacao_entrega: 'Aguardando entrega',
-  aguardando_pix_agenciador: 'Aguardando PIX',
-  pix_confirmado: 'PIX confirmado',
-  documentacao_emitida: 'Documentação emitida',
-  liberado: 'Liberado',
+const SITUACAO_RECEBIMENTO_LABEL: Record<SituacaoRecebimento, string> = {
   pago: 'Pago',
-  atrasado: 'Atrasado',
+  agendado: 'Agendado',
+  previsto: 'Previsto',
   cancelado: 'Cancelado',
 }
 
@@ -50,12 +52,18 @@ const STATUS_ASSINATURA_LABEL: Record<StatusAssinatura, string> = {
   suspenso_por_rbr: 'Suspensa pela RBR',
 }
 
-function badgePagamento(status: StatusPagamentoMotorista): string {
-  if (status === 'pago') return 'var(--rbr-positive)'
-  if (status === 'atrasado' || status === 'cancelado') return 'var(--rbr-danger)'
-  if (status === 'liberado' || status === 'documentacao_emitida' || status === 'pix_confirmado')
-    return 'var(--rbr-gold)'
+function badgeRecebimento(situacao: SituacaoRecebimento): string {
+  if (situacao === 'pago') return 'var(--rbr-positive)'
+  if (situacao === 'previsto') return 'var(--rbr-gold)'
+  if (situacao === 'cancelado') return 'var(--rbr-danger)'
   return 'var(--rbr-navy)'
+}
+
+function linhaDataRecebimento(r: Recebimento): string {
+  if (r.situacao === 'pago') return `Pago em ${formatDate(r.data_pagamento ?? r.data_vencimento)}`
+  if (r.situacao === 'previsto' || r.vencimento_estimado)
+    return `Previsão: ${formatDate(r.data_vencimento)} (depende da entrega/liberação)`
+  return `Programado para ${formatDate(r.data_vencimento)}`
 }
 
 function badgeFatura(status: StatusFatura): string {
@@ -78,7 +86,7 @@ const cardStyle = {
 
 export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
   const [loading, setLoading] = useState(true)
-  const [pagamentos, setPagamentos] = useState<PagamentoMotorista[]>([])
+  const [recebimentos, setRecebimentos] = useState<Recebimento[]>([])
   const [assinaturas, setAssinaturas] = useState<AssinaturaMotorista[]>([])
   const [bloqueios, setBloqueios] = useState<BloqueioAcessoVeiculo[]>([])
   const [faturas, setFaturas] = useState<FaturaAssinatura[]>([])
@@ -95,16 +103,7 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
     const { data: veiculos } = await supabase.from('veiculos').select('id').eq('titular_id', pessoa.id)
     const veiculoIds = (veiculos ?? []).map((v: { id: string }) => v.id)
 
-    const pagamentosFiltro =
-      veiculoIds.length > 0
-        ? `motorista_id.eq.${pessoa.id},veiculo_id.in.(${veiculoIds.join(',')})`
-        : `motorista_id.eq.${pessoa.id}`
-
-    const pagamentosPromise = supabase
-      .from('pagamentos_motorista')
-      .select('*')
-      .or(pagamentosFiltro)
-      .order('created_at', { ascending: false })
+    const recebimentosPromise = supabase.rpc('meus_recebimentos')
 
     const assinaturasPromise = supabase
       .from('assinaturas_motorista')
@@ -126,10 +125,10 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
       .eq('motorista_titular_id', pessoa.id)
       .order('competencia', { ascending: false })
 
-    const [{ data: pagamentosData }, { data: assinaturasData }, { data: bloqueiosData }, { data: faturasData }] =
-      await Promise.all([pagamentosPromise, assinaturasPromise, bloqueiosPromise, faturasPromise])
+    const [{ data: recebimentosData }, { data: assinaturasData }, { data: bloqueiosData }, { data: faturasData }] =
+      await Promise.all([recebimentosPromise, assinaturasPromise, bloqueiosPromise, faturasPromise])
 
-    setPagamentos(pagamentosData ?? [])
+    setRecebimentos((recebimentosData ?? []) as unknown as Recebimento[])
     setAssinaturas(assinaturasData ?? [])
     setBloqueios(bloqueiosData ?? [])
     setFaturas(faturasData ?? [])
@@ -139,6 +138,16 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
   useEffect(() => {
     load()
   }, [load])
+
+  const aReceber = recebimentos
+    .filter((r) => r.situacao !== 'pago' && r.situacao !== 'cancelado')
+    .reduce((acc, r) => acc + Math.max(0, Number(r.valor ?? 0) - Number(r.valor_pago ?? 0)), 0)
+  const limite30d = new Date()
+  limite30d.setDate(limite30d.getDate() - 30)
+  const limite30dStr = limite30d.toLocaleDateString('sv-SE')
+  const recebido30d = recebimentos
+    .filter((r) => r.situacao === 'pago' && r.data_pagamento && r.data_pagamento.slice(0, 10) >= limite30dStr)
+    .reduce((acc, r) => acc + Number(r.valor ?? 0), 0)
 
   if (!podeVerFinanceiro) {
     return (
@@ -175,34 +184,49 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-1">
             Pagamentos
           </div>
-          {pagamentos.length === 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white border rounded-[20px] p-[14px]" style={cardStyle}>
+              <div className="text-[11px] font-semibold text-[color:var(--rbr-muted)] mb-1">A receber da RBR</div>
+              <div className="text-base font-bold text-[color:var(--rbr-navy)]">{formatMoney(aReceber)}</div>
+            </div>
+            <div className="bg-white border rounded-[20px] p-[14px]" style={cardStyle}>
+              <div className="text-[11px] font-semibold text-[color:var(--rbr-muted)] mb-1">
+                Recebido nos últimos 30 dias
+              </div>
+              <div className="text-base font-bold" style={{ color: 'var(--rbr-positive)' }}>
+                {formatMoney(recebido30d)}
+              </div>
+            </div>
+          </div>
+          {recebimentos.length === 0 && (
             <div className="text-sm text-[color:var(--rbr-muted)] bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
               Nenhum pagamento registrado ainda.
             </div>
           )}
-          {pagamentos.map((p) => (
-            <div key={p.id} className="bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
-              <div className="flex items-center justify-between mb-2">
-                <span
-                  className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                  style={{ background: badgePagamento(p.status) }}
-                >
-                  {STATUS_PAGAMENTO_LABEL[p.status]}
-                </span>
-                <span className="text-sm font-bold">{formatMoney(p.valor)}</span>
+          {recebimentos.map((r) => {
+            const valorPago = Number(r.valor_pago ?? 0)
+            return (
+              <div key={r.id} className="bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
+                <div className="flex items-center justify-between mb-2">
+                  <span
+                    className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                    style={{ background: badgeRecebimento(r.situacao) }}
+                  >
+                    {SITUACAO_RECEBIMENTO_LABEL[r.situacao] ?? r.situacao}
+                  </span>
+                  <span className="text-sm font-bold">{formatMoney(r.valor)}</span>
+                </div>
+                <div className="text-[13px] font-semibold mb-1">{r.descricao}</div>
+                {r.rota && <div className="text-xs text-[color:var(--rbr-muted)] mb-1">{r.rota}</div>}
+                <div className="text-xs text-[color:var(--rbr-muted)]">{linhaDataRecebimento(r)}</div>
+                {valorPago > 0 && r.situacao !== 'pago' && (
+                  <div className="text-xs font-semibold mt-1" style={{ color: 'var(--rbr-positive)' }}>
+                    Já pago: {formatMoney(valorPago)}
+                  </div>
+                )}
               </div>
-              <div className="text-[13px] font-semibold mb-1">
-                {TIPO_PAGAMENTO_LABEL[p.tipo] ?? p.tipo}
-              </div>
-              <div className="text-xs text-[color:var(--rbr-muted)]">
-                {p.data_pagamento
-                  ? `Pago em ${formatDate(p.data_pagamento)}`
-                  : p.data_prevista
-                    ? `Previsto para ${formatDate(p.data_prevista)}`
-                    : 'Data ainda não definida'}
-              </div>
-            </div>
-          ))}
+            )
+          })}
 
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-2">
             Assinatura

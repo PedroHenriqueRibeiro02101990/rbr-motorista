@@ -9,6 +9,7 @@ type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type PontuacaoEvento = Database['public']['Tables']['pontuacao_eventos']['Row']
 type PontuacaoContestacao = Database['public']['Tables']['pontuacao_contestacoes']['Row']
 type StatusContestacao = Database['public']['Enums']['status_contestacao']
+type Condutor = Pick<Pessoa, 'id' | 'nome'>
 
 const STATUS_CONTESTACAO_LABEL: Record<StatusContestacao, string> = {
   pendente: 'Pendente',
@@ -30,6 +31,8 @@ const cardStyle = {
 }
 
 export default function Pontos({ pessoa }: { pessoa: Pessoa }) {
+  const ehTitular = pessoa.papel === 'titular_motorista'
+  const [visao, setVisao] = useState<'minhas' | 'frota'>('minhas')
   const [loading, setLoading] = useState(true)
   const [saldo, setSaldo] = useState<number | null>(null)
   const [totalEventos, setTotalEventos] = useState<number | null>(null)
@@ -39,6 +42,14 @@ export default function Pontos({ pessoa }: { pessoa: Pessoa }) {
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // Frota (só pro titular): saldo e histórico de cada condutor. Só leitura —
+  // quem contesta uma pontuação é sempre o próprio condutor, no app dele.
+  const [condutores, setCondutores] = useState<Condutor[]>([])
+  const [loadingCondutores, setLoadingCondutores] = useState(false)
+  const [saldosCondutores, setSaldosCondutores] = useState<Record<string, number>>({})
+  const [condutorExpandidoId, setCondutorExpandidoId] = useState<string | null>(null)
+  const [eventosCondutor, setEventosCondutor] = useState<Record<string, PontuacaoEvento[]>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -54,9 +65,47 @@ export default function Pontos({ pessoa }: { pessoa: Pessoa }) {
     setLoading(false)
   }, [pessoa.id])
 
+  const loadCondutores = useCallback(async () => {
+    if (!ehTitular) return
+    setLoadingCondutores(true)
+    const { data } = await supabase.from('pessoas').select('id, nome').eq('titular_id', pessoa.id).eq('papel', 'condutor')
+    const lista = data ?? []
+    setCondutores(lista)
+    if (lista.length > 0) {
+      const { data: saldosData } = await supabase
+        .from('pontuacao_saldo')
+        .select('pessoa_id, saldo')
+        .in('pessoa_id', lista.map((c) => c.id))
+      const proximo: Record<string, number> = {}
+      for (const s of saldosData ?? []) {
+        if (s.pessoa_id) proximo[s.pessoa_id] = s.saldo ?? 0
+      }
+      setSaldosCondutores(proximo)
+    }
+    setLoadingCondutores(false)
+  }, [pessoa.id, ehTitular])
+
   useEffect(() => {
     load()
-  }, [load])
+    loadCondutores()
+  }, [load, loadCondutores])
+
+  async function toggleExpandCondutor(condutorId: string) {
+    if (condutorExpandidoId === condutorId) {
+      setCondutorExpandidoId(null)
+      return
+    }
+    setCondutorExpandidoId(condutorId)
+    if (!(condutorId in eventosCondutor)) {
+      const { data } = await supabase
+        .from('pontuacao_eventos')
+        .select('*')
+        .eq('pessoa_id', condutorId)
+        .order('aplicado_em', { ascending: false })
+        .limit(20)
+      setEventosCondutor((prev) => ({ ...prev, [condutorId]: data ?? [] }))
+    }
+  }
 
   function contestacaoDoEvento(eventoId: string): PontuacaoContestacao | undefined {
     return contestacoes.find((c) => c.pontuacao_evento_id === eventoId)
@@ -89,11 +138,74 @@ export default function Pontos({ pessoa }: { pessoa: Pessoa }) {
 
   return (
     <div className="px-5 pt-8 flex flex-col gap-3.5">
-      <div className="rbr-display font-bold text-2xl leading-tight text-[color:var(--rbr-navy-dark)]">Pontos</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="rbr-display font-bold text-2xl leading-tight text-[color:var(--rbr-navy-dark)]">Pontos</div>
+        {ehTitular && (
+          <div className="flex rounded-full border p-0.5 flex-shrink-0" style={{ borderColor: 'var(--rbr-border)' }}>
+            {(['minhas', 'frota'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setVisao(v)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full"
+                style={visao === v ? { background: 'var(--rbr-navy)', color: '#fff' } : { color: 'var(--rbr-muted)' }}
+              >
+                {v === 'minhas' ? 'Minhas' : 'Frota'}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
+      {visao === 'frota' && ehTitular && (
+        <div className="flex flex-col gap-3">
+          {loadingCondutores && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 
-      {!loading && (
+          {!loadingCondutores && condutores.length === 0 && (
+            <div className="text-sm text-[color:var(--rbr-muted)] bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
+              Nenhum condutor cadastrado ainda.
+            </div>
+          )}
+
+          {condutores.map((c) => {
+            const expandido = condutorExpandidoId === c.id
+            const eventosDele = eventosCondutor[c.id] ?? []
+            return (
+              <div key={c.id} className="bg-white border rounded-[20px] overflow-hidden" style={cardStyle}>
+                <button className="w-full text-left p-[18px] flex items-center justify-between" onClick={() => toggleExpandCondutor(c.id)}>
+                  <div className="text-sm font-bold">{c.nome}</div>
+                  <div className="flex items-center gap-2">
+                    <IconStar width={14} height={14} fill="var(--rbr-gold)" stroke="none" />
+                    <span className="text-sm font-bold">{saldosCondutores[c.id] ?? 0} pontos</span>
+                  </div>
+                </button>
+                {expandido && (
+                  <div className="border-t px-[18px] pb-[18px] pt-3 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                    {eventosDele.length === 0 && (
+                      <div className="text-xs text-[color:var(--rbr-muted)] py-1">Nenhum evento de pontuação ainda.</div>
+                    )}
+                    {eventosDele.map((ev) => {
+                      const positivo = ev.sinal === 'positivo'
+                      return (
+                        <div key={ev.id} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="flex-1">{ev.motivo_texto ?? ev.tipo_criterio}</span>
+                          <span className="font-bold" style={{ color: positivo ? 'var(--rbr-positive)' : 'var(--rbr-danger)' }}>
+                            {positivo ? '+' : '-'}
+                            {Math.abs(ev.pontos)}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {visao === 'minhas' && loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
+
+      {visao === 'minhas' && !loading && (
         <div
           className="bg-white border rounded-[20px] p-[18px] flex items-center gap-3"
           style={cardStyle}
@@ -113,7 +225,7 @@ export default function Pontos({ pessoa }: { pessoa: Pessoa }) {
         </div>
       )}
 
-      {!loading && (
+      {visao === 'minhas' && !loading && (
         <>
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-1">
             Histórico

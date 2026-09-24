@@ -4,6 +4,10 @@ import type { Database } from '@rbr/shared/database.types'
 import { initials } from '@rbr/shared/format'
 import { IconCamera, IconLogOut } from '@rbr/shared/icons'
 import { IconFileText } from '../icons-local'
+import { BadgeAprovacao, enviarDocumentoPessoal, lerDocumento, MeusDados, StatusCadastro } from '@rbr/shared/cadastro'
+import { BiometriaToggle } from '@rbr/shared/biometria'
+import { formatarDoc } from '@rbr/shared/documento'
+import Condutores from '../components/Condutores'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Veiculo = Database['public']['Tables']['veiculos']['Row']
@@ -30,7 +34,6 @@ type VeiculoFormState = {
   tipo_veiculo: string
   capacidade_carga: string
   crlv_foto_url: string | null
-  crlv_extraido_por_ia: boolean
   crlv_preenchido_manualmente: boolean
 }
 
@@ -43,7 +46,6 @@ const VEICULO_VAZIO: VeiculoFormState = {
   tipo_veiculo: '',
   capacidade_carga: '',
   crlv_foto_url: null,
-  crlv_extraido_por_ia: false,
   crlv_preenchido_manualmente: false,
 }
 
@@ -57,7 +59,6 @@ function veiculoParaForm(v: Veiculo): VeiculoFormState {
     tipo_veiculo: v.tipo_veiculo ?? '',
     capacidade_carga: v.capacidade_carga?.toString() ?? '',
     crlv_foto_url: v.crlv_foto_url ?? null,
-    crlv_extraido_por_ia: v.crlv_extraido_por_ia ?? false,
     crlv_preenchido_manualmente: v.crlv_preenchido_manualmente ?? false,
   }
 }
@@ -78,8 +79,6 @@ type FormState = {
   cnh_numero_registro: string
   cnh_categoria: string
   cnh_validade: string
-  cnh_preenchido_manualmente: boolean
-  cnh_extraido_por_ia: boolean
 }
 
 function toFormState(pessoa: Pessoa): FormState {
@@ -99,8 +98,6 @@ function toFormState(pessoa: Pessoa): FormState {
     cnh_numero_registro: pessoa.cnh_numero_registro ?? '',
     cnh_categoria: pessoa.cnh_categoria ?? '',
     cnh_validade: pessoa.cnh_validade ?? '',
-    cnh_preenchido_manualmente: pessoa.cnh_preenchido_manualmente ?? false,
-    cnh_extraido_por_ia: pessoa.cnh_extraido_por_ia ?? false,
   }
 }
 
@@ -128,7 +125,18 @@ function Field({
   )
 }
 
-export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOut: () => void }) {
+export default function Perfil({
+  pessoa,
+  onSignOut,
+  onRecarregar,
+}: {
+  pessoa: Pessoa
+  onSignOut: () => void
+  onRecarregar: () => Promise<void> | void
+}) {
+  const [crlvNovoPath, setCrlvNovoPath] = useState<string | null>(null)
+  const [cartaoUploading, setCartaoUploading] = useState(false)
+  const ehPJ = pessoa.tipo_pessoa_doc === 'PJ'
   const [form, setForm] = useState<FormState>(() => toFormState(pessoa))
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
@@ -191,16 +199,13 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
     setSaving(true)
     setSavedMsg(null)
     setErrorMsg(null)
-    // CPF é salvo só com dígitos (o banco exige esse formato) — o motorista
-    // pode digitar com ponto/traço normalmente, a gente limpa aqui.
-    const cpfLimpo = form.cpf.replace(/\D/g, '')
+    // CPF/CNPJ não muda depois do cadastro (1 documento = 1 conta).
     const { error } = await supabase
       .from('pessoas')
       .update({
         nome: form.nome,
         email: form.email || null,
         celular: form.celular || null,
-        cpf: cpfLimpo === '' ? null : cpfLimpo,
         pix: form.pix || null,
         cep: form.cep || null,
         logradouro: form.logradouro || null,
@@ -209,11 +214,6 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
         bairro: form.bairro || null,
         cidade: form.cidade || null,
         uf: form.uf || null,
-        cnh_numero_registro: form.cnh_numero_registro || null,
-        cnh_categoria: form.cnh_categoria || null,
-        cnh_validade: form.cnh_validade || null,
-        cnh_preenchido_manualmente: form.cnh_preenchido_manualmente,
-        cnh_extraido_por_ia: form.cnh_extraido_por_ia,
       })
       .eq('id', pessoa.id)
     setSaving(false)
@@ -222,67 +222,50 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
       return
     }
     setSavedMsg('Dados salvos com sucesso.')
+    await onRecarregar()
   }
 
   async function handleCnhUpload(file: File) {
     setCnhUploading(true)
     setErrorMsg(null)
-    const path = `pessoa/${pessoa.id}/cnh-${Date.now()}.jpg`
-    const { error: uploadError } = await supabase.storage.from('documentos-pessoais').upload(path, file)
-    if (uploadError) {
-      setErrorMsg(uploadError.message)
-      setCnhUploading(false)
-      return
-    }
-    const { error: insertError } = await supabase
-      .from('documentos_pessoais_imagens')
-      .insert({ pessoa_id: pessoa.id, tipo: 'cnh', arquivo_url: path })
-    if (insertError) {
-      setCnhUploading(false)
-      setErrorMsg(insertError.message)
-      return
-    }
-
-    // Tenta ler os campos automaticamente via Gemini. Se a função ainda não
-    // tiver a chave configurada (503) ou falhar por qualquer motivo, cai
-    // silenciosamente no fluxo manual que já existia — nunca bloqueia o envio.
-    const { data: extracao, error: extracaoError } = await supabase.functions.invoke('extrair-documento', {
-      body: { tipo: 'cnh', path },
-    })
-
+    setSavedMsg(null)
+    const r = await enviarDocumentoPessoal({ tipo: 'cnh', arquivo: file, pessoaId: pessoa.id, pastaPessoaId: pessoa.id })
     setCnhUploading(false)
-
-    if (!extracaoError && extracao?.sucesso && extracao.campos) {
-      const c = extracao.campos as {
-        numero_registro?: string | null
-        categoria?: string | null
-        validade?: string | null
-        cpf?: string | null
-      }
-      setForm((f) => ({
-        ...f,
-        cnh_numero_registro: c.numero_registro || f.cnh_numero_registro,
-        cnh_categoria: c.categoria || f.cnh_categoria,
-        cnh_validade: c.validade || f.cnh_validade,
-        // O OCR da CNH também lê o CPF — só preenche se o campo ainda
-        // estiver vazio, nunca sobrescreve o que a pessoa já digitou.
-        cpf: f.cpf || c.cpf || f.cpf,
-        cnh_preenchido_manualmente: false,
-        cnh_extraido_por_ia: true,
-      }))
-      setSavedMsg('Foto da CNH enviada e lida automaticamente — confira os campos abaixo antes de salvar.')
-    } else {
-      setSavedMsg('Foto da CNH enviada. Preencha os campos abaixo (leitura automática indisponível no momento).')
+    if (r.erro) {
+      setErrorMsg(r.erro)
+      return
     }
+    await onRecarregar()
+    setSavedMsg(
+      r.campos
+        ? 'Foto da CNH recebida e conferida automaticamente. Veja a situação do cadastro no topo.'
+        : 'Foto da CNH recebida. A leitura automática está indisponível agora — a RBR confere manualmente.',
+    )
+  }
+
+  async function handleCartaoCnpjUpload(file: File) {
+    setCartaoUploading(true)
+    setErrorMsg(null)
+    setSavedMsg(null)
+    const r = await enviarDocumentoPessoal({ tipo: 'cartao_cnpj', arquivo: file, pessoaId: pessoa.id, pastaPessoaId: pessoa.id })
+    setCartaoUploading(false)
+    if (r.erro) {
+      setErrorMsg(r.erro)
+      return
+    }
+    await onRecarregar()
+    setSavedMsg('Cartão CNPJ recebido. Veja a situação do cadastro no topo.')
   }
 
   function openNovoVeiculo() {
+    setCrlvNovoPath(null)
     setVeiculoForm(VEICULO_VAZIO)
     setVeiculoErro(null)
     setVeiculoFormOpen(true)
   }
 
   function openEditarVeiculo(v: Veiculo) {
+    setCrlvNovoPath(null)
     setVeiculoForm(veiculoParaForm(v))
     setVeiculoErro(null)
     setVeiculoFormOpen(true)
@@ -291,45 +274,31 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
   async function handleCrlvUpload(file: File) {
     setCrlvUploading(true)
     setVeiculoErro(null)
-    const path = `pessoa/${pessoa.id}/crlv-${Date.now()}.jpg`
-    const { error: uploadError } = await supabase.storage.from('documentos-pessoais').upload(path, file)
-    if (uploadError) {
-      setVeiculoErro(uploadError.message)
-      setCrlvUploading(false)
+    // Lê a foto pra pré-preencher; o documento é registrado (e conferido) quando o veículo é salvo.
+    const r = await lerDocumento('crlv', file, pessoa.id)
+    setCrlvUploading(false)
+    if (r.erro) {
+      setVeiculoErro(r.erro)
       return
     }
-
-    // Mesma lógica da CNH: tenta ler automaticamente via Gemini, e se falhar
-    // (chave não configurada, foto ilegível) cai no preenchimento manual sem
-    // travar o cadastro do veículo.
-    const { data: extracao, error: extracaoError } = await supabase.functions.invoke('extrair-documento', {
-      body: { tipo: 'crlv', path },
-    })
-
-    setCrlvUploading(false)
-
-    if (!extracaoError && extracao?.sucesso && extracao.campos) {
-      const c = extracao.campos as {
-        placa?: string | null
-        renavam?: string | null
-        marca_modelo?: string | null
-        ano?: number | null
-        capacidade_carga?: number | null
-      }
-      setVeiculoForm((f) => ({
-        ...f,
-        placa: f.placa || c.placa || f.placa,
-        renavam: f.renavam || c.renavam || f.renavam,
-        marca_modelo: f.marca_modelo || c.marca_modelo || f.marca_modelo,
-        ano: f.ano || (c.ano != null ? c.ano.toString() : f.ano),
-        capacidade_carga: f.capacidade_carga || (c.capacidade_carga != null ? c.capacidade_carga.toString() : f.capacidade_carga),
-        crlv_foto_url: path,
-        crlv_preenchido_manualmente: false,
-        crlv_extraido_por_ia: true,
-      }))
-    } else {
-      setVeiculoForm((f) => ({ ...f, crlv_foto_url: path, crlv_extraido_por_ia: false }))
+    setCrlvNovoPath(r.path)
+    const c = (r.campos ?? {}) as {
+      placa?: string | null
+      renavam?: string | null
+      marca_modelo?: string | null
+      ano?: number | null
+      capacidade_carga?: number | null
     }
+    setVeiculoForm((f) => ({
+      ...f,
+      placa: f.placa || (c.placa ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '') || f.placa,
+      renavam: f.renavam || c.renavam || f.renavam,
+      marca_modelo: f.marca_modelo || c.marca_modelo || f.marca_modelo,
+      ano: f.ano || (c.ano != null ? c.ano.toString() : f.ano),
+      capacidade_carga: f.capacidade_carga || (c.capacidade_carga != null ? c.capacidade_carga.toString() : f.capacidade_carga),
+      crlv_foto_url: r.path,
+      crlv_preenchido_manualmente: !r.campos,
+    }))
   }
 
   async function handleSalvarVeiculo() {
@@ -342,14 +311,12 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
 
     const patch = {
       titular_id: pessoa.id,
-      placa: veiculoForm.placa.trim().toUpperCase(),
+      placa: veiculoForm.placa.trim().toUpperCase().replace(/[^A-Z0-9]/g, ''),
       renavam: veiculoForm.renavam.trim(),
       marca_modelo: veiculoForm.marca_modelo || null,
       ano: veiculoForm.ano ? Number(veiculoForm.ano) : null,
       tipo_veiculo: veiculoForm.tipo_veiculo || null,
       capacidade_carga: veiculoForm.capacidade_carga ? Number(veiculoForm.capacidade_carga) : null,
-      crlv_foto_url: veiculoForm.crlv_foto_url,
-      crlv_extraido_por_ia: veiculoForm.crlv_extraido_por_ia,
       crlv_preenchido_manualmente: veiculoForm.crlv_preenchido_manualmente,
     }
 
@@ -361,8 +328,18 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
 
     if (result.error) {
       setVeiculoSaving(false)
-      setVeiculoErro(result.error.message)
+      setVeiculoErro(
+        /veiculos_placa_key|duplicate/i.test(result.error.message)
+          ? 'Esta placa ou RENAVAM já está cadastrada em outra conta. Fale com a RBR.'
+          : result.error.message,
+      )
       return
+    }
+    const veiculoId = veiculoForm.id ?? (result.data as { id: string } | null)?.id ?? null
+    // Foto nova do CRLV: registra e dispara a conferência automática.
+    if (veiculoId && crlvNovoPath) {
+      await enviarDocumentoPessoal({ tipo: 'crlv', veiculoId, pastaPessoaId: pessoa.id, caminhoExistente: crlvNovoPath })
+      setCrlvNovoPath(null)
     }
 
     // Veículo novo → já cria a assinatura pendente (taxa de R$19,90). Sem
@@ -370,7 +347,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
     // o gestor confere o Pix e libera pelo painel dele. O veículo já fica
     // cadastrado, só não conta como "ativo" até isso acontecer.
     if (ehVeiculoNovo && !veiculoForm.id) {
-      const novoVeiculoId = (result.data as { id: string } | null)?.id
+      const novoVeiculoId = veiculoId
       if (novoVeiculoId) {
         await supabase.from('assinaturas_motorista').insert({
           veiculo_id: novoVeiculoId,
@@ -387,7 +364,8 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
 
     setVeiculoSaving(false)
     setVeiculoFormOpen(false)
-    loadVeiculos()
+    await loadVeiculos()
+    await onRecarregar()
   }
 
   return (
@@ -404,10 +382,19 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
             {pessoa.nome}
           </div>
           <div className="text-xs text-[color:var(--rbr-muted)]">
-            {pessoa.papel === 'titular_motorista' ? 'Titular da frota' : 'Condutor'}
+            {pessoa.papel === 'titular_motorista' ? (ehPJ ? 'Empresa / frota' : 'Titular da frota') : 'Condutor'}
           </div>
         </div>
       </div>
+
+      <StatusCadastro
+        pessoa={pessoa}
+        veiculos={veiculos}
+        onAtualizar={async () => {
+          await onRecarregar()
+          await loadVeiculos()
+        }}
+      />
 
       <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
@@ -428,15 +415,10 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
         <Field label="Celular">
           <input className={inputClass} style={inputStyle} value={form.celular} onChange={(e) => update('celular', e.target.value)} />
         </Field>
-        <Field label="CPF">
-          <input
-            className={inputClass}
-            style={inputStyle}
-            inputMode="numeric"
-            placeholder="000.000.000-00"
-            value={form.cpf}
-            onChange={(e) => update('cpf', e.target.value)}
-          />
+        <Field label={ehPJ ? 'CNPJ' : 'CPF'}>
+          <div className={inputClass + ' bg-[color:var(--rbr-muted-bg)] text-[color:var(--rbr-muted)]'} style={inputStyle}>
+            {formatarDoc(ehPJ ? pessoa.cnpj : pessoa.cpf) || '—'}
+          </div>
         </Field>
         <Field label="Chave PIX">
           <input className={inputClass} style={inputStyle} value={form.pix} onChange={(e) => update('pix', e.target.value)} />
@@ -506,14 +488,49 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
         </div>
       </div>
 
+      {ehPJ && (
+        <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Cartão CNPJ</div>
+          <div className="text-xs text-[color:var(--rbr-muted)]">
+            Comprovante de inscrição emitido no site da Receita Federal. Quem dirige são os condutores cadastrados abaixo, cada um com a
+            própria CNH.
+          </div>
+          <label
+            htmlFor="cartao-cnpj"
+            className="flex items-center justify-center gap-2 border rounded-xl py-2.5 text-sm font-semibold"
+            style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)', opacity: cartaoUploading ? 0.6 : 1 }}
+          >
+            <IconCamera width={16} height={16} />
+            {cartaoUploading ? 'Enviando e conferindo…' : 'Enviar Cartão CNPJ (foto ou PDF)'}
+            <input
+              id="cartao-cnpj"
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              disabled={cartaoUploading}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (file) handleCartaoCnpjUpload(file)
+              }}
+            />
+          </label>
+        </div>
+      )}
+
+      {!ehPJ && (
       <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">CNH</div>
+        <div className="text-xs text-[color:var(--rbr-muted)]">
+          Envie a foto da CNH (física ou digital). Os dados abaixo vêm da foto e não podem ser digitados — para corrigir, envie outra foto.
+        </div>
         <Field label="Número de registro">
           <input
             className={inputClass}
             style={inputStyle}
             value={form.cnh_numero_registro}
-            onChange={(e) => update('cnh_numero_registro', e.target.value)}
+                readOnly
+                disabled
           />
         </Field>
         <div className="flex gap-3">
@@ -523,7 +540,8 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
                 className={inputClass}
                 style={inputStyle}
                 value={form.cnh_categoria}
-                onChange={(e) => update('cnh_categoria', e.target.value.toUpperCase())}
+                readOnly
+                disabled
               />
             </Field>
           </div>
@@ -534,19 +552,13 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
                 style={inputStyle}
                 type="date"
                 value={form.cnh_validade}
-                onChange={(e) => update('cnh_validade', e.target.value)}
+                readOnly
+                disabled
               />
             </Field>
           </div>
         </div>
-        <label className="flex items-center gap-2.5 text-xs text-[color:var(--rbr-muted)]">
-          <input
-            type="checkbox"
-            checked={form.cnh_preenchido_manualmente}
-            onChange={(e) => update('cnh_preenchido_manualmente', e.target.checked)}
-          />
-          Preenchi manualmente porque o OCR falhou
-        </label>
+
 
         <label
           htmlFor="cnh-foto"
@@ -554,7 +566,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
           style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)', opacity: cnhUploading ? 0.6 : 1 }}
         >
           <IconCamera width={16} height={16} />
-          {cnhUploading ? 'Enviando…' : 'Enviar foto da CNH'}
+          {cnhUploading ? 'Enviando e conferindo…' : pessoa.cnh_foto_url ? 'Trocar foto da CNH' : 'Enviar foto da CNH'}
           <input
             id="cnh-foto"
             type="file"
@@ -570,6 +582,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
           />
         </label>
       </div>
+      )}
 
       {ehTitular && (
         <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
@@ -618,6 +631,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
                       {v.crlv_foto_url ? ' · CRLV enviado' : ''}
                     </div>
                   </div>
+                  <BadgeAprovacao status={v.aprovacao_status} />
                   {badge && (
                     <span
                       className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full flex-shrink-0"
@@ -683,12 +697,18 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
                       className={inputClass}
                       style={inputStyle}
                       placeholder="ex: Fiorino, HR, Truck"
+                      list="tipos-veiculo"
                       value={veiculoForm.tipo_veiculo}
                       onChange={(e) => setVeiculoForm((f) => ({ ...f, tipo_veiculo: e.target.value }))}
                     />
                   </Field>
                 </div>
               </div>
+              <datalist id="tipos-veiculo">
+                {['Fiorino', 'Van', 'HR / Bongo', 'VUC', '3/4', 'Toco', 'Truck', 'Bitruck', 'Cavalo mecânico', 'Carreta', 'Bitrem', 'Rodotrem'].map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
               <Field label="Capacidade de carga (kg)">
                 <input
                   className={inputClass}
@@ -714,7 +734,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
                 style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)', opacity: crlvUploading ? 0.6 : 1 }}
               >
                 <IconCamera width={16} height={16} />
-                {crlvUploading ? 'Enviando…' : veiculoForm.crlv_foto_url ? 'Trocar foto do CRLV' : 'Enviar foto do CRLV'}
+                {crlvUploading ? 'Lendo o CRLV…' : veiculoForm.crlv_foto_url ? 'Trocar foto do CRLV' : 'Enviar foto do CRLV'}
                 <input
                   id="crlv-foto"
                   type="file"
@@ -790,6 +810,18 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
           )}
         </div>
       )}
+
+      {ehTitular && <Condutores titular={pessoa} />}
+
+      <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Segurança</div>
+        <BiometriaToggle userId={pessoa.auth_user_id ?? pessoa.id} nome={pessoa.nome} email={pessoa.email} />
+      </div>
+
+      <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Meus dados (LGPD)</div>
+        <MeusDados pessoa={pessoa} />
+      </div>
 
       {(savedMsg || errorMsg) && (
         <div

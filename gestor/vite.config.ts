@@ -15,6 +15,9 @@ export default defineConfig({
             if (id.includes('leaflet')) return 'vendor-leaflet'
             if (id.includes('react')) return 'vendor-react'
             if (id.includes('@supabase')) return 'vendor-supabase'
+            // jsPDF e dependências (só usados ao gerar a ficha da assessoria): deixa o bundler
+            // decidir — como são importados sob demanda, vão pra um pedaço carregado só nessa hora.
+            if (/[\/](jspdf|html2canvas|canvg|dompurify|fflate|rgbcolor|stackblur-canvas|svg-pathdata|core-js|@babel)[\/]/.test(id)) return undefined
             return 'vendor'
           }
         },
@@ -23,7 +26,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@rbr/shared': path.resolve(__dirname, '../shared'),
+      '@rbr/shared': path.resolve(__dirname, '../../shared'),
       // shared/ lives outside this app's node_modules tree, so bare imports
       // it makes (react, supabase-js, leaflet) need an explicit pointer back
       // here — otherwise the bundler resolution that walks up from shared/

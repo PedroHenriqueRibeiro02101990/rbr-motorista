@@ -23,7 +23,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@rbr/shared': path.resolve(__dirname, '../shared'),
+      '@rbr/shared': path.resolve(__dirname, '../../shared'),
       // shared/ lives outside this app's node_modules tree, so bare imports
       // it makes (react, supabase-js) need an explicit pointer back here —
       // otherwise the bundler resolution that walks up from shared/ never

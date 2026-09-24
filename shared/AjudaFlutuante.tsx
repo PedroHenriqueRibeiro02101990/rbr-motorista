@@ -95,7 +95,18 @@ export default function AjudaFlutuante({ app }: { app: AppNome }) {
     setEnviando(false)
 
     if (error || !data?.sucesso) {
-      setErro(data?.erro ?? error?.message ?? 'Não consegui responder agora. Tenta de novo em instantes.')
+      // supabase-js zera `data` quando a Edge Function responde 4xx/5xx — o
+      // corpo real do erro (com o campo `erro`) vem em error.context.
+      let texto = data?.erro ?? 'Não consegui responder agora. Tenta de novo em instantes.'
+      if (error) {
+        try {
+          const corpo = await (error as unknown as { context: Response }).context.json()
+          texto = corpo?.erro ?? (error as { message?: string })?.message ?? texto
+        } catch {
+          texto = (error as { message?: string })?.message ?? texto
+        }
+      }
+      setErro(texto)
       return
     }
 

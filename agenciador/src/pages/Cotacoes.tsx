@@ -13,16 +13,35 @@ type StatusCotacao = Database['public']['Enums']['status_cotacao']
 
 type CotacaoComCliente = Cotacao & { clienteNome?: string }
 
+// supabase-js zera `data` quando a Edge Function responde 4xx/5xx — o corpo
+// real do erro (campo `erro`) vem em error.context, não em error.message.
+async function mensagemErroFuncao(error: unknown, data: { erro?: string } | null | undefined, fallback: string): Promise<string> {
+  if (data?.erro) return data.erro
+  if (error) {
+    try {
+      const corpo = await (error as unknown as { context: Response }).context.json()
+      if (corpo?.erro) return corpo.erro as string
+    } catch {
+      // corpo não veio como JSON válido — cai no fallback de error.message abaixo
+    }
+    const msg = (error as { message?: string })?.message
+    if (msg) return msg
+  }
+  return fallback
+}
+
 const STATUS_LABEL: Record<StatusCotacao, string> = {
   rascunho: 'Rascunho',
   enviada: 'Enviada',
   convertida: 'Convertida',
+  perdida: 'Perdida',
 }
 
 const STATUS_STYLE: Record<StatusCotacao, { bg: string; color: string }> = {
   rascunho: { bg: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' },
   enviada: { bg: 'var(--rbr-navy)', color: '#FFFFFF' },
   convertida: { bg: 'var(--rbr-positive)', color: '#FFFFFF' },
+  perdida: { bg: '#FBE9E9', color: 'var(--rbr-danger)' },
 }
 
 interface FormState {
@@ -310,7 +329,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
         body: { produtos: produtosXml, pesoBrutoKg: form.peso_bruto_kg, valorNota: form.valor_nf },
       })
       if (error || !data?.sucesso) {
-        setIaErro(data?.erro ?? error?.message ?? 'Não consegui analisar agora.')
+        setIaErro(await mensagemErroFuncao(error, data, 'Não consegui analisar agora.'))
         return
       }
       const avaliacao = data.avaliacao as {
@@ -355,7 +374,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
         },
       })
       if (error || !data?.sucesso) {
-        setCalculoErro(data?.erro ?? error?.message ?? 'Não consegui calcular a rota agora.')
+        setCalculoErro(await mensagemErroFuncao(error, data, 'Não consegui calcular a rota agora.'))
         return
       }
       setCalculoResultado(data)

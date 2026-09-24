@@ -4,6 +4,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, initials, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconStar } from '@rbr/shared/icons'
 import { useLocationReporter } from '@rbr/shared/useLocationReporter'
+import { StatusCadastro } from '@rbr/shared/cadastro'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -11,7 +12,15 @@ type Veiculo = Database['public']['Tables']['veiculos']['Row']
 
 const TOTAL_ETAPAS_CHECKLIST = 5
 
-export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
+// condicoes_pagamento_operacao é 1 por operação — o Supabase devolve objeto (ou lista, em versões antigas).
+function valorContratoDe(op: unknown): number | null {
+  const c = (op as { condicoes_pagamento_operacao?: unknown }).condicoes_pagamento_operacao
+  const linha = Array.isArray(c) ? c[0] : c
+  return (linha as { valor_total_contrato?: number } | null | undefined)?.valor_total_contrato ?? null
+}
+
+export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRecarregar?: () => Promise<void> | void }) {
+  const [meusVeiculos, setMeusVeiculos] = useState<Veiculo[]>([])
   const [online, setOnline] = useState(pessoa.status_online)
   const [veiculo, setVeiculo] = useState<Veiculo | null>(null)
   const [operacaoAtual, setOperacaoAtual] = useState<
@@ -22,16 +31,11 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
   )
   const [saldoPontos, setSaldoPontos] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
 
   const titularId = pessoa.papel === 'condutor' ? pessoa.titular_id : pessoa.id
 
   const load = useCallback(async () => {
     setLoading(true)
-
-    const veiculosPromise = titularId
-      ? supabase.from('veiculos').select('*').eq('titular_id', titularId).eq('ativo', true).limit(1)
-      : Promise.resolve({ data: [] as Veiculo[] })
 
     const operacaoAtualPromise = supabase
       .from('operacoes')
@@ -48,14 +52,33 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
       .eq('pessoa_id', pessoa.id)
       .maybeSingle()
 
-    const [{ data: veiculos }, { data: opAtual }, { data: saldo }] = await Promise.all([
-      veiculosPromise,
-      operacaoAtualPromise,
-      saldoPromise,
-    ])
+    const [{ data: opAtual }, { data: saldo }] = await Promise.all([operacaoAtualPromise, saldoPromise])
 
-    const meuVeiculo = veiculos?.[0] ?? null
+    // O veículo mostrado (e o que grava a posição de GPS) é o da carga em
+    // andamento, quando existe uma — nunca "o primeiro veículo ativo da
+    // frota", que pode não ter nada a ver com o que está rodando agora
+    // (frota com mais de um veículo, ou condutor dirigindo um veículo do
+    // titular que não é o primeiro cadastrado).
+    let meuVeiculo: Veiculo | null = null
+    if (opAtual?.veiculo_id) {
+      const { data: v } = await supabase.from('veiculos').select('*').eq('id', opAtual.veiculo_id).maybeSingle()
+      meuVeiculo = v ?? null
+    }
+    if (!meuVeiculo && titularId) {
+      const { data: veiculos } = await supabase
+        .from('veiculos')
+        .select('*')
+        .eq('titular_id', titularId)
+        .eq('ativo', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      meuVeiculo = veiculos?.[0] ?? null
+    }
     setVeiculo(meuVeiculo)
+    if (pessoa.papel === 'titular_motorista') {
+      const { data: todos } = await supabase.from('veiculos').select('*').eq('titular_id', pessoa.id).eq('ativo', true)
+      setMeusVeiculos(todos ?? [])
+    }
 
     if (opAtual) {
       const etapasFeitas = await supabase
@@ -65,34 +88,32 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
       setOperacaoAtual({
         ...opAtual,
         clienteNome: (opAtual as any).clientes?.nome_fantasia ?? (opAtual as any).clientes?.razao_social,
-        valorContrato: (opAtual as any).condicoes_pagamento_operacao?.[0]?.valor_total_contrato,
+        valorContrato: valorContratoDe(opAtual),
         etapasFeitas: etapasFeitas.count ?? 0,
       })
     } else {
       setOperacaoAtual(null)
     }
 
-    if (meuVeiculo) {
-      const { data: ofertaData } = await supabase
-        .from('operacoes')
-        .select('*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato)')
-        .eq('status', 'alocando_motorista')
-        .is('pessoa_alocada_id', null)
-        .eq('veiculo_id', meuVeiculo.id)
-        .limit(1)
-        .maybeSingle()
-      setOferta(
-        ofertaData
-          ? {
-              ...ofertaData,
-              clienteNome: (ofertaData as any).clientes?.nome_fantasia ?? (ofertaData as any).clientes?.razao_social,
-              valorContrato: (ofertaData as any).condicoes_pagamento_operacao?.[0]?.valor_total_contrato,
-            }
-          : null,
-      )
-    } else {
-      setOferta(null)
-    }
+    // Quem aloca é o operador da RBR — aqui o motorista só vê a carga já reservada pra ele
+    // enquanto a documentação é preparada (não existe mais "pegar carga" sozinho).
+    const { data: ofertaData } = await supabase
+      .from('operacoes')
+      .select('*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato)')
+      .eq('pessoa_alocada_id', pessoa.id)
+      .in('status', ['alocando_motorista', 'aguardando_liberacao_fiscal'])
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    setOferta(
+      ofertaData
+        ? {
+            ...ofertaData,
+            clienteNome: (ofertaData as any).clientes?.nome_fantasia ?? (ofertaData as any).clientes?.razao_social,
+            valorContrato: valorContratoDe(ofertaData),
+          }
+        : null,
+    )
 
     setSaldoPontos(saldo?.saldo ?? 0)
     setLoading(false)
@@ -122,30 +143,19 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
     if (error) setOnline(!next)
   }
 
-  async function aceitarOferta() {
-    if (!oferta) return
-    setBusy(true)
-    const { error } = await supabase
-      .from('operacoes')
-      .update({ pessoa_alocada_id: pessoa.id })
-      .eq('id', oferta.id)
-    setBusy(false)
-    if (!error) {
-      setOferta(null)
-      load()
-    }
-  }
-
-  function recusarOferta() {
-    // Recusa é só local (sem tabela de registro de recusa no schema v1) —
-    // some da tela nesta sessão; volta a aparecer se a lista for recarregada.
-    setOferta(null)
-  }
-
   const primeiroNome = pessoa.nome.split(' ')[0]
 
   return (
     <div className="px-5 pt-8 flex flex-col gap-3.5">
+      <StatusCadastro
+        pessoa={pessoa}
+        veiculos={meusVeiculos}
+        onAtualizar={async () => {
+          await onRecarregar?.()
+          await load()
+        }}
+        compacto
+      />
       <div className="flex items-center justify-between">
         <div>
           <div className="rbr-display font-bold text-2xl leading-tight text-[color:var(--rbr-navy-dark)]">
@@ -243,28 +253,14 @@ export default function Inicio({ pessoa }: { pessoa: Pessoa }) {
           style={{ borderColor: 'var(--rbr-border)', boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 6px 18px rgba(18,23,61,0.05)' }}
         >
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-2">
-            Nova oferta
+            Carga reservada pra você
           </div>
           <div className="text-[15px] font-bold mb-1">{oferta.clienteNome ?? 'Cliente a confirmar'}</div>
           <div className="text-[13px] text-[color:var(--rbr-muted)] mb-3.5">
             {oferta.valorContrato != null ? formatMoney(oferta.valorContrato) : 'Valor em definição'}
           </div>
-          <div className="flex gap-2.5">
-            <button
-              onClick={recusarOferta}
-              className="flex-1 py-3 rounded-xl text-sm font-bold border"
-              style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-            >
-              Recusar
-            </button>
-            <button
-              onClick={aceitarOferta}
-              disabled={busy}
-              className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-60"
-              style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
-            >
-              {busy ? 'Aceitando…' : 'Aceitar'}
-            </button>
+          <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
+            A RBR está preparando a documentação (CT-e, MDF-e, CIOT, vale-pedágio). A carga aparece em “Minhas cargas” como liberada assim que tudo estiver pronto.
           </div>
         </div>
       )}

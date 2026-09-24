@@ -19,6 +19,7 @@ type DocumentacaoOperacao = Pick<
   | 'mensagem_erro'
   | 'atualizado_em'
   | 'provedor'
+  | 'ambiente'
 >
 type StatusDocumentoFiscal = Database['public']['Enums']['status_documento_fiscal']
 type TipoDocumentoFiscal = Database['public']['Enums']['tipo_documento_fiscal']
@@ -83,9 +84,12 @@ const TIPO_DOC_LABEL: Record<TipoDocumentoFiscal, string> = {
   mdfe: 'MDF-e',
   nfse: 'NFS-e',
   ciot: 'CIOT',
-  atm: 'AT&M',
-  wialon: 'Wialon',
+  atm: 'Averbação do seguro',
+  wialon: 'Rastreamento por satélite',
   apolice_seguro: 'Apólice de seguro',
+  vpo: 'Vale-pedágio (VPO)',
+  gr: 'Pesquisa GR',
+  aet: 'AET (DNIT)',
 }
 
 const STATUS_DOC_LABEL: Record<StatusDocumentoFiscal, string> = {
@@ -183,7 +187,7 @@ export default function Fiscal() {
     const { data } = await supabase
       .from('documentacao_operacao')
       .select(
-        'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor',
+        'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente',
       )
       .in('operacao_id', operacaoIds)
 
@@ -406,10 +410,6 @@ export default function Fiscal() {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Fiscal</h1>
       </div>
 
-      <div className="text-xs text-[color:var(--rbr-muted)]">
-        Ambiente de homologação — documentos emitidos aqui não têm validade fiscal.
-      </div>
-
       {errorMsg && (
         <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {errorMsg}
@@ -578,6 +578,15 @@ export default function Fiscal() {
                                 {doc.atualizado_em && (
                                   <span className="text-[11px] text-[color:var(--rbr-muted)]">
                                     atualizado em {formatDateTime(doc.atualizado_em)}
+                                  </span>
+                                )}
+                                {doc.ambiente === 'homologacao' && (
+                                  <span
+                                    className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                                    style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}
+                                    title="Emitido no ambiente de testes do provedor — não tem validade fiscal."
+                                  >
+                                    Homologação — sem validade fiscal
                                   </span>
                                 )}
                                 {documentoManual && (

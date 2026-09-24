@@ -3,6 +3,9 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { initials, formatDate } from '@rbr/shared/format'
 import { IconLogOut } from '@rbr/shared/icons'
+import { MeusDados, StatusCadastro } from '@rbr/shared/cadastro'
+import { BiometriaToggle } from '@rbr/shared/biometria'
+import DocumentoIdentidade from '../components/DocumentoIdentidade'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Vinculo = Database['public']['Tables']['vinculos_agenciador_motorista']['Row']
@@ -105,7 +108,15 @@ function baixarModeloCsv() {
   URL.revokeObjectURL(url)
 }
 
-export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOut: () => void }) {
+export default function Perfil({
+  pessoa,
+  onSignOut,
+  onRecarregar,
+}: {
+  pessoa: Pessoa
+  onSignOut: () => void
+  onRecarregar: () => Promise<void> | void
+}) {
   const [form, setForm] = useState({
     nome: pessoa.nome ?? '',
     email: pessoa.email ?? '',
@@ -138,11 +149,18 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
     setLoadingVinculos(true)
     const { data, error: err } = await supabase
       .from('vinculos_agenciador_motorista')
-      .select('*, pessoas!vinculos_agenciador_motorista_motorista_id_fkey(nome)')
+      .select('*')
       .eq('agenciador_id', pessoa.id)
       .order('created_at', { ascending: false })
     if (!err) {
-      setVinculos((data ?? []).map((v: any) => ({ ...v, motoristaNome: v.pessoas?.nome })))
+      // Só o nome do motorista, via RPC (o agenciador não lê o cadastro completo — LGPD).
+      const ids = (data ?? []).map((v) => v.motorista_id)
+      const nomes = new Map<string, string>()
+      if (ids.length > 0) {
+        const { data: ns } = await supabase.rpc('nomes_pessoas_relacionadas', { p_ids: ids })
+        for (const n of ns ?? []) nomes.set(n.id, n.nome)
+      }
+      setVinculos((data ?? []).map((v) => ({ ...v, motoristaNome: nomes.get(v.motorista_id) })))
     }
     setLoadingVinculos(false)
   }, [pessoa.id])
@@ -180,7 +198,13 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
     })
     setImportLoading(false)
     if (err) {
-      setImportErro(err.message ?? 'Erro ao importar.')
+      let texto = err.message ?? 'Erro ao importar.'
+      try {
+        texto = (await (err as unknown as { context: Response }).context.json())?.erro ?? texto
+      } catch {
+        /* mantém a mensagem genérica */
+      }
+      setImportErro(texto)
       return
     }
     if (!data?.sucesso) {
@@ -235,6 +259,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
       return
     }
     setSaved(true)
+    await onRecarregar()
   }
 
   return (
@@ -251,6 +276,9 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
           <div className="text-xs text-[color:var(--rbr-muted)]">Agenciador parceiro RBR</div>
         </div>
       </div>
+
+      <StatusCadastro pessoa={pessoa} onAtualizar={onRecarregar} />
+      <DocumentoIdentidade pessoa={pessoa} onEnviado={onRecarregar} />
 
       <form
         onSubmit={handleSubmit}
@@ -384,7 +412,7 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
       <section className="flex flex-col gap-2.5">
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Sua base de motoristas</div>
-          {!importAberto && (
+          {!importAberto && pessoa.aprovacao_status === 'aprovado' && (
             <button
               onClick={() => setImportAberto(true)}
               className="text-xs font-bold px-3 py-1.5 rounded-full border"
@@ -564,6 +592,22 @@ export default function Perfil({ pessoa, onSignOut }: { pessoa: Pessoa; onSignOu
             )
           })}
         </div>
+      </section>
+
+      <section
+        className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3"
+        style={{ borderColor: 'var(--rbr-border)', boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 6px 18px rgba(18,23,61,0.05)' }}
+      >
+        <div className="text-[15px] font-bold text-[color:var(--rbr-navy-dark)]">Segurança</div>
+        <BiometriaToggle userId={pessoa.auth_user_id ?? pessoa.id} nome={pessoa.nome} email={pessoa.email} />
+      </section>
+
+      <section
+        className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3"
+        style={{ borderColor: 'var(--rbr-border)', boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 6px 18px rgba(18,23,61,0.05)' }}
+      >
+        <div className="text-[15px] font-bold text-[color:var(--rbr-navy-dark)]">Meus dados (LGPD)</div>
+        <MeusDados pessoa={pessoa} />
       </section>
 
       <button

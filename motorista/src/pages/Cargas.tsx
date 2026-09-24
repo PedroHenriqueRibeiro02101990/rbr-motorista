@@ -14,6 +14,7 @@ type StatusOperacao = Database['public']['Enums']['status_operacao']
 type OperacaoEnriquecida = Operacao & {
   clienteNome?: string
   valorContrato?: number | null
+  condutorNome?: string | null
 }
 
 const ETAPAS: { key: EtapaChecklist; label: string }[] = [
@@ -24,22 +25,18 @@ const ETAPAS: { key: EtapaChecklist; label: string }[] = [
   { key: 'nota_fiscal_assinada', label: 'Nota fiscal assinada' },
 ]
 
-const STATUS_FLOW: StatusOperacao[] = [
-  'alocando_motorista',
-  'aguardando_liberacao_fiscal',
-  'liberada_coleta',
-  'carregando',
-  'em_transito',
-  'entregue',
-  'fechada',
-]
 
 const TERMINAIS = new Set<StatusOperacao>(['entregue', 'fechada', 'cancelada'])
 
+// O motorista só avança a carga depois que a RBR libera pra coleta (regra também travada no banco).
+const PROXIMO_DO_MOTORISTA: Partial<Record<StatusOperacao, StatusOperacao>> = {
+  liberada_coleta: 'carregando',
+  carregando: 'em_transito',
+  em_transito: 'entregue',
+}
+
 function proximoStatus(atual: StatusOperacao): StatusOperacao | null {
-  const i = STATUS_FLOW.indexOf(atual)
-  if (i === -1 || i === STATUS_FLOW.length - 1) return null
-  return STATUS_FLOW[i + 1]
+  return PROXIMO_DO_MOTORISTA[atual] ?? null
 }
 
 function badgeBackground(status: StatusOperacao): string {
@@ -54,6 +51,8 @@ const cardStyle = {
 }
 
 export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
+  const ehTitular = pessoa.papel === 'titular_motorista'
+  const [visao, setVisao] = useState<'minhas' | 'frota'>('minhas')
   const [operacoes, setOperacoes] = useState<OperacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -65,16 +64,26 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('operacoes')
-      .select('*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato)')
-      .eq('pessoa_alocada_id', pessoa.id)
-      .order('updated_at', { ascending: false })
+      .select(
+        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), pessoas!operacoes_pessoa_alocada_id_fkey(nome)',
+      )
+    // "Frota" só existe pro titular — mostra também as cargas dos condutores
+    // dele (o banco já restringe isso pela policy titular_ve_operacoes_da_frota).
+    if (!(ehTitular && visao === 'frota')) {
+      query = query.eq('pessoa_alocada_id', pessoa.id)
+    }
+    const { data } = await query.order('updated_at', { ascending: false })
 
     const mapeadas: OperacaoEnriquecida[] = (data ?? []).map((op) => ({
       ...op,
       clienteNome: (op as any).clientes?.nome_fantasia ?? (op as any).clientes?.razao_social,
-      valorContrato: (op as any).condicoes_pagamento_operacao?.[0]?.valor_total_contrato,
+      valorContrato: (() => {
+        const c = (op as any).condicoes_pagamento_operacao
+        return (Array.isArray(c) ? c[0] : c)?.valor_total_contrato ?? null
+      })(),
+      condutorNome: (op as any).pessoas?.nome ?? null,
     }))
 
     mapeadas.sort((a, b) => {
@@ -86,7 +95,7 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
 
     setOperacoes(mapeadas)
     setLoading(false)
-  }, [pessoa.id])
+  }, [pessoa.id, ehTitular, visao])
 
   useEffect(() => {
     load()
@@ -136,6 +145,18 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
       return
     }
 
+    // Uma foto por etapa: se já existia uma (reenvio porque a anterior saiu
+    // ruim), some com a antiga — senão a barra de progresso do Início conta
+    // linha em vez de etapa, e mostra "quase pronto" com etapa faltando de
+    // verdade. Só apaga depois que a nova já está gravada com sucesso.
+    const fotoAnterior = (fotosPorOperacao[op.id] ?? []).find((f) => f.etapa === etapa)
+    if (fotoAnterior) {
+      await supabase.from('operacao_checklist_fotos').delete().eq('id', fotoAnterior.id)
+      if (fotoAnterior.foto_url !== path) {
+        await supabase.storage.from('operacao-fotos').remove([fotoAnterior.foto_url])
+      }
+    }
+
     await carregarFotos(op.id)
     setUploadingEtapa(null)
   }
@@ -156,15 +177,35 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
 
   return (
     <div className="px-5 pt-8 flex flex-col gap-3.5">
-      <div className="rbr-display font-bold text-2xl leading-tight text-[color:var(--rbr-navy-dark)]">
-        Minhas cargas
+      <div className="flex items-center justify-between gap-3">
+        <div className="rbr-display font-bold text-2xl leading-tight text-[color:var(--rbr-navy-dark)]">
+          {visao === 'frota' ? 'Cargas da frota' : 'Minhas cargas'}
+        </div>
+        {ehTitular && (
+          <div className="flex rounded-full border p-0.5 flex-shrink-0" style={{ borderColor: 'var(--rbr-border)' }}>
+            {(['minhas', 'frota'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setVisao(v)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full"
+                style={
+                  visao === v
+                    ? { background: 'var(--rbr-navy)', color: '#fff' }
+                    : { color: 'var(--rbr-muted)' }
+                }
+              >
+                {v === 'minhas' ? 'Minhas' : 'Frota'}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 
       {!loading && operacoes && operacoes.length === 0 && (
         <div className="text-sm text-[color:var(--rbr-muted)] bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
-          Nenhuma carga alocada para você ainda.
+          {visao === 'frota' ? 'Nenhuma carga da frota no momento.' : 'Nenhuma carga alocada para você ainda.'}
         </div>
       )}
 
@@ -174,6 +215,9 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
           const fotos = fotosPorOperacao[op.id] ?? []
           const proximo = proximoStatus(op.status)
           const isTerminal = TERMINAIS.has(op.status)
+          // Na visão "Frota", o titular só acompanha — quem avança a carga e
+          // sobe o checklist é sempre quem está dirigindo (regra também travada no banco).
+          const souEuQueDirijo = op.pessoa_alocada_id === pessoa.id
 
           return (
             <div
@@ -209,6 +253,11 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
                   {op.peso_bruto ? `${op.peso_bruto} kg` : 'Peso não informado'} · atualizado em{' '}
                   {formatDateTime(op.updated_at)}
                 </div>
+                {visao === 'frota' && (
+                  <div className="text-xs text-[color:var(--rbr-muted)] mt-0.5">
+                    {op.condutorNome ? `Dirigido por ${op.condutorNome}` : 'Dirigido por você'}
+                  </div>
+                )}
               </button>
 
               {isExpanded && (
@@ -267,30 +316,36 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
                                 )}
                               </div>
                             </div>
-                            <label
-                              htmlFor={inputId}
-                              className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                              style={{
-                                background: foto ? '#fff' : 'var(--rbr-gold)',
-                                color: foto ? 'var(--rbr-navy)' : 'var(--rbr-navy-dark)',
-                                opacity: isUploading ? 0.6 : 1,
-                              }}
-                            >
-                              <IconCamera width={16} height={16} />
-                              <input
-                                id={inputId}
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                className="hidden"
-                                disabled={isUploading}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0]
-                                  e.target.value = ''
-                                  if (file) handleUpload(op, key, file)
+                            {souEuQueDirijo ? (
+                              <label
+                                htmlFor={inputId}
+                                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                                style={{
+                                  background: foto ? '#fff' : 'var(--rbr-gold)',
+                                  color: foto ? 'var(--rbr-navy)' : 'var(--rbr-navy-dark)',
+                                  opacity: isUploading ? 0.6 : 1,
                                 }}
-                              />
-                            </label>
+                              >
+                                <IconCamera width={16} height={16} />
+                                <input
+                                  id={inputId}
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  className="hidden"
+                                  disabled={isUploading}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0]
+                                    e.target.value = ''
+                                    if (file) handleUpload(op, key, file)
+                                  }}
+                                />
+                              </label>
+                            ) : (
+                              !foto && (
+                                <span className="text-[11px] text-[color:var(--rbr-muted)] flex-shrink-0">Pendente</span>
+                              )
+                            )}
                           </div>
                         )
                       })}
@@ -306,7 +361,7 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
                     </div>
                   )}
 
-                  {!isTerminal && proximo && (
+                  {!isTerminal && proximo && souEuQueDirijo && (
                     <button
                       onClick={() => handleAvancar(op)}
                       disabled={advancing}
@@ -317,6 +372,18 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
                         ? 'Atualizando…'
                         : `Avançar para ${STATUS_OPERACAO_LABEL[proximo].toLowerCase()}`}
                     </button>
+                  )}
+
+                  {!isTerminal && proximo && !souEuQueDirijo && (
+                    <div className="text-xs text-[color:var(--rbr-muted)] text-center py-1">
+                      Quem avança esta carga é {op.condutorNome ?? 'o condutor alocado'}.
+                    </div>
+                  )}
+
+                  {!isTerminal && !proximo && (op.status === 'alocando_motorista' || op.status === 'aguardando_liberacao_fiscal') && (
+                    <div className="text-xs text-[color:var(--rbr-muted)] text-center py-1">
+                      Aguardando a RBR liberar a carga para coleta (documentação em preparo).
+                    </div>
                   )}
 
                   {isTerminal && (

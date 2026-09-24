@@ -61,6 +61,17 @@ function apenasDigitos(v: string | null | undefined): string | null {
   return d === "" ? null : d;
 }
 
+function cpfValido(d: string): boolean {
+  if (!/^\d{11}$/.test(d) || /^(\d)\1{10}$/.test(d)) return false;
+  const calc = (n: number) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return calc(9) === Number(d[9]) && calc(10) === Number(d[10]);
+}
+
 function gerarSenhaTemporaria(): string {
   // Nunca é usada de fato — a conta só vira acessível via o link de
   // recovery gerado abaixo, mas o Admin API exige alguma senha pra criar
@@ -107,7 +118,7 @@ Deno.serve(async (req: Request) => {
     // pessoas) — a importação vincula os motoristas a ELE.
     const { data: agenciadorPessoa, error: agenciadorError } = await supabaseAdmin
       .from("pessoas")
-      .select("id, papel")
+      .select("id, papel, aprovacao_status")
       .eq("auth_user_id", userData.user.id)
       .is("deleted_at", null)
       .maybeSingle();
@@ -118,6 +129,12 @@ Deno.serve(async (req: Request) => {
     if (agenciadorPessoa.papel !== "agenciador") {
       return jsonResponse(
         { sucesso: false, erro: "Só agenciadores podem importar motoristas." },
+        403,
+      );
+    }
+    if (agenciadorPessoa.aprovacao_status !== "aprovado") {
+      return jsonResponse(
+        { sucesso: false, erro: "Seu cadastro ainda está em análise. Assim que for aprovado você pode importar motoristas." },
         403,
       );
     }
@@ -151,12 +168,33 @@ Deno.serve(async (req: Request) => {
       try {
         // 1) Já existe uma pessoa com esse e-mail? Se sim, não cria conta
         //    nova — só garante o vínculo (não precisa de CPF pra isso).
-        const { data: pessoaExistente } = await supabaseAdmin
+        // Também procura pelo CPF: 1 CPF = 1 cadastro.
+        let { data: pessoaExistente } = await supabaseAdmin
           .from("pessoas")
-          .select("id")
+          .select("id, papel")
           .eq("email", email)
           .is("deleted_at", null)
           .maybeSingle();
+        if (!pessoaExistente && cpf) {
+          const { data: porCpf } = await supabaseAdmin.from("pessoas").select("id, papel").eq("cpf", cpf).maybeSingle();
+          pessoaExistente = porCpf;
+        }
+
+        // Achou um cadastro com esse CPF/e-mail, mas não é de motorista
+        // (pode ser outro agenciador, um gestor, um condutor de outra
+        // frota): não vincula — evita confirmar pra quem importou que
+        // aquele documento existe no sistema e "puxar" pra si um cadastro
+        // que não é dele.
+        if (pessoaExistente && pessoaExistente.papel !== "titular_motorista") {
+          resultados.push({
+            linha,
+            nome,
+            email,
+            sucesso: false,
+            mensagem: "Este CPF ou e-mail já pertence a um cadastro que não é de motorista.",
+          });
+          continue;
+        }
 
         let pessoaId: string;
         let linkSenha: string | undefined;
@@ -164,6 +202,27 @@ Deno.serve(async (req: Request) => {
 
         if (pessoaExistente) {
           pessoaId = pessoaExistente.id as string;
+
+          // Já confirmado com outro agenciador? Não deixa "roubar" o
+          // motorista pra esta base — só o próprio motorista ou a RBR podem
+          // trocar de agenciador.
+          const { data: vinculoConfirmadoOutro } = await supabaseAdmin
+            .from("vinculos_agenciador_motorista")
+            .select("id")
+            .eq("motorista_id", pessoaId)
+            .eq("status", "confirmado")
+            .neq("agenciador_id", agenciadorId)
+            .maybeSingle();
+          if (vinculoConfirmadoOutro) {
+            resultados.push({
+              linha,
+              nome,
+              email,
+              sucesso: false,
+              mensagem: "Este motorista já está confirmado com outro agenciador.",
+            });
+            continue;
+          }
         } else {
           // pessoas exige CPF pra toda pessoa física (constraint
           // pf_tem_cpf) — só é obrigatório aqui porque estamos criando uma
@@ -172,8 +231,8 @@ Deno.serve(async (req: Request) => {
             resultados.push({ linha, nome, email, sucesso: false, mensagem: "CPF é obrigatório." });
             continue;
           }
-          if (!/^\d{11}$/.test(cpf)) {
-            resultados.push({ linha, nome, email, sucesso: false, mensagem: "CPF precisa ter 11 dígitos." });
+          if (!cpfValido(cpf)) {
+            resultados.push({ linha, nome, email, sucesso: false, mensagem: "CPF inválido." });
             continue;
           }
 
@@ -251,7 +310,8 @@ Deno.serve(async (req: Request) => {
             .insert({
               agenciador_id: agenciadorId,
               motorista_id: pessoaId,
-              status: "confirmado",
+              // A RBR confirma todo vínculo feito por importação (Cadastros → Pendências).
+              status: "reivindicado",
             });
           if (vinculoError) {
             resultados.push({
@@ -272,8 +332,8 @@ Deno.serve(async (req: Request) => {
           email,
           sucesso: true,
           mensagem: pessoaExistente
-            ? "Já existia — vínculo confirmado."
-            : "Conta criada e vinculada.",
+            ? (vinculoExistente ? "Já existia e já estava vinculado." : "Já tinha cadastro — vínculo enviado para a RBR confirmar.")
+            : "Conta criada. Vínculo enviado para a RBR confirmar; ele envia CNH e CRLV pelo app para ser liberado.",
           pessoa_id: pessoaId,
           link_definir_senha: criouConta ? linkSenha : undefined,
         });
