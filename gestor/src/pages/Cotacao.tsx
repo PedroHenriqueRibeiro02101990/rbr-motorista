@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
@@ -8,7 +8,8 @@ import { IconQuote, IconChevronRight, IconCheck } from '@rbr/shared/icons'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
-import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao } from '../lib/financeiro'
+import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao, lerParametro, whatsappLink } from '../lib/financeiro'
+import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/cotacaoPdf'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -20,8 +21,84 @@ type PisoCoeficiente = Database['public']['Tables']['piso_antt_coeficientes']['R
 type TipoCusto = Database['public']['Tables']['tipos_custo_adicional']['Row']
 type CustoAdicionalRow = Database['public']['Tables']['cotacao_custos_adicionais']['Row']
 type Fornecedor = Database['public']['Tables']['fornecedores']['Row']
+type PracaPedagio = Database['public']['Tables']['pracas_pedagio']['Row']
 
 type CotacaoEnriquecida = Cotacao & { clienteNome?: string | null }
+
+// Uma praça lançada na cotação (categoria escolhida + valor daquela tarifa). Guardado em
+// cotacoes.pedagio_pracas (jsonb) pra auditoria — não precisa reconsultar o catálogo depois.
+interface PracaSelecionada {
+  praca_id: string | null
+  nome: string
+  rodovia: string
+  km: number | null
+  categoria: string
+  valor: number
+}
+
+type CotacaoDestinoRow = Database['public']['Tables']['cotacao_destinos']['Row']
+
+// Uma linha de destino numa cotação com vários destinos a partir da mesma origem (ex.: CD
+// que despacha pra várias cidades). Cada linha tem sua própria composição de custo completa
+// (igual à de rota única): endereço de entrega, veículo (tabela ANTT + tipo de carga + eixos,
+// porque destinos diferentes podem usar veículos diferentes), distância, piso ANTT de
+// referência, frete do motorista, pedágio e margem — o valor final e o lucro líquido são
+// calculados a partir disso (ver calcularCustoDestino). TAG seguro e imposto ficam no nível
+// da cotação (dependem do valor da mercadoria, que é um só pra cotação inteira).
+interface DestinoLinha {
+  key: string
+  id?: string
+  endereco: string
+  tabela: string
+  tipo_carga: string
+  eixos: string
+  distancia_km: string
+  frete_motorista: string
+  pedagio: string
+  margem_pct: string
+  // legado — cotações antigas gravadas antes do endereço completo existir
+  cidade?: string
+  uf?: string
+}
+
+function destinoDeLinha(r: CotacaoDestinoRow): DestinoLinha {
+  return {
+    key: r.id,
+    id: r.id,
+    endereco: r.endereco_entrega ?? [r.cidade_destino, r.uf_destino].filter(Boolean).join('/'),
+    tabela: r.tabela_antt ?? '',
+    tipo_carga: r.tipo_carga ?? '',
+    eixos: r.eixos != null ? String(r.eixos) : '',
+    distancia_km: r.distancia_km != null ? String(r.distancia_km) : '',
+    frete_motorista: r.frete_motorista != null ? String(r.frete_motorista) : '',
+    pedagio: r.pedagio != null ? String(r.pedagio) : '',
+    margem_pct: r.margem_pct != null ? String(round2(r.margem_pct * 100)) : '',
+    cidade: r.cidade_destino ?? '',
+    uf: r.uf_destino ?? '',
+  }
+}
+
+// Mesma fórmula de calcularComposicao (custo -> valor final -> imposto -> lucro), só que sem
+// TAG seguro nem custos adicionais (esses ficam no nível da cotação, não por destino) e com
+// margem própria de cada destino em vez do lucro % da cotação inteira.
+function calcularCustoDestino(
+  d: DestinoLinha,
+  aliquota: number,
+): { custo: number; valorFinal: number | null; imposto: number | null; lucro: number | null; erro: string | null } {
+  const frete = numOrNull(d.frete_motorista) ?? 0
+  const pedagio = numOrNull(d.pedagio) ?? 0
+  const custo = round2(frete + pedagio)
+  const margemFrac = (numOrNull(d.margem_pct) ?? 0) / 100
+  const fator = 1 + margemFrac
+  const divisor = 1 - aliquota * fator
+  if (divisor <= 0) {
+    return { custo, valorFinal: null, imposto: null, lucro: null, erro: 'Margem alta demais pra essa alíquota de imposto — revise o %.' }
+  }
+  const valorFinal = round2((custo * fator) / divisor)
+  const imposto = round2(valorFinal * aliquota)
+  const lucro = round2(valorFinal - custo - imposto)
+  return { custo, valorFinal, imposto, lucro, erro: null }
+}
 
 type FormaCalculo = 'fixo' | 'por_km' | 'por_dia' | 'por_unidade' | 'pct_valor_nf'
 type Recebedor = 'motorista' | 'fornecedor' | 'governo' | 'rbr'
@@ -193,6 +270,9 @@ const FORM_INICIAL = {
   condicao_prazo_id: '',
   prazo_personalizado: null as RegraPrazo | null,
   forma_recebimento: 'boleto',
+  // Prazo de validade da proposta (dias corridos a partir da emissão) — editável por cotação,
+  // vai pro PDF em "COTAÇÃO Nº/DATA/VALIDADE" e em "Condições gerais".
+  validade_dias: '5',
 }
 
 type PrecoModo = 'lucro_pct' | 'valor_final'
@@ -209,10 +289,18 @@ interface FaixaSeguro {
   pct: number // fração (0.0015 = 0,15%)
 }
 
+// Taxas de 0,10% a 0,90% (fallback só usado se parametros_sistema.tag_seguro_faixas
+// não existir — o valor vivo no banco é a fonte de verdade, editável sem deploy).
 const FAIXAS_SEGURO_PADRAO: FaixaSeguro[] = [
-  { faixa: 'baixo', label: 'Baixo risco', pct: 0.0015 },
-  { faixa: 'medio', label: 'Médio risco', pct: 0.003 },
-  { faixa: 'alto', label: 'Alto risco', pct: 0.009 },
+  { faixa: '010', label: '0,10%', pct: 0.001 },
+  { faixa: '020', label: '0,20%', pct: 0.002 },
+  { faixa: '030', label: '0,30%', pct: 0.003 },
+  { faixa: '040', label: '0,40%', pct: 0.004 },
+  { faixa: '050', label: '0,50%', pct: 0.005 },
+  { faixa: '060', label: '0,60%', pct: 0.006 },
+  { faixa: '070', label: '0,70%', pct: 0.007 },
+  { faixa: '080', label: '0,80%', pct: 0.008 },
+  { faixa: '090', label: '0,90%', pct: 0.009 },
 ]
 
 interface RotaCalculada {
@@ -362,6 +450,26 @@ export default function Cotacao() {
   const [projetos, setProjetos] = useState<Projeto[]>([])
   const [clienteFiltro, setClienteFiltro] = useState('')
 
+  // Praças de pedágio lançadas na cotação (soma automaticamente pro campo Pedágio).
+  const [pracasCatalogo, setPracasCatalogo] = useState<PracaPedagio[]>([])
+  const [pracasPedagio, setPracasPedagio] = useState<PracaSelecionada[]>([])
+
+  // Destinos múltiplos (cotação com vários destinos a partir da mesma origem). Quando há
+  // linhas aqui, o valor_total da cotação vira a soma delas — não a composição de preço de
+  // rota única acima.
+  const [destinos, setDestinos] = useState<DestinoLinha[]>([])
+  const [carregandoDestinos, setCarregandoDestinos] = useState(false)
+  const [calculandoDestino, setCalculandoDestino] = useState<string | null>(null)
+  const [erroDestino, setErroDestino] = useState<{ key: string; msg: string } | null>(null)
+  // Tabela inteira de piso_antt_coeficientes (carregada uma vez), só com a versão vigente
+  // (data_vigencia mais recente ≤ hoje) por tabela+tipo de carga+eixos — usada pra calcular o
+  // piso ANTT de cada destino da lista de vários destinos, já que cada linha pode ter um
+  // veículo diferente (ver eixosOpcoesPara / coefPara abaixo).
+  const [pisoCoefsTodos, setPisoCoefsTodos] = useState<PisoCoeficiente[]>([])
+  const [pracaBusca, setPracaBusca] = useState('')
+  const [pracaEscolhidaId, setPracaEscolhidaId] = useState('')
+  const [pracaCategoria, setPracaCategoria] = useState('')
+
   const [margemMin, setMargemMin] = useState(0.26)
   const [margemMax, setMargemMax] = useState(0.4)
   const [pesoLimiarKg, setPesoLimiarKg] = useState<number | null>(null)
@@ -405,6 +513,11 @@ export default function Cotacao() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [emitindoPdf, setEmitindoPdf] = useState(false)
+  // Clique em "Enviar WhatsApp" direto na lista: abre a cotação (pra reaproveitar o mesmo
+  // cálculo de composição/itens do formulário) e, assim que custos adicionais e destinos
+  // terminarem de carregar, dispara o PDF + WhatsApp sozinho — ver efeito mais abaixo.
+  const [pendingWhatsAppId, setPendingWhatsAppId] = useState<string | null>(null)
 
   const [eixosOpcoes, setEixosOpcoes] = useState<number[]>([])
   const [pisoInfo, setPisoInfo] = useState<PisoInfo | null>(null)
@@ -476,6 +589,27 @@ export default function Cotacao() {
     setProjetos(data ?? [])
   }, [])
 
+  const loadPracasPedagio = useCallback(async () => {
+    const { data } = await supabase.from('pracas_pedagio').select('*').order('nome', { ascending: true }).limit(1000)
+    setPracasCatalogo(data ?? [])
+  }, [])
+
+  // Tabela inteira de piso_antt_coeficientes, carregada uma vez (é pequena — ~140 linhas) e
+  // reduzida à versão vigente (maior data_vigencia ≤ hoje) por tabela+tipo_carga+eixos. Usada
+  // por eixosOpcoesPara/coefPara pra calcular o piso ANTT de cada destino da lista de vários
+  // destinos sem precisar de uma consulta por linha.
+  const loadPisoCoeficientesTodos = useCallback(async () => {
+    const hojeIso = new Date().toISOString().slice(0, 10)
+    const { data } = await supabase.from('piso_antt_coeficientes').select('*').lte('data_vigencia', hojeIso)
+    const maisRecentePorChave = new Map<string, PisoCoeficiente>()
+    for (const row of data ?? []) {
+      const chave = `${row.tabela}|${row.tipo_carga}|${row.eixos}`
+      const atual = maisRecentePorChave.get(chave)
+      if (!atual || row.data_vigencia > atual.data_vigencia) maisRecentePorChave.set(chave, row)
+    }
+    setPisoCoefsTodos(Array.from(maisRecentePorChave.values()))
+  }, [])
+
   const loadParametros = useCallback(async () => {
     const { data } = await supabase
       .from('parametros_sistema')
@@ -517,7 +651,19 @@ export default function Cotacao() {
     loadParametros()
     loadCatalogoCustos()
     loadCondicoes()
-  }, [load, loadClientes, loadAgenciadores, loadProjetos, loadParametros, loadCatalogoCustos, loadCondicoes])
+    loadPracasPedagio()
+    loadPisoCoeficientesTodos()
+  }, [
+    load,
+    loadClientes,
+    loadAgenciadores,
+    loadProjetos,
+    loadParametros,
+    loadCatalogoCustos,
+    loadCondicoes,
+    loadPracasPedagio,
+    loadPisoCoeficientesTodos,
+  ])
 
   // Opções de eixos disponíveis pra combinação tabela+tipo de carga — consultado ao
   // vivo (em vez de fixar a matriz na tela) pra nunca ficar desatualizado se a tabela
@@ -530,7 +676,7 @@ export default function Cotacao() {
     let cancelado = false
     supabase
       .from('piso_antt_coeficientes')
-      .select('eixos')
+      .select('eixos, cc_fixo, ccd_por_km')
       .eq('tabela', form.tabela)
       .eq('tipo_carga', form.tipo_carga)
       .then(({ data, error }) => {
@@ -550,6 +696,14 @@ export default function Cotacao() {
       setForm((f) => (f ? { ...f, eixos: '' } : f))
     }
   }, [eixosOpcoes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Enquanto houver praças lançadas, o campo Pedágio é a soma delas (edição manual do campo
+  // só volta a valer se a lista for esvaziada).
+  useEffect(() => {
+    if (pracasPedagio.length === 0) return
+    const soma = round2(pracasPedagio.reduce((acc, p) => acc + p.valor, 0))
+    setForm((f) => (f && numOrNull(f.pedagio) !== soma ? { ...f, pedagio: String(soma) } : f))
+  }, [pracasPedagio])
 
   // Piso ANTT: cc_fixo + ccd_por_km * distancia_km, pela linha vigente mais recente.
   useEffect(() => {
@@ -607,6 +761,7 @@ export default function Cotacao() {
     supabase
       .from('apolices_seguro')
       .select('teto_cobertura_por_embarque, vigencia_inicio, vigencia_fim')
+      .eq('tipo', 'RCTR-C')
       .order('vigencia_inicio', { ascending: false })
       .then(({ data }) => {
         const vigente = (data ?? []).find(
@@ -630,6 +785,45 @@ export default function Cotacao() {
   const pisoReferencia = pisoInfo?.calculado ?? pisoSalvo
   const freteAbaixoDoPiso =
     composicao?.frete != null && pisoReferencia != null && composicao.frete < round2(pisoReferencia)
+
+  // Opções de eixos disponíveis pra uma combinação tabela+tipo de carga, a partir da tabela
+  // inteira já carregada em memória (pisoCoefsTodos) — cada destino escolhe seu próprio
+  // veículo, então isso é chamado por linha, não uma vez só pra cotação inteira.
+  function eixosOpcoesPara(tabela: string, tipoCarga: string): number[] {
+    if (!tabela || !tipoCarga) return []
+    const uniq = new Set(
+      pisoCoefsTodos.filter((c) => c.tabela === tabela && c.tipo_carga === tipoCarga).map((c) => c.eixos),
+    )
+    return Array.from(uniq).sort((a, b) => a - b)
+  }
+
+  // Coeficiente vigente (cc_fixo/ccd_por_km) pra uma combinação tabela+tipo de carga+eixos.
+  function coefPara(tabela: string, tipoCarga: string, eixos: number): PisoCoeficiente | null {
+    return pisoCoefsTodos.find((c) => c.tabela === tabela && c.tipo_carga === tipoCarga && c.eixos === eixos) ?? null
+  }
+
+  // Piso ANTT de referência por linha de destino (advisório — não bloqueia salvar, só avisa
+  // na tela). Cada destino tem seu próprio veículo (tabela/tipo de carga/eixos).
+  function pisoRefDestino(d: DestinoLinha): number | null {
+    const eixosNum = numOrNull(d.eixos)
+    const distNum = numOrNull(d.distancia_km)
+    if (eixosNum == null || distNum == null || !d.tabela || !d.tipo_carga) return null
+    const coef = coefPara(d.tabela, d.tipo_carga, eixosNum)
+    if (!coef) return null
+    return round2(coef.cc_fixo + coef.ccd_por_km * distNum)
+  }
+
+  // Alíquota efetiva da cotação (mesma usada na composição de rota única — é um dado da
+  // cotação, não do destino) — usada pra fechar o valor final de cada linha de destino.
+  const aliquotaDestinos = composicao?.aliquota ?? aliquotaPadrao ?? 0.06
+
+  const somaDestinos = useMemo(
+    () =>
+      destinos.length > 0
+        ? round2(destinos.reduce((acc, d) => acc + (calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0), 0))
+        : null,
+    [destinos, aliquotaDestinos],
+  )
 
   // Só clientes ativos podem ser escolhidos — exceto o que já está na cotação (pra não sumir ao reabrir).
   const clientesFiltrados = useMemo(() => {
@@ -658,6 +852,23 @@ export default function Cotacao() {
     if (doc === form.nf_destinatario_cnpj.replace(/\D/g, '')) return 'destinatario'
     return 'terceiro'
   }, [form?.cliente_id, form?.nf_remetente_cnpj, form?.nf_destinatario_cnpj, clientes]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cliente selecionado e seu endereço completo (origem da rota é sempre o endereço
+  // cadastrado do cliente — não tem mais campo manual de cidade/UF de origem).
+  const clienteSelecionado = useMemo(
+    () => clientes.find((c) => c.id === form?.cliente_id) ?? null,
+    [clientes, form?.cliente_id],
+  )
+  const enderecoOrigemCliente = useMemo(() => {
+    const c = clienteSelecionado
+    if (!c) return ''
+    const partes = [
+      [c.logradouro, c.numero_endereco].filter(Boolean).join(', '),
+      c.bairro,
+      [c.cidade, c.uf].filter(Boolean).join('/'),
+    ].filter((p) => p && p.trim() !== '')
+    return partes.join(' — ')
+  }, [clienteSelecionado])
 
   const agenciadoresAtivos = useMemo(
     () => agenciadores.filter((a) => a.status === 'ativo' || a.id === form?.agenciador_id),
@@ -690,10 +901,49 @@ export default function Cotacao() {
 
   const tipoPorId = useMemo(() => new Map(tiposCusto.map((t) => [t.id, t])), [tiposCusto])
 
+  // Custos obrigatórios (ex.: pesquisa GR) entram automaticamente e valem o valor padrão —
+  // não precisam do card editável cheio, só aparecem como linha fixa no resumo.
+  const itensObrigatorios = useMemo(() => itens.filter((i) => tipoPorId.get(i.tipo_id)?.obrigatorio), [itens, tipoPorId])
+  const itensOpcionais = useMemo(() => itens.filter((i) => !tipoPorId.get(i.tipo_id)?.obrigatorio), [itens, tipoPorId])
+
   const projetosFiltrados = useMemo(() => {
     if (!form || !form.cliente_id) return projetos
     return projetos.filter((p) => !p.cliente_id || p.cliente_id === form.cliente_id)
   }, [projetos, form?.cliente_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pracasFiltradas = useMemo(() => {
+    const termo = pracaBusca.trim().toLowerCase()
+    if (!termo) return pracasCatalogo.slice(0, 30)
+    return pracasCatalogo.filter((p) => `${p.nome} ${p.rodovia} ${p.uf} ${p.concessionaria ?? ''}`.toLowerCase().includes(termo)).slice(0, 30)
+  }, [pracasCatalogo, pracaBusca])
+
+  const pracaEscolhida = useMemo(() => pracasCatalogo.find((p) => p.id === pracaEscolhidaId) ?? null, [pracasCatalogo, pracaEscolhidaId])
+
+  const categoriasDaPracaEscolhida = useMemo(() => {
+    if (!pracaEscolhida) return []
+    const tarifas = (pracaEscolhida.tarifas ?? {}) as Record<string, number>
+    return Object.keys(tarifas)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((cat) => ({ categoria: cat, valor: Number(tarifas[cat]) }))
+  }, [pracaEscolhida])
+
+  function adicionarPraca() {
+    if (!pracaEscolhida || !pracaCategoria) return
+    const tarifas = (pracaEscolhida.tarifas ?? {}) as Record<string, number>
+    const valor = Number(tarifas[pracaCategoria])
+    if (!Number.isFinite(valor)) return
+    setPracasPedagio((lista) => [
+      ...lista,
+      { praca_id: pracaEscolhida.id, nome: pracaEscolhida.nome, rodovia: pracaEscolhida.rodovia, km: pracaEscolhida.km, categoria: pracaCategoria, valor },
+    ])
+    setPracaBusca('')
+    setPracaEscolhidaId('')
+    setPracaCategoria('')
+  }
+
+  function removerPraca(index: number) {
+    setPracasPedagio((lista) => lista.filter((_, i) => i !== index))
+  }
 
   function limparAuxiliares() {
     setFormError(null)
@@ -707,6 +957,11 @@ export default function Cotacao() {
     setMotivoPerda('')
     setDetalhePerda('')
     setTipoParaAdicionar('')
+    setPracasPedagio([])
+    setPracaBusca('')
+    setPracaEscolhidaId('')
+    setPracaCategoria('')
+    setDestinos([])
   }
 
   function abrirNovaCotacao() {
@@ -738,6 +993,21 @@ export default function Cotacao() {
       return
     }
     setItens((data ?? []).map(itemDeLinha))
+  }
+
+  async function carregarDestinos(cotacaoId: string) {
+    setCarregandoDestinos(true)
+    const { data, error } = await supabase
+      .from('cotacao_destinos')
+      .select('*')
+      .eq('cotacao_id', cotacaoId)
+      .order('ordem', { ascending: true })
+    setCarregandoDestinos(false)
+    if (error) {
+      setFormError(`Não consegui carregar os destinos: ${error.message}`)
+      return
+    }
+    setDestinos((data ?? []).map(destinoDeLinha))
   }
 
   function abrirEdicao(c: Cotacao) {
@@ -791,6 +1061,7 @@ export default function Cotacao() {
       condicao_prazo_id: c.condicao_prazo_id ?? '',
       prazo_personalizado: (c.prazo_personalizado as unknown as RegraPrazo | null) ?? null,
       forma_recebimento: c.forma_recebimento ?? 'boleto',
+      validade_dias: c.validade_dias != null ? String(c.validade_dias) : '5',
     })
     setEditingId(c.id)
     setEditingStatus(c.status)
@@ -802,8 +1073,11 @@ export default function Cotacao() {
         : null,
     )
     limparAuxiliares()
+    const pracasSalvas = Array.isArray(c.pedagio_pracas) ? (c.pedagio_pracas as unknown as PracaSelecionada[]) : []
+    setPracasPedagio(pracasSalvas)
     setItens([])
     carregarItens(c.id)
+    carregarDestinos(c.id)
   }
 
   // Cliente já negociou antes? Repete o último prazo combinado com ele.
@@ -1042,8 +1316,17 @@ export default function Cotacao() {
             preco_modo: modoValorFinal ? 'valor_final' : 'lucro_pct',
           }
 
+    // Cotação com múltiplos destinos: o valor final ao cliente é a soma das linhas de destino,
+    // não a composição de preço de rota única acima (que fica de fora — não faz sentido com
+    // vários destinos e preços diferentes cada um).
+    const somaDestinosPatch =
+      destinos.length > 0
+        ? round2(destinos.reduce((acc, d) => acc + (calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0), 0))
+        : null
+
     return {
       ...preco,
+      ...(somaDestinosPatch != null ? { valor_total: somaDestinosPatch } : {}),
       valor_frete_motorista: comp.frete,
       faixa_risco_seguro: f.faixa_risco_seguro || null,
       taxa_seguro_tag_pct: taxaPct != null ? taxaPct / 100 : null,
@@ -1085,11 +1368,13 @@ export default function Cotacao() {
       flag_peso_acima_limiar: flagPeso,
       flag_valor_acima_teto_seguro: f.flag_valor_acima_teto_seguro,
       pedagio: numOrNull(f.pedagio),
+      pedagio_pracas: pracasPedagio.length > 0 ? (pracasPedagio as unknown as Json) : null,
       piso_antt_calculado: pisoInfo != null ? round2(pisoInfo.calculado) : pisoSalvo,
       xml_danfe_url: f.xml_danfe_url.trim() || null,
       condicao_prazo_id: f.prazo_modo === 'regra' ? f.condicao_prazo_id || null : null,
       prazo_personalizado: f.prazo_modo === 'personalizado' && f.prazo_personalizado ? (f.prazo_personalizado as unknown as Json) : null,
       forma_recebimento: f.forma_recebimento || 'boleto',
+      validade_dias: numOrNull(f.validade_dias) ?? 5,
     }
   }
 
@@ -1112,6 +1397,16 @@ export default function Cotacao() {
     for (const i of itens) {
       if (numOrNull(i.valor_unitario) != null && (numOrNull(i.valor_unitario) ?? 0) < 0) return 'Custo adicional com valor negativo.'
       if (i.forma_calculo !== 'pct_valor_nf' && (numOrNull(i.quantidade) ?? 0) < 0) return 'Custo adicional com quantidade negativa.'
+    }
+    return null
+  }
+
+  function validarDestinos(): string | null {
+    for (const d of destinos) {
+      if (!d.endereco.trim()) return 'Preencha o endereço de entrega em todo destino lançado.'
+      const r = calcularCustoDestino(d, aliquotaDestinos)
+      if (r.erro) return r.erro
+      if (r.valorFinal == null || r.valorFinal <= 0) return 'Todo destino precisa de frete do motorista preenchido, pra calcular o valor final.'
     }
     return null
   }
@@ -1143,6 +1438,32 @@ export default function Cotacao() {
       p_itens: itensParaBanco(),
     })
     if (errItens) throw errItens
+    // Destinos: apaga tudo que estava salvo e regrava a lista atual da tela (mesmo padrão
+    // simples de "substituir tudo" usado pros custos adicionais, sem RPC porque aqui não tem
+    // recálculo de gatilho no banco).
+    const { error: errDelDestinos } = await supabase.from('cotacao_destinos').delete().eq('cotacao_id', id)
+    if (errDelDestinos) throw errDelDestinos
+    if (destinos.length > 0) {
+      const { error: errInsDestinos } = await supabase.from('cotacao_destinos').insert(
+        destinos.map((d, i) => ({
+          cotacao_id: id as string,
+          ordem: i,
+          cidade_destino: d.cidade?.trim() || null,
+          uf_destino: d.uf?.trim().toUpperCase() || null,
+          endereco_entrega: d.endereco.trim(),
+          tabela_antt: d.tabela || null,
+          tipo_carga: d.tipo_carga || null,
+          eixos: numOrNull(d.eixos),
+          distancia_km: numOrNull(d.distancia_km),
+          piso_antt_referencia: pisoRefDestino(d),
+          frete_motorista: numOrNull(d.frete_motorista),
+          pedagio: numOrNull(d.pedagio),
+          margem_pct: (numOrNull(d.margem_pct) ?? 0) / 100,
+          valor: calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0,
+        })),
+      )
+      if (errInsDestinos) throw errInsDestinos
+    }
     if (Object.keys(extra).length > 0) {
       const { error } = await supabase.from('cotacoes').update(extra).eq('id', id)
       if (error) throw error
@@ -1167,6 +1488,11 @@ export default function Cotacao() {
     const erroItens = validarItens()
     if (erroItens) {
       setFormError(erroItens)
+      return
+    }
+    const erroDestinos = validarDestinos()
+    if (erroDestinos) {
+      setFormError(erroDestinos)
       return
     }
     setSaving(true)
@@ -1210,6 +1536,11 @@ export default function Cotacao() {
       setFormError(erroItens)
       return
     }
+    const erroDestinos = validarDestinos()
+    if (erroDestinos) {
+      setFormError(erroDestinos)
+      return
+    }
     setSaving(true)
     try {
       const final = await gravarTudo({ status: 'enviada' })
@@ -1231,6 +1562,10 @@ export default function Cotacao() {
     setSuccessMsg(null)
     if (!form.cliente_id) {
       setFormError('Selecione um cliente antes de converter em operação.')
+      return
+    }
+    if (destinos.length > 0) {
+      setFormError('Cotação com múltiplos destinos ainda não converte em operação automaticamente — crie a operação de cada trecho manualmente em Operações.')
       return
     }
     if (composicao?.frete == null || composicao.valorFinal == null) {
@@ -1312,6 +1647,146 @@ export default function Cotacao() {
     await load()
   }
 
+  // Descrição legível do prazo combinado com o cliente, pro PDF (mesma lógica de leitura
+  // usada na tela: regra cadastrada ou prazo personalizado desta negociação).
+  function textoPrazoPagamento(): string {
+    if (!form) return '-'
+    let regra: RegraPrazo | null = null
+    if (form.prazo_modo === 'personalizado') {
+      regra = form.prazo_personalizado
+    } else {
+      const c = condicoesPrazo.find((x) => x.id === form.condicao_prazo_id)
+      regra = c ? regraDeCondicao(c) : null
+    }
+    return descreverRegra(regra)
+  }
+
+  // Gera o PDF da cotação (dados_empresa + composição já calculada em tela) e dispara o
+  // download — é o "emitir cotação" que substitui o papel timbrado manual em Word.
+  // modo 'whatsapp': em vez de só baixar, tenta compartilhar o PDF já anexado (celular/Windows
+  // com Web Share API pra arquivo); sem suporte, abre a conversa no WhatsApp Web e baixa o PDF
+  // pra anexar na hora — mesmo padrão já usado no envio de fatura.
+  async function emitirPdf(modo: 'baixar' | 'whatsapp' = 'baixar') {
+    if (!form || !editingId) return
+    setFormError(null)
+    if (!form.cliente_id) {
+      setFormError('Selecione um cliente antes de emitir a cotação.')
+      return
+    }
+    const multiDestino = destinos.length > 0
+    if (!multiDestino) {
+      if (!composicao || composicao.valorFinal == null) {
+        setFormError('Preencha o frete do motorista (e o restante da composição do preço) antes de emitir a cotação.')
+        return
+      }
+      if (composicao.erro) {
+        setFormError(composicao.erro)
+        return
+      }
+    } else {
+      const erroDestinos = validarDestinos()
+      if (erroDestinos) {
+        setFormError(erroDestinos)
+        return
+      }
+    }
+    setEmitindoPdf(true)
+    try {
+      const cliente = clientes.find((c) => c.id === form.cliente_id)
+      const valorNf = numOrNull(form.valor_nf) ?? 0
+      // Cotação com múltiplos destinos: uma linha por destino (cidade/UF + valor final daquele
+      // trecho), sem detalhar a composição de custo — igual ao modelo antigo (Fretes Cotados).
+      // Cotação de rota única: detalha frete/pedágio/seguro/custos como sempre.
+      const itensPreco: ItemPrecoCotacao[] = multiDestino
+        ? destinos.map((d) => ({
+            descricao: d.endereco.trim() || [d.cidade, d.uf].filter(Boolean).join('/'),
+            valor: calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0,
+          }))
+        : []
+      if (!multiDestino && composicao) {
+        if (composicao.frete != null) itensPreco.push({ descricao: 'Frete rodoviário', valor: composicao.frete })
+        if (composicao.pedagio > 0) {
+          const detalhe =
+            pracasPedagio.length > 0
+              ? pracasPedagio.map((p) => `${p.nome} (${p.rodovia}${p.km != null ? ` km ${p.km}` : ''})`).join(' · ')
+              : undefined
+          itensPreco.push({ descricao: 'Pedágio', valor: composicao.pedagio, detalhe })
+        }
+        if (composicao.seguroTag > 0) itensPreco.push({ descricao: 'Seguro (TAG)', valor: composicao.seguroTag })
+        for (const i of itens) {
+          const valor = valorItem(i, valorNf)
+          if (valor !== 0) itensPreco.push({ descricao: i.descricao.trim() || tipoPorId.get(i.tipo_id)?.nome || 'Custo adicional', valor })
+        }
+      }
+      const valorTotalPdf = multiDestino ? (somaDestinos ?? 0) : (composicao?.valorFinal ?? 0)
+      const dados: CotacaoPdfDados = {
+        numero: editingId.slice(0, 8).toUpperCase(),
+        dataEmissao: new Date().toISOString(),
+        clienteNome: cliente?.nome_fantasia || cliente?.razao_social || '-',
+        clienteDocumento: cliente?.cnpj ? `CNPJ ${cliente.cnpj}` : cliente?.cpf ? `CPF ${cliente.cpf}` : null,
+        clienteContato: cliente?.nome_contato_comercial || null,
+        cidadeOrigem: form.cidade_origem || null,
+        ufOrigem: form.uf_origem || null,
+        cidadeDestino: multiDestino ? null : form.cidade_destino || null,
+        ufDestino: multiDestino ? null : form.uf_destino || null,
+        distanciaKm: multiDestino ? null : numOrNull(form.distancia_km),
+        tipoCarga: form.tipo_carga || null,
+        pesoBrutoKg: numOrNull(form.peso_bruto_kg),
+        valorNf: numOrNull(form.valor_nf),
+        itensPreco,
+        valorTotal: valorTotalPdf,
+        prazoPagamento: textoPrazoPagamento(),
+        formaPagamento: FORMA_PAGTO_LABEL[form.forma_recebimento] ?? form.forma_recebimento,
+        validadeDias: numOrNull(form.validade_dias) ?? 5,
+      }
+      const [{ gerarCotacaoPdf }, empresa] = await Promise.all([import('../lib/cotacaoPdf'), lerParametro<EmpresaCotacao>('dados_empresa')])
+      const blob = gerarCotacaoPdf(dados, empresa ?? {})
+      const nomeArquivo = `cotacao-${dados.numero}-${(dados.clienteNome ?? '').replace(/[^\w]+/g, '-').slice(0, 30)}.pdf`
+
+      if (modo === 'whatsapp') {
+        if (!cliente?.celular_whatsapp) {
+          setFormError('Esse cliente não tem WhatsApp cadastrado — adicione o número em Cadastros antes de enviar.')
+          return
+        }
+        const primeiroNome = (cliente.nome_contato_comercial || dados.clienteNome || '').split(' ')[0]
+        const trecho = dados.cidadeDestino ? `${dados.cidadeOrigem ?? '?'}/${dados.ufOrigem ?? '?'} → ${dados.cidadeDestino}/${dados.ufDestino ?? '?'}` : 'vários destinos'
+        const texto = `Olá${primeiroNome ? `, ${primeiroNome}` : ''}! Aqui é da RBR Cargo. Segue a cotação nº ${dados.numero} (${trecho}), valor ${formatMoney(dados.valorTotal)}. Já anexo o PDF aqui.`
+        const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' })
+        const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean; share?: (d: ShareData) => Promise<void> }
+        if (nav.share && nav.canShare?.({ files: [arquivo] })) {
+          try {
+            await nav.share({ files: [arquivo], text: texto, title: `Cotação ${dados.numero}` })
+          } catch (e) {
+            if ((e as Error)?.name !== 'AbortError') setFormError(e instanceof Error ? e.message : 'Não consegui compartilhar o PDF.')
+          }
+          return
+        }
+        // Sem compartilhamento nativo de arquivo (a maioria dos navegadores em computador):
+        // abre a conversa do cliente já logada no WhatsApp Web e baixa o PDF pra anexar na hora.
+        window.open(whatsappLink(cliente.celular_whatsapp, texto), '_blank', 'noopener')
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = nomeArquivo
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 5000)
+        setSuccessMsg('PDF baixado — é só anexar na conversa do WhatsApp que abriu.')
+        return
+      }
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = nomeArquivo
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Erro ao gerar o PDF da cotação.')
+    } finally {
+      setEmitindoPdf(false)
+    }
+  }
+
   function adicionarItem(tipoId: string) {
     const t = tipoPorId.get(tipoId)
     if (!t) return
@@ -1327,10 +1802,112 @@ export default function Cotacao() {
     setItens((lista) => lista.filter((i) => i.key !== key))
   }
 
+  function adicionarDestino() {
+    setDestinos((lista) => [
+      ...lista,
+      {
+        key: novaChave(),
+        endereco: '',
+        tabela: '',
+        tipo_carga: '',
+        eixos: '',
+        distancia_km: '',
+        frete_motorista: '',
+        pedagio: '',
+        margem_pct: '',
+      },
+    ])
+  }
+
+  function editarDestino(key: string, campo: keyof DestinoLinha, valor: string) {
+    setDestinos((lista) =>
+      lista.map((d) => {
+        if (d.key !== key) return d
+        const atualizado = { ...d, [campo]: valor }
+        // Trocar tabela ou tipo de carga pode invalidar o eixos escolhido — limpa se a
+        // combinação nova não tiver mais essa opção (mesmo comportamento da rota única).
+        if (campo === 'tabela' || campo === 'tipo_carga') {
+          const opcoes = eixosOpcoesPara(atualizado.tabela, atualizado.tipo_carga)
+          if (atualizado.eixos && !opcoes.includes(Number(atualizado.eixos))) atualizado.eixos = ''
+        }
+        return atualizado
+      }),
+    )
+  }
+
+  function removerDestino(key: string) {
+    setDestinos((lista) => lista.filter((d) => d.key !== key))
+    setErroDestino((e) => (e?.key === key ? null : e))
+  }
+
+  // Botão "Calcular Piso ANTT + Pedágio" de uma linha de destino: usa o endereço completo do
+  // cliente (origem) e o endereço de entrega do destino (destino) pra traçar a rota e estimar
+  // o piso ANTT — o mesmo edge function da rota única, só que com endereço em vez de cidade/UF.
+  // Pedágio segue manual por enquanto: a calculadora ainda não estima praças na rota.
+  async function calcularRotaDestino(key: string) {
+    const d = destinos.find((x) => x.key === key)
+    if (!d) return
+    if (!enderecoOrigemCliente) {
+      setErroDestino({ key, msg: 'Selecione um cliente com endereço cadastrado antes de calcular.' })
+      return
+    }
+    if (!d.endereco.trim()) {
+      setErroDestino({ key, msg: 'Preencha o endereço de entrega antes de calcular.' })
+      return
+    }
+    setErroDestino(null)
+    setCalculandoDestino(key)
+    try {
+      const { data, error } = await supabase.functions.invoke('calcular-rota-frete', {
+        body: {
+          endereco_origem: enderecoOrigemCliente,
+          endereco_destino: d.endereco.trim(),
+          tipo_carga: d.tipo_carga || undefined,
+          eixos: d.eixos ? Number(d.eixos) : undefined,
+          tabela: d.tabela || undefined,
+        },
+      })
+      if (error || !data?.sucesso) {
+        setErroDestino({ key, msg: data?.erro ?? error?.message ?? 'Não consegui calcular a rota agora.' })
+        return
+      }
+      const resultado = data as RotaCalculada
+      setDestinos((lista) =>
+        lista.map((x) => (x.key === key ? { ...x, distancia_km: String(resultado.distancia_km) } : x)),
+      )
+    } catch (e) {
+      setErroDestino({ key, msg: e instanceof Error ? e.message : 'Erro ao chamar o cálculo de rota.' })
+    } finally {
+      setCalculandoDestino(null)
+    }
+  }
+
   const clienteNomePorId = useMemo(
     () => new Map(clientes.map((c) => [c.id, c.nome_fantasia ?? c.razao_social ?? ''])),
     [clientes],
   )
+  const clienteWhatsappPorId = useMemo(() => new Map(clientes.map((c) => [c.id, c.celular_whatsapp])), [clientes])
+
+  // Clique em "Enviar WhatsApp" num card da lista: abre a cotação (reaproveita o mesmo cálculo
+  // de composição do formulário) e marca como pendente — o efeito abaixo dispara assim que
+  // custos adicionais e destinos terminarem de carregar.
+  function enviarWhatsAppDaLista(c: CotacaoEnriquecida) {
+    if (!clienteWhatsappPorId.get(c.cliente_id ?? '')) {
+      setListError('Esse cliente não tem WhatsApp cadastrado — adicione o número em Cadastros antes de enviar.')
+      return
+    }
+    setListError(null)
+    abrirEdicao(c)
+    setPendingWhatsAppId(c.id)
+  }
+
+  useEffect(() => {
+    if (!pendingWhatsAppId || editingId !== pendingWhatsAppId) return
+    if (carregandoItens || carregandoDestinos) return
+    setPendingWhatsAppId(null)
+    emitirPdf('whatsapp')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingWhatsAppId, editingId, carregandoItens, carregandoDestinos])
 
   const lista = useMemo(() => {
     const termo = normalizar(busca.trim())
@@ -1490,7 +2067,20 @@ export default function Cotacao() {
                 value={form.cliente_id}
                 onChange={(e) => {
                   const id = e.target.value
-                  setForm((f) => (f ? { ...f, cliente_id: id } : f))
+                  const cli = clientes.find((c) => c.id === id)
+                  setForm((f) =>
+                    f
+                      ? {
+                          ...f,
+                          cliente_id: id,
+                          // Origem da rota vem do endereço cadastrado do cliente — mantém
+                          // cidade/UF de origem preenchidas por trás pra não quebrar a
+                          // calculadora de rota única, que ainda usa esses dois campos.
+                          cidade_origem: cli?.cidade ?? f.cidade_origem,
+                          uf_origem: cli?.uf ?? f.uf_origem,
+                        }
+                      : f,
+                  )
                   if (id && !editingId) sugerirPrazoDoCliente(id)
                 }}
                 className={inputClass}
@@ -1620,21 +2210,33 @@ export default function Cotacao() {
             </div>
           </div>
 
-          {/* NF-e upload */}
-          <div className="rounded-xl p-3.5 flex flex-col gap-2" style={{ background: 'var(--rbr-muted-bg)' }}>
-            <label className={labelClass}>Carregar XML da NF-e (opcional)</label>
-            <input type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="text-xs" />
-            <div className="text-[11px] text-[color:var(--rbr-muted)]">
-              Leitura 100% local do arquivo — preenche os campos abaixo automaticamente, mas todos continuam editáveis depois.
-            </div>
-            {xmlError && (
-              <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                {xmlError}
+          {/* Dados fiscais da NF-e — opcional, só usado na emissão de CT-e/MDF-e depois.
+              Colapsado por padrão pra não competir com os campos de rota (esses sim usados em
+              toda cotação); abre sozinho se já tiver dado de NF-e salvo. */}
+          <details
+            className="rounded-xl p-3.5"
+            style={{ background: 'var(--rbr-muted-bg)' }}
+            open={Boolean(form.nf_chave_acesso || form.nf_remetente_razao_social || form.nf_destinatario_razao_social || form.xml_danfe_url)}
+          >
+            <summary className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] cursor-pointer">
+              Dados fiscais da NF-e (opcional) — XML, CT-e/MDF-e
+            </summary>
+            <div className="flex flex-col gap-3 mt-3">
+            <div className="flex flex-col gap-2">
+              <label className={labelClass}>Carregar XML da NF-e</label>
+              <input type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="text-xs" />
+              <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                Leitura 100% local do arquivo — preenche os campos abaixo automaticamente, inclusive origem/destino da rota, mas todos continuam
+                editáveis depois.
               </div>
-            )}
-          </div>
+              {xmlError && (
+                <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                  {xmlError}
+                </div>
+              )}
+            </div>
 
-          {/* Dados da NF-e */}
+            {/* Dados da NF-e */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Chave de acesso da NF-e</label>
@@ -1775,49 +2377,277 @@ export default function Cotacao() {
                 </button>
               )}
             </div>
-          </div>
+            </div>
+            </div>
+          </details>
 
           {/* Rota */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div>
-              <label className={labelClass}>Cidade origem</label>
-              <input
-                value={form.cidade_origem}
-                onChange={(e) => setForm((f) => (f ? { ...f, cidade_origem: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>UF origem</label>
-              <input
-                maxLength={2}
-                value={form.uf_origem}
-                onChange={(e) => setForm((f) => (f ? { ...f, uf_origem: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Cidade destino</label>
-              <input
-                value={form.cidade_destino}
-                onChange={(e) => setForm((f) => (f ? { ...f, cidade_destino: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>UF destino</label>
-              <input
-                maxLength={2}
-                value={form.uf_destino}
-                onChange={(e) => setForm((f) => (f ? { ...f, uf_destino: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass}>Origem</label>
+            {clienteSelecionado ? (
+              <div className="text-xs font-semibold rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
+                {enderecoOrigemCliente || 'Cliente selecionado não tem endereço cadastrado — complete o cadastro pra calcular a rota.'}
+              </div>
+            ) : (
+              <div className="text-[11px] text-[color:var(--rbr-muted)]">Selecione um cliente acima — a origem vem do endereço cadastrado dele.</div>
+            )}
           </div>
+          {destinos.length === 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className={labelClass}>Cidade destino</label>
+                <input
+                  value={form.cidade_destino}
+                  onChange={(e) => setForm((f) => (f ? { ...f, cidade_destino: e.target.value } : f))}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>UF destino</label>
+                <input
+                  maxLength={2}
+                  value={form.uf_destino}
+                  onChange={(e) => setForm((f) => (f ? { ...f, uf_destino: e.target.value } : f))}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+          )}
+          {destinos.length > 0 && (
+            <div className="text-[11px] text-[color:var(--rbr-muted)] -mt-2">
+              Cidade/UF destino ficam de fora — essa cotação tem vários destinos (lista abaixo, cada um com endereço próprio).
+            </div>
+          )}
+
+          {/* Destinos múltiplos — cotação com vários destinos a partir da mesma origem (ex.: CD
+              que despacha pra várias cidades), cada um com seu preço final ao cliente. */}
+          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={destinos.length > 0}>
+            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
+              <span>
+                Vários destinos (opcional) {carregandoDestinos && '· carregando…'}
+                {destinos.length > 0 && ` — ${destinos.length} destino${destinos.length > 1 ? 's' : ''}`}
+              </span>
+              {somaDestinos != null && <span className="text-sm font-bold tabular-nums">{formatMoney(somaDestinos)}</span>}
+            </summary>
+            <div className="flex flex-col gap-2.5 mt-3">
+              <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                Pra cotação com um CD ou origem única distribuindo pra várias cidades — cada linha é um destino com o valor final
+                cobrado do cliente naquele trecho. Ao usar essa lista, o valor total da cotação vira a soma das linhas (a composição de
+                preço de rota única abaixo fica de fora). "Converter em operação" fica desabilitado — crie a operação de cada trecho
+                manualmente depois.
+              </div>
+
+              {destinos.map((d) => {
+                const opcoesEixos = eixosOpcoesPara(d.tabela, d.tipo_carga)
+                const ref = pisoRefDestino(d)
+                const custoDestino = calcularCustoDestino(d, aliquotaDestinos)
+                const freteNum = numOrNull(d.frete_motorista)
+                const abaixo = ref != null && freteNum != null && freteNum < round2(ref)
+                const calculando = calculandoDestino === d.key
+                const erro = erroDestino?.key === d.key ? erroDestino.msg : null
+                const badgeStyle: CSSProperties = {
+                  fontSize: 9,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '.03em',
+                  background: 'var(--rbr-positive)',
+                  color: '#fff',
+                  padding: '2px 6px',
+                  borderRadius: 999,
+                }
+                return (
+                  <div key={d.key} className="rounded-lg border p-3 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
+                    <div>
+                      <label className={labelClass}>Endereço de entrega completo</label>
+                      <input
+                        placeholder="Rua, número, bairro, cidade/UF"
+                        value={d.endereco}
+                        onChange={(e) => editarDestino(d.key, 'endereco', e.target.value)}
+                        className={inputClass}
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <select
+                        value={d.tabela}
+                        onChange={(e) => editarDestino(d.key, 'tabela', e.target.value)}
+                        className={inputClass}
+                        style={inputStyle}
+                      >
+                        <option value="">Tabela ANTT</option>
+                        {TABELAS.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={d.tipo_carga}
+                        onChange={(e) => editarDestino(d.key, 'tipo_carga', e.target.value)}
+                        className={inputClass}
+                        style={inputStyle}
+                      >
+                        <option value="">Tipo de carga</option>
+                        {TIPOS_CARGA.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={d.eixos}
+                        onChange={(e) => editarDestino(d.key, 'eixos', e.target.value)}
+                        disabled={opcoesEixos.length === 0}
+                        className={inputClass}
+                        style={inputStyle}
+                      >
+                        <option value="">{opcoesEixos.length === 0 ? 'Escolha tabela e tipo' : 'Eixos'}</option>
+                        {opcoesEixos.map((n) => (
+                          <option key={n} value={n}>
+                            {n} eixos
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => calcularRotaDestino(d.key)}
+                        disabled={calculando}
+                        className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
+                        style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                      >
+                        {calculando ? 'Calculando…' : 'Calcular Piso ANTT + Pedágio'}
+                      </button>
+                      <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                        Usa o endereço do cliente (origem) e o de entrega acima. Pedágio ainda é estimado manualmente — confira antes de emitir.
+                      </span>
+                    </div>
+                    {erro && (
+                      <div className="text-[11px] font-semibold rounded-lg px-2.5 py-1.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                        {erro}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 rounded-lg p-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className={labelClass} style={{ marginBottom: 0 }}>
+                            Distância (km)
+                          </label>
+                          {d.distancia_km && <span style={badgeStyle}>calculado</span>}
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={d.distancia_km}
+                          onChange={(e) => editarDestino(d.key, 'distancia_km', e.target.value)}
+                          className={inputClass}
+                          style={{ ...inputStyle, background: '#fff' }}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className={labelClass} style={{ marginBottom: 0 }}>
+                            Piso ANTT (R$)
+                          </label>
+                          {ref != null && <span style={badgeStyle}>calculado</span>}
+                        </div>
+                        <input readOnly value={ref != null ? formatMoney(ref) : '—'} className={inputClass} style={{ ...inputStyle, background: '#fbfbfd' }} />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className={labelClass} style={{ marginBottom: 0 }}>
+                            Pedágio (R$)
+                          </label>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={d.pedagio}
+                          onChange={(e) => editarDestino(d.key, 'pedagio', e.target.value)}
+                          className={inputClass}
+                          style={{ ...inputStyle, background: '#fff' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <label className={labelClass}>Frete motorista (R$)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={d.frete_motorista}
+                          onChange={(e) => editarDestino(d.key, 'frete_motorista', e.target.value)}
+                          className={inputClass}
+                          style={{ ...inputStyle, borderColor: abaixo ? 'var(--rbr-danger)' : 'var(--rbr-border)', fontWeight: 700 }}
+                        />
+                        {abaixo && ref != null && (
+                          <div className="text-[11px] font-semibold mt-1" style={{ color: 'var(--rbr-danger)' }}>
+                            Abaixo do piso ANTT de referência ({formatMoney(ref)}).
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Margem (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={d.margem_pct}
+                          onChange={(e) => editarDestino(d.key, 'margem_pct', e.target.value)}
+                          className={inputClass}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+
+                    {custoDestino.erro && (
+                      <div className="text-[11px] font-semibold rounded-lg px-2.5 py-1.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                        {custoDestino.erro}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t" style={{ borderColor: 'var(--rbr-border)' }}>
+                      <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
+                        <span>
+                          Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(custoDestino.custo)}</strong>
+                        </span>
+                        {custoDestino.lucro != null && (
+                          <span>
+                            Lucro líquido: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(custoDestino.lucro)}</strong>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
+                          {custoDestino.valorFinal != null ? formatMoney(custoDestino.valorFinal) : '—'}
+                        </span>
+                        <button type="button" onClick={() => removerDestino(d.key)} className="text-[11px] font-semibold underline" style={{ color: 'var(--rbr-danger)' }}>
+                          remover
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+
+              <button
+                type="button"
+                onClick={adicionarDestino}
+                className="self-start text-[11px] font-bold px-2.5 py-1.5 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+              >
+                + Adicionar destino
+              </button>
+            </div>
+          </details>
 
           {/* Carga */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1933,6 +2763,13 @@ export default function Cotacao() {
               </div>
             </div>
 
+            {destinos.length > 0 && (
+              <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
+                Essa cotação tem vários destinos (seção acima) — o valor total ao cliente é a soma dos destinos, não a composição
+                abaixo. Preencha esses campos só se fizer sentido pra referência interna.
+              </div>
+            )}
+
             {precoLegado && composicao?.frete == null && (
               <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
                 Cotação criada antes da composição de preço (valor salvo: {formatMoney(precoLegado.valorTotal)}, lucro{' '}
@@ -1973,12 +2810,90 @@ export default function Cotacao() {
                   min={0}
                   step="0.01"
                   value={form.pedagio}
+                  disabled={pracasPedagio.length > 0}
                   onChange={(e) => setForm((f) => (f ? { ...f, pedagio: e.target.value } : f))}
                   className={inputClass}
-                  style={inputStyle}
+                  style={{ ...inputStyle, opacity: pracasPedagio.length > 0 ? 0.6 : 1 }}
                 />
-                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">Valor da rota no Qualp, pra quantidade de eixos do veículo.</div>
+                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                  {pracasPedagio.length > 0 ? 'Soma automática das praças lançadas abaixo.' : 'Valor da rota no Qualp, ou lance as praças abaixo.'}
+                </div>
               </div>
+
+              <div className="col-span-1 md:col-span-2 rounded-lg border p-2.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Praças de pedágio (opcional)</div>
+                  {pracasPedagio.length > 0 && (
+                    <div className="text-xs font-bold tabular-nums">{formatMoney(pracasPedagio.reduce((acc, p) => acc + p.valor, 0))}</div>
+                  )}
+                </div>
+
+                {pracasPedagio.map((p, i) => (
+                  <div key={`${p.praca_id}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-[color:var(--rbr-navy-dark)]">
+                      {p.nome} · {p.rodovia}
+                      {p.km != null ? ` km ${p.km}` : ''} · cat. {p.categoria}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="tabular-nums font-semibold">{formatMoney(p.valor)}</span>
+                      <button type="button" onClick={() => removerPraca(i)} className="underline font-semibold" style={{ color: 'var(--rbr-danger)' }}>
+                        remover
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  <input
+                    placeholder="Filtrar por nome, rodovia ou UF"
+                    value={pracaBusca}
+                    onChange={(e) => setPracaBusca(e.target.value)}
+                    className={`${inputClass} md:col-span-2`}
+                    style={inputStyle}
+                  />
+                  <select
+                    value={pracaEscolhidaId}
+                    onChange={(e) => {
+                      setPracaEscolhidaId(e.target.value)
+                      setPracaCategoria('')
+                    }}
+                    className={inputClass}
+                    style={inputStyle}
+                  >
+                    <option value="">Selecione a praça…</option>
+                    {pracasFiltradas.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome} — {p.rodovia}
+                        {p.km != null ? ` km ${p.km}` : ''} ({p.uf})
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={pracaCategoria}
+                    onChange={(e) => setPracaCategoria(e.target.value)}
+                    disabled={!pracaEscolhida}
+                    className={inputClass}
+                    style={inputStyle}
+                  >
+                    <option value="">Categoria…</option>
+                    {categoriasDaPracaEscolhida.map((c) => (
+                      <option key={c.categoria} value={c.categoria}>
+                        Cat. {c.categoria} — {formatMoney(c.valor)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={adicionarPraca}
+                  disabled={!pracaEscolhida || !pracaCategoria}
+                  className="self-start text-[11px] font-bold px-2.5 py-1.5 rounded-lg border disabled:opacity-40"
+                  style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                >
+                  + Adicionar praça
+                </button>
+              </div>
+
               <div>
                 <label className={labelClass}>TAG seguro — faixa de risco</label>
                 <div className="flex gap-2">
@@ -2144,11 +3059,28 @@ export default function Cotacao() {
                 </div>
               )}
 
-              {itens.length === 0 && !carregandoItens && (
-                <div className="text-[11px] text-[color:var(--rbr-muted)]">Nenhum custo adicional nesta cotação.</div>
+              {itensObrigatorios.length > 0 && (
+                <div className="flex flex-col gap-1 text-[11px]">
+                  {itensObrigatorios.map((i) => {
+                    const tipo = tipoPorId.get(i.tipo_id)
+                    const valor = valorItem(i, numOrNull(form.valor_nf) ?? 0)
+                    return (
+                      <div key={i.key} className="flex items-center justify-between gap-2 text-[color:var(--rbr-muted)]">
+                        <span>
+                          {tipo?.nome ?? 'Custo'} <span className="font-semibold">(obrigatório em toda carga)</span>
+                        </span>
+                        <span className="tabular-nums font-semibold">{formatMoney(valor)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
 
-              {itens.map((i) => {
+              {itensOpcionais.length === 0 && !carregandoItens && (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">Nenhum custo adicional opcional nesta cotação.</div>
+              )}
+
+              {itensOpcionais.map((i) => {
                 const tipo = tipoPorId.get(i.tipo_id)
                 const rotulo = FORMA_LABEL[i.forma_calculo]
                 const valor = valorItem(i, numOrNull(form.valor_nf) ?? 0)
@@ -2424,6 +3356,25 @@ export default function Cotacao() {
                 </select>
               </div>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:max-w-[160px]">
+                <label className={labelClass}>Validade da proposta (dias)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={form.validade_dias}
+                  onChange={(e) => setForm((f) => (f ? { ...f, validade_dias: e.target.value.replace(/[^\d]/g, '') } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                  placeholder="5"
+                />
+              </div>
+              <div className="md:col-span-2 flex items-end">
+                <span className="text-[11px] text-[color:var(--rbr-muted)] pb-2">
+                  Depois desse prazo a proposta é considerada expirada. Vale a partir da data de emissão do PDF.
+                </span>
+              </div>
+            </div>
             {form.prazo_modo === 'personalizado' && form.prazo_personalizado && (
               <EditorParcelas regra={form.prazo_personalizado} onChange={(r) => setForm((f) => (f ? { ...f, prazo_personalizado: r } : f))} />
             )}
@@ -2581,6 +3532,29 @@ export default function Cotacao() {
               {saving ? 'Salvando…' : editingId ? 'Salvar alterações' : 'Criar cotação'}
             </button>
 
+            {editingId && (
+              <button
+                onClick={() => emitirPdf('baixar')}
+                disabled={saving || emitindoPdf}
+                className="text-sm font-bold px-4 py-2 rounded-xl border disabled:opacity-60"
+                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+              >
+                {emitindoPdf ? 'Gerando PDF…' : 'Emitir cotação (PDF)'}
+              </button>
+            )}
+
+            {editingId && (
+              <button
+                onClick={() => emitirPdf('whatsapp')}
+                disabled={saving || emitindoPdf}
+                title={form.cliente_id && !clienteWhatsappPorId.get(form.cliente_id) ? 'Cliente sem WhatsApp cadastrado' : undefined}
+                className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
+                style={{ background: '#1FA855', color: '#fff' }}
+              >
+                {emitindoPdf ? 'Gerando…' : 'Enviar por WhatsApp'}
+              </button>
+            )}
+
             {editingId && editingStatus === 'rascunho' && (
               <button
                 onClick={enviar}
@@ -2595,7 +3569,8 @@ export default function Cotacao() {
             {editingId && (editingStatus === 'rascunho' || editingStatus === 'enviada') && (
               <button
                 onClick={converter}
-                disabled={saving}
+                disabled={saving || destinos.length > 0}
+                title={destinos.length > 0 ? 'Cotação com múltiplos destinos — crie a operação de cada trecho manualmente em Operações' : undefined}
                 className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
                 style={{ background: 'var(--rbr-positive)', color: '#fff' }}
               >
@@ -2688,11 +3663,21 @@ export default function Cotacao() {
         {!loading &&
           lista.map((c) => {
             const margemC = margemBadge(c.margem_ajustada, margemMin, margemMax)
+            const temWhatsapp = Boolean(clienteWhatsappPorId.get(c.cliente_id ?? ''))
+            const enviandoEsta = pendingWhatsAppId === c.id
             return (
-              <button
+              <div
                 key={c.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => abrirEdicao(c)}
-                className="w-full text-left bg-white border rounded-[20px] p-[18px]"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    abrirEdicao(c)
+                  }
+                }}
+                className="w-full text-left bg-white border rounded-[20px] p-[18px] cursor-pointer"
                 style={cardStyle}
               >
                 <div className="flex items-center justify-between mb-2.5 gap-3 flex-wrap">
@@ -2733,7 +3718,21 @@ export default function Cotacao() {
                     {c.motivo_perda_detalhe ? ` — ${c.motivo_perda_detalhe}` : ''}
                   </div>
                 )}
-              </button>
+                <div className="mt-2.5 pt-2.5 border-t flex justify-end" style={{ borderColor: 'var(--rbr-border)' }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      enviarWhatsAppDaLista(c)
+                    }}
+                    disabled={!temWhatsapp || enviandoEsta}
+                    title={temWhatsapp ? undefined : 'Cliente sem WhatsApp cadastrado'}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                    style={{ background: '#1FA855', color: '#fff' }}
+                  >
+                    {enviandoEsta ? 'Preparando…' : 'Enviar WhatsApp'}
+                  </button>
+                </div>
+              </div>
             )
           })}
       </div>
