@@ -5,6 +5,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
 import { IconQuote, IconChevronRight, IconCheck } from '@rbr/shared/icons'
+import { IconX } from '../icons-local'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
@@ -21,7 +22,6 @@ type PisoCoeficiente = Database['public']['Tables']['piso_antt_coeficientes']['R
 type TipoCusto = Database['public']['Tables']['tipos_custo_adicional']['Row']
 type CustoAdicionalRow = Database['public']['Tables']['cotacao_custos_adicionais']['Row']
 type Fornecedor = Database['public']['Tables']['fornecedores']['Row']
-type PracaPedagio = Database['public']['Tables']['pracas_pedagio']['Row']
 
 type CotacaoEnriquecida = Cotacao & { clienteNome?: string | null }
 
@@ -186,6 +186,10 @@ const cardStyle = {
 const inputClass = 'border rounded-lg px-3 py-2 text-sm outline-none w-full'
 const inputStyle = { borderColor: 'var(--rbr-border)' }
 const labelClass = 'text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1.5 block'
+// Link pra revelar um grupo de campos adicionais/opcionais (tudo que não aparece no preview
+// aprovado some atrás de uma palavra clicável assim, em vez de ocupar espaço na tela por padrão).
+const opcaoLinkClass = 'self-start text-[11px] font-bold underline'
+const opcaoLinkStyle: CSSProperties = { color: 'var(--rbr-navy)' }
 const badgeCalculadoStyle: CSSProperties = {
   fontSize: 9,
   fontWeight: 800,
@@ -460,8 +464,9 @@ export default function Cotacao() {
   const [projetos, setProjetos] = useState<Projeto[]>([])
   const [clienteFiltro, setClienteFiltro] = useState('')
 
-  // Praças de pedágio lançadas na cotação (soma automaticamente pro campo Pedágio).
-  const [pracasCatalogo, setPracasCatalogo] = useState<PracaPedagio[]>([])
+  // Praças de pedágio já lançadas em cotações antigas (soma automaticamente pro campo Pedágio).
+  // O lançamento manual de novas praças foi removido do formulário — pedágio agora é sempre um
+  // campo direto — mas cotações antigas com pedagio_pracas salvo continuam carregando aqui.
   const [pracasPedagio, setPracasPedagio] = useState<PracaSelecionada[]>([])
 
   // Destinos múltiplos (cotação com vários destinos a partir da mesma origem). Quando há
@@ -476,9 +481,6 @@ export default function Cotacao() {
   // piso ANTT de cada destino da lista de vários destinos, já que cada linha pode ter um
   // veículo diferente (ver eixosOpcoesPara / coefPara abaixo).
   const [pisoCoefsTodos, setPisoCoefsTodos] = useState<PisoCoeficiente[]>([])
-  const [pracaBusca, setPracaBusca] = useState('')
-  const [pracaEscolhidaId, setPracaEscolhidaId] = useState('')
-  const [pracaCategoria, setPracaCategoria] = useState('')
 
   const [margemMin, setMargemMin] = useState(0.26)
   const [margemMax, setMargemMax] = useState(0.4)
@@ -543,6 +545,27 @@ export default function Cotacao() {
   const [xmlError, setXmlError] = useState<string | null>(null)
   const [xmlArrastando, setXmlArrastando] = useState(false)
 
+  // Controles de exibição de campos "adicionais/opcionais" — ficam escondidos atrás de um
+  // link por padrão pra tela bater com o preview aprovado, e abrem sozinhos quando a cotação
+  // já tem algum dado preenchido naquele grupo (ver valores default logo abaixo de cada um).
+  const [mostrarOrigemExtra, setMostrarOrigemExtra] = useState(false)
+  const [mostrarMaisDadosCarga, setMostrarMaisDadosCarga] = useState(false)
+  const [mostrarCustosAdicionais, setMostrarCustosAdicionais] = useState(false)
+  const [mostrarCondicoesPagamento, setMostrarCondicoesPagamento] = useState(false)
+  const [impostoEditavel, setImpostoEditavel] = useState(false)
+  const [cargaComplexaAberta, setCargaComplexaAberta] = useState(false)
+
+  // Formulário abre como painel flutuante sobre o resto da tela (igual ao preview aprovado) —
+  // trava o scroll do body enquanto ele está aberto pra não rolar o conteúdo por trás junto.
+  useEffect(() => {
+    if (!form) return
+    const overflowAnterior = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = overflowAnterior
+    }
+  }, [form])
+
   const load = useCallback(async () => {
     setLoading(true)
     setListError(null)
@@ -598,11 +621,6 @@ export default function Cotacao() {
   const loadProjetos = useCallback(async () => {
     const { data } = await supabase.from('projetos').select('*').order('nome', { ascending: true }).limit(300)
     setProjetos(data ?? [])
-  }, [])
-
-  const loadPracasPedagio = useCallback(async () => {
-    const { data } = await supabase.from('pracas_pedagio').select('*').order('nome', { ascending: true }).limit(1000)
-    setPracasCatalogo(data ?? [])
   }, [])
 
   // Tabela inteira de piso_antt_coeficientes, carregada uma vez (é pequena — ~140 linhas) e
@@ -662,7 +680,6 @@ export default function Cotacao() {
     loadParametros()
     loadCatalogoCustos()
     loadCondicoes()
-    loadPracasPedagio()
     loadPisoCoeficientesTodos()
   }, [
     load,
@@ -672,7 +689,6 @@ export default function Cotacao() {
     loadParametros,
     loadCatalogoCustos,
     loadCondicoes,
-    loadPracasPedagio,
     loadPisoCoeficientesTodos,
   ])
 
@@ -922,40 +938,6 @@ export default function Cotacao() {
     return projetos.filter((p) => !p.cliente_id || p.cliente_id === form.cliente_id)
   }, [projetos, form?.cliente_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pracasFiltradas = useMemo(() => {
-    const termo = pracaBusca.trim().toLowerCase()
-    if (!termo) return pracasCatalogo.slice(0, 30)
-    return pracasCatalogo.filter((p) => `${p.nome} ${p.rodovia} ${p.uf} ${p.concessionaria ?? ''}`.toLowerCase().includes(termo)).slice(0, 30)
-  }, [pracasCatalogo, pracaBusca])
-
-  const pracaEscolhida = useMemo(() => pracasCatalogo.find((p) => p.id === pracaEscolhidaId) ?? null, [pracasCatalogo, pracaEscolhidaId])
-
-  const categoriasDaPracaEscolhida = useMemo(() => {
-    if (!pracaEscolhida) return []
-    const tarifas = (pracaEscolhida.tarifas ?? {}) as Record<string, number>
-    return Object.keys(tarifas)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((cat) => ({ categoria: cat, valor: Number(tarifas[cat]) }))
-  }, [pracaEscolhida])
-
-  function adicionarPraca() {
-    if (!pracaEscolhida || !pracaCategoria) return
-    const tarifas = (pracaEscolhida.tarifas ?? {}) as Record<string, number>
-    const valor = Number(tarifas[pracaCategoria])
-    if (!Number.isFinite(valor)) return
-    setPracasPedagio((lista) => [
-      ...lista,
-      { praca_id: pracaEscolhida.id, nome: pracaEscolhida.nome, rodovia: pracaEscolhida.rodovia, km: pracaEscolhida.km, categoria: pracaCategoria, valor },
-    ])
-    setPracaBusca('')
-    setPracaEscolhidaId('')
-    setPracaCategoria('')
-  }
-
-  function removerPraca(index: number) {
-    setPracasPedagio((lista) => lista.filter((_, i) => i !== index))
-  }
-
   function limparAuxiliares() {
     setFormError(null)
     setSuccessMsg(null)
@@ -969,10 +951,13 @@ export default function Cotacao() {
     setDetalhePerda('')
     setTipoParaAdicionar('')
     setPracasPedagio([])
-    setPracaBusca('')
-    setPracaEscolhidaId('')
-    setPracaCategoria('')
     setDestinos([])
+    setMostrarOrigemExtra(false)
+    setMostrarMaisDadosCarga(false)
+    setMostrarCustosAdicionais(false)
+    setMostrarCondicoesPagamento(false)
+    setImpostoEditavel(false)
+    setCargaComplexaAberta(false)
   }
 
   function abrirNovaCotacao() {
@@ -2029,19 +2014,40 @@ export default function Cotacao() {
       )}
 
       {form && (
-        <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-4" style={cardStyle}>
+        <div
+          className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-3 py-6 md:py-10"
+          style={{ background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) fecharForm()
+          }}
+        >
+        <div
+          className="w-full bg-white border rounded-[20px] p-[18px] flex flex-col gap-4 my-auto"
+          style={{ ...cardStyle, maxWidth: 760 }}
+        >
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
-              {editingId ? 'Editar cotação' : 'Nova cotação'}
+            <div className="flex items-center gap-2.5">
+              <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
+                {editingId ? 'Editar cotação' : 'Nova cotação'}
+              </div>
+              {editingId && (
+                <span
+                  className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                  style={{ background: statusBadgeBg(editingStatus) }}
+                >
+                  {STATUS_COTACAO_LABEL[editingStatus]}
+                </span>
+              )}
             </div>
-            {editingId && (
-              <span
-                className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                style={{ background: statusBadgeBg(editingStatus) }}
-              >
-                {STATUS_COTACAO_LABEL[editingStatus]}
-              </span>
-            )}
+            <button
+              type="button"
+              onClick={fecharForm}
+              aria-label="Fechar"
+              className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
+            >
+              <IconX width={14} height={14} />
+            </button>
           </div>
 
           {formError && (
@@ -2224,68 +2230,74 @@ export default function Cotacao() {
           </div>
           </div>
 
-          {/* Origem / agenciador / projeto */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className={labelClass}>Origem</label>
-              <select
-                value={form.origem}
-                onChange={(e) =>
-                  setForm((f) => (f ? { ...f, origem: e.target.value, agenciador_id: e.target.value === 'agenciador' ? f.agenciador_id : '' } : f))
-                }
-                className={inputClass}
-                style={inputStyle}
-              >
-                <option value="gestor">Gestor (RBR direta)</option>
-                <option value="agenciador">Agenciador</option>
-              </select>
-            </div>
-            {form.origem === 'agenciador' && (
+          {/* Origem / agenciador / projeto — não aparece no preview aprovado, então fica atrás
+              de um link; abre sozinho se a cotação já usa agenciador ou tem projeto vinculado. */}
+          {mostrarOrigemExtra || form.origem === 'agenciador' || form.projeto_id ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className={labelClass}>Agenciador</label>
+                <label className={labelClass}>Origem</label>
                 <select
-                  value={form.agenciador_id}
-                  onChange={(e) => setForm((f) => (f ? { ...f, agenciador_id: e.target.value } : f))}
+                  value={form.origem}
+                  onChange={(e) =>
+                    setForm((f) => (f ? { ...f, origem: e.target.value, agenciador_id: e.target.value === 'agenciador' ? f.agenciador_id : '' } : f))
+                  }
                   className={inputClass}
                   style={inputStyle}
                 >
-                  <option value="">Selecione…</option>
-                  {agenciadoresAtivos.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.nome}
+                  <option value="gestor">Gestor (RBR direta)</option>
+                  <option value="agenciador">Agenciador</option>
+                </select>
+              </div>
+              {form.origem === 'agenciador' && (
+                <div>
+                  <label className={labelClass}>Agenciador</label>
+                  <select
+                    value={form.agenciador_id}
+                    onChange={(e) => setForm((f) => (f ? { ...f, agenciador_id: e.target.value } : f))}
+                    className={inputClass}
+                    style={inputStyle}
+                  >
+                    <option value="">Selecione…</option>
+                    {agenciadoresAtivos.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className={labelClass}>Projeto (opcional)</label>
+                <select
+                  value={form.projeto_id}
+                  onChange={(e) => setForm((f) => (f ? { ...f, projeto_id: e.target.value } : f))}
+                  className={inputClass}
+                  style={inputStyle}
+                >
+                  <option value="">Nenhum</option>
+                  {projetosFiltrados.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
                     </option>
                   ))}
                 </select>
               </div>
-            )}
-            <div>
-              <label className={labelClass}>Projeto (opcional)</label>
-              <select
-                value={form.projeto_id}
-                onChange={(e) => setForm((f) => (f ? { ...f, projeto_id: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              >
-                <option value="">Nenhum</option>
-                {projetosFiltrados.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-              </select>
             </div>
-          </div>
+          ) : (
+            <button type="button" onClick={() => setMostrarOrigemExtra(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
+              + origem / agenciador / projeto
+            </button>
+          )}
 
           {/* Dados fiscais da NF-e — opcional, só usado na emissão de CT-e/MDF-e depois.
               Colapsado por padrão pra não competir com os campos de rota (esses sim usados em
               toda cotação); abre sozinho se já tiver dado de NF-e salvo. */}
           <details
-            className="rounded-xl p-3.5"
-            style={{ background: 'var(--rbr-muted-bg)' }}
+            className="[&_summary::-webkit-details-marker]:hidden"
             open={Boolean(form.nf_chave_acesso || form.nf_remetente_razao_social || form.nf_destinatario_razao_social || form.xml_danfe_url)}
           >
-            <summary className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] cursor-pointer">
-              Detalhes fiscais da NF-e (opcional) — chave, CT-e/MDF-e
+            <summary className={`${opcaoLinkClass} list-none`} style={opcaoLinkStyle}>
+              + detalhes fiscais da NF-e (chave, CT-e/MDF-e)
             </summary>
             <div className="flex flex-col gap-3 mt-3">
             <div className="text-[11px] text-[color:var(--rbr-muted)]">
@@ -2438,51 +2450,50 @@ export default function Cotacao() {
           </details>
 
           {/* Rota */}
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Rota</div>
           <div className="flex flex-col gap-1">
-            <label className={labelClass}>Origem</label>
             {clienteSelecionado ? (
-              <div className="text-xs font-semibold rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
-                {enderecoOrigemCliente || 'Cliente selecionado não tem endereço cadastrado — complete o cadastro pra calcular a rota.'}
+              <div className="text-xs" style={{ color: 'var(--rbr-muted)' }}>
+                Origem: {enderecoOrigemCliente || 'cliente selecionado não tem endereço cadastrado — complete o cadastro pra calcular a rota.'}
               </div>
             ) : (
               <div className="text-[11px] text-[color:var(--rbr-muted)]">Selecione um cliente acima — a origem vem do endereço cadastrado dele.</div>
             )}
           </div>
-          {destinos.length === 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className={labelClass}>Cidade destino</label>
-                <input
-                  value={form.cidade_destino}
-                  onChange={(e) => setForm((f) => (f ? { ...f, cidade_destino: e.target.value } : f))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
+
+          <div>
+            <label className={labelClass}>Valor da mercadoria (R$)</label>
+            <input
+              type="number"
+              min={0}
+              value={form.valor_nf}
+              onChange={(e) => setForm((f) => (f ? { ...f, valor_nf: e.target.value } : f))}
+              placeholder="sem XML — digite"
+              className={inputClass}
+              style={{ ...inputStyle, maxWidth: 220 }}
+            />
+            {!numOrNull(form.valor_nf) && (
+              <div className="text-[11px] font-semibold mt-1" style={{ color: 'var(--rbr-danger)' }}>
+                Sem XML/DANFE — preencha o valor da mercadoria à mão. A TAG seguro depende dele.
               </div>
-              <div>
-                <label className={labelClass}>UF destino</label>
-                <input
-                  maxLength={2}
-                  value={form.uf_destino}
-                  onChange={(e) => setForm((f) => (f ? { ...f, uf_destino: e.target.value } : f))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
+
           {destinos.length > 0 && (
-            <div className="text-[11px] text-[color:var(--rbr-muted)] -mt-2">
+            <div className="text-[11px] text-[color:var(--rbr-muted)]">
               Cidade/UF destino ficam de fora — essa cotação tem vários destinos (lista abaixo, cada um com endereço próprio).
             </div>
           )}
 
           {/* Destinos múltiplos — cotação com vários destinos a partir da mesma origem (ex.: CD
               que despacha pra várias cidades), cada um com seu preço final ao cliente. */}
-          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={destinos.length > 0}>
-            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
+          <details open={destinos.length > 0}>
+            <summary
+              className={destinos.length > 0 ? 'text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap' : `${opcaoLinkClass} list-none flex items-center justify-between gap-2 flex-wrap`}
+              style={destinos.length > 0 ? undefined : opcaoLinkStyle}
+            >
               <span>
-                Vários destinos (opcional) {carregandoDestinos && '· carregando…'}
+                + vários destinos (opcional) {carregandoDestinos && '· carregando…'}
                 {destinos.length > 0 && ` — ${destinos.length} destino${destinos.length > 1 ? 's' : ''}`}
               </span>
               {somaDestinos != null && <span className="text-sm font-bold tabular-nums">{formatMoney(somaDestinos)}</span>}
@@ -2705,41 +2716,39 @@ export default function Cotacao() {
             </div>
           </details>
 
-          {/* Carga */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className={labelClass}>Peso bruto (kg)</label>
-              <input
-                type="number"
-                value={form.peso_bruto_kg}
-                onChange={(e) => setForm((f) => (f ? { ...f, peso_bruto_kg: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
+          {/* Carga — peso bruto e NCMs não aparecem no preview aprovado (valor da mercadoria já
+              subiu pra junto de "Rota" acima); ficam atrás de um link, abrindo sozinhos se já
+              tiverem algum dado preenchido. */}
+          {mostrarMaisDadosCarga || form.peso_bruto_kg.trim() || form.ncms_produtos.trim() ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Peso bruto (kg)</label>
+                <input
+                  type="number"
+                  value={form.peso_bruto_kg}
+                  onChange={(e) => setForm((f) => (f ? { ...f, peso_bruto_kg: e.target.value } : f))}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>NCMs dos produtos</label>
+                <input
+                  placeholder="separados por vírgula"
+                  value={form.ncms_produtos}
+                  onChange={(e) => setForm((f) => (f ? { ...f, ncms_produtos: e.target.value } : f))}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+              </div>
             </div>
-            <div>
-              <label className={labelClass}>Valor da NF (R$)</label>
-              <input
-                type="number"
-                value={form.valor_nf}
-                onChange={(e) => setForm((f) => (f ? { ...f, valor_nf: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>NCMs dos produtos</label>
-              <input
-                placeholder="separados por vírgula"
-                value={form.ncms_produtos}
-                onChange={(e) => setForm((f) => (f ? { ...f, ncms_produtos: e.target.value } : f))}
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-          </div>
+          ) : (
+            <button type="button" onClick={() => setMostrarMaisDadosCarga(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
+              + peso bruto / NCMs dos produtos
+            </button>
+          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <div>
               <label className={labelClass}>TAG seguro — faixa de risco</label>
               <div className="flex gap-2">
@@ -2773,40 +2782,60 @@ export default function Cotacao() {
                 {composicao?.taxaSeguro != null
                   ? numOrNull(form.valor_nf) != null
                     ? `${formatPct(composicao.taxaSeguro)} × valor da NF (${formatMoney(numOrNull(form.valor_nf))}) = ${formatMoney(composicao.seguroTag)}`
-                    : 'Informe o valor da NF acima — a TAG é calculada sobre ele.'
-                  : 'Percentual aplicado sobre o valor da NF.'}
+                    : 'Informe o valor da mercadoria acima — a TAG é calculada sobre ele.'
+                  : '% sobre o valor da mercadoria.'}
               </div>
             </div>
             <div>
-              <label className={labelClass}>Imposto — alíquota aproximada</label>
-              <div className="relative" style={{ maxWidth: 160 }}>
+              <label className={labelClass}>Imposto {impostoEditavel ? '— alíquota aproximada' : '(travado)'}</label>
+              {impostoEditavel ? (
+                <>
+                  <div className="relative" style={{ maxWidth: 160 }}>
+                    <input
+                      inputMode="decimal"
+                      placeholder="ex.: 6"
+                      value={form.aliquota_imposto_pct}
+                      onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
+                      className={inputClass}
+                      style={{ ...inputStyle, paddingRight: 24 }}
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+                  </div>
+                  <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                    Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
+                    {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm rounded-lg px-3 py-2 border" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
+                    {form.aliquota_imposto_pct.trim() ? `${form.aliquota_imposto_pct}% · calculado sobre o valor final` : 'sem alíquota definida'}
+                  </div>
+                  <button type="button" onClick={() => setImpostoEditavel(true)} className="text-[11px] underline font-semibold mt-1" style={{ color: 'var(--rbr-navy)' }}>
+                    ajustar alíquota
+                  </button>
+                </>
+              )}
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-xs font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer">
                 <input
-                  inputMode="decimal"
-                  placeholder="ex.: 6"
-                  value={form.aliquota_imposto_pct}
-                  onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, paddingRight: 24 }}
+                  type="checkbox"
+                  checked={cargaComplexaAberta || sinaisAtivos.length > 0}
+                  onChange={(e) => setCargaComplexaAberta(e.target.checked)}
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
-              </div>
-              <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
-                Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
-                {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
-              </div>
+                Carga complexa (opcional)
+                {sinaisAtivos.length > 0 && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                    {sinaisAtivos.length}
+                  </span>
+                )}
+              </label>
+              <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">Escolta, AET, balsa, carga perigosa…</div>
             </div>
           </div>
 
-          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={sinaisAtivos.length > 0}>
-            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
-              <span>Carga complexa (opcional)</span>
-              {sinaisAtivos.length > 0 && (
-                <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                  {sinaisAtivos.length} sinal{sinaisAtivos.length > 1 ? 'is' : ''} ativo{sinaisAtivos.length > 1 ? 's' : ''}
-                </span>
-              )}
-            </summary>
-            <div className="text-[11px] text-[color:var(--rbr-muted)] mt-2 mb-2.5">Escolta, AET, balsa, carga perigosa…</div>
+          {(cargaComplexaAberta || sinaisAtivos.length > 0) && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="flex items-center gap-2 text-xs font-semibold">
               <input
@@ -2877,7 +2906,7 @@ export default function Cotacao() {
               </label>
             )}
             </div>
-          </details>
+          )}
 
           {/* Composição do preço — inclui a referência de piso ANTT/pedágio como primeiro
               bloco, no mesmo padrão visual do card "Destino" usado em Vários destinos. */}
@@ -2901,6 +2930,30 @@ export default function Cotacao() {
                 Cotação criada antes da composição de preço (valor salvo: {formatMoney(precoLegado.valorTotal)}, lucro{' '}
                 {formatMoney(precoLegado.lucro)}). Preencha o frete do motorista pra recalcular — enquanto isso, o valor antigo
                 fica como está.
+              </div>
+            )}
+
+            {destinos.length === 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelClass} style={{ marginBottom: 0 }}>Cidade destino</label>
+                  <input
+                    value={form.cidade_destino}
+                    onChange={(e) => setForm((f) => (f ? { ...f, cidade_destino: e.target.value } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass} style={{ marginBottom: 0 }}>UF destino</label>
+                  <input
+                    maxLength={2}
+                    value={form.uf_destino}
+                    onChange={(e) => setForm((f) => (f ? { ...f, uf_destino: e.target.value.toUpperCase() } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  />
+                </div>
               </div>
             )}
 
@@ -3091,79 +3144,28 @@ export default function Cotacao() {
                 </div>
               </div>
 
-              <div className="col-span-1 md:col-span-2 rounded-lg border p-2.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Praças de pedágio (opcional)</div>
-                  {pracasPedagio.length > 0 && (
-                    <div className="text-xs font-bold tabular-nums">{formatMoney(pracasPedagio.reduce((acc, p) => acc + p.valor, 0))}</div>
-                  )}
-                </div>
-
-                {pracasPedagio.map((p, i) => (
-                  <div key={`${p.praca_id}-${i}`} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-[color:var(--rbr-navy-dark)]">
-                      {p.nome} · {p.rodovia}
-                      {p.km != null ? ` km ${p.km}` : ''} · cat. {p.categoria}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className="tabular-nums font-semibold">{formatMoney(p.valor)}</span>
-                      <button type="button" onClick={() => removerPraca(i)} className="underline font-semibold" style={{ color: 'var(--rbr-danger)' }}>
-                        remover
-                      </button>
+              {pracasPedagio.length > 0 && (
+                <div className="col-span-1 md:col-span-2 rounded-lg border p-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
+                      Pedágio detalhado (lançado antes por praças)
                     </div>
+                    <div className="text-xs font-bold tabular-nums">{formatMoney(pracasPedagio.reduce((acc, p) => acc + p.valor, 0))}</div>
                   </div>
-                ))}
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                  <input
-                    placeholder="Filtrar por nome, rodovia ou UF"
-                    value={pracaBusca}
-                    onChange={(e) => setPracaBusca(e.target.value)}
-                    className={`${inputClass} md:col-span-2`}
-                    style={inputStyle}
-                  />
-                  <select
-                    value={pracaEscolhidaId}
-                    onChange={(e) => {
-                      setPracaEscolhidaId(e.target.value)
-                      setPracaCategoria('')
-                    }}
-                    className={inputClass}
-                    style={inputStyle}
-                  >
-                    <option value="">Selecione a praça…</option>
-                    {pracasFiltradas.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nome} — {p.rodovia}
-                        {p.km != null ? ` km ${p.km}` : ''} ({p.uf})
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={pracaCategoria}
-                    onChange={(e) => setPracaCategoria(e.target.value)}
-                    disabled={!pracaEscolhida}
-                    className={inputClass}
-                    style={inputStyle}
-                  >
-                    <option value="">Categoria…</option>
-                    {categoriasDaPracaEscolhida.map((c) => (
-                      <option key={c.categoria} value={c.categoria}>
-                        Cat. {c.categoria} — {formatMoney(c.valor)}
-                      </option>
-                    ))}
-                  </select>
+                  {pracasPedagio.map((p, i) => (
+                    <div key={`${p.praca_id}-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-[color:var(--rbr-navy-dark)]">
+                        {p.nome} · {p.rodovia}
+                        {p.km != null ? ` km ${p.km}` : ''} · cat. {p.categoria}
+                      </span>
+                      <span className="tabular-nums font-semibold">{formatMoney(p.valor)}</span>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setPracasPedagio([])} className="self-start text-[11px] font-semibold underline" style={{ color: 'var(--rbr-danger)' }}>
+                    limpar detalhamento e editar o pedágio direto
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={adicionarPraca}
-                  disabled={!pracaEscolhida || !pracaCategoria}
-                  className="self-start text-[11px] font-bold px-2.5 py-1.5 rounded-lg border disabled:opacity-40"
-                  style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                >
-                  + Adicionar praça
-                </button>
-              </div>
+              )}
 
               <div className="md:col-span-2">
                 <label className={labelClass}>Valor final ao cliente (R$)</label>
@@ -3198,7 +3200,9 @@ export default function Cotacao() {
               </div>
             </div>
 
-            {/* Custos adicionais */}
+            {/* Custos adicionais — não aparece no preview aprovado, fica atrás de um link;
+                abre sozinho se já tiver custo lançado, sugestão ou obrigatório pendente. */}
+            {mostrarCustosAdicionais || itens.length > 0 || sugestoes.length > 0 || obrigatoriosFaltando.length > 0 ? (
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
@@ -3402,6 +3406,11 @@ export default function Cotacao() {
                 )
               })}
             </div>
+            ) : (
+              <button type="button" onClick={() => setMostrarCustosAdicionais(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
+                + custos adicionais
+              </button>
+            )}
 
             {composicao?.erro && (
               <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
@@ -3488,7 +3497,10 @@ export default function Cotacao() {
             </div>
           </div>
 
-          {/* Recebimento do cliente */}
+          {/* Recebimento do cliente — não aparece no preview aprovado (fica no prazo padrão
+              cadastrado por default), então some atrás de um link; abre sozinho se a cotação
+              já tem um prazo negociado à parte. */}
+          {mostrarCondicoesPagamento || form.prazo_modo === 'personalizado' ? (
           <div className="rounded-xl p-3.5 flex flex-col gap-3 border" style={{ borderColor: 'var(--rbr-border)' }}>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Recebimento do cliente</div>
@@ -3613,6 +3625,11 @@ export default function Cotacao() {
               )
             })()}
           </div>
+          ) : (
+            <button type="button" onClick={() => setMostrarCondicoesPagamento(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
+              + condições de pagamento e prazo
+            </button>
+          )}
 
           {/* Ações */}
           <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -3741,6 +3758,7 @@ export default function Cotacao() {
               </button>
             </div>
           )}
+        </div>
         </div>
       )}
 
