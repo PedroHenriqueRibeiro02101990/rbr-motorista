@@ -29,8 +29,14 @@ function traduzLogin(msg: string): string {
 }
 
 function Marca() {
-  return <img src="/logo-192.png" alt="RBR Cargo" className="w-14 h-14 rounded-2xl mb-6" />
-
+  return (
+    <div
+      className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6 font-bold text-white text-lg"
+      style={{ background: 'var(--rbr-navy)' }}
+    >
+      RBR
+    </div>
+  )
 }
 
 function Caixa({ tom, children }: { tom: 'erro' | 'aviso' | 'ok'; children: React.ReactNode }) {

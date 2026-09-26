@@ -31,7 +31,12 @@ export default function AppShell({
         style={{ borderColor: 'var(--rbr-border)' }}
       >
         <div className="px-5 pt-6 pb-5 flex items-center gap-2.5">
-          <img src="/logo-192.png" alt="RBR Cargo" className="w-9 h-9 rounded-xl flex-shrink-0" />
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0"
+            style={{ background: 'var(--rbr-navy)' }}
+          >
+            RBR
+          </div>
           <div>
             <div className="rbr-display font-bold text-[15px] leading-tight text-[color:var(--rbr-navy-dark)]">
               RBR Cargo
