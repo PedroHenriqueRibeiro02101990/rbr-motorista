@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+   git add -A
+   git statusimport { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -2086,7 +2087,9 @@ export default function Cotacao() {
             </div>
           )}
 
-          {/* Cliente */}
+          {/* Cliente e documento fiscal */}
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Cliente e documento fiscal</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
           <div className="flex flex-col gap-2">
             <label className={labelClass}>Cliente *</label>
             <div className="flex gap-2 flex-wrap items-start">
@@ -2192,6 +2195,36 @@ export default function Cotacao() {
             )}
           </div>
 
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="xml-danfe-upload"
+              onDragOver={handleXmlDragOver}
+              onDragLeave={handleXmlDragLeave}
+              onDrop={handleXmlDrop}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-lg py-3.5 px-3 text-center cursor-pointer transition-colors"
+              style={{
+                border: `1.5px dashed ${xmlArrastando ? 'var(--rbr-navy)' : 'var(--rbr-border)'}`,
+                background: xmlArrastando ? 'var(--rbr-muted-bg)' : '#fff',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--rbr-navy)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 15V3m0 0 4 4m-4-4-4 4" />
+                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+              </svg>
+              <span className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Arraste o XML ou DANFE aqui</span>
+              <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                preenche cliente e valor da mercadoria sozinho (opcional)
+              </span>
+              <input id="xml-danfe-upload" type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="hidden" />
+            </label>
+            {xmlError && (
+              <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                {xmlError}
+              </div>
+            )}
+          </div>
+          </div>
+
           {/* Origem / agenciador / projeto */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
@@ -2253,40 +2286,11 @@ export default function Cotacao() {
             open={Boolean(form.nf_chave_acesso || form.nf_remetente_razao_social || form.nf_destinatario_razao_social || form.xml_danfe_url)}
           >
             <summary className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] cursor-pointer">
-              Dados fiscais da NF-e (opcional) — XML, CT-e/MDF-e
+              Detalhes fiscais da NF-e (opcional) — chave, CT-e/MDF-e
             </summary>
             <div className="flex flex-col gap-3 mt-3">
-            <div className="flex flex-col gap-2">
-              <label
-                htmlFor="xml-danfe-upload"
-                onDragOver={handleXmlDragOver}
-                onDragLeave={handleXmlDragLeave}
-                onDrop={handleXmlDrop}
-                className="flex flex-col items-center justify-center gap-1.5 rounded-lg py-5 px-3 text-center cursor-pointer transition-colors"
-                style={{
-                  border: `1.5px dashed ${xmlArrastando ? 'var(--rbr-navy)' : 'var(--rbr-border)'}`,
-                  background: xmlArrastando ? 'var(--rbr-muted-bg)' : '#fff',
-                }}
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--rbr-navy)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 15V3m0 0 4 4m-4-4-4 4" />
-                  <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-                </svg>
-                <span className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Arraste o XML ou DANFE aqui</span>
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  preenche cliente e valor da mercadoria sozinho (opcional) — ou clique para escolher o arquivo
-                </span>
-                <input id="xml-danfe-upload" type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="hidden" />
-              </label>
-              <div className="text-[11px] text-[color:var(--rbr-muted)]">
-                Leitura 100% local do arquivo — preenche os campos abaixo automaticamente, inclusive origem/destino da rota, mas todos continuam
-                editáveis depois.
-              </div>
-              {xmlError && (
-                <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                  {xmlError}
-                </div>
-              )}
+            <div className="text-[11px] text-[color:var(--rbr-muted)]">
+              Preenchidos automaticamente ao carregar o XML/DANFE acima — todos continuam editáveis depois.
             </div>
 
             {/* Dados da NF-e */}
@@ -2736,7 +2740,75 @@ export default function Cotacao() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className={labelClass}>TAG seguro — faixa de risco</label>
+              <div className="flex gap-2">
+                <select
+                  value={form.faixa_risco_seguro}
+                  onChange={(e) => escolherFaixaSeguro(e.target.value)}
+                  className={inputClass}
+                  style={inputStyle}
+                >
+                  <option value="">Selecione…</option>
+                  {faixasSeguro.map((x) => (
+                    <option key={x.faixa} value={x.faixa}>
+                      {x.label} — {formatPct(x.pct)}
+                    </option>
+                  ))}
+                  <option value="personalizada">Personalizada</option>
+                </select>
+                <div className="relative" style={{ maxWidth: 110 }}>
+                  <input
+                    inputMode="decimal"
+                    placeholder="%"
+                    value={form.taxa_seguro_tag_pct}
+                    onChange={(e) => editarTaxaSeguro(e.target.value)}
+                    className={inputClass}
+                    style={{ ...inputStyle, paddingRight: 24 }}
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+                </div>
+              </div>
+              <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                {composicao?.taxaSeguro != null
+                  ? numOrNull(form.valor_nf) != null
+                    ? `${formatPct(composicao.taxaSeguro)} × valor da NF (${formatMoney(numOrNull(form.valor_nf))}) = ${formatMoney(composicao.seguroTag)}`
+                    : 'Informe o valor da NF acima — a TAG é calculada sobre ele.'
+                  : 'Percentual aplicado sobre o valor da NF.'}
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>Imposto — alíquota aproximada</label>
+              <div className="relative" style={{ maxWidth: 160 }}>
+                <input
+                  inputMode="decimal"
+                  placeholder="ex.: 6"
+                  value={form.aliquota_imposto_pct}
+                  onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, paddingRight: 24 }}
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+              </div>
+              <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
+                {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
+              </div>
+            </div>
+          </div>
+
+          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={sinaisAtivos.length > 0}>
+            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
+              <span>Carga complexa (opcional)</span>
+              {sinaisAtivos.length > 0 && (
+                <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                  {sinaisAtivos.length} sinal{sinaisAtivos.length > 1 ? 'is' : ''} ativo{sinaisAtivos.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </summary>
+            <div className="text-[11px] text-[color:var(--rbr-muted)] mt-2 mb-2.5">Escolta, AET, balsa, carga perigosa…</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="flex items-center gap-2 text-xs font-semibold">
               <input
                 type="checkbox"
@@ -2805,144 +2877,11 @@ export default function Cotacao() {
                 Valor acima do teto de seguro (marcação manual — cadastre a apólice em Operações → Dados de emissão pra ficar automático)
               </label>
             )}
-          </div>
-
-          {/* Piso ANTT — referência opcional */}
-          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={Boolean(form.tabela || form.distancia_km)}>
-            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
-              <span>Piso ANTT e pedágio (referência opcional)</span>
-              {pisoReferencia != null && <span className="text-sm font-bold tabular-nums">{formatMoney(pisoReferencia)}</span>}
-            </summary>
-            <div className="flex flex-col gap-2.5 mt-3">
-              <div className="text-[11px] text-[color:var(--rbr-muted)]">
-                Serve pra conferir se o frete do motorista respeita o mínimo legal. Pedágio é lançado em "Composição do preço"
-                abaixo (soma automática se você lançar as praças).
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <select
-                  value={form.tabela}
-                  onChange={(e) => setForm((f) => (f ? { ...f, tabela: e.target.value, eixos: '' } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">Tabela ANTT</option>
-                  {TABELAS.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={form.tipo_carga}
-                  onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">Tipo de carga</option>
-                  {TIPOS_CARGA.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={form.eixos}
-                  onChange={(e) => setForm((f) => (f ? { ...f, eixos: e.target.value } : f))}
-                  disabled={eixosOpcoes.length === 0}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">{eixosOpcoes.length === 0 ? 'Escolha tabela e tipo' : 'Eixos'}</option>
-                  {eixosOpcoes.map((n) => (
-                    <option key={n} value={n}>
-                      {n} eixos
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={calcularRota}
-                  disabled={rotaCalculando}
-                  className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
-                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                >
-                  {rotaCalculando ? 'Calculando…' : 'Calcular Piso ANTT + Pedágio'}
-                </button>
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  Calcula a distância pela rota (grátis, OpenStreetMap) e o piso ANTT. Pedágio segue estimado manualmente —
-                  confira antes de emitir.
-                </span>
-              </div>
-              {rotaResultado && (
-                <div className="text-xs flex items-center gap-2 flex-wrap">
-                  <span>
-                    {rotaResultado.distancia_km.toLocaleString('pt-BR')} km · ~{rotaResultado.duracao_horas.toLocaleString('pt-BR')} h
-                  </span>
-                  <button type="button" onClick={usarDistanciaCalculada} className="underline font-semibold">
-                    usar essa distância
-                  </button>
-                  <span className="text-[11px] text-[color:var(--rbr-muted)]">(estimativa OpenStreetMap — pode divergir do Qualp)</span>
-                </div>
-              )}
-              {rotaErro && (
-                <span className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
-                  {rotaErro}
-                </span>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 rounded-lg p-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className={labelClass} style={{ marginBottom: 0 }}>
-                      Distância (km)
-                    </label>
-                    {form.distancia_km && <span style={badgeCalculadoStyle}>calculado</span>}
-                  </div>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.distancia_km}
-                    onChange={(e) => setForm((f) => (f ? { ...f, distancia_km: e.target.value } : f))}
-                    className={inputClass}
-                    style={{ ...inputStyle, background: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className={labelClass} style={{ marginBottom: 0 }}>
-                      Piso ANTT (R$)
-                    </label>
-                    {pisoInfo != null && <span style={badgeCalculadoStyle}>calculado</span>}
-                  </div>
-                  <input
-                    readOnly
-                    value={
-                      carregandoPiso
-                        ? 'calculando…'
-                        : pisoInfo
-                          ? formatMoney(pisoInfo.calculado)
-                          : pisoSalvo != null
-                            ? `${formatMoney(pisoSalvo)} (salvo)`
-                            : '—'
-                    }
-                    className={inputClass}
-                    style={{ ...inputStyle, background: '#fbfbfd' }}
-                  />
-                </div>
-              </div>
-              {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  Preencha tabela, tipo de carga, eixos e distância pra calcular.
-                </span>
-              )}
             </div>
           </details>
 
-          {/* Composição do preço */}
+          {/* Composição do preço — inclui a referência de piso ANTT/pedágio como primeiro
+              bloco, no mesmo padrão visual do card "Destino" usado em Vários destinos. */}
           <div className="rounded-xl border p-3.5 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Composição do preço</div>
@@ -2964,6 +2903,145 @@ export default function Cotacao() {
                 {formatMoney(precoLegado.lucro)}). Preencha o frete do motorista pra recalcular — enquanto isso, o valor antigo
                 fica como está.
               </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <select
+                value={form.tabela}
+                onChange={(e) => setForm((f) => (f ? { ...f, tabela: e.target.value, eixos: '' } : f))}
+                className={inputClass}
+                style={{ ...inputStyle, background: '#fff' }}
+              >
+                <option value="">Tabela ANTT</option>
+                {TABELAS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={form.tipo_carga}
+                onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
+                className={inputClass}
+                style={{ ...inputStyle, background: '#fff' }}
+              >
+                <option value="">Tipo de carga</option>
+                {TIPOS_CARGA.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={form.eixos}
+                onChange={(e) => setForm((f) => (f ? { ...f, eixos: e.target.value } : f))}
+                disabled={eixosOpcoes.length === 0}
+                className={inputClass}
+                style={{ ...inputStyle, background: '#fff' }}
+              >
+                <option value="">{eixosOpcoes.length === 0 ? 'Escolha tabela e tipo' : 'Eixos'}</option>
+                {eixosOpcoes.map((n) => (
+                  <option key={n} value={n}>
+                    {n} eixos
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={calcularRota}
+                disabled={rotaCalculando}
+                className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
+                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+              >
+                {rotaCalculando ? 'Calculando…' : 'Calcular Piso ANTT + Pedágio'}
+              </button>
+              <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                Calcula a distância pela rota (grátis, OpenStreetMap) e o piso ANTT. Pedágio segue estimado manualmente —
+                confira antes de emitir, ou detalhe pelas praças abaixo.
+              </span>
+            </div>
+            {rotaResultado && (
+              <div className="text-xs flex items-center gap-2 flex-wrap -mt-2">
+                <span>
+                  {rotaResultado.distancia_km.toLocaleString('pt-BR')} km · ~{rotaResultado.duracao_horas.toLocaleString('pt-BR')} h
+                </span>
+                <button type="button" onClick={usarDistanciaCalculada} className="underline font-semibold">
+                  usar essa distância
+                </button>
+                <span className="text-[11px] text-[color:var(--rbr-muted)]">(estimativa OpenStreetMap — pode divergir do Qualp)</span>
+              </div>
+            )}
+            {rotaErro && (
+              <span className="text-xs -mt-2" style={{ color: 'var(--rbr-danger)' }}>
+                {rotaErro}
+              </span>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 rounded-lg p-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={labelClass} style={{ marginBottom: 0 }}>
+                    Distância (km)
+                  </label>
+                  {form.distancia_km && <span style={badgeCalculadoStyle}>calculado</span>}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.distancia_km}
+                  onChange={(e) => setForm((f) => (f ? { ...f, distancia_km: e.target.value } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={labelClass} style={{ marginBottom: 0 }}>
+                    Piso ANTT (R$)
+                  </label>
+                  {pisoInfo != null && <span style={badgeCalculadoStyle}>calculado</span>}
+                </div>
+                <input
+                  readOnly
+                  value={
+                    carregandoPiso
+                      ? 'calculando…'
+                      : pisoInfo
+                        ? formatMoney(pisoInfo.calculado)
+                        : pisoSalvo != null
+                          ? `${formatMoney(pisoSalvo)} (salvo)`
+                          : '—'
+                  }
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fbfbfd' }}
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={labelClass} style={{ marginBottom: 0 }}>
+                    Pedágio (R$)
+                  </label>
+                  {pracasPedagio.length > 0 && <span style={badgeCalculadoStyle}>calculado</span>}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.pedagio}
+                  disabled={pracasPedagio.length > 0}
+                  onChange={(e) => setForm((f) => (f ? { ...f, pedagio: e.target.value } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff', opacity: pracasPedagio.length > 0 ? 0.6 : 1 }}
+                />
+              </div>
+            </div>
+            {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
+              <span className="text-[11px] text-[color:var(--rbr-muted)] -mt-2">
+                Preencha tabela, tipo de carga, eixos e distância pra calcular.
+              </span>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2992,19 +3070,25 @@ export default function Cotacao() {
                 ) : null}
               </div>
               <div>
-                <label className={labelClass}>Pedágio (R$)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.pedagio}
-                  disabled={pracasPedagio.length > 0}
-                  onChange={(e) => setForm((f) => (f ? { ...f, pedagio: e.target.value } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, opacity: pracasPedagio.length > 0 ? 0.6 : 1 }}
-                />
+                <label className={labelClass}>Lucro RBR — Margem (% sobre o custo com imposto)</label>
+                <div className="relative" style={{ maxWidth: 160 }}>
+                  <input
+                    inputMode="decimal"
+                    value={
+                      form.preco_modo === 'valor_final' && numOrNull(form.valor_final_manual) != null
+                        ? composicao?.lucroPct != null
+                          ? fracToPctStr(Number(composicao.lucroPct.toFixed(4)))
+                          : ''
+                        : form.lucro_pct
+                    }
+                    onChange={(e) => editarLucroPct(e.target.value)}
+                    className={inputClass}
+                    style={{ ...inputStyle, paddingRight: 24 }}
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+                </div>
                 <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
-                  {pracasPedagio.length > 0 ? 'Soma automática das praças lançadas abaixo.' : 'Valor da rota no Qualp, ou lance as praças abaixo.'}
+                  Padrão {formatPct(lucroPadrao, 0)} — somado depois de frete + pedágio + TAG + imposto.
                 </div>
               </div>
 
@@ -3082,84 +3166,7 @@ export default function Cotacao() {
                 </button>
               </div>
 
-              <div>
-                <label className={labelClass}>TAG seguro — faixa de risco</label>
-                <div className="flex gap-2">
-                  <select
-                    value={form.faixa_risco_seguro}
-                    onChange={(e) => escolherFaixaSeguro(e.target.value)}
-                    className={inputClass}
-                    style={inputStyle}
-                  >
-                    <option value="">Selecione…</option>
-                    {faixasSeguro.map((x) => (
-                      <option key={x.faixa} value={x.faixa}>
-                        {x.label} — {formatPct(x.pct)}
-                      </option>
-                    ))}
-                    <option value="personalizada">Personalizada</option>
-                  </select>
-                  <div className="relative" style={{ maxWidth: 110 }}>
-                    <input
-                      inputMode="decimal"
-                      placeholder="%"
-                      value={form.taxa_seguro_tag_pct}
-                      onChange={(e) => editarTaxaSeguro(e.target.value)}
-                      className={inputClass}
-                      style={{ ...inputStyle, paddingRight: 24 }}
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
-                  </div>
-                </div>
-                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
-                  {composicao?.taxaSeguro != null
-                    ? numOrNull(form.valor_nf) != null
-                      ? `${formatPct(composicao.taxaSeguro)} × valor da NF (${formatMoney(numOrNull(form.valor_nf))}) = ${formatMoney(composicao.seguroTag)}`
-                      : 'Informe o valor da NF acima — a TAG é calculada sobre ele.'
-                    : 'Percentual aplicado sobre o valor da NF.'}
-                </div>
-              </div>
-              <div>
-                <label className={labelClass}>Imposto — alíquota aproximada</label>
-                <div className="relative" style={{ maxWidth: 160 }}>
-                  <input
-                    inputMode="decimal"
-                    placeholder="ex.: 6"
-                    value={form.aliquota_imposto_pct}
-                    onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
-                    className={inputClass}
-                    style={{ ...inputStyle, paddingRight: 24 }}
-                  />
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
-                </div>
-                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
-                  Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
-                  {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
-                </div>
-              </div>
-              <div>
-                <label className={labelClass}>Lucro RBR (% sobre o custo com imposto)</label>
-                <div className="relative" style={{ maxWidth: 160 }}>
-                  <input
-                    inputMode="decimal"
-                    value={
-                      form.preco_modo === 'valor_final' && numOrNull(form.valor_final_manual) != null
-                        ? composicao?.lucroPct != null
-                          ? fracToPctStr(Number(composicao.lucroPct.toFixed(4)))
-                          : ''
-                        : form.lucro_pct
-                    }
-                    onChange={(e) => editarLucroPct(e.target.value)}
-                    className={inputClass}
-                    style={{ ...inputStyle, paddingRight: 24 }}
-                  />
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
-                </div>
-                <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
-                  Padrão {formatPct(lucroPadrao, 0)} — somado depois de frete + pedágio + TAG + imposto.
-                </div>
-              </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className={labelClass}>Valor final ao cliente (R$)</label>
                 <input
                   type="number"
@@ -3403,8 +3410,24 @@ export default function Cotacao() {
               </div>
             )}
 
-            {/* Resumo */}
+            {/* Resumo — abre com os 3 números principais (mesmo padrão do card "Destino" em
+                Vários destinos), detalhamento completo logo abaixo. */}
             <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
+              <div className="flex items-center justify-between gap-3 flex-wrap pb-2 mb-1 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
+                  <span>
+                    Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao?.custoComImposto ?? null)}</strong>
+                  </span>
+                  {composicao?.lucro != null && (
+                    <span>
+                      Lucro líquido: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao.lucro)}</strong>
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
+                  {composicao?.valorFinal != null ? formatMoney(composicao.valorFinal) : '—'}
+                </span>
+              </div>
               {[
                 { label: 'Frete do motorista', valor: composicao?.frete ?? null },
                 { label: 'Pedágio', valor: composicao?.frete != null ? composicao.pedagio : null },
