@@ -2807,6 +2807,141 @@ export default function Cotacao() {
             )}
           </div>
 
+          {/* Piso ANTT — referência opcional */}
+          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={Boolean(form.tabela || form.distancia_km)}>
+            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
+              <span>Piso ANTT e pedágio (referência opcional)</span>
+              {pisoReferencia != null && <span className="text-sm font-bold tabular-nums">{formatMoney(pisoReferencia)}</span>}
+            </summary>
+            <div className="flex flex-col gap-2.5 mt-3">
+              <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                Serve pra conferir se o frete do motorista respeita o mínimo legal. Pedágio é lançado em "Composição do preço"
+                abaixo (soma automática se você lançar as praças).
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <select
+                  value={form.tabela}
+                  onChange={(e) => setForm((f) => (f ? { ...f, tabela: e.target.value, eixos: '' } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                >
+                  <option value="">Tabela ANTT</option>
+                  {TABELAS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={form.tipo_carga}
+                  onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                >
+                  <option value="">Tipo de carga</option>
+                  {TIPOS_CARGA.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={form.eixos}
+                  onChange={(e) => setForm((f) => (f ? { ...f, eixos: e.target.value } : f))}
+                  disabled={eixosOpcoes.length === 0}
+                  className={inputClass}
+                  style={{ ...inputStyle, background: '#fff' }}
+                >
+                  <option value="">{eixosOpcoes.length === 0 ? 'Escolha tabela e tipo' : 'Eixos'}</option>
+                  {eixosOpcoes.map((n) => (
+                    <option key={n} value={n}>
+                      {n} eixos
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={calcularRota}
+                  disabled={rotaCalculando}
+                  className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
+                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                >
+                  {rotaCalculando ? 'Calculando…' : 'Calcular Piso ANTT + Pedágio'}
+                </button>
+                <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Calcula a distância pela rota (grátis, OpenStreetMap) e o piso ANTT. Pedágio segue estimado manualmente —
+                  confira antes de emitir.
+                </span>
+              </div>
+              {rotaResultado && (
+                <div className="text-xs flex items-center gap-2 flex-wrap">
+                  <span>
+                    {rotaResultado.distancia_km.toLocaleString('pt-BR')} km · ~{rotaResultado.duracao_horas.toLocaleString('pt-BR')} h
+                  </span>
+                  <button type="button" onClick={usarDistanciaCalculada} className="underline font-semibold">
+                    usar essa distância
+                  </button>
+                  <span className="text-[11px] text-[color:var(--rbr-muted)]">(estimativa OpenStreetMap — pode divergir do Qualp)</span>
+                </div>
+              )}
+              {rotaErro && (
+                <span className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
+                  {rotaErro}
+                </span>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 rounded-lg p-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={labelClass} style={{ marginBottom: 0 }}>
+                      Distância (km)
+                    </label>
+                    {form.distancia_km && <span style={badgeCalculadoStyle}>calculado</span>}
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.distancia_km}
+                    onChange={(e) => setForm((f) => (f ? { ...f, distancia_km: e.target.value } : f))}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={labelClass} style={{ marginBottom: 0 }}>
+                      Piso ANTT (R$)
+                    </label>
+                    {pisoInfo != null && <span style={badgeCalculadoStyle}>calculado</span>}
+                  </div>
+                  <input
+                    readOnly
+                    value={
+                      carregandoPiso
+                        ? 'calculando…'
+                        : pisoInfo
+                          ? formatMoney(pisoInfo.calculado)
+                          : pisoSalvo != null
+                            ? `${formatMoney(pisoSalvo)} (salvo)`
+                            : '—'
+                    }
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fbfbfd' }}
+                  />
+                </div>
+              </div>
+              {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
+                <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Preencha tabela, tipo de carga, eixos e distância pra calcular.
+                </span>
+              )}
+            </div>
+          </details>
+
           {/* Composição do preço */}
           <div className="rounded-xl border p-3.5 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -3456,141 +3591,6 @@ export default function Cotacao() {
               )
             })()}
           </div>
-
-          {/* Piso ANTT — referência opcional */}
-          <details className="rounded-xl border p-3.5" style={{ borderColor: 'var(--rbr-border)' }} open={Boolean(form.tabela || form.distancia_km)}>
-            <summary className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap">
-              <span>Piso ANTT e pedágio (referência opcional)</span>
-              {pisoReferencia != null && <span className="text-sm font-bold tabular-nums">{formatMoney(pisoReferencia)}</span>}
-            </summary>
-            <div className="flex flex-col gap-2.5 mt-3">
-              <div className="text-[11px] text-[color:var(--rbr-muted)]">
-                Serve pra conferir se o frete do motorista respeita o mínimo legal. Pedágio é lançado em "Composição do preço"
-                abaixo (soma automática se você lançar as praças).
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <select
-                  value={form.tabela}
-                  onChange={(e) => setForm((f) => (f ? { ...f, tabela: e.target.value, eixos: '' } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">Tabela ANTT</option>
-                  {TABELAS.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={form.tipo_carga}
-                  onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">Tipo de carga</option>
-                  {TIPOS_CARGA.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={form.eixos}
-                  onChange={(e) => setForm((f) => (f ? { ...f, eixos: e.target.value } : f))}
-                  disabled={eixosOpcoes.length === 0}
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fff' }}
-                >
-                  <option value="">{eixosOpcoes.length === 0 ? 'Escolha tabela e tipo' : 'Eixos'}</option>
-                  {eixosOpcoes.map((n) => (
-                    <option key={n} value={n}>
-                      {n} eixos
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={calcularRota}
-                  disabled={rotaCalculando}
-                  className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
-                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                >
-                  {rotaCalculando ? 'Calculando…' : 'Calcular Piso ANTT + Pedágio'}
-                </button>
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  Calcula a distância pela rota (grátis, OpenStreetMap) e o piso ANTT. Pedágio segue estimado manualmente —
-                  confira antes de emitir.
-                </span>
-              </div>
-              {rotaResultado && (
-                <div className="text-xs flex items-center gap-2 flex-wrap">
-                  <span>
-                    {rotaResultado.distancia_km.toLocaleString('pt-BR')} km · ~{rotaResultado.duracao_horas.toLocaleString('pt-BR')} h
-                  </span>
-                  <button type="button" onClick={usarDistanciaCalculada} className="underline font-semibold">
-                    usar essa distância
-                  </button>
-                  <span className="text-[11px] text-[color:var(--rbr-muted)]">(estimativa OpenStreetMap — pode divergir do Qualp)</span>
-                </div>
-              )}
-              {rotaErro && (
-                <span className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
-                  {rotaErro}
-                </span>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 rounded-lg p-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className={labelClass} style={{ marginBottom: 0 }}>
-                      Distância (km)
-                    </label>
-                    {form.distancia_km && <span style={badgeCalculadoStyle}>calculado</span>}
-                  </div>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.distancia_km}
-                    onChange={(e) => setForm((f) => (f ? { ...f, distancia_km: e.target.value } : f))}
-                    className={inputClass}
-                    style={{ ...inputStyle, background: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className={labelClass} style={{ marginBottom: 0 }}>
-                      Piso ANTT (R$)
-                    </label>
-                    {pisoInfo != null && <span style={badgeCalculadoStyle}>calculado</span>}
-                  </div>
-                  <input
-                    readOnly
-                    value={
-                      carregandoPiso
-                        ? 'calculando…'
-                        : pisoInfo
-                          ? formatMoney(pisoInfo.calculado)
-                          : pisoSalvo != null
-                            ? `${formatMoney(pisoSalvo)} (salvo)`
-                            : '—'
-                    }
-                    className={inputClass}
-                    style={{ ...inputStyle, background: '#fbfbfd' }}
-                  />
-                </div>
-              </div>
-              {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  Preencha tabela, tipo de carga, eixos e distância pra calcular.
-                </span>
-              )}
-            </div>
-          </details>
 
           {/* Ações */}
           <div className="flex items-center gap-2 flex-wrap pt-1">
