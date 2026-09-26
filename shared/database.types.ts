@@ -129,9 +129,11 @@ export type Database = {
       apolices_seguro: {
         Row: {
           created_at: string
+          detalhes: Json | null
           faixa_risco: string | null
           id: string
           numero_apolice: string | null
+          premio_minimo_mensal: number | null
           responsavel_seguro: string
           seguradora_cnpj: string | null
           seguradora_nome: string | null
@@ -143,9 +145,11 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          detalhes?: Json | null
           faixa_risco?: string | null
           id?: string
           numero_apolice?: string | null
+          premio_minimo_mensal?: number | null
           responsavel_seguro?: string
           seguradora_cnpj?: string | null
           seguradora_nome?: string | null
@@ -157,9 +161,11 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          detalhes?: Json | null
           faixa_risco?: string | null
           id?: string
           numero_apolice?: string | null
+          premio_minimo_mensal?: number | null
           responsavel_seguro?: string
           seguradora_cnpj?: string | null
           seguradora_nome?: string | null
@@ -1517,6 +1523,81 @@ export type Database = {
           },
         ]
       }
+      cotacao_destinos: {
+        Row: {
+          cidade_destino: string | null
+          cotacao_id: string
+          created_at: string
+          distancia_km: number | null
+          eixos: number | null
+          endereco_entrega: string | null
+          frete_motorista: number | null
+          id: string
+          margem_pct: number | null
+          ordem: number
+          pedagio: number | null
+          piso_antt_referencia: number | null
+          tabela_antt: string | null
+          tipo_carga: string | null
+          uf_destino: string | null
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          cidade_destino?: string | null
+          cotacao_id: string
+          created_at?: string
+          distancia_km?: number | null
+          eixos?: number | null
+          endereco_entrega?: string | null
+          frete_motorista?: number | null
+          id?: string
+          margem_pct?: number | null
+          ordem?: number
+          pedagio?: number | null
+          piso_antt_referencia?: number | null
+          tabela_antt?: string | null
+          tipo_carga?: string | null
+          uf_destino?: string | null
+          updated_at?: string
+          valor: number
+        }
+        Update: {
+          cidade_destino?: string | null
+          cotacao_id?: string
+          created_at?: string
+          distancia_km?: number | null
+          eixos?: number | null
+          endereco_entrega?: string | null
+          frete_motorista?: number | null
+          id?: string
+          margem_pct?: number | null
+          ordem?: number
+          pedagio?: number | null
+          piso_antt_referencia?: number | null
+          tabela_antt?: string | null
+          tipo_carga?: string | null
+          uf_destino?: string | null
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cotacao_destinos_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cotacao_destinos_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["cotacao_id"]
+          },
+        ]
+      }
       cotacoes: {
         Row: {
           agenciador_id: string | null
@@ -1559,6 +1640,7 @@ export type Database = {
           nf_serie: string | null
           origem: string
           pedagio: number | null
+          pedagio_pracas: Json | null
           perdida_em: string | null
           peso_bruto_kg: number | null
           piso_antt_calculado: number | null
@@ -1573,6 +1655,7 @@ export type Database = {
           uf_destino: string | null
           uf_origem: string | null
           updated_at: string
+          validade_dias: number
           valor_frete_motorista: number | null
           valor_imposto: number | null
           valor_nf: number | null
@@ -1622,6 +1705,7 @@ export type Database = {
           nf_serie?: string | null
           origem?: string
           pedagio?: number | null
+          pedagio_pracas?: Json | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
@@ -1636,6 +1720,7 @@ export type Database = {
           uf_destino?: string | null
           uf_origem?: string | null
           updated_at?: string
+          validade_dias?: number
           valor_frete_motorista?: number | null
           valor_imposto?: number | null
           valor_nf?: number | null
@@ -1685,6 +1770,7 @@ export type Database = {
           nf_serie?: string | null
           origem?: string
           pedagio?: number | null
+          pedagio_pracas?: Json | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
@@ -1699,6 +1785,7 @@ export type Database = {
           uf_destino?: string | null
           uf_origem?: string | null
           updated_at?: string
+          validade_dias?: number
           valor_frete_motorista?: number | null
           valor_imposto?: number | null
           valor_nf?: number | null
@@ -4045,6 +4132,24 @@ export type Database = {
           },
         ]
       }
+      pedagio_categorias_antt: {
+        Row: {
+          categoria: number
+          descricao: string
+          eixos: number | null
+        }
+        Insert: {
+          categoria: number
+          descricao: string
+          eixos?: number | null
+        }
+        Update: {
+          categoria?: number
+          descricao?: string
+          eixos?: number | null
+        }
+        Relationships: []
+      }
       pessoas: {
         Row: {
           acesso_bloqueado: boolean
@@ -4653,6 +4758,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pracas_pedagio: {
+        Row: {
+          concessionaria: string | null
+          created_at: string
+          data_pesquisa: string
+          data_vigencia: string | null
+          fonte: string | null
+          id: string
+          km: number | null
+          lat: number | null
+          legenda_categoria: string | null
+          lng: number | null
+          nome: string
+          observacoes: string | null
+          regiao: string | null
+          rodovia: string
+          sentido: string | null
+          tarifas: Json
+          tipo_rodovia: string
+          uf: string
+          updated_at: string
+        }
+        Insert: {
+          concessionaria?: string | null
+          created_at?: string
+          data_pesquisa?: string
+          data_vigencia?: string | null
+          fonte?: string | null
+          id?: string
+          km?: number | null
+          lat?: number | null
+          legenda_categoria?: string | null
+          lng?: number | null
+          nome: string
+          observacoes?: string | null
+          regiao?: string | null
+          rodovia: string
+          sentido?: string | null
+          tarifas?: Json
+          tipo_rodovia: string
+          uf: string
+          updated_at?: string
+        }
+        Update: {
+          concessionaria?: string | null
+          created_at?: string
+          data_pesquisa?: string
+          data_vigencia?: string | null
+          fonte?: string | null
+          id?: string
+          km?: number | null
+          lat?: number | null
+          legenda_categoria?: string | null
+          lng?: number | null
+          nome?: string
+          observacoes?: string | null
+          regiao?: string | null
+          rodovia?: string
+          sentido?: string | null
+          tarifas?: Json
+          tipo_rodovia?: string
+          uf?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       prestadores_parceiros: {
         Row: {
