@@ -1646,6 +1646,7 @@ export type Database = {
           perdida_em: string | null
           peso_bruto_kg: number | null
           piso_antt_calculado: number | null
+          pontos_coleta_adicionais: string | null
           prazo_entrega: string | null
           prazo_personalizado: Json | null
           prazo_recebimento: string | null
@@ -1715,6 +1716,7 @@ export type Database = {
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
+          pontos_coleta_adicionais?: string | null
           prazo_entrega?: string | null
           prazo_personalizado?: Json | null
           prazo_recebimento?: string | null
@@ -1784,6 +1786,7 @@ export type Database = {
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
+          pontos_coleta_adicionais?: string | null
           prazo_entrega?: string | null
           prazo_personalizado?: Json | null
           prazo_recebimento?: string | null

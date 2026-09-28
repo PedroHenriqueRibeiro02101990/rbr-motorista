@@ -254,6 +254,10 @@ const FORM_INICIAL = {
   cidade_destino: '',
   uf_destino: '',
   endereco_destino: '',
+  // Carga que passa por mais de um ponto de coleta antes do destino final (ex.: "carrega na
+  // Bosch, depois na Logik, e segue pro destino"). Texto livre, só informativo — não entra no
+  // cálculo de rota/preço, mas aparece no PDF da cotação pra avisar o motorista/operação.
+  pontos_coleta_adicionais: '',
   peso_bruto_kg: '',
   valor_nf: '',
   natureza_operacao: '',
@@ -1038,6 +1042,7 @@ export default function Cotacao() {
       cidade_destino: c.cidade_destino ?? '',
       uf_destino: c.uf_destino ?? '',
       endereco_destino: c.endereco_destino ?? '',
+      pontos_coleta_adicionais: c.pontos_coleta_adicionais ?? '',
       peso_bruto_kg: c.peso_bruto_kg != null ? String(c.peso_bruto_kg) : '',
       valor_nf: c.valor_nf != null ? String(c.valor_nf) : '',
       natureza_operacao: c.natureza_operacao ?? '',
@@ -1386,6 +1391,7 @@ export default function Cotacao() {
       cidade_destino: f.cidade_destino.trim() || null,
       uf_destino: f.uf_destino.trim().toUpperCase() || null,
       endereco_destino: f.endereco_destino.trim() || null,
+      pontos_coleta_adicionais: f.pontos_coleta_adicionais.trim() || null,
       peso_bruto_kg: numOrNull(f.peso_bruto_kg),
       valor_nf: numOrNull(f.valor_nf),
       natureza_operacao: f.natureza_operacao.trim() || null,
@@ -1763,6 +1769,7 @@ export default function Cotacao() {
         cidadeDestino: multiDestino ? null : form.cidade_destino || null,
         ufDestino: multiDestino ? null : form.uf_destino || null,
         enderecoDestino: multiDestino ? null : form.endereco_destino.trim() || null,
+        pontosColetaAdicionais: form.pontos_coleta_adicionais.trim() || null,
         distanciaKm: multiDestino ? null : numOrNull(form.distancia_km),
         tipoCarga: form.tipo_carga || null,
         pesoBrutoKg: numOrNull(form.peso_bruto_kg),
@@ -2034,7 +2041,13 @@ export default function Cotacao() {
         <div
           className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-3 py-6 md:py-10"
           style={{ background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          onMouseDown={(e) => {
+          onClick={(e) => {
+            // Fecha só num clique de verdade no fundo (não um arrastar de seleção de texto
+            // que termina fora do card). Importante usar onClick, não onMouseDown: no Chrome,
+            // interagir com a própria barra de rolagem deste elemento (que também é o
+            // container com scroll) dispara mousedown nele mesmo — com onMouseDown isso
+            // fechava o formulário sempre que o usuário clicava na barra de rolagem do
+            // navegador. onClick não sofre desse problema.
             if (e.target === e.currentTarget) fecharForm()
           }}
         >
@@ -2273,6 +2286,21 @@ export default function Cotacao() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Pontos de coleta adicionais — carga que passa por mais de um local antes do
+              destino final (ex.: carrega na Bosch, depois na Logik). Simples texto livre,
+              só informativo: não mexe em rota/preço, mas aparece no PDF da cotação. */}
+          <div>
+            <label className={labelClass}>Pontos de coleta adicionais (opcional)</label>
+            <textarea
+              rows={2}
+              placeholder="Ex.: carrega na Bosch, depois na Logik, e segue para o destino final"
+              value={form.pontos_coleta_adicionais}
+              onChange={(e) => setForm((f) => (f ? { ...f, pontos_coleta_adicionais: e.target.value } : f))}
+              className={inputClass}
+              style={inputStyle}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">

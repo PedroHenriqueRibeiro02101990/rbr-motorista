@@ -52,6 +52,9 @@ export interface CotacaoPdfDados {
   cidadeDestino?: string | null
   ufDestino?: string | null
   enderecoDestino?: string | null
+  // Carga que passa por mais de um ponto de coleta antes do destino final (ex.: "carrega na
+  // Bosch, depois na Logik, e segue pro destino"). Texto livre e opcional.
+  pontosColetaAdicionais?: string | null
   distanciaKm?: number | null
   tipoCarga?: string | null
   pesoBrutoKg?: number | null
@@ -194,7 +197,9 @@ export function gerarCotacaoPdf(d: CotacaoPdfDados, empresa: EmpresaCotacao): Bl
   const col3 = (larg - padX * 2 - colGap * 2) / 3
   const rowH = 16
   const temCarga = Boolean(d.tipoCarga || d.pesoBrutoKg != null)
-  const clienteRotaH = 12 + rowH * 2 + colGap + (temCarga ? rowH + colGap : 0)
+  const temPontosColeta = Boolean(d.pontosColetaAdicionais)
+  const clienteRotaH =
+    12 + rowH * 2 + colGap + (temPontosColeta ? rowH + colGap : 0) + (temCarga ? rowH + colGap : 0)
   card(doc, m, y, larg, clienteRotaH)
   sectionTitle(doc, 'CLIENTE E ROTA', m + 5, y + 8)
   let fy = y + 12
@@ -206,6 +211,10 @@ export function gerarCotacaoPdf(d: CotacaoPdfDados, empresa: EmpresaCotacao): Bl
   const destinoTexto = [[d.cidadeDestino, d.ufDestino].filter(Boolean).join('/'), d.enderecoDestino].filter(Boolean).join(' — ')
   fieldBox(doc, m + 5 + col3 + colGap, fy, col3, rowH, 'Destino', destinoTexto, { fontSize: 8.5 })
   fieldBox(doc, m + 5 + (col3 + colGap) * 2, fy, col3, rowH, 'Distância', d.distanciaKm != null ? `${d.distanciaKm.toLocaleString('pt-BR')} km` : '-')
+  if (temPontosColeta) {
+    fy += rowH + colGap
+    fieldBox(doc, m + 5, fy, larg - 10, rowH, 'Pontos de coleta adicionais', d.pontosColetaAdicionais ?? '-', { fontSize: 9 })
+  }
   if (temCarga) {
     fy += rowH + colGap
     const cargaTexto = [d.tipoCarga, d.pesoBrutoKg != null ? `${d.pesoBrutoKg.toLocaleString('pt-BR')} kg` : null].filter(Boolean).join('  ·  ')
