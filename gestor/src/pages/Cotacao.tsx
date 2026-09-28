@@ -184,7 +184,7 @@ const cardStyle = {
 }
 
 const inputClass = 'border rounded-lg px-3 py-2 text-sm outline-none w-full'
-const inputStyle = { borderColor: 'var(--rbr-border)' }
+const inputStyle = { borderColor: 'var(--rbr-border)', background: '#fff' }
 const labelClass = 'text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1.5 block'
 const badgeCalculadoStyle: CSSProperties = {
   fontSize: 9,
