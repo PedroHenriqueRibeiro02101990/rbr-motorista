@@ -2217,11 +2217,11 @@ export default function Cotacao() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-            <div className="flex flex-col gap-2">
+            <div>
               <label className={labelClass}>Origem</label>
               {clienteSelecionado ? (
                 <div
-                  className="text-xs rounded-lg px-3 py-2 border"
+                  className="text-xs rounded-lg px-3 py-2.5 border"
                   style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}
                 >
                   {enderecoOrigemCliente || 'Cliente selecionado não tem endereço cadastrado — complete o cadastro pra calcular a rota.'}
@@ -2233,15 +2233,15 @@ export default function Cotacao() {
               )}
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div>
               <label className={labelClass}>Destino</label>
               {destinos.length > 0 ? (
                 <div className="text-[11px] text-[color:var(--rbr-muted)]">
                   Cidade/UF destino ficam de fora — essa cotação tem vários destinos (aba avançada, cada um com endereço próprio).
                 </div>
               ) : (
-                <div className="flex flex-col gap-1.5">
-                  <div className="grid grid-cols-2 gap-1.5">
+                <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-[1fr_72px] gap-2">
                     <input
                       placeholder="Cidade destino *"
                       value={form.cidade_destino}
@@ -2271,19 +2271,21 @@ export default function Cotacao() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-            <div className="flex flex-col gap-2">
+            <div>
+              <label className={labelClass}>XML / DANFE</label>
               <label
                 htmlFor="xml-danfe-upload"
                 onDragOver={handleXmlDragOver}
                 onDragLeave={handleXmlDragLeave}
                 onDrop={handleXmlDrop}
-                className="flex flex-col items-center justify-center gap-1.5 rounded-lg py-3.5 px-3 text-center cursor-pointer transition-colors"
+                className="flex flex-col items-center justify-center gap-1 rounded-lg text-center cursor-pointer transition-colors"
                 style={{
                   border: `1.5px dashed ${xmlArrastando ? 'var(--rbr-navy)' : 'var(--rbr-border)'}`,
                   background: xmlArrastando ? 'var(--rbr-muted-bg)' : '#fff',
+                  padding: '10px 12px',
                 }}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--rbr-navy)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--rbr-navy)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 15V3m0 0 4 4m-4-4-4 4" />
                   <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
                 </svg>
@@ -2294,7 +2296,7 @@ export default function Cotacao() {
                 <input id="xml-danfe-upload" type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="hidden" />
               </label>
               {xmlError && (
-                <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                <div className="text-xs rounded-lg px-3 py-2 mt-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {xmlError}
                 </div>
               )}
@@ -2309,10 +2311,10 @@ export default function Cotacao() {
                 onChange={(e) => setForm((f) => (f ? { ...f, valor_nf: e.target.value } : f))}
                 placeholder="sem XML — digite"
                 className={inputClass}
-                style={{ ...inputStyle, maxWidth: 220 }}
+                style={inputStyle}
               />
               {!numOrNull(form.valor_nf) && (
-                <div className="text-[11px] font-semibold mt-1" style={{ color: 'var(--rbr-danger)' }}>
+                <div className="text-[11px] font-semibold mt-2" style={{ color: 'var(--rbr-danger)' }}>
                   Sem XML/DANFE — preencha o valor da mercadoria à mão. A TAG seguro depende dele.
                 </div>
               )}
