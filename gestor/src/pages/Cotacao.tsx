@@ -2109,8 +2109,13 @@ export default function Cotacao() {
             </div>
           )}
 
-          {/* Cliente e documento fiscal */}
-          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Cliente e documento fiscal</div>
+          {/* Cliente e documento fiscal — card com fundo levemente colorido e borda à
+              esquerda, pra separar visualmente das outras seções (igual ao preview aprovado). */}
+          <div
+            className="rounded-2xl border p-4 flex flex-col gap-3"
+            style={{ borderColor: 'var(--rbr-border)', borderLeft: '4px solid var(--rbr-navy)', background: 'var(--rbr-navy-tint)' }}
+          >
+          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-navy)]">Cliente e documento fiscal</div>
           <div className="flex flex-col gap-2">
             <label className={labelClass}>Cliente *</label>
             <div className="flex gap-2 flex-wrap items-start">
@@ -2319,6 +2324,7 @@ export default function Cotacao() {
                 </div>
               )}
             </div>
+          </div>
           </div>
 
           {/* Duas abas: "Cotação padrão" é exatamente o preview aprovado; "Cotação avançada"
@@ -2851,7 +2857,10 @@ export default function Cotacao() {
               aba padrão. Imposto fica sempre travado aqui; ajustar a alíquota é uma opção da
               aba avançada. */}
           {abaCotacao === 'padrao' && (
-          <>
+          <div
+            className="rounded-2xl border p-4 flex flex-col gap-3"
+            style={{ borderColor: 'var(--rbr-border)', borderLeft: '4px solid var(--rbr-navy)', background: 'var(--rbr-navy-tint)' }}
+          >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <div>
               <label className={labelClass}>TAG seguro — faixa de risco</label>
@@ -2989,7 +2998,7 @@ export default function Cotacao() {
             )}
             </div>
           )}
-          </>
+          </div>
           )}
 
           {/* Composição do preço — inclui a referência de piso ANTT/pedágio como primeiro
@@ -2997,7 +3006,10 @@ export default function Cotacao() {
               preview aprovado, então fica só na aba padrão (o item "Custos adicionais" que
               não está no preview foi movido pra aba avançada). */}
           {abaCotacao === 'padrao' && (
-          <div className="rounded-xl border p-3.5 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
+          <div
+            className="rounded-xl border p-3.5 flex flex-col gap-4"
+            style={{ borderColor: 'var(--rbr-border)', borderTop: '3px solid var(--rbr-navy)' }}
+          >
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Composição do preço</div>
               <div className="text-[11px] text-[color:var(--rbr-muted)]">
@@ -3283,7 +3295,7 @@ export default function Cotacao() {
             {/* Condições comerciais — mesmos campos de forma/prazo de recebimento e validade
                 que existem em "Recebimento do cliente" (aba avançada), só que resumidos aqui
                 pra quem só usa a aba padrão. Ficam nos dois lugares, gravando no mesmo campo. */}
-            <div className="rounded-lg p-3.5 flex flex-col gap-3" style={{ background: '#fff', border: '1px solid var(--rbr-border)' }}>
+            <div className="rounded-lg p-3.5 flex flex-col gap-3" style={{ background: 'var(--rbr-muted-bg)' }}>
               <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
                 Condições comerciais
               </div>
