@@ -51,6 +51,7 @@ export interface CotacaoPdfDados {
   ufOrigem?: string | null
   cidadeDestino?: string | null
   ufDestino?: string | null
+  enderecoDestino?: string | null
   distanciaKm?: number | null
   tipoCarga?: string | null
   pesoBrutoKg?: number | null
@@ -64,6 +65,8 @@ export interface CotacaoPdfDados {
   prazoPagamento: string
   formaPagamento: string
   validadeDias?: number
+  prazoEntrega?: string | null
+  observacoes?: string | null
 }
 
 // Texto padrão da RBR — reaproduzido do papel timbrado (Word) que este PDF substitui, não
@@ -200,7 +203,8 @@ export function gerarCotacaoPdf(d: CotacaoPdfDados, empresa: EmpresaCotacao): Bl
   fieldBox(doc, m + 5 + (col3 + colGap) * 2, fy, col3, rowH, 'Contato', d.clienteContato ?? '-', { fontSize: 8.5 })
   fy += rowH + colGap
   fieldBox(doc, m + 5, fy, col3, rowH, 'Origem', [d.cidadeOrigem, d.ufOrigem].filter(Boolean).join('/'))
-  fieldBox(doc, m + 5 + col3 + colGap, fy, col3, rowH, 'Destino', [d.cidadeDestino, d.ufDestino].filter(Boolean).join('/'))
+  const destinoTexto = [[d.cidadeDestino, d.ufDestino].filter(Boolean).join('/'), d.enderecoDestino].filter(Boolean).join(' — ')
+  fieldBox(doc, m + 5 + col3 + colGap, fy, col3, rowH, 'Destino', destinoTexto, { fontSize: 8.5 })
   fieldBox(doc, m + 5 + (col3 + colGap) * 2, fy, col3, rowH, 'Distância', d.distanciaKm != null ? `${d.distanciaKm.toLocaleString('pt-BR')} km` : '-')
   if (temCarga) {
     fy += rowH + colGap
@@ -238,19 +242,34 @@ export function gerarCotacaoPdf(d: CotacaoPdfDados, empresa: EmpresaCotacao): Bl
   y += resumoH + gap
 
   // ---- card: condições gerais + observações ----
+  // As duas primeiras condições ficam lado a lado (como sempre foi); "Prazo de entrega" (se
+  // preenchido na cotação) entra como uma 3ª linha, em largura cheia, abaixo delas.
   const condicoes: Array<[string, string]> = [
     ['Coleta e entrega', TEXTO_COLETA_ENTREGA],
     ['Validade da cotação', `Até ${validadeData}`],
   ]
+  if (d.prazoEntrega) condicoes.push(['Prazo de entrega', d.prazoEntrega])
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.6)
+  const colW2 = (larg - 10) / 2
+  const condLinhas = condicoes.map(([label, valor], i) => {
+    const rw = doc.getTextWidth(`${label}: `)
+    const colW = i < 2 ? colW2 : larg - 10
+    return (doc.splitTextToSize(txt(valor), colW - rw) as string[]).length
+  })
+  const condRowsAlturas = [Math.max(condLinhas[0] ?? 1, condLinhas[1] ?? 1)]
+  for (let i = 2; i < condicoes.length; i++) condRowsAlturas.push(condLinhas[i])
+  const condicoesH = condRowsAlturas.reduce((n, l) => n + l * 4.2, 0)
+
   const obsLinhasCount = OBSERVACOES.reduce((n, o) => n + (doc.splitTextToSize(txt(`•  ${o}`), larg - 10) as string[]).length, 0)
-  const condH = 12 + 6 + 5 + 6 + obsLinhasCount * 3.9 + 4
+  const obsUsuario = d.observacoes ? (doc.splitTextToSize(txt(d.observacoes), larg - 10) as string[]) : []
+  const obsUsuarioH = obsUsuario.length > 0 ? 4.6 + obsUsuario.length * 3.9 + 2 : 0
+
+  const condH = 12 + condicoesH + 5 + 6 + obsLinhasCount * 3.9 + obsUsuarioH + 4
   card(doc, m, y, larg, condH)
   sectionTitle(doc, 'CONDIÇÕES GERAIS', m + 5, y + 8)
   let cy = y + 14
-  const colW2 = (larg - 10) / 2
-  for (let c = 0; c < 2; c++) {
+  for (let c = 0; c < Math.min(2, condicoes.length); c++) {
     const par = condicoes[c]
     const x = c === 0 ? m + 5 : m + 5 + colW2 + 5
     doc.setTextColor(...NAVY)
@@ -261,9 +280,24 @@ export function gerarCotacaoPdf(d: CotacaoPdfDados, empresa: EmpresaCotacao): Bl
     const rw = doc.getTextWidth(rot)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(...MUTED)
-    doc.text(txt(par[1]), x + rw, cy)
+    const linhas = doc.splitTextToSize(txt(par[1]), colW2 - rw) as string[]
+    doc.text(linhas, x + rw, cy)
   }
-  cy += 6
+  cy += condRowsAlturas[0] * 4.2
+  for (let c = 2; c < condicoes.length; c++) {
+    const par = condicoes[c]
+    doc.setTextColor(...NAVY)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    const rot = `${par[0]}: `
+    doc.text(rot, m + 5, cy)
+    const rw = doc.getTextWidth(rot)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...MUTED)
+    const linhas = doc.splitTextToSize(txt(par[1]), larg - 10 - rw) as string[]
+    doc.text(linhas, m + 5 + rw, cy)
+    cy += linhas.length * 4.2
+  }
   doc.setDrawColor(...FIELD_BORDER)
   doc.setLineWidth(0.25)
   doc.line(m + 5, cy, 210 - m - 5, cy)
@@ -282,6 +316,19 @@ export function gerarCotacaoPdf(d: CotacaoPdfDados, empresa: EmpresaCotacao): Bl
     const linhas = doc.splitTextToSize(txt(obs), larg - 14) as string[]
     doc.text(linhas, m + 9, cy)
     cy += linhas.length * 3.9
+  }
+  if (obsUsuario.length > 0) {
+    cy += 2
+    doc.setTextColor(...NAVY)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.8)
+    doc.text('OBSERVAÇÕES DA COTAÇÃO', m + 5, cy, { charSpace: 0.4 })
+    cy += 4.6
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.6)
+    doc.setTextColor(...MUTED)
+    doc.text(obsUsuario, m + 5, cy)
+    cy += obsUsuario.length * 3.9
   }
   y += condH + gap
 

@@ -186,10 +186,6 @@ const cardStyle = {
 const inputClass = 'border rounded-lg px-3 py-2 text-sm outline-none w-full'
 const inputStyle = { borderColor: 'var(--rbr-border)' }
 const labelClass = 'text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1.5 block'
-// Link pra revelar um grupo de campos adicionais/opcionais (tudo que não aparece no preview
-// aprovado some atrás de uma palavra clicável assim, em vez de ocupar espaço na tela por padrão).
-const opcaoLinkClass = 'self-start text-[11px] font-bold underline'
-const opcaoLinkStyle: CSSProperties = { color: 'var(--rbr-navy)' }
 const badgeCalculadoStyle: CSSProperties = {
   fontSize: 9,
   fontWeight: 800,
@@ -257,6 +253,7 @@ const FORM_INICIAL = {
   uf_origem: '',
   cidade_destino: '',
   uf_destino: '',
+  endereco_destino: '',
   peso_bruto_kg: '',
   valor_nf: '',
   natureza_operacao: '',
@@ -287,7 +284,22 @@ const FORM_INICIAL = {
   // Prazo de validade da proposta (dias corridos a partir da emissão) — editável por cotação,
   // vai pro PDF em "COTAÇÃO Nº/DATA/VALIDADE" e em "Condições gerais".
   validade_dias: '5',
+  // Card "Condições comerciais" (aba padrão) — descritivo, não alimenta o motor de parcelas
+  // (condicao_prazo_id/prazo_personalizado) usado em "Recebimento do cliente".
+  prazo_recebimento: '' as '' | 'a_vista' | '7ddl' | '14ddl' | '15ddl' | '21ddl' | '30ddl' | '2x',
+  prazo_entrega: '',
+  observacoes: '',
 }
+
+const PRAZO_RECEBIMENTO_OPCOES: Array<{ value: Exclude<CotacaoFormState['prazo_recebimento'], ''>; label: string }> = [
+  { value: 'a_vista', label: 'À vista' },
+  { value: '7ddl', label: '7DDL' },
+  { value: '14ddl', label: '14DDL' },
+  { value: '15ddl', label: '15DDL' },
+  { value: '21ddl', label: '21DDL' },
+  { value: '30ddl', label: '30DDL' },
+  { value: '2x', label: '2X (parcelado, com data das faturas)' },
+]
 
 type PrecoModo = 'lucro_pct' | 'valor_final'
 type CotacaoFormState = typeof FORM_INICIAL
@@ -545,14 +557,12 @@ export default function Cotacao() {
   const [xmlError, setXmlError] = useState<string | null>(null)
   const [xmlArrastando, setXmlArrastando] = useState(false)
 
-  // Controles de exibição de campos "adicionais/opcionais" — ficam escondidos atrás de um
-  // link por padrão pra tela bater com o preview aprovado, e abrem sozinhos quando a cotação
-  // já tem algum dado preenchido naquele grupo (ver valores default logo abaixo de cada um).
-  const [mostrarOrigemExtra, setMostrarOrigemExtra] = useState(false)
-  const [mostrarMaisDadosCarga, setMostrarMaisDadosCarga] = useState(false)
-  const [mostrarCustosAdicionais, setMostrarCustosAdicionais] = useState(false)
-  const [mostrarCondicoesPagamento, setMostrarCondicoesPagamento] = useState(false)
-  const [impostoEditavel, setImpostoEditavel] = useState(false)
+  // Duas abas dentro do formulário: "padrão" é exatamente o preview aprovado (cliente/XML,
+  // rota, TAG seguro/imposto/carga complexa, composição de preço) — nada a mais nem a menos.
+  // "avançada" reúne tudo que o dia a dia às vezes precisa mas não está no preview (origem de
+  // agenciador, detalhes fiscais da NF-e, peso bruto/NCMs, vários destinos, custos adicionais,
+  // condições de pagamento, ajuste manual de alíquota de imposto).
+  const [abaCotacao, setAbaCotacao] = useState<'padrao' | 'avancada'>('padrao')
   const [cargaComplexaAberta, setCargaComplexaAberta] = useState(false)
 
   // Formulário abre como painel flutuante sobre o resto da tela (igual ao preview aprovado) —
@@ -952,11 +962,7 @@ export default function Cotacao() {
     setTipoParaAdicionar('')
     setPracasPedagio([])
     setDestinos([])
-    setMostrarOrigemExtra(false)
-    setMostrarMaisDadosCarga(false)
-    setMostrarCustosAdicionais(false)
-    setMostrarCondicoesPagamento(false)
-    setImpostoEditavel(false)
+    setAbaCotacao('padrao')
     setCargaComplexaAberta(false)
   }
 
@@ -1031,6 +1037,7 @@ export default function Cotacao() {
       uf_origem: c.uf_origem ?? '',
       cidade_destino: c.cidade_destino ?? '',
       uf_destino: c.uf_destino ?? '',
+      endereco_destino: c.endereco_destino ?? '',
       peso_bruto_kg: c.peso_bruto_kg != null ? String(c.peso_bruto_kg) : '',
       valor_nf: c.valor_nf != null ? String(c.valor_nf) : '',
       natureza_operacao: c.natureza_operacao ?? '',
@@ -1058,6 +1065,9 @@ export default function Cotacao() {
       prazo_personalizado: (c.prazo_personalizado as unknown as RegraPrazo | null) ?? null,
       forma_recebimento: c.forma_recebimento ?? 'boleto',
       validade_dias: c.validade_dias != null ? String(c.validade_dias) : '5',
+      prazo_recebimento: (c.prazo_recebimento as CotacaoFormState['prazo_recebimento']) ?? '',
+      prazo_entrega: c.prazo_entrega ?? '',
+      observacoes: c.observacoes ?? '',
     })
     setEditingId(c.id)
     setEditingStatus(c.status)
@@ -1375,6 +1385,7 @@ export default function Cotacao() {
       uf_origem: f.uf_origem.trim().toUpperCase() || null,
       cidade_destino: f.cidade_destino.trim() || null,
       uf_destino: f.uf_destino.trim().toUpperCase() || null,
+      endereco_destino: f.endereco_destino.trim() || null,
       peso_bruto_kg: numOrNull(f.peso_bruto_kg),
       valor_nf: numOrNull(f.valor_nf),
       natureza_operacao: f.natureza_operacao.trim() || null,
@@ -1394,6 +1405,9 @@ export default function Cotacao() {
       prazo_personalizado: f.prazo_modo === 'personalizado' && f.prazo_personalizado ? (f.prazo_personalizado as unknown as Json) : null,
       forma_recebimento: f.forma_recebimento || 'boleto',
       validade_dias: numOrNull(f.validade_dias) ?? 5,
+      prazo_recebimento: f.prazo_recebimento || null,
+      prazo_entrega: f.prazo_entrega.trim() || null,
+      observacoes: f.observacoes.trim() || null,
     }
   }
 
@@ -1748,15 +1762,18 @@ export default function Cotacao() {
         ufOrigem: form.uf_origem || null,
         cidadeDestino: multiDestino ? null : form.cidade_destino || null,
         ufDestino: multiDestino ? null : form.uf_destino || null,
+        enderecoDestino: multiDestino ? null : form.endereco_destino.trim() || null,
         distanciaKm: multiDestino ? null : numOrNull(form.distancia_km),
         tipoCarga: form.tipo_carga || null,
         pesoBrutoKg: numOrNull(form.peso_bruto_kg),
         valorNf: numOrNull(form.valor_nf),
         itensPreco,
         valorTotal: valorTotalPdf,
-        prazoPagamento: textoPrazoPagamento(),
+        prazoPagamento: PRAZO_RECEBIMENTO_OPCOES.find((o) => o.value === form.prazo_recebimento)?.label ?? textoPrazoPagamento(),
         formaPagamento: FORMA_PAGTO_LABEL[form.forma_recebimento] ?? form.forma_recebimento,
         validadeDias: numOrNull(form.validade_dias) ?? 5,
+        prazoEntrega: form.prazo_entrega.trim() || null,
+        observacoes: form.observacoes.trim() || null,
       }
       const [{ gerarCotacaoPdf }, empresa] = await Promise.all([import('../lib/cotacaoPdf'), lerParametro<EmpresaCotacao>('dados_empresa')])
       const blob = gerarCotacaoPdf(dados, empresa ?? {})
@@ -2094,7 +2111,6 @@ export default function Cotacao() {
 
           {/* Cliente e documento fiscal */}
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Cliente e documento fiscal</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
           <div className="flex flex-col gap-2">
             <label className={labelClass}>Cliente *</label>
             <div className="flex gap-2 flex-wrap items-start">
@@ -2200,39 +2216,157 @@ export default function Cotacao() {
             )}
           </div>
 
-          <div className="flex flex-col gap-2">
-            <label
-              htmlFor="xml-danfe-upload"
-              onDragOver={handleXmlDragOver}
-              onDragLeave={handleXmlDragLeave}
-              onDrop={handleXmlDrop}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-lg py-3.5 px-3 text-center cursor-pointer transition-colors"
-              style={{
-                border: `1.5px dashed ${xmlArrastando ? 'var(--rbr-navy)' : 'var(--rbr-border)'}`,
-                background: xmlArrastando ? 'var(--rbr-muted-bg)' : '#fff',
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--rbr-navy)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 15V3m0 0 4 4m-4-4-4 4" />
-                <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-              </svg>
-              <span className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Arraste o XML ou DANFE aqui</span>
-              <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                preenche cliente e valor da mercadoria sozinho (opcional)
-              </span>
-              <input id="xml-danfe-upload" type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="hidden" />
-            </label>
-            {xmlError && (
-              <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                {xmlError}
-              </div>
-            )}
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+            <div className="flex flex-col gap-2">
+              <label className={labelClass}>Origem</label>
+              {clienteSelecionado ? (
+                <div
+                  className="text-xs rounded-lg px-3 py-2 border"
+                  style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}
+                >
+                  {enderecoOrigemCliente || 'Cliente selecionado não tem endereço cadastrado — complete o cadastro pra calcular a rota.'}
+                </div>
+              ) : (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Selecione um cliente acima — a origem vem do endereço cadastrado dele.
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className={labelClass}>Destino</label>
+              {destinos.length > 0 ? (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Cidade/UF destino ficam de fora — essa cotação tem vários destinos (aba avançada, cada um com endereço próprio).
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <input
+                      placeholder="Cidade destino *"
+                      value={form.cidade_destino}
+                      onChange={(e) => setForm((f) => (f ? { ...f, cidade_destino: e.target.value } : f))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                    <input
+                      placeholder="UF *"
+                      maxLength={2}
+                      value={form.uf_destino}
+                      onChange={(e) => setForm((f) => (f ? { ...f, uf_destino: e.target.value.toUpperCase() } : f))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <input
+                    placeholder="Endereço completo do destino (opcional)"
+                    value={form.endereco_destino}
+                    onChange={(e) => setForm((f) => (f ? { ...f, endereco_destino: e.target.value } : f))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Origem / agenciador / projeto — não aparece no preview aprovado, então fica atrás
-              de um link; abre sozinho se a cotação já usa agenciador ou tem projeto vinculado. */}
-          {mostrarOrigemExtra || form.origem === 'agenciador' || form.projeto_id ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="xml-danfe-upload"
+                onDragOver={handleXmlDragOver}
+                onDragLeave={handleXmlDragLeave}
+                onDrop={handleXmlDrop}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-lg py-3.5 px-3 text-center cursor-pointer transition-colors"
+                style={{
+                  border: `1.5px dashed ${xmlArrastando ? 'var(--rbr-navy)' : 'var(--rbr-border)'}`,
+                  background: xmlArrastando ? 'var(--rbr-muted-bg)' : '#fff',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--rbr-navy)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 15V3m0 0 4 4m-4-4-4 4" />
+                  <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+                </svg>
+                <span className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Arraste o XML ou DANFE aqui</span>
+                <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                  preenche cliente e valor da mercadoria sozinho (opcional)
+                </span>
+                <input id="xml-danfe-upload" type="file" accept=".xml,text/xml" onChange={handleXmlUpload} className="hidden" />
+              </label>
+              {xmlError && (
+                <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                  {xmlError}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className={labelClass}>Valor da mercadoria (R$)</label>
+              <input
+                type="number"
+                min={0}
+                value={form.valor_nf}
+                onChange={(e) => setForm((f) => (f ? { ...f, valor_nf: e.target.value } : f))}
+                placeholder="sem XML — digite"
+                className={inputClass}
+                style={{ ...inputStyle, maxWidth: 220 }}
+              />
+              {!numOrNull(form.valor_nf) && (
+                <div className="text-[11px] font-semibold mt-1" style={{ color: 'var(--rbr-danger)' }}>
+                  Sem XML/DANFE — preencha o valor da mercadoria à mão. A TAG seguro depende dele.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Duas abas: "Cotação padrão" é exatamente o preview aprovado; "Cotação avançada"
+              junta tudo que não está nele (origem de agenciador, NF-e, peso/NCMs, vários
+              destinos, custos adicionais, condições de pagamento, ajuste de imposto). */}
+          <div className="flex items-center gap-1.5 -mb-1">
+            {(
+              [
+                ['padrao', 'Cotação padrão'],
+                ['avancada', 'Cotação avançada'],
+              ] as const
+            ).map(([k, l]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setAbaCotacao(k)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full border flex items-center gap-1.5"
+                style={
+                  abaCotacao === k
+                    ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' }
+                    : { background: '#fff', color: 'var(--rbr-navy-dark)', borderColor: 'var(--rbr-border)' }
+                }
+              >
+                {l}
+                {k === 'avancada' &&
+                  Boolean(
+                    form.origem === 'agenciador' ||
+                      form.projeto_id ||
+                      form.nf_chave_acesso ||
+                      form.nf_remetente_razao_social ||
+                      form.nf_destinatario_razao_social ||
+                      form.xml_danfe_url ||
+                      form.peso_bruto_kg.trim() ||
+                      form.ncms_produtos.trim() ||
+                      itens.length > 0 ||
+                      destinos.length > 0 ||
+                      form.prazo_modo === 'personalizado',
+                  ) && (
+                    <span
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: abaCotacao === k ? '#fff' : 'var(--rbr-gold)' }}
+                    />
+                  )}
+              </button>
+            ))}
+          </div>
+
+          {/* Origem / agenciador / projeto — não está no preview aprovado, então fica só na
+              aba avançada. */}
+          {abaCotacao === 'avancada' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className={labelClass}>Origem</label>
@@ -2283,21 +2417,19 @@ export default function Cotacao() {
                 </select>
               </div>
             </div>
-          ) : (
-            <button type="button" onClick={() => setMostrarOrigemExtra(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
-              + origem / agenciador / projeto
-            </button>
           )}
 
-          {/* Dados fiscais da NF-e — opcional, só usado na emissão de CT-e/MDF-e depois.
-              Colapsado por padrão pra não competir com os campos de rota (esses sim usados em
-              toda cotação); abre sozinho se já tiver dado de NF-e salvo. */}
+          {/* Dados fiscais da NF-e — opcional, só usado na emissão de CT-e/MDF-e depois. Não
+              está no preview aprovado, então fica só na aba avançada; colapsado por padrão
+              dentro dela, abre sozinho se já tiver dado de NF-e salvo. */}
+          {abaCotacao === 'avancada' && (
           <details
-            className="[&_summary::-webkit-details-marker]:hidden"
+            className="rounded-xl p-3.5"
+            style={{ background: 'var(--rbr-muted-bg)' }}
             open={Boolean(form.nf_chave_acesso || form.nf_remetente_razao_social || form.nf_destinatario_razao_social || form.xml_danfe_url)}
           >
-            <summary className={`${opcaoLinkClass} list-none`} style={opcaoLinkStyle}>
-              + detalhes fiscais da NF-e (chave, CT-e/MDF-e)
+            <summary className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] cursor-pointer">
+              Detalhes fiscais da NF-e (opcional) — chave, CT-e/MDF-e
             </summary>
             <div className="flex flex-col gap-3 mt-3">
             <div className="text-[11px] text-[color:var(--rbr-muted)]">
@@ -2448,52 +2580,21 @@ export default function Cotacao() {
             </div>
             </div>
           </details>
-
-          {/* Rota */}
-          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Rota</div>
-          <div className="flex flex-col gap-1">
-            {clienteSelecionado ? (
-              <div className="text-xs" style={{ color: 'var(--rbr-muted)' }}>
-                Origem: {enderecoOrigemCliente || 'cliente selecionado não tem endereço cadastrado — complete o cadastro pra calcular a rota.'}
-              </div>
-            ) : (
-              <div className="text-[11px] text-[color:var(--rbr-muted)]">Selecione um cliente acima — a origem vem do endereço cadastrado dele.</div>
-            )}
-          </div>
-
-          <div>
-            <label className={labelClass}>Valor da mercadoria (R$)</label>
-            <input
-              type="number"
-              min={0}
-              value={form.valor_nf}
-              onChange={(e) => setForm((f) => (f ? { ...f, valor_nf: e.target.value } : f))}
-              placeholder="sem XML — digite"
-              className={inputClass}
-              style={{ ...inputStyle, maxWidth: 220 }}
-            />
-            {!numOrNull(form.valor_nf) && (
-              <div className="text-[11px] font-semibold mt-1" style={{ color: 'var(--rbr-danger)' }}>
-                Sem XML/DANFE — preencha o valor da mercadoria à mão. A TAG seguro depende dele.
-              </div>
-            )}
-          </div>
-
-          {destinos.length > 0 && (
-            <div className="text-[11px] text-[color:var(--rbr-muted)]">
-              Cidade/UF destino ficam de fora — essa cotação tem vários destinos (lista abaixo, cada um com endereço próprio).
-            </div>
           )}
 
+          {/* Rota (origem/destino/valor da mercadoria) já aparece em "Cliente e documento
+              fiscal", acima do seletor de abas — vale pras duas abas. */}
+
           {/* Destinos múltiplos — cotação com vários destinos a partir da mesma origem (ex.: CD
-              que despacha pra várias cidades), cada um com seu preço final ao cliente. */}
+              que despacha pra várias cidades), cada um com seu preço final ao cliente. Não está
+              no preview aprovado, então fica só na aba avançada. */}
+          {abaCotacao === 'avancada' && (
           <details open={destinos.length > 0}>
             <summary
-              className={destinos.length > 0 ? 'text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap' : `${opcaoLinkClass} list-none flex items-center justify-between gap-2 flex-wrap`}
-              style={destinos.length > 0 ? undefined : opcaoLinkStyle}
+              className="text-sm font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer flex items-center justify-between gap-2 flex-wrap"
             >
               <span>
-                + vários destinos (opcional) {carregandoDestinos && '· carregando…'}
+                Vários destinos (opcional) {carregandoDestinos && '· carregando…'}
                 {destinos.length > 0 && ` — ${destinos.length} destino${destinos.length > 1 ? 's' : ''}`}
               </span>
               {somaDestinos != null && <span className="text-sm font-bold tabular-nums">{formatMoney(somaDestinos)}</span>}
@@ -2715,11 +2816,11 @@ export default function Cotacao() {
               </button>
             </div>
           </details>
+          )}
 
-          {/* Carga — peso bruto e NCMs não aparecem no preview aprovado (valor da mercadoria já
-              subiu pra junto de "Rota" acima); ficam atrás de um link, abrindo sozinhos se já
-              tiverem algum dado preenchido. */}
-          {mostrarMaisDadosCarga || form.peso_bruto_kg.trim() || form.ncms_produtos.trim() ? (
+          {/* Carga — peso bruto e NCMs não aparecem no preview aprovado. Não está no preview
+              aprovado, então fica só na aba avançada. */}
+          {abaCotacao === 'avancada' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>Peso bruto (kg)</label>
@@ -2742,12 +2843,13 @@ export default function Cotacao() {
                 />
               </div>
             </div>
-          ) : (
-            <button type="button" onClick={() => setMostrarMaisDadosCarga(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
-              + peso bruto / NCMs dos produtos
-            </button>
           )}
 
+          {/* TAG seguro / Imposto / Carga complexa — é o preview aprovado, então fica só na
+              aba padrão. Imposto fica sempre travado aqui; ajustar a alíquota é uma opção da
+              aba avançada. */}
+          {abaCotacao === 'padrao' && (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <div>
               <label className={labelClass}>TAG seguro — faixa de risco</label>
@@ -2787,35 +2889,13 @@ export default function Cotacao() {
               </div>
             </div>
             <div>
-              <label className={labelClass}>Imposto {impostoEditavel ? '— alíquota aproximada' : '(travado)'}</label>
-              {impostoEditavel ? (
-                <>
-                  <div className="relative" style={{ maxWidth: 160 }}>
-                    <input
-                      inputMode="decimal"
-                      placeholder="ex.: 6"
-                      value={form.aliquota_imposto_pct}
-                      onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
-                      className={inputClass}
-                      style={{ ...inputStyle, paddingRight: 24 }}
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
-                  </div>
-                  <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
-                    Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
-                    {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-sm rounded-lg px-3 py-2 border" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
-                    {form.aliquota_imposto_pct.trim() ? `${form.aliquota_imposto_pct}% · calculado sobre o valor final` : 'sem alíquota definida'}
-                  </div>
-                  <button type="button" onClick={() => setImpostoEditavel(true)} className="text-[11px] underline font-semibold mt-1" style={{ color: 'var(--rbr-navy)' }}>
-                    ajustar alíquota
-                  </button>
-                </>
-              )}
+              <label className={labelClass}>Imposto (travado)</label>
+              <div className="text-sm rounded-lg px-3 py-2 border" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
+                {form.aliquota_imposto_pct.trim() ? `${form.aliquota_imposto_pct}% · calculado sobre o valor final` : 'sem alíquota definida'}
+              </div>
+              <div className="text-[11px] mt-1 text-[color:var(--rbr-muted)]">
+                Pra ajustar a alíquota, use a aba avançada.
+              </div>
             </div>
             <div>
               <label className="flex items-center gap-2 text-xs font-bold text-[color:var(--rbr-navy-dark)] cursor-pointer">
@@ -2907,9 +2987,14 @@ export default function Cotacao() {
             )}
             </div>
           )}
+          </>
+          )}
 
           {/* Composição do preço — inclui a referência de piso ANTT/pedágio como primeiro
-              bloco, no mesmo padrão visual do card "Destino" usado em Vários destinos. */}
+              bloco, no mesmo padrão visual do card "Destino" usado em Vários destinos. É o
+              preview aprovado, então fica só na aba padrão (o item "Custos adicionais" que
+              não está no preview foi movido pra aba avançada). */}
+          {abaCotacao === 'padrao' && (
           <div className="rounded-xl border p-3.5 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Composição do preço</div>
@@ -2933,29 +3018,8 @@ export default function Cotacao() {
               </div>
             )}
 
-            {destinos.length === 0 && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelClass} style={{ marginBottom: 0 }}>Cidade destino</label>
-                  <input
-                    value={form.cidade_destino}
-                    onChange={(e) => setForm((f) => (f ? { ...f, cidade_destino: e.target.value } : f))}
-                    className={inputClass}
-                    style={{ ...inputStyle, background: '#fff' }}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass} style={{ marginBottom: 0 }}>UF destino</label>
-                  <input
-                    maxLength={2}
-                    value={form.uf_destino}
-                    onChange={(e) => setForm((f) => (f ? { ...f, uf_destino: e.target.value.toUpperCase() } : f))}
-                    className={inputClass}
-                    style={{ ...inputStyle, background: '#fff' }}
-                  />
-                </div>
-              </div>
-            )}
+            {/* Cidade/UF destino já são preenchidos em "Cliente e documento fiscal", acima
+                do seletor de abas — não repete aqui. */}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <select
@@ -3056,20 +3120,25 @@ export default function Cotacao() {
                   </label>
                   {pisoInfo != null && <span style={badgeCalculadoStyle}>calculado</span>}
                 </div>
-                <input
-                  readOnly
-                  value={
-                    carregandoPiso
-                      ? 'calculando…'
-                      : pisoInfo
-                        ? formatMoney(pisoInfo.calculado)
-                        : pisoSalvo != null
-                          ? `${formatMoney(pisoSalvo)} (salvo)`
-                          : '—'
-                  }
-                  className={inputClass}
-                  style={{ ...inputStyle, background: '#fbfbfd' }}
-                />
+                {pisoInfo != null || carregandoPiso ? (
+                  <input
+                    readOnly
+                    value={carregandoPiso ? 'calculando…' : formatMoney(pisoInfo!.calculado)}
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fbfbfd' }}
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={pisoSalvo ?? ''}
+                    onChange={(e) => setPisoSalvo(numOrNull(e.target.value))}
+                    placeholder="lançar manualmente"
+                    className={inputClass}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  />
+                )}
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
@@ -3090,9 +3159,9 @@ export default function Cotacao() {
                 />
               </div>
             </div>
-            {!carregandoPiso && !pisoInfo && (form.tabela || form.tipo_carga || form.eixos || form.distancia_km) && (
+            {!carregandoPiso && !pisoInfo && (
               <span className="text-[11px] text-[color:var(--rbr-muted)] -mt-2">
-                Preencha tabela, tipo de carga, eixos e distância pra calcular.
+                Preencha tabela, tipo de carga, eixos e distância pra calcular automaticamente, ou lance o piso ANTT à mão ao lado.
               </span>
             )}
 
@@ -3200,10 +3269,172 @@ export default function Cotacao() {
               </div>
             </div>
 
-            {/* Custos adicionais — não aparece no preview aprovado, fica atrás de um link;
-                abre sozinho se já tiver custo lançado, sugestão ou obrigatório pendente. */}
-            {mostrarCustosAdicionais || itens.length > 0 || sugestoes.length > 0 || obrigatoriosFaltando.length > 0 ? (
-            <div className="flex flex-col gap-2.5">
+            {/* Custos adicionais foram movidos pra aba avançada (não estão no preview aprovado) —
+                ver mais abaixo, fora deste card. O resumo abaixo continua mostrando o total. */}
+
+            {composicao?.erro && (
+              <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                {composicao.erro}
+              </div>
+            )}
+
+            {/* Condições comerciais — mesmos campos de forma/prazo de recebimento e validade
+                que existem em "Recebimento do cliente" (aba avançada), só que resumidos aqui
+                pra quem só usa a aba padrão. Ficam nos dois lugares, gravando no mesmo campo. */}
+            <div className="rounded-lg p-3.5 flex flex-col gap-3" style={{ background: '#fff', border: '1px solid var(--rbr-border)' }}>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
+                Condições comerciais
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass} style={{ marginBottom: 0 }}>Forma de recebimento</label>
+                  <select
+                    value={form.forma_recebimento === 'boleto' ? 'boleto' : 'transferencia'}
+                    onChange={(e) => setForm((f) => (f ? { ...f, forma_recebimento: e.target.value } : f))}
+                    className={inputClass}
+                    style={inputStyle}
+                  >
+                    <option value="boleto">Boleto</option>
+                    <option value="transferencia">Transferência/Pix</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass} style={{ marginBottom: 0 }}>Prazo de recebimento</label>
+                  <select
+                    value={form.prazo_recebimento}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, prazo_recebimento: e.target.value as CotacaoFormState['prazo_recebimento'] } : f))
+                    }
+                    className={inputClass}
+                    style={inputStyle}
+                  >
+                    <option value="">Selecione…</option>
+                    {PRAZO_RECEBIMENTO_OPCOES.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass} style={{ marginBottom: 0 }}>Validade da proposta (dias)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.validade_dias}
+                    onChange={(e) => setForm((f) => (f ? { ...f, validade_dias: e.target.value.replace(/[^\d]/g, '') } : f))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass} style={{ marginBottom: 0 }}>Prazo de entrega</label>
+                  <input
+                    placeholder="ex.: 2 dias úteis"
+                    value={form.prazo_entrega}
+                    onChange={(e) => setForm((f) => (f ? { ...f, prazo_entrega: e.target.value } : f))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className={labelClass} style={{ marginBottom: 0 }}>Observações</label>
+                <textarea
+                  rows={2}
+                  placeholder="Observações da cotação (aparece no PDF)…"
+                  value={form.observacoes}
+                  onChange={(e) => setForm((f) => (f ? { ...f, observacoes: e.target.value } : f))}
+                  className={inputClass}
+                  style={{ ...inputStyle, resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            {/* Resumo — abre com os 3 números principais (mesmo padrão do card "Destino" em
+                Vários destinos), detalhamento completo logo abaixo. */}
+            <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
+              <div className="flex items-center justify-between gap-3 flex-wrap pb-2 mb-1 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
+                  <span>
+                    Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao?.custoComImposto ?? null)}</strong>
+                  </span>
+                  {composicao?.lucro != null && (
+                    <span>
+                      Lucro líquido: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao.lucro)}</strong>
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
+                  {composicao?.valorFinal != null ? formatMoney(composicao.valorFinal) : '—'}
+                </span>
+              </div>
+              {[
+                { label: 'Frete do motorista', valor: composicao?.frete ?? null },
+                { label: 'Pedágio', valor: composicao?.frete != null ? composicao.pedagio : null },
+                {
+                  label: `TAG seguro${composicao?.taxaSeguro != null ? ` (${formatPct(composicao.taxaSeguro)} da NF)` : ''}`,
+                  valor: composicao?.frete != null ? composicao.seguroTag : null,
+                },
+                ...(itens.length > 0
+                  ? [{ label: `Custos adicionais (${itens.length})`, valor: composicao?.frete != null ? composicao.adicionais : null }]
+                  : []),
+              ].map((linha) => (
+                <div key={linha.label} className="flex justify-between text-xs">
+                  <span className="text-[color:var(--rbr-navy-dark)]">{linha.label}</span>
+                  <span className="tabular-nums">{formatMoney(linha.valor)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-xs">
+                <span>Imposto ({formatPct(composicao?.aliquota ?? 0)} do valor final)</span>
+                <span className="tabular-nums">{formatMoney(composicao?.imposto ?? null)}</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold border-t pt-1.5" style={{ borderColor: 'var(--rbr-border)' }}>
+                <span>Custo total com imposto</span>
+                <span className="tabular-nums">{formatMoney(composicao?.custoComImposto ?? null)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span>+ Lucro RBR ({formatPct(composicao?.lucroPct ?? null, 1)} sobre o custo com imposto)</span>
+                <span className="tabular-nums" style={{ color: (composicao?.lucro ?? 0) < 0 ? 'var(--rbr-danger)' : undefined }}>
+                  {formatMoney(composicao?.lucro ?? null)}
+                </span>
+              </div>
+              <div
+                className="flex justify-between items-center text-sm font-bold border-t pt-2 mt-0.5 text-[color:var(--rbr-navy-dark)]"
+                style={{ borderColor: 'var(--rbr-border)' }}
+              >
+                <span>Valor final ao cliente</span>
+                <span className="tabular-nums text-base">{formatMoney(composicao?.valorFinal ?? null)}</span>
+              </div>
+              {composicao?.totalMotorista != null && (
+                <div className="flex justify-between text-[11px] text-[color:var(--rbr-muted)] pt-1">
+                  <span>
+                    Total a pagar ao motorista (frete{composicao.adicionaisMotorista > 0 ? ' + adicionais dele' : ''})
+                  </span>
+                  <span className="tabular-nums font-semibold">{formatMoney(composicao.totalMotorista)}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <span className="text-[11px] font-semibold text-[color:var(--rbr-navy-dark)]">Margem sobre o valor final:</span>
+                <span
+                  className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
+                  style={{ background: margem.bg, color: margem.color }}
+                >
+                  {margem.label}
+                </span>
+                <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                  faixa recomendada {(margemMin * 100).toFixed(0)}% – {(margemMax * 100).toFixed(0)}% (fora dela a gravação continua
+                  permitida, mas fica registrada no log de auditoria)
+                </span>
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Custos adicionais — não está no preview aprovado, então fica na aba avançada. Abre
+              sozinho se já tiver custo lançado, sugestão ou obrigatório pendente. */}
+          {abaCotacao === 'avancada' && (
+            <div className="rounded-xl border p-3.5 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
                   Custos adicionais {carregandoItens && '· carregando…'}
@@ -3406,101 +3637,32 @@ export default function Cotacao() {
                 )
               })}
             </div>
-            ) : (
-              <button type="button" onClick={() => setMostrarCustosAdicionais(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
-                + custos adicionais
-              </button>
-            )}
+          )}
 
-            {composicao?.erro && (
-              <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                {composicao.erro}
-              </div>
-            )}
-
-            {/* Resumo — abre com os 3 números principais (mesmo padrão do card "Destino" em
-                Vários destinos), detalhamento completo logo abaixo. */}
-            <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
-              <div className="flex items-center justify-between gap-3 flex-wrap pb-2 mb-1 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
-                <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
-                  <span>
-                    Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao?.custoComImposto ?? null)}</strong>
-                  </span>
-                  {composicao?.lucro != null && (
-                    <span>
-                      Lucro líquido: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao.lucro)}</strong>
-                    </span>
-                  )}
-                </div>
-                <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
-                  {composicao?.valorFinal != null ? formatMoney(composicao.valorFinal) : '—'}
-                </span>
-              </div>
-              {[
-                { label: 'Frete do motorista', valor: composicao?.frete ?? null },
-                { label: 'Pedágio', valor: composicao?.frete != null ? composicao.pedagio : null },
-                {
-                  label: `TAG seguro${composicao?.taxaSeguro != null ? ` (${formatPct(composicao.taxaSeguro)} da NF)` : ''}`,
-                  valor: composicao?.frete != null ? composicao.seguroTag : null,
-                },
-                ...(itens.length > 0
-                  ? [{ label: `Custos adicionais (${itens.length})`, valor: composicao?.frete != null ? composicao.adicionais : null }]
-                  : []),
-              ].map((linha) => (
-                <div key={linha.label} className="flex justify-between text-xs">
-                  <span className="text-[color:var(--rbr-navy-dark)]">{linha.label}</span>
-                  <span className="tabular-nums">{formatMoney(linha.valor)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between text-xs">
-                <span>Imposto ({formatPct(composicao?.aliquota ?? 0)} do valor final)</span>
-                <span className="tabular-nums">{formatMoney(composicao?.imposto ?? null)}</span>
-              </div>
-              <div className="flex justify-between text-xs font-bold border-t pt-1.5" style={{ borderColor: 'var(--rbr-border)' }}>
-                <span>Custo total com imposto</span>
-                <span className="tabular-nums">{formatMoney(composicao?.custoComImposto ?? null)}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span>+ Lucro RBR ({formatPct(composicao?.lucroPct ?? null, 1)} sobre o custo com imposto)</span>
-                <span className="tabular-nums" style={{ color: (composicao?.lucro ?? 0) < 0 ? 'var(--rbr-danger)' : undefined }}>
-                  {formatMoney(composicao?.lucro ?? null)}
-                </span>
-              </div>
-              <div
-                className="flex justify-between items-center text-sm font-bold border-t pt-2 mt-0.5 text-[color:var(--rbr-navy-dark)]"
-                style={{ borderColor: 'var(--rbr-border)' }}
-              >
-                <span>Valor final ao cliente</span>
-                <span className="tabular-nums text-base">{formatMoney(composicao?.valorFinal ?? null)}</span>
-              </div>
-              {composicao?.totalMotorista != null && (
-                <div className="flex justify-between text-[11px] text-[color:var(--rbr-muted)] pt-1">
-                  <span>
-                    Total a pagar ao motorista (frete{composicao.adicionaisMotorista > 0 ? ' + adicionais dele' : ''})
-                  </span>
-                  <span className="tabular-nums font-semibold">{formatMoney(composicao.totalMotorista)}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-2 flex-wrap pt-1">
-                <span className="text-[11px] font-semibold text-[color:var(--rbr-navy-dark)]">Margem sobre o valor final:</span>
-                <span
-                  className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
-                  style={{ background: margem.bg, color: margem.color }}
-                >
-                  {margem.label}
-                </span>
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                  faixa recomendada {(margemMin * 100).toFixed(0)}% – {(margemMax * 100).toFixed(0)}% (fora dela a gravação continua
-                  permitida, mas fica registrada no log de auditoria)
-                </span>
-              </div>
+          {/* Recebimento do cliente / condições de pagamento e ajuste de alíquota de imposto —
+              não aparecem no preview aprovado, então ficam só na aba avançada. */}
+          {abaCotacao === 'avancada' && (
+          <div className="rounded-xl p-3.5 flex flex-col gap-3 border" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Imposto — ajustar alíquota</div>
+            <div className="relative" style={{ maxWidth: 160 }}>
+              <input
+                inputMode="decimal"
+                placeholder="ex.: 6"
+                value={form.aliquota_imposto_pct}
+                onChange={(e) => setForm((f) => (f ? { ...f, aliquota_imposto_pct: e.target.value } : f))}
+                className={inputClass}
+                style={{ ...inputStyle, paddingRight: 24 }}
+              />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[color:var(--rbr-muted)]">%</span>
+            </div>
+            <div className="text-[11px] -mt-1 text-[color:var(--rbr-muted)]">
+              Calculado sobre o valor final (já entra na conta, não precisa estimar em R$).
+              {!form.aliquota_imposto_pct.trim() && ' Sem alíquota, o imposto fica em R$ 0.'}
             </div>
           </div>
+          )}
 
-          {/* Recebimento do cliente — não aparece no preview aprovado (fica no prazo padrão
-              cadastrado por default), então some atrás de um link; abre sozinho se a cotação
-              já tem um prazo negociado à parte. */}
-          {mostrarCondicoesPagamento || form.prazo_modo === 'personalizado' ? (
+          {abaCotacao === 'avancada' && (
           <div className="rounded-xl p-3.5 flex flex-col gap-3 border" style={{ borderColor: 'var(--rbr-border)' }}>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Recebimento do cliente</div>
@@ -3625,10 +3787,6 @@ export default function Cotacao() {
               )
             })()}
           </div>
-          ) : (
-            <button type="button" onClick={() => setMostrarCondicoesPagamento(true)} className={opcaoLinkClass} style={opcaoLinkStyle}>
-              + condições de pagamento e prazo
-            </button>
           )}
 
           {/* Ações */}

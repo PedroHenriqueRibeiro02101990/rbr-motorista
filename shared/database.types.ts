@@ -1612,6 +1612,7 @@ export type Database = {
           custos_adicionais_total: number
           distancia_km: number | null
           eixos: number | null
+          endereco_destino: string | null
           faixa_risco_seguro: string | null
           flag_peso_acima_limiar: boolean
           flag_valor_acima_teto_seguro: boolean
@@ -1638,13 +1639,16 @@ export type Database = {
           nf_remetente_ie: string | null
           nf_remetente_razao_social: string | null
           nf_serie: string | null
+          observacoes: string | null
           origem: string
           pedagio: number | null
           pedagio_pracas: Json | null
           perdida_em: string | null
           peso_bruto_kg: number | null
           piso_antt_calculado: number | null
+          prazo_entrega: string | null
           prazo_personalizado: Json | null
+          prazo_recebimento: string | null
           preco_modo: string
           projeto_id: string | null
           status: Database["public"]["Enums"]["status_cotacao"]
@@ -1677,6 +1681,7 @@ export type Database = {
           custos_adicionais_total?: number
           distancia_km?: number | null
           eixos?: number | null
+          endereco_destino?: string | null
           faixa_risco_seguro?: string | null
           flag_peso_acima_limiar?: boolean
           flag_valor_acima_teto_seguro?: boolean
@@ -1703,13 +1708,16 @@ export type Database = {
           nf_remetente_ie?: string | null
           nf_remetente_razao_social?: string | null
           nf_serie?: string | null
+          observacoes?: string | null
           origem?: string
           pedagio?: number | null
           pedagio_pracas?: Json | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
+          prazo_entrega?: string | null
           prazo_personalizado?: Json | null
+          prazo_recebimento?: string | null
           preco_modo?: string
           projeto_id?: string | null
           status?: Database["public"]["Enums"]["status_cotacao"]
@@ -1742,6 +1750,7 @@ export type Database = {
           custos_adicionais_total?: number
           distancia_km?: number | null
           eixos?: number | null
+          endereco_destino?: string | null
           faixa_risco_seguro?: string | null
           flag_peso_acima_limiar?: boolean
           flag_valor_acima_teto_seguro?: boolean
@@ -1768,13 +1777,16 @@ export type Database = {
           nf_remetente_ie?: string | null
           nf_remetente_razao_social?: string | null
           nf_serie?: string | null
+          observacoes?: string | null
           origem?: string
           pedagio?: number | null
           pedagio_pracas?: Json | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
+          prazo_entrega?: string | null
           prazo_personalizado?: Json | null
+          prazo_recebimento?: string | null
           preco_modo?: string
           projeto_id?: string | null
           status?: Database["public"]["Enums"]["status_cotacao"]
