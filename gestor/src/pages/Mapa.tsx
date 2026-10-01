@@ -334,7 +334,10 @@ function DetalheCarga({ c, onFechar }: { c: CargaMapa; onFechar: () => void }) {
         <Linha r="Motorista" v={c.motorista ?? '—'} />
         <Linha r="Veículo" v={[c.tipo_veiculo, c.placa].filter(Boolean).join(' · ') || '—'} />
         <Linha r="Rastreamento" v={c.rastreador === 'wialon' ? 'Rastreador certificado' : c.rastreador === 'nenhum' ? 'Nenhum' : 'GPS do celular'} />
-        <Linha r="Distância da viagem" v={c.distancia_total_km != null ? `~${Number(c.distancia_total_km).toLocaleString('pt-BR')} km` : '—'} />
+        <Linha
+          r="Distância da viagem"
+          v={c.distancia_total_km != null ? `${c.distancia_total_e_real ? '' : '~'}${Number(c.distancia_total_km).toLocaleString('pt-BR')} km` : '—'}
+        />
         <Linha r="Falta" v={c.restante_km != null ? `~${Number(c.restante_km).toLocaleString('pt-BR')} km` : '—'} />
         <Linha r="Chegada estimada" v={horas != null ? (horas < 1 ? 'menos de 1 h' : `~${Math.round(horas)} h de estrada`) : '—'} />
       </div>
@@ -347,7 +350,10 @@ function DetalheCarga({ c, onFechar }: { c: CargaMapa; onFechar: () => void }) {
         </div>
       )}
       <div className="text-[11px] text-[color:var(--rbr-muted)]">
-        Distâncias estimadas pela estrada (linha reta × 1,25) e chegada a {VELOCIDADE_MEDIA_KMH} km/h de média, sem paradas.
+        {c.distancia_total_e_real
+          ? 'Distância da viagem é a rota real calculada na cotação (piso ANTT). '
+          : 'Distância da viagem estimada (linha reta × 1,25) — essa cotação não teve o piso ANTT calculado. '}
+        "Falta" é estimativa pela posição atual (linha reta × 1,25). Chegada a {VELOCIDADE_MEDIA_KMH} km/h de média, sem paradas.
       </div>
       <div className="flex gap-2 flex-wrap">
         <Link to={`/operacoes?op=${c.id}`} className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>

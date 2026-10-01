@@ -37,6 +37,10 @@
 //      especificamente pra esse cenário — testar em homologação e ajustar via
 //      suporte@focusnfe.com.br se a Focus usar outro nome de campo.
 //
+// v2 (2026-10-01): alinhado à doc da Focus (POST /v2/nfse): natureza_operacao, optante_simples_nacional,
+// prestador.inscricao_municipal, servico.codigo_municipio; tomador = cliente da operação (com endereço);
+// modo `previa: true` (card de conferência: devolve payload + bloqueios, sem gravar nem chamar a Focus).
+//
 // Fluxo (mesmo padrão da emitir-cte): valida -> monta payload -> chama Focus
 // -> grava em documentacao_operacao (tipo='nfse') -> status final chega
 // depois via consultar-documento-fiscal.
@@ -73,7 +77,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { operacao_id } = await req.json();
+    const { operacao_id, previa } = await req.json();
     if (!operacao_id || typeof operacao_id !== "string") {
       return jsonResponse({ sucesso: false, erro: "Informe operacao_id." }, 400);
     }
@@ -139,16 +143,19 @@ Deno.serve(async (req: Request) => {
     let municipio: { codigo_ibge: string; aliquota_iss_transporte: number | null; eh_sede_rbr: boolean } | null =
       null;
     if (mesmoMunicipio && op.cidade_origem && op.uf_origem) {
-      const { data: muni } = await supabaseAdmin
-        .from("municipios_ibge")
-        .select("codigo_ibge, aliquota_iss_transporte, eh_sede_rbr")
-        .eq("uf", op.uf_origem)
-        .ilike("cidade", op.cidade_origem)
-        .maybeSingle();
+      const { data: achado } = await supabaseAdmin.rpc("buscar_municipio", { p_cidade: op.cidade_origem, p_uf: op.uf_origem });
+      const codigo = Array.isArray(achado) && achado.length ? achado[0].codigo_ibge : null;
+      const { data: muni } = codigo
+        ? await supabaseAdmin
+            .from("municipios_ibge")
+            .select("codigo_ibge, aliquota_iss_transporte, eh_sede_rbr")
+            .eq("codigo_ibge", codigo)
+            .maybeSingle()
+        : { data: null };
       municipio = muni ?? null;
       if (!municipio) {
         bloqueios.push(
-          `Cidade "${op.cidade_origem}/${op.uf_origem}" ainda não está cadastrada em municipios_ibge (código IBGE + alíquota de ISS de transporte) — cadastrar antes de emitir.`,
+          `Cidade "${op.cidade_origem}/${op.uf_origem}" não foi encontrada na tabela do IBGE — confira a grafia da cidade e a UF na cotação.`,
         );
       } else if (municipio.aliquota_iss_transporte === null) {
         bloqueios.push(
@@ -159,7 +166,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: pf } = await supabaseAdmin
       .from("parametros_fiscais")
-      .select("nfse_nacional_habilitada, item_lista_servico_transporte_municipal")
+      .select("nfse_nacional_habilitada, item_lista_servico_transporte_municipal, inscricao_municipal")
       .eq("id", op.parametros_fiscais_id)
       .maybeSingle();
 
@@ -169,11 +176,87 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    if (!pf?.inscricao_municipal) {
+      bloqueios.push("Inscrição Municipal (IM) da RBR não cadastrada em parametros_fiscais — obrigatória no prestador da NFS-e.");
+    }
+
+    // Tomador = cliente da operação (quem contrata/paga o serviço); cai para os dados da NF só se faltar cliente.
+    // deno-lint-ignore no-explicit-any
+    let cliente: Record<string, any> | null = null;
+    const { data: opRow } = await supabaseAdmin.from("operacoes").select("cliente_id").eq("id", operacao_id).maybeSingle();
+    if (opRow?.cliente_id) {
+      const { data: c } = await supabaseAdmin
+        .from("clientes")
+        .select("cnpj, cpf, razao_social, email, celular_whatsapp, cep, logradouro, numero_endereco, complemento, bairro, cidade, uf")
+        .eq("id", opRow.cliente_id)
+        .maybeSingle();
+      cliente = c;
+    }
+    let codMunTomador: string | null = null;
+    if (cliente?.cidade && cliente?.uf) {
+      const { data: m } = await supabaseAdmin.rpc("buscar_municipio", { p_cidade: cliente.cidade, p_uf: cliente.uf });
+      codMunTomador = Array.isArray(m) && m.length ? m[0].codigo_ibge : null;
+    }
+
     const usaNacional = Boolean(municipio && !municipio.eh_sede_rbr);
     if (usaNacional && !pf?.nfse_nacional_habilitada) {
       bloqueios.push(
         `Frete intramunicipal fora da sede da RBR (${op.cidade_origem}/${op.uf_origem}) precisa do Emissor Nacional da NFS-e habilitado no painel da Focus (endpoint /v2/nfsen) — parametros_fiscais.nfse_nacional_habilitada ainda está false. Habilitar no painel e marcar true antes de emitir.`,
       );
+    }
+
+    const somenteDigitos = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
+    const tomadorCnpj = somenteDigitos(cliente?.cnpj) || somenteDigitos(op.nf_destinatario_cnpj || op.nf_remetente_cnpj);
+    const tomadorCpf = !cliente?.cnpj ? somenteDigitos(cliente?.cpf) : "";
+    const tomadorNome = cliente?.razao_social || op.nf_destinatario_razao_social || op.nf_remetente_razao_social;
+
+    const valorServico = Number(op.valor_total_cotacao ?? 0);
+    const aliquota = municipio?.aliquota_iss_transporte != null ? Number(municipio.aliquota_iss_transporte) : null;
+    const usaNacionalPrev = Boolean(municipio && !municipio.eh_sede_rbr);
+    const payload: Record<string, unknown> = {
+      data_emissao: new Date().toISOString(),
+      natureza_operacao: "1", // 1 = tributação no município
+      optante_simples_nacional: true, // RBR é Simples Nacional
+      prestador: {
+        cnpj: somenteDigitos(op.emitente_cnpj),
+        inscricao_municipal: somenteDigitos(pf?.inscricao_municipal),
+        codigo_municipio: "3550308", // sede RBR, São Paulo capital — fixo (sem filial)
+      },
+      tomador: {
+        ...(tomadorCpf ? { cpf: tomadorCpf } : { cnpj: tomadorCnpj }),
+        razao_social: tomadorNome,
+        email: cliente?.email || undefined,
+        telefone: somenteDigitos(cliente?.celular_whatsapp) || undefined,
+        endereco: cliente?.logradouro
+          ? {
+              logradouro: cliente.logradouro,
+              numero: cliente.numero_endereco || "S/N",
+              complemento: cliente.complemento || undefined,
+              bairro: cliente.bairro,
+              codigo_municipio: codMunTomador || undefined,
+              uf: cliente.uf,
+              cep: somenteDigitos(cliente.cep) || undefined,
+            }
+          : undefined,
+      },
+      servico: {
+        discriminacao: `Serviço de transporte rodoviário de carga, intramunicipal, em ${op.cidade_origem}/${op.uf_origem}.`,
+        item_lista_servico: pf?.item_lista_servico_transporte_municipal,
+        codigo_municipio: municipio?.codigo_ibge, // município da prestação (onde o frete acontece)
+        ...(usaNacionalPrev ? { codigo_municipio_incidencia: municipio?.codigo_ibge } : {}),
+        valor_servicos: valorServico,
+        base_calculo: valorServico,
+        aliquota,
+        valor_iss: aliquota != null ? Math.round(valorServico * aliquota * 100) / 100 : undefined,
+        iss_retido: usaNacionalPrev, // fora da sede: tomador retém; na sede, RBR recolhe normalmente
+      },
+    };
+
+    if (!tomadorCnpj && !tomadorCpf) bloqueios.push("Tomador do serviço sem CNPJ/CPF — preencha o cadastro do cliente da operação.");
+    if (!tomadorNome) bloqueios.push("Tomador do serviço sem razão social.");
+
+    if (previa === true) {
+      return jsonResponse({ sucesso: true, previa: true, ambiente: op.ambiente_fiscal ?? "homologacao", bloqueios, payload });
     }
 
     if (bloqueios.length > 0) {
@@ -194,30 +277,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const ref = `rbr-nfse-${operacao_id}`;
-    const tomadorCnpj = op.nf_destinatario_cnpj || op.nf_remetente_cnpj;
-    const tomadorNome = op.nf_destinatario_razao_social || op.nf_remetente_razao_social;
     const endpoint = usaNacional ? "/v2/nfsen" : "/v2/nfse";
     const provedorGravado = usaNacional ? "nfsen" : "nfse";
-
-    const payload: Record<string, unknown> = {
-      data_emissao: new Date().toISOString(),
-      prestador: {
-        cnpj: op.emitente_cnpj,
-        codigo_municipio: "3550308", // sede RBR, São Paulo capital — fixo (sem filial)
-      },
-      tomador: {
-        cnpj: tomadorCnpj,
-        razao_social: tomadorNome,
-      },
-      servico: {
-        discriminacao: `Serviço de transporte rodoviário de carga, intramunicipal, em ${op.cidade_origem}/${op.uf_origem}.`,
-        item_lista_servico: pf!.item_lista_servico_transporte_municipal,
-        codigo_municipio_incidencia: municipio!.codigo_ibge,
-        valor_servicos: op.valor_total_cotacao,
-        aliquota: municipio!.aliquota_iss_transporte,
-        iss_retido: usaNacional, // fora da sede: tomador retém na fonte; na sede, RBR recolhe normalmente
-      },
-    };
 
     const { data: token, error: tokenError } = await supabaseAdmin.rpc("get_focus_nfe_token", {
       p_ambiente: op.ambiente_fiscal ?? "homologacao",

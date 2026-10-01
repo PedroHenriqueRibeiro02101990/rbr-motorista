@@ -116,6 +116,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [copiadoId, setCopiadoId] = useState<string | null>(null)
 
   const [motivoLiberacao, setMotivoLiberacao] = useState('')
+  const [motivoCancelamento, setMotivoCancelamento] = useState('')
   const [busca, setBusca] = useState('')
   const [showDadosEmissao, setShowDadosEmissao] = useState(false)
   const [assessoria, setAssessoria] = useState<AssessoriaContato>({ nome: '', whatsapp: '', email: '' })
@@ -263,6 +264,21 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         : `Liberado por ${gestor.nome}`,
     })
     setMotivoLiberacao('')
+  }
+
+  // Não apaga a linha do banco — operação já tem lançamento financeiro/documento fiscal
+  // amarrado, e apagar de verdade quebraria isso. "Cancelar" usa o status que já existe no
+  // schema (cancelada_em/cancelada_por/motivo_cancelamento) — some das listas ativas, mas o
+  // histórico continua íntegro.
+  async function cancelarOperacao(op: OperacaoEnriquecida) {
+    if (!window.confirm('Cancelar esta operação? Ela some das listas ativas, mas o histórico financeiro/fiscal fica registrado (não dá pra desfazer sozinho depois).')) return
+    const ok = await atualizarOperacao(op.id, {
+      status: 'cancelada',
+      cancelada_em: new Date().toISOString(),
+      cancelada_por: gestor.id,
+      motivo_cancelamento: motivoCancelamento.trim() || null,
+    })
+    if (ok) setMotivoCancelamento('')
   }
 
   async function togglePagamentoPosEntrega(op: OperacaoEnriquecida) {
@@ -921,6 +937,29 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                         />
                       </button>
                     </div>
+
+                    {op.status !== 'cancelada' && (
+                      <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2 border" style={{ borderColor: 'var(--rbr-danger)' }}>
+                        <div className="text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+                          Cancelar operação
+                        </div>
+                        <input
+                          value={motivoCancelamento}
+                          onChange={(e) => setMotivoCancelamento(e.target.value)}
+                          placeholder="Motivo do cancelamento (opcional)"
+                          className="border rounded-lg px-3 py-2 text-xs outline-none bg-white"
+                          style={{ borderColor: 'var(--rbr-border)' }}
+                        />
+                        <button
+                          onClick={() => cancelarOperacao(op)}
+                          disabled={saving}
+                          className="self-start text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                          style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                        >
+                          {saving ? 'Salvando…' : 'Cancelar operação'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

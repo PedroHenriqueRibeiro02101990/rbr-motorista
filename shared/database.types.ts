@@ -955,6 +955,8 @@ export type Database = {
       }
       clientes: {
         Row: {
+          inscricao_estadual: string | null
+          ie_situacao: string | null
           agenciador_id: string | null
           bairro: string | null
           celular_whatsapp: string | null
@@ -982,6 +984,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          inscricao_estadual?: string | null
+          ie_situacao?: string | null
           agenciador_id?: string | null
           bairro?: string | null
           celular_whatsapp?: string | null
@@ -1009,6 +1013,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          inscricao_estadual?: string | null
+          ie_situacao?: string | null
           agenciador_id?: string | null
           bairro?: string | null
           celular_whatsapp?: string | null
@@ -1209,6 +1215,124 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      operacao_ciot_vpo: {
+        Row: {
+          ciot: string | null
+          ciot_cnpj_responsavel: string | null
+          created_at: string
+          id: string
+          operacao_id: string
+          origem: string
+          pagto_agencia: string | null
+          pagto_banco: string | null
+          pagto_cnpj_ipef: string | null
+          pagto_parcelas: Json | null
+          pagto_pix: string | null
+          updated_at: string
+          vpo_categoria_combinacao: string | null
+          vpo_cnpj_fornecedora: string | null
+          vpo_idvpo: string | null
+          vpo_tipo: string | null
+          vpo_valor: number | null
+        }
+        Insert: {
+          ciot?: string | null
+          ciot_cnpj_responsavel?: string | null
+          created_at?: string
+          id?: string
+          operacao_id: string
+          origem?: string
+          pagto_agencia?: string | null
+          pagto_banco?: string | null
+          pagto_cnpj_ipef?: string | null
+          pagto_parcelas?: Json | null
+          pagto_pix?: string | null
+          updated_at?: string
+          vpo_categoria_combinacao?: string | null
+          vpo_cnpj_fornecedora?: string | null
+          vpo_idvpo?: string | null
+          vpo_tipo?: string | null
+          vpo_valor?: number | null
+        }
+        Update: {
+          ciot?: string | null
+          ciot_cnpj_responsavel?: string | null
+          created_at?: string
+          id?: string
+          operacao_id?: string
+          origem?: string
+          pagto_agencia?: string | null
+          pagto_banco?: string | null
+          pagto_cnpj_ipef?: string | null
+          pagto_parcelas?: Json | null
+          pagto_pix?: string | null
+          updated_at?: string
+          vpo_categoria_combinacao?: string | null
+          vpo_cnpj_fornecedora?: string | null
+          vpo_idvpo?: string | null
+          vpo_tipo?: string | null
+          vpo_valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operacao_ciot_vpo_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: true
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      eventos_fiscais_operacao: {
+        Row: {
+          ator_id: string | null
+          created_at: string
+          evento: string
+          id: string
+          mensagem: string | null
+          operacao_id: string
+          origem: string
+          requisicao: Json | null
+          resposta: Json | null
+          sucesso: boolean
+          tipo_documento: string
+        }
+        Insert: {
+          ator_id?: string | null
+          created_at?: string
+          evento: string
+          id?: string
+          mensagem?: string | null
+          operacao_id: string
+          origem: string
+          requisicao?: Json | null
+          resposta?: Json | null
+          sucesso: boolean
+          tipo_documento: string
+        }
+        Update: {
+          ator_id?: string | null
+          created_at?: string
+          evento?: string
+          id?: string
+          mensagem?: string | null
+          operacao_id?: string
+          origem?: string
+          requisicao?: Json | null
+          resposta?: Json | null
+          sucesso?: boolean
+          tipo_documento?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eventos_fiscais_operacao_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       condicoes_pagamento_operacao: {
         Row: {
@@ -1525,6 +1649,7 @@ export type Database = {
       }
       cotacao_destinos: {
         Row: {
+          custo_financeiro: number
           cidade_destino: string | null
           cotacao_id: string
           created_at: string
@@ -1544,6 +1669,7 @@ export type Database = {
           valor: number
         }
         Insert: {
+          custo_financeiro?: number
           cidade_destino?: string | null
           cotacao_id: string
           created_at?: string
@@ -1563,6 +1689,7 @@ export type Database = {
           valor: number
         }
         Update: {
+          custo_financeiro?: number
           cidade_destino?: string | null
           cotacao_id?: string
           created_at?: string
@@ -1610,6 +1737,12 @@ export type Database = {
           condicao_prazo_id: string | null
           created_at: string
           custos_adicionais_total: number
+          custo_financeiro: number
+          giro_repassar: boolean
+          giro_repasse_pct: number
+          giro_dias_transito: number | null
+          giro_aporte: number | null
+          giro_taxa_efetiva: number | null
           distancia_km: number | null
           eixos: number | null
           endereco_destino: string | null
@@ -1680,6 +1813,12 @@ export type Database = {
           condicao_prazo_id?: string | null
           created_at?: string
           custos_adicionais_total?: number
+          custo_financeiro?: number
+          giro_repassar?: boolean
+          giro_repasse_pct?: number
+          giro_dias_transito?: number | null
+          giro_aporte?: number | null
+          giro_taxa_efetiva?: number | null
           distancia_km?: number | null
           eixos?: number | null
           endereco_destino?: string | null
@@ -1750,6 +1889,12 @@ export type Database = {
           condicao_prazo_id?: string | null
           created_at?: string
           custos_adicionais_total?: number
+          custo_financeiro?: number
+          giro_repassar?: boolean
+          giro_repasse_pct?: number
+          giro_dias_transito?: number | null
+          giro_aporte?: number | null
+          giro_taxa_efetiva?: number | null
           distancia_km?: number | null
           eixos?: number | null
           endereco_destino?: string | null
@@ -1856,6 +2001,9 @@ export type Database = {
       }
       documentacao_operacao: {
         Row: {
+          encerrado_em: string | null
+          encerramento_erro: string | null
+          encerramento_origem: string | null
           aceite_manual_motivo: string | null
           ambiente: string | null
           arquivo_enviado_em: string | null
@@ -1888,6 +2036,9 @@ export type Database = {
           url_pdf: string | null
         }
         Insert: {
+          encerrado_em?: string | null
+          encerramento_erro?: string | null
+          encerramento_origem?: string | null
           aceite_manual_motivo?: string | null
           ambiente?: string | null
           arquivo_enviado_em?: string | null
@@ -1920,6 +2071,9 @@ export type Database = {
           url_pdf?: string | null
         }
         Update: {
+          encerrado_em?: string | null
+          encerramento_erro?: string | null
+          encerramento_origem?: string | null
           aceite_manual_motivo?: string | null
           ambiente?: string | null
           arquivo_enviado_em?: string | null
@@ -2805,6 +2959,7 @@ export type Database = {
       }
       fornecedores: {
         Row: {
+          inscricao_estadual: string | null
           banco_agencia: string | null
           banco_codigo: string | null
           banco_conta: string | null
@@ -2827,6 +2982,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          inscricao_estadual?: string | null
           banco_agencia?: string | null
           banco_codigo?: string | null
           banco_conta?: string | null
@@ -2849,6 +3005,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          inscricao_estadual?: string | null
           banco_agencia?: string | null
           banco_codigo?: string | null
           banco_conta?: string | null
@@ -4040,13 +4197,30 @@ export type Database = {
           ativo: boolean
           cnpj: string
           created_at: string
+          csosn: string | null
+          email_contato: string | null
+          endereco_bairro: string | null
+          endereco_cep: string | null
+          endereco_codigo_municipio: string | null
+          endereco_complemento: string | null
+          endereco_logradouro: string | null
+          endereco_numero: string | null
+          endereco_uf: string | null
+          icms_aliquota_credito_simples: number | null
           icms_aliquota_intraestadual_sp: number | null
           id: string
           inscricao_estadual: string | null
+          inscricao_municipal: string | null
           item_lista_servico_transporte_municipal: string | null
           nfse_nacional_habilitada: boolean
           provedor: string
           razao_social: string
+          responsavel_tecnico_cnpj: string | null
+          responsavel_tecnico_contato: string | null
+          responsavel_tecnico_email: string | null
+          responsavel_tecnico_telefone: string | null
+          rntrc: string | null
+          telefone_contato: string | null
           token_homologacao_vault_secret_id: string | null
           token_producao_vault_secret_id: string | null
           updated_at: string
@@ -4058,13 +4232,30 @@ export type Database = {
           ativo?: boolean
           cnpj: string
           created_at?: string
+          csosn?: string | null
+          email_contato?: string | null
+          endereco_bairro?: string | null
+          endereco_cep?: string | null
+          endereco_codigo_municipio?: string | null
+          endereco_complemento?: string | null
+          endereco_logradouro?: string | null
+          endereco_numero?: string | null
+          endereco_uf?: string | null
+          icms_aliquota_credito_simples?: number | null
           icms_aliquota_intraestadual_sp?: number | null
           id?: string
           inscricao_estadual?: string | null
+          inscricao_municipal?: string | null
           item_lista_servico_transporte_municipal?: string | null
           nfse_nacional_habilitada?: boolean
           provedor?: string
           razao_social: string
+          responsavel_tecnico_cnpj?: string | null
+          responsavel_tecnico_contato?: string | null
+          responsavel_tecnico_email?: string | null
+          responsavel_tecnico_telefone?: string | null
+          rntrc?: string | null
+          telefone_contato?: string | null
           token_homologacao_vault_secret_id?: string | null
           token_producao_vault_secret_id?: string | null
           updated_at?: string
@@ -4076,13 +4267,30 @@ export type Database = {
           ativo?: boolean
           cnpj?: string
           created_at?: string
+          csosn?: string | null
+          email_contato?: string | null
+          endereco_bairro?: string | null
+          endereco_cep?: string | null
+          endereco_codigo_municipio?: string | null
+          endereco_complemento?: string | null
+          endereco_logradouro?: string | null
+          endereco_numero?: string | null
+          endereco_uf?: string | null
+          icms_aliquota_credito_simples?: number | null
           icms_aliquota_intraestadual_sp?: number | null
           id?: string
           inscricao_estadual?: string | null
+          inscricao_municipal?: string | null
           item_lista_servico_transporte_municipal?: string | null
           nfse_nacional_habilitada?: boolean
           provedor?: string
           razao_social?: string
+          responsavel_tecnico_cnpj?: string | null
+          responsavel_tecnico_contato?: string | null
+          responsavel_tecnico_email?: string | null
+          responsavel_tecnico_telefone?: string | null
+          rntrc?: string | null
+          telefone_contato?: string | null
           token_homologacao_vault_secret_id?: string | null
           token_producao_vault_secret_id?: string | null
           updated_at?: string
@@ -4167,6 +4375,7 @@ export type Database = {
       }
       pessoas: {
         Row: {
+          inscricao_estadual: string | null
           acesso_bloqueado: boolean
           aprovacao_em: string | null
           aprovacao_hash: string | null
@@ -4219,6 +4428,7 @@ export type Database = {
           verificado_em: string | null
         }
         Insert: {
+          inscricao_estadual?: string | null
           acesso_bloqueado?: boolean
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -4271,6 +4481,7 @@ export type Database = {
           verificado_em?: string | null
         }
         Update: {
+          inscricao_estadual?: string | null
           acesso_bloqueado?: boolean
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -4842,6 +5053,7 @@ export type Database = {
       }
       prestadores_parceiros: {
         Row: {
+          inscricao_estadual: string | null
           celular: string | null
           cnh_ou_cnpj_validado: boolean
           cnpj: string | null
@@ -4861,6 +5073,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          inscricao_estadual?: string | null
           celular?: string | null
           cnh_ou_cnpj_validado?: boolean
           cnpj?: string | null
@@ -4880,6 +5093,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          inscricao_estadual?: string | null
           celular?: string | null
           cnh_ou_cnpj_validado?: boolean
           cnpj?: string | null

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime } from '@rbr/shared/format'
+import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
+import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
+import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -20,6 +23,9 @@ type DocumentacaoOperacao = Pick<
   | 'atualizado_em'
   | 'provedor'
   | 'ambiente'
+  | 'encerrado_em'
+  | 'encerramento_origem'
+  | 'encerramento_erro'
 >
 type StatusDocumentoFiscal = Database['public']['Enums']['status_documento_fiscal']
 type TipoDocumentoFiscal = Database['public']['Enums']['tipo_documento_fiscal']
@@ -173,6 +179,10 @@ export default function Fiscal() {
   const [docsPorOperacao, setDocsPorOperacao] = useState<Map<string, DocumentacaoOperacao[]>>(new Map())
   const [emAndamento, setEmAndamento] = useState<Set<string>>(new Set())
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
+  // Card de conferência aberto antes de emitir CT-e/MDF-e.
+  const [conferencia, setConferencia] = useState<{ op: OperacaoEnriquecida; tipo: TipoConferencia } | null>(null)
+  // Eventos fiscais pós-emissão (encerrar/cancelar MDF-e, cancelar CT-e, carta de correção, trocar condutor).
+  const [evento, setEvento] = useState<{ op: OperacaoEnriquecida; acao: AcaoEventoFiscal } | null>(null)
 
   // Registro manual de CT-e/MDF-e/CIOT emitidos fora do sistema.
   const [formNovoDocOperacaoId, setFormNovoDocOperacaoId] = useState<string | null>(null)
@@ -187,7 +197,7 @@ export default function Fiscal() {
     const { data } = await supabase
       .from('documentacao_operacao')
       .select(
-        'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente',
+        'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente, encerrado_em, encerramento_origem, encerramento_erro',
       )
       .in('operacao_id', operacaoIds)
 
@@ -241,9 +251,9 @@ export default function Fiscal() {
     })
   }
 
-  async function emitirDocumento(op: OperacaoEnriquecida, tipo: 'cte' | 'nfse') {
+  async function emitirDocumento(op: OperacaoEnriquecida, tipo: 'cte' | 'mdfe' | 'nfse') {
     const chave = `${op.id}:${tipo}`
-    const funcao = tipo === 'cte' ? 'emitir-cte' : 'emitir-nfse-intramunicipal'
+    const funcao = tipo === 'cte' ? 'emitir-cte' : tipo === 'mdfe' ? 'emitir-mdfe' : 'emitir-nfse-intramunicipal'
     marcarEmAndamento(chave, true)
     setErroPorOperacao((prev) => ({ ...prev, [op.id]: null }))
     try {
@@ -267,7 +277,7 @@ export default function Fiscal() {
     }
   }
 
-  async function consultarStatus(op: OperacaoEnriquecida, tipo: 'cte' | 'nfse') {
+  async function consultarStatus(op: OperacaoEnriquecida, tipo: 'cte' | 'mdfe' | 'nfse') {
     const chave = `${op.id}:consultar:${tipo}`
     marcarEmAndamento(chave, true)
     setErroPorOperacao((prev) => ({ ...prev, [op.id]: null }))
@@ -410,6 +420,32 @@ export default function Fiscal() {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Fiscal</h1>
       </div>
 
+      <ParametrosFiscaisPanel />
+      {evento && (
+        <EventoFiscalModal
+          operacaoId={evento.op.id}
+          acao={evento.acao}
+          cidadeDestino={evento.op.cidadeDestino}
+          ufDestino={evento.op.ufDestino}
+          onFechar={() => setEvento(null)}
+          onConcluido={() => carregarDocumentos([evento.op.id])}
+        />
+      )}
+      {conferencia && (
+        <ConferenciaEmissaoModal
+          operacaoId={conferencia.op.id}
+          tipo={conferencia.tipo}
+          titulo={conferencia.tipo === 'cte' ? 'CT-e' : conferencia.tipo === 'mdfe' ? 'MDF-e' : 'NFS-e'}
+          emitindo={emAndamento.has(`${conferencia.op.id}:${conferencia.tipo}`)}
+          onCancelar={() => setConferencia(null)}
+          onConfirmar={async () => {
+            const { op, tipo } = conferencia
+            await emitirDocumento(op, tipo)
+            setConferencia(null)
+          }}
+        />
+      )}
+
       {errorMsg && (
         <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {errorMsg}
@@ -433,9 +469,12 @@ export default function Fiscal() {
             )
             const docCte = docs.find((d) => d.tipo === 'cte')
             const docNfse = docs.find((d) => d.tipo === 'nfse')
+            const docMdfe = docs.find((d) => d.tipo === 'mdfe')
             const erroCard = erroPorOperacao[op.id]
 
             const chaveCte = `${op.id}:cte`
+            const chaveMdfe = `${op.id}:mdfe`
+            const chaveConsultarMdfe = `${op.id}:consultar:mdfe`
             const chaveNfse = `${op.id}:nfse`
             const chaveConsultarCte = `${op.id}:consultar:cte`
             const chaveConsultarNfse = `${op.id}:consultar:nfse`
@@ -778,9 +817,26 @@ export default function Fiscal() {
                   </div>
                 )}
 
+                {docMdfe?.status === 'emitido' && (
+                  <div
+                    className="text-xs rounded-lg px-3 py-2"
+                    style={
+                      docMdfe.encerramento_erro && !docMdfe.encerrado_em
+                        ? { background: '#FBE9E9', color: 'var(--rbr-danger)' }
+                        : { background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }
+                    }
+                  >
+                    {docMdfe.encerrado_em
+                      ? `MDF-e encerrado em ${new Date(docMdfe.encerrado_em).toLocaleString('pt-BR')} (${docMdfe.encerramento_origem === 'automatico' ? 'automático, ao finalizar a entrega' : 'manual'}).`
+                      : docMdfe.encerramento_erro
+                        ? `Não consegui encerrar o MDF-e: ${docMdfe.encerramento_erro} Use "Encerrar MDF-e".`
+                        : 'MDF-e autorizado — será encerrado automaticamente quando o motorista finalizar a entrega (ou use "Encerrar MDF-e").'}
+                  </div>
+                )}
+
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => emitirDocumento(op, 'cte')}
+                    onClick={() => setConferencia({ op, tipo: 'cte' })}
                     disabled={emAndamento.has(chaveCte)}
                     className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
                     style={{ background: 'var(--rbr-navy)', color: '#fff' }}
@@ -788,7 +844,25 @@ export default function Fiscal() {
                     {emAndamento.has(chaveCte) ? 'Enviando…' : 'Emitir CT-e'}
                   </button>
                   <button
-                    onClick={() => emitirDocumento(op, 'nfse')}
+                    onClick={() => setConferencia({ op, tipo: 'mdfe' })}
+                    disabled={emAndamento.has(chaveMdfe)}
+                    className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                  >
+                    {emAndamento.has(chaveMdfe) ? 'Enviando…' : 'Emitir MDF-e'}
+                  </button>
+                  {docMdfe?.status === 'pendente' && docMdfe.referencia && (
+                    <button
+                      onClick={() => consultarStatus(op, 'mdfe')}
+                      disabled={emAndamento.has(chaveConsultarMdfe)}
+                      className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                    >
+                      {emAndamento.has(chaveConsultarMdfe) ? 'Consultando…' : 'Atualizar status MDF-e'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setConferencia({ op, tipo: 'nfse' })}
                     disabled={emAndamento.has(chaveNfse)}
                     className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
                     style={{ background: 'var(--rbr-navy)', color: '#fff' }}
@@ -804,6 +878,49 @@ export default function Fiscal() {
                     >
                       {emAndamento.has(chaveConsultarCte) ? 'Consultando…' : 'Atualizar status CT-e'}
                     </button>
+                  )}
+                  {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
+                    <>
+                      <button
+                        onClick={() => setEvento({ op, acao: 'encerrar_mdfe' })}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                      >
+                        Encerrar MDF-e
+                      </button>
+                      <button
+                        onClick={() => setEvento({ op, acao: 'incluir_condutor_mdfe' })}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                      >
+                        Trocar condutor
+                      </button>
+                      <button
+                        onClick={() => setEvento({ op, acao: 'cancelar_mdfe' })}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                        style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                      >
+                        Cancelar MDF-e
+                      </button>
+                    </>
+                  )}
+                  {docCte?.status === 'emitido' && (
+                    <>
+                      <button
+                        onClick={() => setEvento({ op, acao: 'carta_correcao_cte' })}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                      >
+                        Carta de correção CT-e
+                      </button>
+                      <button
+                        onClick={() => setEvento({ op, acao: 'cancelar_cte' })}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                        style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                      >
+                        Cancelar CT-e
+                      </button>
+                    </>
                   )}
                   {docNfse?.status === 'pendente' && (
                     <button

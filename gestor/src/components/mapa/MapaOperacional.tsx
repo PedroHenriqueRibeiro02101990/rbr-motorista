@@ -24,6 +24,7 @@ export type CargaMapa = {
   sinal: Sinal
   trilha: [number, number, string][]
   distancia_total_km: number | null
+  distancia_total_e_real: boolean
   restante_km: number | null
 }
 export type MotoristaMapa = {

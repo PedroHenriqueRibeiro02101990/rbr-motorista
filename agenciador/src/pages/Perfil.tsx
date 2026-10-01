@@ -6,6 +6,7 @@ import { IconLogOut } from '@rbr/shared/icons'
 import { MeusDados, StatusCadastro } from '@rbr/shared/cadastro'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import DocumentoIdentidade from '../components/DocumentoIdentidade'
+import { consultarCnpj, consultarCep, preencherVazios } from '@rbr/shared/consultaCadastro'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Vinculo = Database['public']['Tables']['vinculos_agenciador_motorista']['Row']
@@ -122,6 +123,7 @@ export default function Perfil({
     email: pessoa.email ?? '',
     celular: pessoa.celular ?? '',
     pix: pessoa.pix ?? '',
+    inscricao_estadual: pessoa.inscricao_estadual ?? '',
     cep: pessoa.cep ?? '',
     logradouro: pessoa.logradouro ?? '',
     numero_endereco: pessoa.numero_endereco ?? '',
@@ -130,6 +132,29 @@ export default function Perfil({
     cidade: pessoa.cidade ?? '',
     uf: pessoa.uf ?? '',
   })
+  // Pessoa jurídica: completa IE e endereço a partir do CNPJ já cadastrado (uma vez, só campos vazios).
+  useEffect(() => {
+    if (pessoa.tipo_pessoa_doc !== 'PJ' || !pessoa.cnpj) return
+    if (pessoa.inscricao_estadual && pessoa.cep) return
+    consultarCnpj(pessoa.cnpj).then((r) => {
+      const d = r.dados
+      if (!d) return
+      setForm((f) =>
+        preencherVazios(f, {
+          inscricao_estadual: d.inscricao_estadual,
+          cep: d.cep,
+          logradouro: d.logradouro,
+          numero_endereco: d.numero_endereco,
+          complemento: d.complemento,
+          bairro: d.bairro,
+          cidade: d.cidade,
+          uf: d.uf,
+        }),
+      )
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoa.id])
+
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -244,6 +269,7 @@ export default function Perfil({
         email: form.email || null,
         celular: form.celular || null,
         pix: form.pix || null,
+        inscricao_estadual: form.inscricao_estadual || null,
         cep: form.cep || null,
         logradouro: form.logradouro || null,
         numero_endereco: form.numero_endereco || null,
@@ -328,6 +354,19 @@ export default function Perfil({
           </label>
         </div>
 
+        {pessoa.tipo_pessoa_doc === 'PJ' && (
+          <label className={labelCls}>
+            Inscrição estadual (IE)
+            <input
+              className={inputCls}
+              style={{ borderColor: 'var(--rbr-border)' }}
+              placeholder="preenchida pelo CNPJ — ou digite (isento)"
+              value={form.inscricao_estadual}
+              onChange={(e) => setForm((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+            />
+          </label>
+        )}
+
         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-1">Endereço</div>
         <div className="grid md:grid-cols-3 gap-3">
           <label className={labelCls}>
@@ -337,6 +376,10 @@ export default function Perfil({
               style={{ borderColor: 'var(--rbr-border)' }}
               value={form.cep}
               onChange={(e) => setForm((f) => ({ ...f, cep: e.target.value }))}
+              onBlur={async () => {
+                const d = await consultarCep(form.cep)
+                if (d) setForm((f) => preencherVazios(f, { logradouro: d.logradouro, bairro: d.bairro, cidade: d.cidade, uf: d.uf }))
+              }}
             />
           </label>
           <label className={`${labelCls} md:col-span-2`}>

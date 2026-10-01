@@ -35,7 +35,10 @@ Deno.serve(async (req: Request) => {
     const { data: chave } = await admin.rpc("get_gemini_api_key");
     if (!chave) return json({ ok: false, erro: "Leitura por IA indisponível (chave não configurada)." }, 503);
 
-    const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+    // gemini-2.5-flash passou a devolver 404 pra chaves free-tier novas (restrição do Google) e a linha
+    // 3.6/3.7/3.8-flash está com sobrecarga (503) do lado do Google nas últimas semanas — usando o
+    // flash-lite, mais leve, que tem fila de capacidade separada.
+    const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
     const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${chave}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

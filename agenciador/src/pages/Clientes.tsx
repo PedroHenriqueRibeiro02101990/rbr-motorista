@@ -3,6 +3,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { IconPlus, IconEdit, IconX, IconArchive } from '../icons-local'
 import { IconCheck } from '@rbr/shared/icons'
+import { consultarCnpj as consultarCnpjApi, consultarCep as consultarCepApi, resumoCnpj, preencherVazios, soDigitos } from '@rbr/shared/consultaCadastro'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cliente = Database['public']['Tables']['clientes']['Row']
@@ -12,6 +13,7 @@ interface FormState {
   razao_social: string
   nome_fantasia: string
   cnpj: string
+  inscricao_estadual: string
   email: string
   celular_whatsapp: string
   condicoes_pagamento_prazo: string
@@ -29,6 +31,7 @@ const EMPTY_FORM: FormState = {
   razao_social: '',
   nome_fantasia: '',
   cnpj: '',
+  inscricao_estadual: '',
   email: '',
   celular_whatsapp: '',
   condicoes_pagamento_prazo: '',
@@ -47,6 +50,7 @@ function clienteToForm(c: Cliente): FormState {
     razao_social: c.razao_social ?? '',
     nome_fantasia: c.nome_fantasia ?? '',
     cnpj: c.cnpj ?? '',
+    inscricao_estadual: c.inscricao_estadual ?? '',
     email: c.email ?? '',
     celular_whatsapp: c.celular_whatsapp ?? '',
     condicoes_pagamento_prazo: c.condicoes_pagamento_prazo ?? '',
@@ -89,6 +93,47 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
     load()
   }, [load])
 
+  const [consultando, setConsultando] = useState<'cnpj' | 'cep' | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+
+  // Preenche tudo o que der a partir do CNPJ (Receita + IE) e do CEP; só completa campos vazios.
+  async function consultarCnpj() {
+    if (soDigitos(form.cnpj).length !== 14) return
+    setConsultando('cnpj')
+    setAviso(null)
+    const r = await consultarCnpjApi(form.cnpj)
+    setConsultando(null)
+    if (!r.dados) {
+      setAviso(r.erro)
+      return
+    }
+    const d = r.dados
+    setForm((f) =>
+      preencherVazios(f, {
+        razao_social: d.razao_social,
+        nome_fantasia: d.nome_fantasia,
+        inscricao_estadual: d.inscricao_estadual,
+        email: d.email?.toLowerCase(),
+        celular_whatsapp: d.telefone,
+        cep: d.cep,
+        logradouro: d.logradouro,
+        numero_endereco: d.numero_endereco,
+        complemento: d.complemento,
+        bairro: d.bairro,
+        cidade: d.cidade,
+        uf: d.uf,
+      }),
+    )
+    setAviso(resumoCnpj(d, r.ieIndisponivel))
+  }
+
+  async function consultarCep() {
+    setConsultando('cep')
+    const d = await consultarCepApi(form.cep)
+    setConsultando(null)
+    if (d) setForm((f) => preencherVazios(f, { logradouro: d.logradouro, bairro: d.bairro, cidade: d.cidade, uf: d.uf }))
+  }
+
   function openNew() {
     setForm(EMPTY_FORM)
     setFormOpen(true)
@@ -112,6 +157,7 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
       razao_social: form.razao_social || null,
       nome_fantasia: form.nome_fantasia || null,
       cnpj: form.cnpj || null,
+      inscricao_estadual: form.inscricao_estadual || null,
       email: form.email || null,
       celular_whatsapp: form.celular_whatsapp || null,
       condicoes_pagamento_prazo: form.condicoes_pagamento_prazo || null,
@@ -197,6 +243,12 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
             </button>
           </div>
 
+          {aviso && (
+            <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: 'var(--rbr-bg, #F4F6FB)', color: 'var(--rbr-navy-dark)' }}>
+              {aviso}
+            </div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-3">
             <label className={labelCls}>
               Razão social
@@ -223,7 +275,21 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
                 className={inputCls}
                 style={{ borderColor: 'var(--rbr-border)' }}
                 value={form.cnpj}
+                inputMode="numeric"
+                placeholder="Digite o CNPJ — os dados vêm da Receita"
                 onChange={(e) => setForm((f) => ({ ...f, cnpj: e.target.value }))}
+                onBlur={consultarCnpj}
+              />
+              {consultando === 'cnpj' && <span className="font-normal">Consultando Receita…</span>}
+            </label>
+            <label className={labelCls}>
+              Inscrição estadual (IE)
+              <input
+                className={inputCls}
+                style={{ borderColor: 'var(--rbr-border)' }}
+                placeholder="vem do CNPJ — ou digite (isento)"
+                value={form.inscricao_estadual}
+                onChange={(e) => setForm((f) => ({ ...f, inscricao_estadual: e.target.value }))}
               />
             </label>
             <label className={labelCls}>
@@ -265,7 +331,9 @@ export default function Clientes({ pessoa }: { pessoa: Pessoa }) {
                 className={inputCls}
                 style={{ borderColor: 'var(--rbr-border)' }}
                 value={form.cep}
+                inputMode="numeric"
                 onChange={(e) => setForm((f) => ({ ...f, cep: e.target.value }))}
+                onBlur={consultarCep}
               />
             </label>
             <label className={`${labelCls} md:col-span-2`}>

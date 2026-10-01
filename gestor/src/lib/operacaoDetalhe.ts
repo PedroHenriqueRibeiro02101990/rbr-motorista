@@ -80,6 +80,7 @@ export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperac
     supabase
       .from('apolices_seguro')
       .select('*')
+      .eq('tipo', 'RCTR-C')
       .or(`vigencia_inicio.is.null,vigencia_inicio.lte.${hoje}`)
       .order('vigencia_inicio', { ascending: false, nullsFirst: false }),
     supabase.from('parametros_sistema').select('valor').eq('chave', 'dados_empresa').maybeSingle(),

@@ -179,7 +179,10 @@ Deno.serve(async (req: Request) => {
       const bytes = new Uint8Array(await fileBlob.arrayBuffer());
       if (bytes.length > 15 * 1024 * 1024) return jsonResponse({ sucesso: false, erro: "Arquivo grande demais (máx. 15 MB)." }, 413);
       const mimeType = fileBlob.type && fileBlob.type !== "" ? fileBlob.type : "image/jpeg";
-      const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+      // gemini-2.5-flash passou a devolver 404 pra chaves free-tier novas (restrição do Google) e a linha
+      // 3.6/3.7/3.8-flash está com sobrecarga (503) do lado do Google nas últimas semanas — usando o
+      // flash-lite, mais leve, que tem fila de capacidade separada.
+      const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
 
       const geminiResp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,

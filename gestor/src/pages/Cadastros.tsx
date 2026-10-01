@@ -6,6 +6,7 @@ import { IconChevronRight } from '@rbr/shared/icons'
 import { useSearchParams } from 'react-router-dom'
 import { BadgeAprovacao } from '@rbr/shared/cadastro'
 import { formatarDoc } from '@rbr/shared/documento'
+import { consultarCnpj, consultarCep, resumoCnpj, preencherVazios, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import Pendencias from '../components/cadastros/Pendencias'
 import PainelCadastro from '../components/cadastros/PainelCadastro'
 
@@ -79,6 +80,7 @@ function StatusBadge({ status }: { status: StatusCicloVida }) {
 const CLIENTE_INICIAL = {
   tipo_pessoa_doc: 'PJ' as TipoPessoaDoc,
   cnpj: '',
+  inscricao_estadual: '',
   cpf: '',
   razao_social: '',
   nome_fantasia: '',
@@ -124,6 +126,7 @@ const AGENCIADOR_INICIAL = {
   nome: '',
   cpf: '',
   cnpj: '',
+  inscricao_estadual: '',
   email: '',
   celular: '',
   cep: '',
@@ -140,6 +143,7 @@ const FORNECEDOR_INICIAL = {
   nome: '',
   razao_social: '',
   cnpj: '',
+  inscricao_estadual: '',
   cpf: '',
   email: '',
   celular: '',
@@ -168,6 +172,7 @@ const PRESTADOR_INICIAL = {
   nome: '',
   razao_social: '',
   cnpj: '',
+  inscricao_estadual: '',
   cpf: '',
   email: '',
   celular: '',
@@ -556,6 +561,47 @@ export default function Cadastros() {
     }
   }
 
+  // ---------- Consulta automática (CNPJ + IE, CEP) ----------
+
+  const [avisoConsulta, setAvisoConsulta] = useState<{ alvo: string; texto: string } | null>(null)
+  const [consultando, setConsultando] = useState<string | null>(null)
+
+  async function autoCnpj<T extends object>(
+    alvo: string,
+    valor: string,
+    setForm: (fn: (f: T) => T) => void,
+    mapa: (d: DadosCnpj) => { [K in keyof T]?: string | null | undefined },
+  ) {
+    if (soDigitos(valor).length !== 14) return
+    setConsultando(alvo)
+    setAvisoConsulta(null)
+    const r = await consultarCnpj(valor)
+    setConsultando(null)
+    if (!r.dados) {
+      if (r.erro) setAvisoConsulta({ alvo, texto: r.erro })
+      return
+    }
+    const d = r.dados
+    setForm((f) => preencherVazios(f, mapa(d)))
+    setAvisoConsulta({ alvo, texto: resumoCnpj(d, r.ieIndisponivel) })
+  }
+
+  async function autoCep<T extends object>(valor: string, setForm: (fn: (f: T) => T) => void) {
+    const d = await consultarCep(valor)
+    if (!d) return
+    setForm((f) => preencherVazios(f, { logradouro: d.logradouro, bairro: d.bairro, cidade: d.cidade, uf: d.uf } as { [K in keyof T]?: string | null }))
+  }
+
+  function AvisoConsulta({ alvo }: { alvo: string }) {
+    if (consultando === alvo) return <div className="text-xs text-[color:var(--rbr-muted)]">Consultando Receita Federal…</div>
+    if (avisoConsulta?.alvo !== alvo) return null
+    return (
+      <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
+        {avisoConsulta.texto}
+      </div>
+    )
+  }
+
   // ---------- Clientes ----------
 
   function montarPayloadCliente() {
@@ -564,6 +610,7 @@ export default function Cadastros() {
       razao_social: novoCliente.razao_social.trim() || null,
       nome_fantasia: novoCliente.nome_fantasia.trim() || null,
       cnpj: novoCliente.tipo_pessoa_doc === 'PJ' ? novoCliente.cnpj.trim() || null : null,
+      inscricao_estadual: novoCliente.tipo_pessoa_doc === 'PJ' ? novoCliente.inscricao_estadual.trim() || null : null,
       cpf: novoCliente.tipo_pessoa_doc === 'PF' ? novoCliente.cpf.trim() || null : null,
       cep: novoCliente.cep.trim() || null,
       logradouro: novoCliente.logradouro.trim() || null,
@@ -615,6 +662,7 @@ export default function Cadastros() {
     setNovoCliente({
       tipo_pessoa_doc: c.tipo_pessoa_doc,
       cnpj: c.cnpj ?? '',
+      inscricao_estadual: c.inscricao_estadual ?? '',
       cpf: c.cpf ?? '',
       razao_social: c.razao_social ?? '',
       nome_fantasia: c.nome_fantasia ?? '',
@@ -989,6 +1037,7 @@ export default function Cadastros() {
       nome: novoAgenciador.nome.trim(),
       cpf: novoAgenciador.tipo_pessoa_doc === 'PF' ? novoAgenciador.cpf.trim() || null : null,
       cnpj: novoAgenciador.tipo_pessoa_doc === 'PJ' ? novoAgenciador.cnpj.trim() || null : null,
+      inscricao_estadual: novoAgenciador.tipo_pessoa_doc === 'PJ' ? novoAgenciador.inscricao_estadual.trim() || null : null,
       email: novoAgenciador.email.trim() || null,
       celular: novoAgenciador.celular.trim() || null,
       cep: novoAgenciador.cep.trim() || null,
@@ -1039,6 +1088,7 @@ export default function Cadastros() {
       nome: a.nome,
       cpf: a.cpf ?? '',
       cnpj: a.cnpj ?? '',
+      inscricao_estadual: a.inscricao_estadual ?? '',
       email: a.email ?? '',
       celular: a.celular ?? '',
       cep: a.cep ?? '',
@@ -1072,6 +1122,7 @@ export default function Cadastros() {
       nome: novoFornecedor.nome.trim() || null,
       razao_social: novoFornecedor.razao_social.trim() || null,
       cnpj: novoFornecedor.tipo_pessoa_doc === 'PJ' ? novoFornecedor.cnpj.trim() || null : null,
+      inscricao_estadual: novoFornecedor.tipo_pessoa_doc === 'PJ' ? novoFornecedor.inscricao_estadual.trim() || null : null,
       cpf: novoFornecedor.tipo_pessoa_doc === 'PF' ? novoFornecedor.cpf.trim() || null : null,
       email: novoFornecedor.email.trim() || null,
       celular: novoFornecedor.celular.trim() || null,
@@ -1125,6 +1176,7 @@ export default function Cadastros() {
       nome: f.nome ?? '',
       razao_social: f.razao_social ?? '',
       cnpj: f.cnpj ?? '',
+      inscricao_estadual: f.inscricao_estadual ?? '',
       cpf: f.cpf ?? '',
       email: f.email ?? '',
       celular: f.celular ?? '',
@@ -1160,6 +1212,7 @@ export default function Cadastros() {
       nome: novoPrestador.tipo_pessoa_doc === 'PF' ? novoPrestador.nome.trim() || null : null,
       razao_social: novoPrestador.tipo_pessoa_doc === 'PJ' ? novoPrestador.razao_social.trim() || null : null,
       cnpj: novoPrestador.tipo_pessoa_doc === 'PJ' ? novoPrestador.cnpj.trim() || null : null,
+      inscricao_estadual: novoPrestador.tipo_pessoa_doc === 'PJ' ? novoPrestador.inscricao_estadual.trim() || null : null,
       cpf: novoPrestador.tipo_pessoa_doc === 'PF' ? novoPrestador.cpf.trim() || null : null,
       email: novoPrestador.email.trim() || null,
       celular: novoPrestador.celular.trim() || null,
@@ -1210,6 +1263,7 @@ export default function Cadastros() {
       nome: p.nome ?? '',
       razao_social: p.razao_social ?? '',
       cnpj: p.cnpj ?? '',
+      inscricao_estadual: p.inscricao_estadual ?? '',
       cpf: p.cpf ?? '',
       email: p.email ?? '',
       celular: p.celular ?? '',
@@ -1293,6 +1347,7 @@ export default function Cadastros() {
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
                 {editingClienteId ? 'Editar cliente' : 'Novo cliente'}
               </div>
+              <AvisoConsulta alvo="cliente" />
               {erroCliente && (
                 <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {erroCliente}
@@ -1331,6 +1386,7 @@ export default function Cadastros() {
                     placeholder="CNPJ *"
                     value={novoCliente.cnpj}
                     onChange={(e) => setNovoCliente((f) => ({ ...f, cnpj: e.target.value }))}
+                    onBlur={() => autoCnpj('cliente', novoCliente.cnpj, setNovoCliente, (d) => ({ razao_social: d.razao_social, nome_fantasia: d.nome_fantasia, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular_whatsapp: d.telefone, cep: d.cep, logradouro: d.logradouro, numero_endereco: d.numero_endereco, complemento: d.complemento, bairro: d.bairro, cidade: d.cidade, uf: d.uf }))}
                     className={inputClass}
                     style={inputStyle}
                   />
@@ -1339,6 +1395,15 @@ export default function Cadastros() {
                     placeholder="CPF *"
                     value={novoCliente.cpf}
                     onChange={(e) => setNovoCliente((f) => ({ ...f, cpf: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                )}
+                {novoCliente.tipo_pessoa_doc === 'PJ' && (
+                  <input
+                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                    value={novoCliente.inscricao_estadual}
+                    onChange={(e) => setNovoCliente((f) => ({ ...f, inscricao_estadual: e.target.value }))}
                     className={inputClass}
                     style={inputStyle}
                   />
@@ -1363,6 +1428,7 @@ export default function Cadastros() {
                   placeholder="CEP"
                   value={novoCliente.cep}
                   onChange={(e) => setNovoCliente((f) => ({ ...f, cep: e.target.value }))}
+                  onBlur={() => autoCep(novoCliente.cep, setNovoCliente)}
                   className={inputClass}
                   style={inputStyle}
                 />
@@ -1546,6 +1612,7 @@ export default function Cadastros() {
                   placeholder="CEP"
                   value={novoMotorista.cep}
                   onChange={(e) => setNovoMotorista((f) => ({ ...f, cep: e.target.value }))}
+                  onBlur={() => autoCep(novoMotorista.cep, setNovoMotorista)}
                   className={inputClass}
                   style={inputStyle}
                 />
@@ -2413,6 +2480,7 @@ export default function Cadastros() {
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
                 {editingAgenciadorId ? 'Editar agenciador' : 'Novo agenciador'}
               </div>
+              <AvisoConsulta alvo="agenciador" />
               {erroAgenciador && (
                 <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {erroAgenciador}
@@ -2450,6 +2518,16 @@ export default function Cadastros() {
                     placeholder="CNPJ *"
                     value={novoAgenciador.cnpj}
                     onChange={(e) => setNovoAgenciador((f) => ({ ...f, cnpj: e.target.value }))}
+                    onBlur={() => autoCnpj('agenciador', novoAgenciador.cnpj, setNovoAgenciador, (d) => ({ nome: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone, cep: d.cep, logradouro: d.logradouro, numero_endereco: d.numero_endereco, complemento: d.complemento, bairro: d.bairro, cidade: d.cidade, uf: d.uf }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                )}
+                {novoAgenciador.tipo_pessoa_doc === 'PJ' && (
+                  <input
+                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                    value={novoAgenciador.inscricao_estadual}
+                    onChange={(e) => setNovoAgenciador((f) => ({ ...f, inscricao_estadual: e.target.value }))}
                     className={inputClass}
                     style={inputStyle}
                   />
@@ -2474,6 +2552,7 @@ export default function Cadastros() {
                   placeholder="CEP"
                   value={novoAgenciador.cep}
                   onChange={(e) => setNovoAgenciador((f) => ({ ...f, cep: e.target.value }))}
+                  onBlur={() => autoCep(novoAgenciador.cep, setNovoAgenciador)}
                   className={inputClass}
                   style={inputStyle}
                 />
@@ -2624,6 +2703,7 @@ export default function Cadastros() {
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
                 {editingFornecedorId ? 'Editar fornecedor' : 'Novo fornecedor'}
               </div>
+              <AvisoConsulta alvo="fornecedor" />
               {erroFornecedor && (
                 <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {erroFornecedor}
@@ -2657,6 +2737,7 @@ export default function Cadastros() {
                     placeholder="CNPJ *"
                     value={novoFornecedor.cnpj}
                     onChange={(e) => setNovoFornecedor((f) => ({ ...f, cnpj: e.target.value }))}
+                    onBlur={() => autoCnpj('fornecedor', novoFornecedor.cnpj, setNovoFornecedor, (d) => ({ nome: d.nome_fantasia || d.razao_social, razao_social: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone }))}
                     className={inputClass}
                     style={inputStyle}
                   />
@@ -2678,6 +2759,15 @@ export default function Cadastros() {
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {novoFornecedor.tipo_pessoa_doc === 'PJ' && (
+                  <input
+                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                    value={novoFornecedor.inscricao_estadual}
+                    onChange={(e) => setNovoFornecedor((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                )}
                 <input
                   placeholder="E-mail"
                   value={novoFornecedor.email}
@@ -2857,6 +2947,7 @@ export default function Cadastros() {
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
                 {editingPrestadorId ? 'Editar prestador parceiro' : 'Novo prestador parceiro'}
               </div>
+              <AvisoConsulta alvo="prestador" />
               {erroPrestador && (
                 <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {erroPrestador}
@@ -2890,6 +2981,7 @@ export default function Cadastros() {
                     placeholder="CNPJ *"
                     value={novoPrestador.cnpj}
                     onChange={(e) => setNovoPrestador((f) => ({ ...f, cnpj: e.target.value }))}
+                    onBlur={() => autoCnpj('prestador', novoPrestador.cnpj, setNovoPrestador, (d) => ({ razao_social: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone }))}
                     className={inputClass}
                     style={inputStyle}
                   />
@@ -2912,6 +3004,15 @@ export default function Cadastros() {
                 </label>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {novoPrestador.tipo_pessoa_doc === 'PJ' && (
+                  <input
+                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                    value={novoPrestador.inscricao_estadual}
+                    onChange={(e) => setNovoPrestador((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                )}
                 <input
                   placeholder="E-mail"
                   value={novoPrestador.email}

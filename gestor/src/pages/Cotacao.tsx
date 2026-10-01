@@ -10,7 +10,9 @@ import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
 import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao, lerParametro, whatsappLink } from '../lib/financeiro'
+import { type GiroParams, type ResultadoGiro, GIRO_PARAMS_PADRAO, calcularGiro, diasTransito, giroParamsDeLinhas } from '../lib/giro'
 import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/cotacaoPdf'
+import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -84,19 +86,22 @@ function destinoDeLinha(r: CotacaoDestinoRow): DestinoLinha {
 function calcularCustoDestino(
   d: DestinoLinha,
   aliquota: number,
+  custoFin = 0, // custo financeiro do giro desta linha (R$, já com gross-up do IR)
+  repasse = 1, // fração do custo financeiro que entra no preço (1 = tudo, 0 = RBR absorve)
 ): { custo: number; valorFinal: number | null; imposto: number | null; lucro: number | null; erro: string | null } {
   const frete = numOrNull(d.frete_motorista) ?? 0
   const pedagio = numOrNull(d.pedagio) ?? 0
   const custo = round2(frete + pedagio)
+  const custoPreco = round2(custo + custoFin * repasse)
   const margemFrac = (numOrNull(d.margem_pct) ?? 0) / 100
   const fator = 1 + margemFrac
   const divisor = 1 - aliquota * fator
   if (divisor <= 0) {
     return { custo, valorFinal: null, imposto: null, lucro: null, erro: 'Margem alta demais pra essa alíquota de imposto — revise o %.' }
   }
-  const valorFinal = round2((custo * fator) / divisor)
+  const valorFinal = round2((custoPreco * fator) / divisor)
   const imposto = round2(valorFinal * aliquota)
-  const lucro = round2(valorFinal - custo - imposto)
+  const lucro = round2(valorFinal - custo - custoFin - imposto)
   return { custo, valorFinal, imposto, lucro, erro: null }
 }
 
@@ -279,6 +284,10 @@ const FORM_INICIAL = {
   lucro_pct: '',
   preco_modo: 'lucro_pct' as PrecoModo,
   valor_final_manual: '',
+  // Capital de giro: o custo financeiro do aporte entra no preço (true) ou a RBR absorve na margem (false).
+  giro_repasse_pct: '100', // % do custo financeiro que entra no preço (0–100); o resto a RBR absorve
+  // Dias de trânsito (saída do veículo → entrega). Vazio = estimativa pela distância.
+  giro_dias_transito: '',
   xml_danfe_url: '',
   // Recebimento do cliente: regra cadastrada ou prazo combinado só nesta negociação.
   prazo_modo: 'regra' as 'regra' | 'personalizado',
@@ -378,6 +387,8 @@ interface Composicao {
   aliquota: number
   imposto: number | null
   custoComImposto: number | null
+  custoFinanceiro: number // custo do giro (juros do aporte + IR assumido)
+  giro: ResultadoGiro | null
   lucro: number | null
   lucroPct: number | null // lucro ÷ (custo + imposto) — o "% de lucro" que o gestor digita
   margem: number | null // lucro ÷ valor final — base da faixa 26–40%
@@ -391,7 +402,14 @@ interface Composicao {
 //   imposto = alíquota × valor final
 //   lucro = lucro% × (custo + imposto)          ← soma o lucro depois do custo total com imposto
 //   valor final = custo × (1 + L) / (1 − t × (1 + L))
-function calcularComposicao(f: CotacaoFormState, lucroPadrao: number, itens: ItemCusto[]): Composicao {
+//   Capital de giro: custo financeiro (juros do aporte ÷ (1 − IR)) soma ao custo na base do preço quando
+//   "repassar" está ligado; desligado, o preço não muda e o custo financeiro sai do lucro da RBR.
+function calcularComposicao(
+  f: CotacaoFormState,
+  lucroPadrao: number,
+  itens: ItemCusto[],
+  giroCtx?: { params: GiroParams; regra: RegraPrazo | null },
+): Composicao {
   const frete = numOrNull(f.valor_frete_motorista)
   const pedagio = numOrNull(f.pedagio) ?? 0
   const valorNf = numOrNull(f.valor_nf) ?? 0
@@ -415,6 +433,8 @@ function calcularComposicao(f: CotacaoFormState, lucroPadrao: number, itens: Ite
     aliquota,
     imposto: null,
     custoComImposto: null,
+    custoFinanceiro: 0,
+    giro: null,
     lucro: null,
     lucroPct: null,
     margem: null,
@@ -423,28 +443,41 @@ function calcularComposicao(f: CotacaoFormState, lucroPadrao: number, itens: Ite
   }
   if (frete == null) return vazio
   const custo = round2(frete + pedagio + seguroTag + adicionais)
+  const giro = giroCtx
+    ? calcularGiro(
+        custo,
+        giroCtx.regra,
+        diasTransito(numOrNull(f.giro_dias_transito), numOrNull(f.distancia_km), giroCtx.params),
+        giroCtx.params,
+      )
+    : null
+  const custoFinanceiro = giro?.custoFinanceiro ?? 0
+  const repasse = Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100) / 100
+  const custoPreco = round2(custo + custoFinanceiro * repasse)
   let valorFinal: number
   const manual = numOrNull(f.valor_final_manual)
   if (f.preco_modo === 'valor_final' && manual != null) {
-    if (manual <= 0) return { ...vazio, custo, erro: 'Valor final precisa ser maior que zero.' }
+    if (manual <= 0) return { ...vazio, custo, custoFinanceiro, giro, erro: 'Valor final precisa ser maior que zero.' }
     valorFinal = round2(manual)
   } else {
     const lucroFrac = (numOrNull(f.lucro_pct) ?? lucroPadrao * 100) / 100
     const fator = 1 + lucroFrac
     const divisor = 1 - aliquota * fator
     if (divisor <= 0) {
-      return { ...vazio, custo, erro: 'Com esse lucro % e essa alíquota não dá pra fechar o valor final — revise os percentuais.' }
+      return { ...vazio, custo, custoFinanceiro, giro, erro: 'Com esse lucro % e essa alíquota não dá pra fechar o valor final — revise os percentuais.' }
     }
-    valorFinal = round2((custo * fator) / divisor)
+    valorFinal = round2((custoPreco * fator) / divisor)
   }
   const imposto = round2(valorFinal * aliquota)
-  const custoComImposto = round2(custo + imposto)
-  const lucro = round2(valorFinal - custo - imposto)
+  const custoComImposto = round2(custo + custoFinanceiro + imposto)
+  const lucro = round2(valorFinal - custo - custoFinanceiro - imposto)
   return {
     ...vazio,
     custo,
     imposto,
     custoComImposto,
+    custoFinanceiro,
+    giro,
     lucro,
     lucroPct: custoComImposto > 0 ? lucro / custoComImposto : null,
     margem: valorFinal > 0 ? lucro / valorFinal : null,
@@ -505,6 +538,7 @@ export default function Cotacao() {
   const [tetoSeguro, setTetoSeguro] = useState<number | null>(null)
   const [lucroPadrao, setLucroPadrao] = useState(0.4)
   const [aliquotaPadrao, setAliquotaPadrao] = useState<number | null>(null)
+  const [giroParams, setGiroParams] = useState<GiroParams>(GIRO_PARAMS_PADRAO)
   const [faixasSeguro, setFaixasSeguro] = useState<FaixaSeguro[]>(FAIXAS_SEGURO_PADRAO)
 
   // Custos adicionais
@@ -555,6 +589,7 @@ export default function Cotacao() {
   const [novoClienteTipo, setNovoClienteTipo] = useState<'PJ' | 'PF'>('PJ')
   const [novoClienteRazao, setNovoClienteRazao] = useState('')
   const [novoClienteCnpj, setNovoClienteCnpj] = useState('')
+  const [novoClienteDados, setNovoClienteDados] = useState<DadosCnpj | null>(null)
   const [criandoCliente, setCriandoCliente] = useState(false)
   const [erroNovoCliente, setErroNovoCliente] = useState<string | null>(null)
 
@@ -664,8 +699,19 @@ export default function Cotacao() {
         'lucro_cotacao_padrao',
         'aliquota_imposto_cotacao_padrao',
         'tag_seguro_faixas',
+        'giro_ativo',
+        'giro_faixas',
+        'giro_taxa_teto',
+        'giro_ir_pct',
+        'giro_pct_financiado',
+        'giro_dias_compensacao',
+        'giro_km_por_dia',
+        'giro_dias_carga',
+        'giro_dias_mes',
       ])
+    setGiroParams(giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))))
     for (const row of data ?? []) {
+      if (row.chave.startsWith('giro_')) continue
       if (row.chave === 'tag_seguro_faixas') {
         if (Array.isArray(row.valor)) {
           const faixas = (row.valor as unknown as FaixaSeguro[]).filter(
@@ -820,7 +866,21 @@ export default function Cotacao() {
     }
   }, [form?.valor_nf, tetoSeguro]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const composicao = useMemo(() => (form ? calcularComposicao(form, lucroPadrao, itens) : null), [form, lucroPadrao, itens])
+  // Regra de prazo do cliente (cadastrada ou personalizada) — define o relógio do aporte.
+  const regraCliente = useMemo<RegraPrazo | null>(() => {
+    if (!form) return null
+    if (form.prazo_modo === 'personalizado') return form.prazo_personalizado
+    const c = condicoesPrazo.find((x) => x.id === form.condicao_prazo_id) ?? condicoesPrazo.find((x) => x.padrao_receber)
+    return c ? regraDeCondicao(c) : null
+  }, [form, condicoesPrazo])
+  const giroCtx = useMemo(() => ({ params: giroParams, regra: regraCliente }), [giroParams, regraCliente])
+  // Custo financeiro de uma linha de destino (trânsito estimado pela distância daquele destino).
+  function finDestino(d: DestinoLinha): number {
+    const custo = round2((numOrNull(d.frete_motorista) ?? 0) + (numOrNull(d.pedagio) ?? 0))
+    return calcularGiro(custo, giroCtx.regra, diasTransito(null, numOrNull(d.distancia_km), giroCtx.params), giroCtx.params)?.custoFinanceiro ?? 0
+  }
+  const repassarGiro = Math.min(Math.max(numOrNull(form?.giro_repasse_pct ?? '100') ?? 100, 0), 100) / 100
+  const composicao = useMemo(() => (form ? calcularComposicao(form, lucroPadrao, itens, giroCtx) : null), [form, lucroPadrao, itens, giroCtx])
   const margemAjustada = composicao?.margem ?? null
   const margem = margemBadge(margemAjustada, margemMin, margemMax)
   const pisoReferencia = pisoInfo?.calculado ?? pisoSalvo
@@ -861,9 +921,9 @@ export default function Cotacao() {
   const somaDestinos = useMemo(
     () =>
       destinos.length > 0
-        ? round2(destinos.reduce((acc, d) => acc + (calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0), 0))
+        ? round2(destinos.reduce((acc, d) => acc + (calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro).valorFinal ?? 0), 0))
         : null,
-    [destinos, aliquotaDestinos],
+    [destinos, aliquotaDestinos, giroCtx, repassarGiro], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   // Só clientes ativos podem ser escolhidos — exceto o que já está na cotação (pra não sumir ao reabrir).
@@ -1064,6 +1124,8 @@ export default function Cotacao() {
       lucro_pct: fracToPctStr(c.lucro_pct ?? (c.valor_frete_motorista == null ? lucroPadrao : null)),
       preco_modo: c.preco_modo === 'valor_final' ? 'valor_final' : 'lucro_pct',
       valor_final_manual: c.preco_modo === 'valor_final' && c.valor_total != null ? String(c.valor_total) : '',
+      giro_repasse_pct: c.giro_repasse_pct != null ? String(c.giro_repasse_pct) : '100',
+      giro_dias_transito: c.giro_dias_transito != null ? String(c.giro_dias_transito) : '',
       xml_danfe_url: c.xml_danfe_url ?? '',
       prazo_modo: c.prazo_personalizado ? 'personalizado' : 'regra',
       condicao_prazo_id: c.condicao_prazo_id ?? '',
@@ -1164,6 +1226,38 @@ export default function Cotacao() {
     }
   }
 
+  // Remetente/destinatário: ao sair do CNPJ, completa razão social, IE e endereço (só o que está vazio).
+  async function autoParteNf(parte: 'remetente' | 'destinatario', valor: string) {
+    if (soDigitos(valor).length !== 14) return
+    const r = await consultarCnpj(valor)
+    const d = r.dados
+    if (!d) return
+    const vazio = (x: string | null | undefined) => !x || !x.trim()
+    setForm((f) => {
+      if (!f) return f
+      const rz = parte === 'remetente' ? 'nf_remetente_razao_social' : 'nf_destinatario_razao_social'
+      const ie = parte === 'remetente' ? 'nf_remetente_ie' : 'nf_destinatario_ie'
+      const en = parte === 'remetente' ? 'nf_remetente_endereco' : 'nf_destinatario_endereco'
+      const atual = f[en] ?? { logradouro: null, numero: null, complemento: null, bairro: null, municipio: null, codigo_ibge: null, uf: null, cep: null }
+      const pega = (a: string | null, b: string | null) => (vazio(a) ? b : a)
+      return {
+        ...f,
+        [rz]: vazio(f[rz]) ? (d.razao_social ?? '') : f[rz],
+        [ie]: vazio(f[ie]) ? (d.inscricao_estadual ?? '') : f[ie],
+        [en]: {
+          logradouro: pega(atual.logradouro, d.logradouro),
+          numero: pega(atual.numero, d.numero_endereco),
+          complemento: pega(atual.complemento, d.complemento),
+          bairro: pega(atual.bairro, d.bairro),
+          municipio: pega(atual.municipio, d.cidade),
+          codigo_ibge: pega(atual.codigo_ibge, d.codigo_ibge),
+          uf: pega(atual.uf, d.uf),
+          cep: pega(atual.cep, d.cep),
+        },
+      }
+    })
+  }
+
   async function handleXmlUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -1211,6 +1305,21 @@ export default function Cotacao() {
           cnpj: pf ? null : novoClienteCnpj.trim(),
           cpf: pf ? novoClienteCnpj.trim() : null,
           origem: 'gestor',
+          ...(!pf && novoClienteDados
+            ? {
+                nome_fantasia: novoClienteDados.nome_fantasia,
+                inscricao_estadual: novoClienteDados.inscricao_estadual,
+                email: novoClienteDados.email?.toLowerCase() ?? null,
+                celular_whatsapp: novoClienteDados.telefone,
+                cep: novoClienteDados.cep,
+                logradouro: novoClienteDados.logradouro,
+                numero_endereco: novoClienteDados.numero_endereco,
+                complemento: novoClienteDados.complemento,
+                bairro: novoClienteDados.bairro,
+                cidade: novoClienteDados.cidade,
+                uf: novoClienteDados.uf,
+              }
+            : {}),
         })
         .select()
         .single()
@@ -1219,6 +1328,7 @@ export default function Cotacao() {
       setForm((f) => (f ? { ...f, cliente_id: data.id } : f))
       setNovoClienteRazao('')
       setNovoClienteCnpj('')
+      setNovoClienteDados(null)
       setShowNovoCliente(false)
     } catch (e) {
       setErroNovoCliente(e instanceof Error ? e.message : 'Erro ao criar cliente.')
@@ -1326,7 +1436,7 @@ export default function Cotacao() {
       .map((s) => s.trim())
       .filter(Boolean)
     const flagPeso = pesoLimiarKg != null ? (f.peso_bruto_kg.trim() !== '' && (numOrNull(f.peso_bruto_kg) ?? 0) >= pesoLimiarKg) : f.flag_peso_acima_limiar
-    const comp = calcularComposicao(f, lucroPadrao, itens)
+    const comp = calcularComposicao(f, lucroPadrao, itens, giroCtx)
     const taxaPct = numOrNull(f.taxa_seguro_tag_pct)
     const aliqPct = numOrNull(f.aliquota_imposto_pct)
     const lucroPctDigitado = numOrNull(f.lucro_pct)
@@ -1348,6 +1458,12 @@ export default function Cotacao() {
                 ? lucroPctDigitado / 100
                 : lucroPadrao,
             preco_modo: modoValorFinal ? 'valor_final' : 'lucro_pct',
+            custo_financeiro: comp.custoFinanceiro,
+            giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
+            giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
+            giro_dias_transito: numOrNull(f.giro_dias_transito),
+            giro_aporte: comp.giro?.aporte ?? null,
+            giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
           }
 
     // Cotação com múltiplos destinos: o valor final ao cliente é a soma das linhas de destino,
@@ -1355,7 +1471,7 @@ export default function Cotacao() {
     // vários destinos e preços diferentes cada um).
     const somaDestinosPatch =
       destinos.length > 0
-        ? round2(destinos.reduce((acc, d) => acc + (calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0), 0))
+        ? round2(destinos.reduce((acc, d) => acc + (calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro).valorFinal ?? 0), 0))
         : null
 
     return {
@@ -1443,7 +1559,7 @@ export default function Cotacao() {
   function validarDestinos(): string | null {
     for (const d of destinos) {
       if (!d.endereco.trim()) return 'Preencha o endereço de entrega em todo destino lançado.'
-      const r = calcularCustoDestino(d, aliquotaDestinos)
+      const r = calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro)
       if (r.erro) return r.erro
       if (r.valorFinal == null || r.valorFinal <= 0) return 'Todo destino precisa de frete do motorista preenchido, pra calcular o valor final.'
     }
@@ -1498,7 +1614,8 @@ export default function Cotacao() {
           frete_motorista: numOrNull(d.frete_motorista),
           pedagio: numOrNull(d.pedagio),
           margem_pct: (numOrNull(d.margem_pct) ?? 0) / 100,
-          valor: calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0,
+          valor: calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro).valorFinal ?? 0,
+          custo_financeiro: finDestino(d),
         })),
       )
       if (errInsDestinos) throw errInsDestinos
@@ -1686,6 +1803,30 @@ export default function Cotacao() {
     await load()
   }
 
+  // Apaga a cotação de vez (não é "marcar como perdida" — some da lista). Só permitido pra
+  // quem nunca virou operação (rascunho/enviada/perdida) — se já foi convertida, o próprio banco
+  // recusa (FK sem cascade em operacoes/faturas/lancamentos_financeiros), então o erro vem de lá
+  // como cinto de segurança extra. Destinos e custos adicionais somem sozinhos (cascade).
+  async function apagarCotacao() {
+    if (!editingId) return
+    if (!window.confirm('Apagar esta cotação de vez? Não dá pra desfazer.')) return
+    setFormError(null)
+    setSuccessMsg(null)
+    setSaving(true)
+    const { error } = await supabase.from('cotacoes').delete().eq('id', editingId)
+    setSaving(false)
+    if (error) {
+      setFormError(
+        error.code === '23503'
+          ? 'Essa cotação já tem operação, fatura ou lançamento financeiro vinculado — não dá pra apagar.'
+          : error.message,
+      )
+      return
+    }
+    fecharForm()
+    await load()
+  }
+
   // Descrição legível do prazo combinado com o cliente, pro PDF (mesma lógica de leitura
   // usada na tela: regra cadastrada ou prazo personalizado desta negociação).
   function textoPrazoPagamento(): string {
@@ -1739,7 +1880,7 @@ export default function Cotacao() {
       const itensPreco: ItemPrecoCotacao[] = multiDestino
         ? destinos.map((d) => ({
             descricao: d.endereco.trim() || [d.cidade, d.uf].filter(Boolean).join('/'),
-            valor: calcularCustoDestino(d, aliquotaDestinos).valorFinal ?? 0,
+            valor: calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro).valorFinal ?? 0,
           }))
         : []
       if (!multiDestino && composicao) {
@@ -2214,6 +2355,13 @@ export default function Cotacao() {
                     placeholder={novoClienteTipo === 'PF' ? 'CPF *' : 'CNPJ *'}
                     value={novoClienteCnpj}
                     onChange={(e) => setNovoClienteCnpj(e.target.value)}
+                    onBlur={async () => {
+                      if (novoClienteTipo !== 'PJ') return
+                      const r = await consultarCnpj(novoClienteCnpj)
+                      if (!r.dados) return
+                      setNovoClienteDados(r.dados)
+                      setNovoClienteRazao((v) => v.trim() || r.dados?.razao_social || '')
+                    }}
                     className={inputClass}
                     style={{ ...inputStyle, background: '#fff' }}
                   />
@@ -2228,7 +2376,7 @@ export default function Cotacao() {
                   {criandoCliente ? 'Criando…' : 'Criar cliente'}
                 </button>
                 <div className="text-[11px] text-[color:var(--rbr-muted)]">
-                  Cadastro rápido — endereço e contatos podem ser completados depois em Cadastros → Clientes.
+                  Cadastro rápido — ao digitar o CNPJ, razão social, IE e endereço vêm da Receita automaticamente.
                 </div>
               </div>
             )}
@@ -2506,6 +2654,7 @@ export default function Cotacao() {
               <input
                 value={form.nf_remetente_cnpj}
                 onChange={(e) => setForm((f) => (f ? { ...f, nf_remetente_cnpj: e.target.value } : f))}
+                onBlur={() => autoParteNf('remetente', form.nf_remetente_cnpj)}
                 className={inputClass}
                 style={inputStyle}
               />
@@ -2524,6 +2673,7 @@ export default function Cotacao() {
               <input
                 value={form.nf_destinatario_cnpj}
                 onChange={(e) => setForm((f) => (f ? { ...f, nf_destinatario_cnpj: e.target.value } : f))}
+                onBlur={() => autoParteNf('destinatario', form.nf_destinatario_cnpj)}
                 className={inputClass}
                 style={inputStyle}
               />
@@ -2582,7 +2732,23 @@ export default function Cotacao() {
                     <input placeholder="Bairro" value={end.bairro ?? ''} onChange={(e) => set('bairro', e.target.value)} className={`${inputClass} col-span-2`} style={inputStyle} />
                     <input placeholder="Município" value={end.municipio ?? ''} onChange={(e) => set('municipio', e.target.value)} className={`${inputClass} col-span-2`} style={inputStyle} />
                     <input placeholder="UF" maxLength={2} value={end.uf ?? ''} onChange={(e) => set('uf', e.target.value.toUpperCase())} className={inputClass} style={inputStyle} />
-                    <input placeholder="CEP" value={end.cep ?? ''} onChange={(e) => set('cep', e.target.value)} className={inputClass} style={inputStyle} />
+                    <input
+                      placeholder="CEP"
+                      value={end.cep ?? ''}
+                      onChange={(e) => set('cep', e.target.value)}
+                      onBlur={async () => {
+                        const d = await consultarCep(end.cep ?? '')
+                        if (!d) return
+                        setForm((f) => {
+                          if (!f) return f
+                          const a = f[campo] ?? end
+                          const pega = (x: string | null, y: string | null) => (x && x.trim() ? x : y)
+                          return { ...f, [campo]: { ...a, logradouro: pega(a.logradouro, d.logradouro), bairro: pega(a.bairro, d.bairro), municipio: pega(a.municipio, d.cidade), uf: pega(a.uf, d.uf), codigo_ibge: pega(a.codigo_ibge, d.codigo_ibge) } }
+                        })
+                      }}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
                   </div>
                 </div>
               )
@@ -2646,7 +2812,7 @@ export default function Cotacao() {
               {destinos.map((d) => {
                 const opcoesEixos = eixosOpcoesPara(d.tabela, d.tipo_carga)
                 const ref = pisoRefDestino(d)
-                const custoDestino = calcularCustoDestino(d, aliquotaDestinos)
+                const custoDestino = calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro)
                 const freteNum = numOrNull(d.frete_motorista)
                 const abaixo = ref != null && freteNum != null && freteNum < round2(ref)
                 const calculando = calculandoDestino === d.key
@@ -3393,6 +3559,59 @@ export default function Cotacao() {
               </div>
             </div>
 
+            {/* Capital de giro — custo do aporte do investidor. Entra no preço por padrão; a chave
+                abaixo deixa a RBR absorver o custo na margem (o preço ao cliente não muda). */}
+            {giroParams.ativo && (
+              <div className="rounded-lg border p-3.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <span className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Capital de giro (aporte do investidor)</span>
+                  <label className="flex items-center gap-2 text-xs">
+                    Repassar ao cliente
+                    <input
+                      inputMode="numeric"
+                      value={form.giro_repasse_pct}
+                      onChange={(e) => setForm((f) => (f ? { ...f, giro_repasse_pct: e.target.value.replace(/\D/g, '').slice(0, 3) } : f))}
+                      className={inputClass}
+                      style={{ ...inputStyle, width: 64 }}
+                    />
+                    %
+                  </label>
+                </div>
+                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+                  <div>
+                    <label className={labelClass} style={{ marginBottom: 0 }}>Dias de trânsito</label>
+                    <input
+                      inputMode="numeric"
+                      placeholder={`auto (${diasTransito(null, numOrNull(form.distancia_km), giroParams)})`}
+                      value={form.giro_dias_transito}
+                      onChange={(e) => setForm((f) => (f ? { ...f, giro_dias_transito: e.target.value.replace(/\D/g, '') } : f))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+                {composicao?.giro ? (
+                  <div className="text-xs text-[color:var(--rbr-muted)] flex flex-col gap-0.5">
+                    <span>
+                      Aporte {formatMoney(composicao.giro.aporte)} · relógio médio {composicao.giro.diasMedios} dias (saída do veículo até o
+                      pagamento compensar) · taxa {formatPct(composicao.giro.taxaEfetiva, 2)} sobre o aporte
+                    </span>
+                    <span>
+                      Juros ao investidor {formatMoney(composicao.giro.jurosLimpos)} + IR assumido pela RBR ={' '}
+                      <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao.custoFinanceiro)}</strong> de custo financeiro
+                      {repassarGiro >= 1
+                        ? ' (entra todo no valor final)'
+                        : repassarGiro <= 0
+                          ? ' (sai todo do lucro — valor final não muda)'
+                          : ` — cliente paga ${formatMoney(round2(composicao.custoFinanceiro * repassarGiro))}, RBR absorve ${formatMoney(round2(composicao.custoFinanceiro * (1 - repassarGiro)))}`}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-[color:var(--rbr-muted)]">Preencha o frete do motorista pra calcular o custo do giro.</span>
+                )}
+              </div>
+            )}
+
             {/* Resumo — abre com os 3 números principais (mesmo padrão do card "Destino" em
                 Vários destinos), detalhamento completo logo abaixo. */}
             <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
@@ -3420,6 +3639,14 @@ export default function Cotacao() {
                 },
                 ...(itens.length > 0
                   ? [{ label: `Custos adicionais (${itens.length})`, valor: composicao?.frete != null ? composicao.adicionais : null }]
+                  : []),
+                ...(composicao?.giro
+                  ? [
+                      {
+                        label: `Custo financeiro do giro${repassarGiro >= 1 ? '' : repassarGiro <= 0 ? ' (absorvido pela RBR)' : ` (cliente paga ${formatPct(repassarGiro)})`}`,
+                        valor: composicao.custoFinanceiro,
+                      },
+                    ]
                   : []),
               ].map((linha) => (
                 <div key={linha.label} className="flex justify-between text-xs">
@@ -3907,6 +4134,17 @@ export default function Cotacao() {
                 style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
               >
                 Reabrir cotação
+              </button>
+            )}
+
+            {editingId && editingStatus !== 'convertida' && (
+              <button
+                onClick={apagarCotacao}
+                disabled={saving}
+                className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
+                style={{ color: 'var(--rbr-danger)' }}
+              >
+                Apagar cotação
               </button>
             )}
 

@@ -1,0 +1,2 @@
+-- Documentação da migration aplicada (operacao_ciot_vpo): CIOT, VPO (IDVPO) e pagamento do frete por operação.
+-- Ver definição completa no projeto Supabase (tabela public.operacao_ciot_vpo, RLS gestor_acesso_total).

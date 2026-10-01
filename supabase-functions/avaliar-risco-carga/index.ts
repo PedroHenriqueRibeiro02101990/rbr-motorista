@@ -101,7 +101,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+    // gemini-2.5-flash passou a devolver 404 pra chaves free-tier novas (restrição do Google) e a linha
+    // 3.6/3.7/3.8-flash está com sobrecarga (503) do lado do Google nas últimas semanas — usando o
+    // flash-lite, mais leve, que tem fila de capacidade separada.
+    const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
     const prompt = montaPrompt(produtos, pesoBrutoKg ?? null, valorNota ?? null);
 
     const geminiResp = await fetch(

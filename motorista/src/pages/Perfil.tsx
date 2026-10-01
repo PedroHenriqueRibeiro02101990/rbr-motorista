@@ -69,6 +69,7 @@ type FormState = {
   celular: string
   cpf: string
   pix: string
+  inscricao_estadual: string
   cep: string
   logradouro: string
   numero_endereco: string
@@ -88,6 +89,7 @@ function toFormState(pessoa: Pessoa): FormState {
     celular: pessoa.celular ?? '',
     cpf: pessoa.cpf ?? '',
     pix: pessoa.pix ?? '',
+    inscricao_estadual: pessoa.inscricao_estadual ?? '',
     cep: pessoa.cep ?? '',
     logradouro: pessoa.logradouro ?? '',
     numero_endereco: pessoa.numero_endereco ?? '',
@@ -207,6 +209,7 @@ export default function Perfil({
         email: form.email || null,
         celular: form.celular || null,
         pix: form.pix || null,
+        inscricao_estadual: form.inscricao_estadual || null,
         cep: form.cep || null,
         logradouro: form.logradouro || null,
         numero_endereco: form.numero_endereco || null,
@@ -420,6 +423,17 @@ export default function Perfil({
             {formatarDoc(ehPJ ? pessoa.cnpj : pessoa.cpf) || '—'}
           </div>
         </Field>
+        {ehPJ && (
+          <Field label="Inscrição estadual (IE)">
+            <input
+              className={inputClass}
+              style={inputStyle}
+              placeholder="digite a IE (ou isento)"
+              value={form.inscricao_estadual}
+              onChange={(e) => update('inscricao_estadual', e.target.value)}
+            />
+          </Field>
+        )}
         <Field label="Chave PIX">
           <input className={inputClass} style={inputStyle} value={form.pix} onChange={(e) => update('pix', e.target.value)} />
         </Field>

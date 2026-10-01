@@ -49,6 +49,25 @@ async function geocodificarCidade(cidade: string, uf: string): Promise<Coordenad
   return { lat, lon };
 }
 
+// Geocodificação por endereço completo (rua, número, bairro, cidade/UF) em texto livre —
+// usado pela cotação com vários destinos, onde cada linha guarda um endereço de entrega
+// completo em vez de só cidade/UF. Cai pra busca livre do Nominatim (campo "q"), mais
+// tolerante a formatação do que os campos estruturados city/state.
+async function geocodificarEndereco(endereco: string): Promise<Coordenada | null> {
+  const query = /brasil|brazil/i.test(endereco) ? endereco : `${endereco}, Brasil`;
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=br&format=json&limit=1`;
+  const resp = await fetch(url, {
+    headers: { "User-Agent": "RBRCargo-CalculoRota/1.0 (contato: operacional@rbrcargo.com.br)" },
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const lat = parseFloat(data[0].lat);
+  const lon = parseFloat(data[0].lon);
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+  return { lat, lon };
+}
+
 async function calcularDistanciaRodoviaria(
   origem: Coordenada,
   destino: Coordenada,
@@ -79,14 +98,21 @@ Deno.serve(async (req: Request) => {
       uf_origem,
       cidade_destino,
       uf_destino,
+      endereco_origem,
+      endereco_destino,
       tipo_carga,
       eixos,
       tabela = "A",
     } = await req.json();
 
-    if (!cidade_origem || !uf_origem || !cidade_destino || !uf_destino) {
+    const temOrigem = Boolean(endereco_origem) || Boolean(cidade_origem && uf_origem);
+    const temDestino = Boolean(endereco_destino) || Boolean(cidade_destino && uf_destino);
+    if (!temOrigem || !temDestino) {
       return jsonResponse(
-        { sucesso: false, erro: "cidade_origem, uf_origem, cidade_destino e uf_destino são obrigatórios." },
+        {
+          sucesso: false,
+          erro: "Informe endereco_origem/endereco_destino, ou cidade_origem+uf_origem e cidade_destino+uf_destino.",
+        },
         400,
       );
     }
@@ -102,17 +128,23 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ sucesso: false, erro: "Não autenticado" }, 401);
     }
 
-    const origem = await geocodificarCidade(cidade_origem, uf_origem);
+    const origem = endereco_origem
+      ? await geocodificarEndereco(endereco_origem)
+      : await geocodificarCidade(cidade_origem, uf_origem);
     if (!origem) {
+      const referencia = endereco_origem ?? `${cidade_origem}/${uf_origem}`;
       return jsonResponse(
-        { sucesso: false, erro: `Não consegui localizar "${cidade_origem}/${uf_origem}" — confere o nome da cidade.` },
+        { sucesso: false, erro: `Não consegui localizar a origem "${referencia}" — confere o endereço.` },
         422,
       );
     }
-    const destino = await geocodificarCidade(cidade_destino, uf_destino);
+    const destino = endereco_destino
+      ? await geocodificarEndereco(endereco_destino)
+      : await geocodificarCidade(cidade_destino, uf_destino);
     if (!destino) {
+      const referencia = endereco_destino ?? `${cidade_destino}/${uf_destino}`;
       return jsonResponse(
-        { sucesso: false, erro: `Não consegui localizar "${cidade_destino}/${uf_destino}" — confere o nome da cidade.` },
+        { sucesso: false, erro: `Não consegui localizar o destino "${referencia}" — confere o endereço.` },
         422,
       );
     }
