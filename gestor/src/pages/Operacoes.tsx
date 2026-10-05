@@ -8,6 +8,7 @@ import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
 import DadosEmissao from '../components/operacao/DadosEmissao'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
+import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -123,6 +124,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [assessoria, setAssessoria] = useState<AssessoriaContato>({ nome: '', whatsapp: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [cargasAguardando, setCargasAguardando] = useState<CargaAguardando[]>([])
 
   // Depois da primeira carga, recarrega em segundo plano — senão cada ação dentro do card
   // desmontava o painel aberto (perdendo a mensagem de sucesso e o que estava expandido).
@@ -155,6 +157,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     setOperacoes(mapeadas)
     setLoading(false)
     primeiraCarga.current = false
+    carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))
   }, [])
 
   const carregarVeiculos = useCallback(async () => {
@@ -503,6 +506,18 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         </Link>{' '}
         e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
       </div>
+
+      <AvisoCargasAguardando
+        cargas={cargasAguardando}
+        rotulo={(c) => operacoes?.find((o) => o.id === c.operacao_id)?.clienteNome}
+        onAbrir={(id) => {
+          const alvo = operacoes?.find((o) => o.id === id)
+          if (!alvo) return
+          setFiltro('todas')
+          if (expandedId !== id) toggleExpand(alvo)
+          setTimeout(() => document.getElementById(`op-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+        }}
+      />
 
       {showDadosEmissao && (
         <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
@@ -916,6 +931,14 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                           </div>
                         )
                       })()}
+
+                    {op.status === 'alocando_motorista' && !op.pessoa_alocada_id && (
+                      <MotoristasSugeridos
+                        operacaoId={op.id}
+                        carga={cargasAguardando.find((c) => c.operacao_id === op.id)}
+                        onAvisado={() => carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))}
+                      />
+                    )}
 
                     <OperacaoFluxo operacaoId={op.id} gestor={gestor} assessoria={assessoria} onChanged={load} />
 

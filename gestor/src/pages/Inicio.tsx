@@ -4,6 +4,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney, MOTIVO_PERDA_LABEL, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { linkWhatsApp } from '@rbr/shared/documento'
 import FrotaMap, { type FrotaMapPonto } from '@rbr/shared/FrotaMap'
+import { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
 
 type Alerta = {
   nivel: 'vermelho' | 'amarelo'
@@ -138,11 +139,13 @@ export default function Inicio() {
   const [gerandoResumo, setGerandoResumo] = useState(false)
   const [erroResumo, setErroResumo] = useState<string | null>(null)
   const [verTodos, setVerTodos] = useState(false)
+  const [cargasAguardando, setCargasAguardando] = useState<CargaAguardando[]>([])
   const carregando = useRef(false)
 
   const carregar = useCallback(async () => {
     if (carregando.current) return
     carregando.current = true
+    carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))
     const { data, error } = await supabase.rpc('painel_inicio')
     carregando.current = false
     if (error) {
@@ -346,6 +349,9 @@ export default function Inicio() {
           })}
         </div>
       </Card>
+
+      {/* Cargas que ainda procuram motorista */}
+      <AvisoCargasAguardando cargas={cargasAguardando} linkPara={(id) => `/operacoes?op=${id}`} />
 
       {/* Operação do dia */}
       <Card titulo="Operação" acao={<Link to="/operacoes" className="text-xs font-bold text-[color:var(--rbr-navy)]">Ver operações →</Link>}>
