@@ -7,6 +7,7 @@ import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
 import DadosEmissao from '../components/operacao/DadosEmissao'
+import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -917,6 +918,11 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                       })()}
 
                     <OperacaoFluxo operacaoId={op.id} gestor={gestor} assessoria={assessoria} onChanged={load} />
+
+                    {/* Encerrar o MDF-e só faz sentido depois que a carga sai; antes disso o bloco só ocupa espaço. */}
+                    {!['alocando_motorista', 'aguardando_liberacao_fiscal', 'cancelada'].includes(op.status) && (
+                      <FinalizarViagem operacaoId={op.id} statusOperacao={op.status} entregueEm={op.entregue_em} />
+                    )}
 
                     <div className="flex items-center justify-between rounded-xl px-3.5 py-3" style={{ background: 'var(--rbr-muted-bg)' }}>
                       <div>

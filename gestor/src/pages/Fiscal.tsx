@@ -5,6 +5,7 @@ import { formatMoney, formatDateTime } from '@rbr/shared/format'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
 import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
+import FinalizarViagem from '../components/operacao/FinalizarViagem'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -181,7 +182,7 @@ export default function Fiscal() {
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
   // Card de conferência aberto antes de emitir CT-e/MDF-e.
   const [conferencia, setConferencia] = useState<{ op: OperacaoEnriquecida; tipo: TipoConferencia } | null>(null)
-  // Eventos fiscais pós-emissão (encerrar/cancelar MDF-e, cancelar CT-e, carta de correção, trocar condutor).
+  // Eventos fiscais pós-emissão (cancelar MDF-e/CT-e, carta de correção, trocar condutor).
   const [evento, setEvento] = useState<{ op: OperacaoEnriquecida; acao: AcaoEventoFiscal } | null>(null)
 
   // Registro manual de CT-e/MDF-e/CIOT emitidos fora do sistema.
@@ -425,8 +426,6 @@ export default function Fiscal() {
         <EventoFiscalModal
           operacaoId={evento.op.id}
           acao={evento.acao}
-          cidadeDestino={evento.op.cidadeDestino}
-          ufDestino={evento.op.ufDestino}
           onFechar={() => setEvento(null)}
           onConcluido={() => carregarDocumentos([evento.op.id])}
         />
@@ -817,21 +816,14 @@ export default function Fiscal() {
                   </div>
                 )}
 
-                {docMdfe?.status === 'emitido' && (
-                  <div
-                    className="text-xs rounded-lg px-3 py-2"
-                    style={
-                      docMdfe.encerramento_erro && !docMdfe.encerrado_em
-                        ? { background: '#FBE9E9', color: 'var(--rbr-danger)' }
-                        : { background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }
-                    }
-                  >
-                    {docMdfe.encerrado_em
-                      ? `MDF-e encerrado em ${new Date(docMdfe.encerrado_em).toLocaleString('pt-BR')} (${docMdfe.encerramento_origem === 'automatico' ? 'automático, ao finalizar a entrega' : 'manual'}).`
-                      : docMdfe.encerramento_erro
-                        ? `Não consegui encerrar o MDF-e: ${docMdfe.encerramento_erro} Use "Encerrar MDF-e".`
-                        : 'MDF-e autorizado — será encerrado automaticamente quando o motorista finalizar a entrega (ou use "Encerrar MDF-e").'}
-                  </div>
+                {docMdfe && (
+                  <FinalizarViagem
+                    operacaoId={op.id}
+                    statusOperacao={op.status}
+                    entregueEm={op.entregue_em}
+                    mdfe={docMdfe}
+                    onAtualizado={() => carregarDocumentos([op.id])}
+                  />
                 )}
 
                 <div className="flex gap-2 flex-wrap">
@@ -881,13 +873,6 @@ export default function Fiscal() {
                   )}
                   {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
                     <>
-                      <button
-                        onClick={() => setEvento({ op, acao: 'encerrar_mdfe' })}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                      >
-                        Encerrar MDF-e
-                      </button>
                       <button
                         onClick={() => setEvento({ op, acao: 'incluir_condutor_mdfe' })}
                         className="text-xs font-bold px-3.5 py-2 rounded-lg border"

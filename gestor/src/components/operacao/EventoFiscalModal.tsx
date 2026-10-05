@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 
-// Eventos fiscais pós-emissão (encerrar MDF-e, cancelar MDF-e/CT-e, carta de correção, trocar condutor).
+// Eventos fiscais pós-emissão (cancelar MDF-e/CT-e, carta de correção, trocar condutor).
+// Encerrar o MDF-e fica no botão "Finalizar viagem" (FinalizarViagem.tsx).
 // Tudo passa pela Edge Function `eventos-fiscais`, que valida as regras, chama a Focus NFe e grava o log de auditoria.
 
-export type AcaoEventoFiscal = 'encerrar_mdfe' | 'cancelar_mdfe' | 'cancelar_cte' | 'carta_correcao_cte' | 'incluir_condutor_mdfe'
+export type AcaoEventoFiscal = 'cancelar_mdfe' | 'cancelar_cte' | 'carta_correcao_cte' | 'incluir_condutor_mdfe'
 
 const TITULOS: Record<AcaoEventoFiscal, string> = {
-  encerrar_mdfe: 'Encerrar MDF-e',
   cancelar_mdfe: 'Cancelar MDF-e',
   cancelar_cte: 'Cancelar CT-e',
   carta_correcao_cte: 'Carta de correção do CT-e',
@@ -15,8 +15,6 @@ const TITULOS: Record<AcaoEventoFiscal, string> = {
 }
 
 const AVISOS: Record<AcaoEventoFiscal, string> = {
-  encerrar_mdfe:
-    'Normalmente o MDF-e é encerrado sozinho quando o motorista finaliza a entrega. Use isto só se isso não aconteceu ou se a entrega foi feita de outro jeito. Prazo legal: até 30 dias da emissão.',
   cancelar_mdfe:
     'Só vale para MDF-e autorizado, antes de a viagem começar (regra legal: até 24 horas). Depois disso o caminho é encerrar. O cancelamento não pode ser desfeito.',
   cancelar_cte:
@@ -28,7 +26,7 @@ const AVISOS: Record<AcaoEventoFiscal, string> = {
 
 type Erro = { erro?: string }
 
-async function extrairErro(error: unknown): Promise<string> {
+export async function extrairErro(error: unknown): Promise<string> {
   try {
     const context = (error as { context?: unknown } | null | undefined)?.context
     if (context && typeof (context as Response).json === 'function') {
@@ -44,22 +42,15 @@ async function extrairErro(error: unknown): Promise<string> {
 export default function EventoFiscalModal({
   operacaoId,
   acao,
-  cidadeDestino,
-  ufDestino,
   onFechar,
   onConcluido,
 }: {
   operacaoId: string
   acao: AcaoEventoFiscal
-  cidadeDestino?: string | null
-  ufDestino?: string | null
   onFechar: () => void
   onConcluido: () => void
 }) {
   const [justificativa, setJustificativa] = useState('')
-  const [data, setData] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }))
-  const [uf, setUf] = useState(ufDestino ?? '')
-  const [municipio, setMunicipio] = useState(cidadeDestino ?? '')
   const [campo, setCampo] = useState('')
   const [valor, setValor] = useState('')
   const [grupo, setGrupo] = useState('')
@@ -78,11 +69,6 @@ export default function EventoFiscalModal({
     setAviso(null)
     const body: Record<string, unknown> = { acao, operacao_id: operacaoId }
     if (cancelamento) body.justificativa = justificativa
-    if (acao === 'encerrar_mdfe') {
-      body.data = data
-      body.sigla_uf = uf
-      body.nome_municipio = municipio
-    }
     if (acao === 'carta_correcao_cte') {
       body.campo_corrigido = campo
       body.valor_corrigido = valor
@@ -109,7 +95,6 @@ export default function EventoFiscalModal({
   const rotulo = 'flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]'
   const pode =
     (cancelamento && justificativa.trim().length >= 15) ||
-    (acao === 'encerrar_mdfe' && !!data && !!uf && !!municipio) ||
     (acao === 'carta_correcao_cte' && !!campo && !!valor) ||
     (acao === 'incluir_condutor_mdfe' && nome.trim().length >= 2 && cpf.replace(/\D/g, '').length === 11)
 
@@ -129,24 +114,6 @@ export default function EventoFiscalModal({
             </label>
           )}
 
-          {acao === 'encerrar_mdfe' && (
-            <>
-              <label className={rotulo}>
-                Data do encerramento
-                <input type="date" className={campoCls} style={campoStyle} value={data} onChange={(e) => setData(e.target.value)} />
-              </label>
-              <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr 80px' }}>
-                <label className={rotulo}>
-                  Município do encerramento
-                  <input className={campoCls} style={campoStyle} value={municipio} onChange={(e) => setMunicipio(e.target.value)} />
-                </label>
-                <label className={rotulo}>
-                  UF
-                  <input className={campoCls} style={campoStyle} value={uf} maxLength={2} onChange={(e) => setUf(e.target.value.toUpperCase())} />
-                </label>
-              </div>
-            </>
-          )}
 
           {acao === 'carta_correcao_cte' && (
             <>

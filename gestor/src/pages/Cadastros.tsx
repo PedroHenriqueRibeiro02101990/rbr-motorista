@@ -8,6 +8,7 @@ import { BadgeAprovacao } from '@rbr/shared/cadastro'
 import { formatarDoc } from '@rbr/shared/documento'
 import { consultarCnpj, consultarCep, resumoCnpj, preencherVazios, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import Pendencias from '../components/cadastros/Pendencias'
+import GestaoContatos from '../components/cadastros/GestaoContatos'
 import PainelCadastro from '../components/cadastros/PainelCadastro'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
@@ -40,6 +41,7 @@ const TABS = [
   { value: 'agenciadores', label: 'Agenciadores' },
   { value: 'fornecedores', label: 'Fornecedores' },
   { value: 'prestadores', label: 'Transportadoras parceiras' },
+  { value: 'contatos', label: 'Gestão de contatos' },
 ] as const
 type TabValue = (typeof TABS)[number]['value']
 
@@ -1320,6 +1322,8 @@ export default function Cadastros() {
       </div>
 
       {tab === 'pendencias' && <Pendencias onContagem={setQtdPendencias} />}
+
+      {tab === 'contatos' && <GestaoContatos />}
 
       {tab === 'clientes' && (
         <div className="flex flex-col gap-3">
