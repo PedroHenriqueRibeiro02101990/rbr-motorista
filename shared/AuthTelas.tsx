@@ -16,8 +16,8 @@ type AuthApi = {
 }
 
 const input =
-  'border border-[color:var(--rbr-border)] rounded-xl px-4 py-3 text-sm outline-none focus:border-[color:var(--rbr-navy)] w-full bg-white'
-const botaoPrimario = 'rounded-xl py-3 font-bold text-sm text-[color:var(--rbr-navy-dark)] disabled:opacity-60 w-full'
+  'border border-[color:var(--rbr-muted)]/40 rounded-xl px-4 py-3 min-h-11 text-base sm:text-sm outline-none focus:border-[color:var(--rbr-navy)] w-full bg-white'
+const botaoPrimario = 'rounded-xl py-3 min-h-11 font-bold text-sm text-[color:var(--rbr-navy-dark)] disabled:opacity-60 w-full'
 const VERSAO_TERMOS: Record<App, string> = { motorista: 'motorista-v1', agenciador: 'agenciador-v1', gestor: '' }
 
 function traduzLogin(msg: string): string {
@@ -28,9 +28,16 @@ function traduzLogin(msg: string): string {
   return msg
 }
 
-function Marca() {
-  return <img src="/logo-192.png" alt="RBR Cargo" className="w-14 h-14 rounded-2xl mb-6" />
-
+// Fundo cinza + cartão branco centralizado, igual ao padrão do painel gestor. Usado pelas três telas.
+function Moldura({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-dvh flex flex-col justify-center px-4 py-10" style={{ background: 'var(--rbr-muted-bg)' }}>
+      <div className="mx-auto w-full max-w-[400px] rounded-2xl border border-[color:var(--rbr-border)] bg-white p-6 shadow-sm text-center [&_form]:text-left">
+        <img src="/logo-192.png" alt="RBR Cargo" className="w-16 h-16 rounded-2xl mx-auto mb-5" />
+        {children}
+      </div>
+    </div>
+  )
 }
 
 function Caixa({ tom, children }: { tom: 'erro' | 'aviso' | 'ok'; children: React.ReactNode }) {
@@ -77,7 +84,7 @@ export function CampoSenha({
         <button
           type="button"
           onClick={() => setVer((v) => !v)}
-          className="absolute right-3 top-3 text-xs font-bold text-[color:var(--rbr-navy)]"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[color:var(--rbr-navy)]"
         >
           {ver ? 'Ocultar' : 'Mostrar'}
         </button>
@@ -132,7 +139,9 @@ function AvisoPrivacidade({ app }: { app: App }) {
 
 // ---------- Tela de entrada (login / cadastro / esqueci a senha) ----------
 export function TelaEntrada({ app, auth }: { app: App; auth: AuthApi }) {
-  const [modo, setModo] = useState<'login' | 'cadastro' | 'esqueci'>('login')
+  const [modo, setModo] = useState<'login' | 'cadastro' | 'esqueci'>(() =>
+    app !== 'gestor' && new URLSearchParams(window.location.search).get('cadastro') === '1' ? 'cadastro' : 'login',
+  )
   const titulo = {
     motorista: { login: 'Acesse sua conta RBR Cargo', cad: 'Criar conta de motorista' },
     agenciador: { login: 'Acesse seu painel de parceiro RBR Cargo', cad: 'Criar conta de agenciador' },
@@ -140,16 +149,13 @@ export function TelaEntrada({ app, auth }: { app: App; auth: AuthApi }) {
   }[app]
 
   return (
-    <div className="min-h-dvh flex flex-col justify-center px-6 py-10 bg-white">
-      <div className="mx-auto w-full max-w-[400px]">
-        <Marca />
-        {modo === 'login' && (
-          <Login auth={auth} subtitulo={titulo.login} onEsqueci={() => setModo('esqueci')} onCadastro={app === 'gestor' ? null : () => setModo('cadastro')} />
-        )}
-        {modo === 'cadastro' && app !== 'gestor' && <Cadastro app={app} auth={auth} titulo={titulo.cad} onVoltar={() => setModo('login')} />}
-        {modo === 'esqueci' && <Esqueci onVoltar={() => setModo('login')} />}
-      </div>
-    </div>
+    <Moldura>
+      {modo === 'login' && (
+        <Login auth={auth} subtitulo={titulo.login} onEsqueci={() => setModo('esqueci')} onCadastro={app === 'gestor' ? null : () => setModo('cadastro')} />
+      )}
+      {modo === 'cadastro' && app !== 'gestor' && <Cadastro app={app} auth={auth} titulo={titulo.cad} onVoltar={() => setModo('login')} />}
+      {modo === 'esqueci' && <Esqueci onVoltar={() => setModo('login')} />}
+    </Moldura>
   )
 }
 
@@ -551,49 +557,46 @@ export function TelaConcluirCadastro({ app, auth, email }: { app: 'motorista' | 
   }
 
   return (
-    <div className="min-h-dvh flex flex-col justify-center px-6 py-10 bg-white">
-      <div className="mx-auto w-full max-w-[400px]">
-        <Marca />
-        <h1 className="rbr-display text-2xl font-bold text-[color:var(--rbr-navy-dark)] mb-1">Concluir cadastro</h1>
-        <p className="text-sm text-[color:var(--rbr-muted)] mb-6">Conta {email ?? ''}. Falta só confirmar seus dados.</p>
-        <form onSubmit={enviar} className="flex flex-col gap-3">
-          <CamposPessoa
-            app={app}
-            tipo={tipo}
-            setTipo={setTipo}
-            doc={doc}
-            setDoc={(v) => {
-              setDoc(v)
-              setVerif(null)
-            }}
-            nome={nome}
-            setNome={setNome}
-            celular={celular}
-            setCelular={setCelular}
-            verif={verif}
-            onBlurDoc={async () => {
-              if (!docNorm) return
-              if (!docOk) return setVerif({ valido: false })
-              setVerif(await verificarDocumento(docNorm))
-            }}
-          />
-          {verif?.existe && <BlocoContaExistente verif={verif} doc={docNorm} />}
-          <label className="flex items-start gap-2.5 text-xs text-[color:var(--rbr-muted)] leading-relaxed">
-            <input type="checkbox" className="mt-0.5" checked={aceite} onChange={(e) => setAceite(e.target.checked)} />
-            <span>
-              Li e aceito os <AvisoPrivacidade app={app} />.
-            </span>
-          </label>
-          {erro && <Caixa tom="erro">{erro}</Caixa>}
-          <button type="submit" disabled={enviando || !!verif?.existe} className={botaoPrimario} style={{ background: 'var(--rbr-gold)' }}>
-            {enviando ? 'Salvando…' : 'Concluir'}
-          </button>
-        </form>
-        <button className="mt-5 text-sm font-semibold text-[color:var(--rbr-navy)] w-full text-center" onClick={() => auth.signOut()}>
-          Sair
+    <Moldura>
+      <h1 className="rbr-display text-2xl font-bold text-[color:var(--rbr-navy-dark)] mb-1">Concluir cadastro</h1>
+      <p className="text-sm text-[color:var(--rbr-muted)] mb-6">Conta {email ?? ''}. Falta só confirmar seus dados.</p>
+      <form onSubmit={enviar} className="flex flex-col gap-3">
+        <CamposPessoa
+          app={app}
+          tipo={tipo}
+          setTipo={setTipo}
+          doc={doc}
+          setDoc={(v) => {
+            setDoc(v)
+            setVerif(null)
+          }}
+          nome={nome}
+          setNome={setNome}
+          celular={celular}
+          setCelular={setCelular}
+          verif={verif}
+          onBlurDoc={async () => {
+            if (!docNorm) return
+            if (!docOk) return setVerif({ valido: false })
+            setVerif(await verificarDocumento(docNorm))
+          }}
+        />
+        {verif?.existe && <BlocoContaExistente verif={verif} doc={docNorm} />}
+        <label className="flex items-start gap-2.5 text-xs text-[color:var(--rbr-muted)] leading-relaxed">
+          <input type="checkbox" className="mt-0.5" checked={aceite} onChange={(e) => setAceite(e.target.checked)} />
+          <span>
+            Li e aceito os <AvisoPrivacidade app={app} />.
+          </span>
+        </label>
+        {erro && <Caixa tom="erro">{erro}</Caixa>}
+        <button type="submit" disabled={enviando || !!verif?.existe} className={botaoPrimario} style={{ background: 'var(--rbr-gold)' }}>
+          {enviando ? 'Salvando…' : 'Concluir'}
         </button>
-      </div>
-    </div>
+      </form>
+      <button className="mt-5 text-sm font-semibold text-[color:var(--rbr-navy)] w-full text-center" onClick={() => auth.signOut()}>
+        Sair
+      </button>
+    </Moldura>
   )
 }
 
@@ -617,19 +620,16 @@ export function TelaNovaSenha({ auth, dados }: { auth: AuthApi; dados: { nome?: 
   }
 
   return (
-    <div className="min-h-dvh flex flex-col justify-center px-6 py-10 bg-white">
-      <div className="mx-auto w-full max-w-[400px]">
-        <Marca />
-        <h1 className="rbr-display text-2xl font-bold text-[color:var(--rbr-navy-dark)] mb-1">Crie sua nova senha</h1>
-        <p className="text-sm text-[color:var(--rbr-muted)] mb-6">Ao salvar, os outros aparelhos conectados nesta conta serão desconectados.</p>
-        <form onSubmit={salvar} className="flex flex-col gap-3">
-          <CampoSenha valor={senha} onChange={setSenha} confirmar={senha2} onConfirmar={setSenha2} dados={dados} />
-          {erro && <Caixa tom="erro">{erro}</Caixa>}
-          <button type="submit" disabled={enviando} className={botaoPrimario + ' mt-1'} style={{ background: 'var(--rbr-gold)' }}>
-            {enviando ? 'Salvando…' : 'Salvar nova senha'}
-          </button>
-        </form>
-      </div>
-    </div>
+    <Moldura>
+      <h1 className="rbr-display text-2xl font-bold text-[color:var(--rbr-navy-dark)] mb-1">Crie sua nova senha</h1>
+      <p className="text-sm text-[color:var(--rbr-muted)] mb-6">Ao salvar, os outros aparelhos conectados nesta conta serão desconectados.</p>
+      <form onSubmit={salvar} className="flex flex-col gap-3">
+        <CampoSenha valor={senha} onChange={setSenha} confirmar={senha2} onConfirmar={setSenha2} dados={dados} />
+        {erro && <Caixa tom="erro">{erro}</Caixa>}
+        <button type="submit" disabled={enviando} className={botaoPrimario + ' mt-1'} style={{ background: 'var(--rbr-gold)' }}>
+          {enviando ? 'Salvando…' : 'Salvar nova senha'}
+        </button>
+      </form>
+    </Moldura>
   )
 }

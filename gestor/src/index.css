@@ -1,2 +1,4 @@
 @import "tailwindcss";
 @import "@rbr/shared/theme.css";
+/* shared/ fica fora do src/: sem isto o Tailwind não gera as classes usadas só lá (ex.: AuthTelas) */
+@source "../../shared";
