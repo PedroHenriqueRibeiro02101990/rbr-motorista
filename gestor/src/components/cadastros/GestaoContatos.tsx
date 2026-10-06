@@ -73,75 +73,27 @@ function normalizarCelular(texto: string): string | null {
   return /^55\d{10,11}$/.test(d) ? d : null
 }
 
-// DDD → UF e região (área do DDD, conforme a Anatel). Usado ao corrigir o telefone.
-const DDD_INFO: Record<string, { uf: string; regiao: string }> = {
-  '11': { uf: 'SP', regiao: 'São Paulo e região metropolitana' },
-  '12': { uf: 'SP', regiao: 'Vale do Paraíba e Litoral Norte' },
-  '13': { uf: 'SP', regiao: 'Baixada Santista e Vale do Ribeira' },
-  '14': { uf: 'SP', regiao: 'Bauru e Marília' },
-  '15': { uf: 'SP', regiao: 'Sorocaba' },
-  '16': { uf: 'SP', regiao: 'Ribeirão Preto e Araraquara' },
-  '17': { uf: 'SP', regiao: 'São José do Rio Preto' },
-  '18': { uf: 'SP', regiao: 'Presidente Prudente e Araçatuba' },
-  '19': { uf: 'SP', regiao: 'Campinas e Piracicaba' },
-  '21': { uf: 'RJ', regiao: 'Rio de Janeiro e região metropolitana' },
-  '22': { uf: 'RJ', regiao: 'Norte Fluminense e Região dos Lagos' },
-  '24': { uf: 'RJ', regiao: 'Sul Fluminense e Região Serrana' },
-  '27': { uf: 'ES', regiao: 'Vitória e região' },
-  '28': { uf: 'ES', regiao: 'Sul do Espírito Santo' },
-  '31': { uf: 'MG', regiao: 'Belo Horizonte e região' },
-  '32': { uf: 'MG', regiao: 'Juiz de Fora e Zona da Mata' },
-  '33': { uf: 'MG', regiao: 'Governador Valadares e Vale do Rio Doce' },
-  '34': { uf: 'MG', regiao: 'Uberlândia e Triângulo Mineiro' },
-  '35': { uf: 'MG', regiao: 'Sul de Minas' },
-  '37': { uf: 'MG', regiao: 'Divinópolis e Centro-Oeste de Minas' },
-  '38': { uf: 'MG', regiao: 'Montes Claros e Norte de Minas' },
-  '41': { uf: 'PR', regiao: 'Curitiba e região' },
-  '42': { uf: 'PR', regiao: 'Ponta Grossa e Campos Gerais' },
-  '43': { uf: 'PR', regiao: 'Londrina e Norte do Paraná' },
-  '44': { uf: 'PR', regiao: 'Maringá e Noroeste do Paraná' },
-  '45': { uf: 'PR', regiao: 'Cascavel e Oeste do Paraná' },
-  '46': { uf: 'PR', regiao: 'Sudoeste do Paraná' },
-  '47': { uf: 'SC', regiao: 'Joinville e Vale do Itajaí' },
-  '48': { uf: 'SC', regiao: 'Florianópolis e Sul de Santa Catarina' },
-  '49': { uf: 'SC', regiao: 'Oeste de Santa Catarina' },
-  '51': { uf: 'RS', regiao: 'Porto Alegre e região' },
-  '53': { uf: 'RS', regiao: 'Pelotas e Sul do Rio Grande do Sul' },
-  '54': { uf: 'RS', regiao: 'Caxias do Sul e Serra Gaúcha' },
-  '55': { uf: 'RS', regiao: 'Santa Maria e Oeste do Rio Grande do Sul' },
-  '61': { uf: 'DF', regiao: 'Distrito Federal e entorno' },
-  '62': { uf: 'GO', regiao: 'Goiânia e região' },
-  '63': { uf: 'TO', regiao: 'Tocantins' },
-  '64': { uf: 'GO', regiao: 'Sul de Goiás' },
-  '65': { uf: 'MT', regiao: 'Cuiabá e região' },
-  '66': { uf: 'MT', regiao: 'Interior de Mato Grosso' },
-  '67': { uf: 'MS', regiao: 'Mato Grosso do Sul' },
-  '68': { uf: 'AC', regiao: 'Acre' },
-  '69': { uf: 'RO', regiao: 'Rondônia' },
-  '71': { uf: 'BA', regiao: 'Salvador e região' },
-  '73': { uf: 'BA', regiao: 'Sul da Bahia' },
-  '74': { uf: 'BA', regiao: 'Norte da Bahia' },
-  '75': { uf: 'BA', regiao: 'Feira de Santana e Recôncavo' },
-  '77': { uf: 'BA', regiao: 'Oeste e Sudoeste da Bahia' },
-  '79': { uf: 'SE', regiao: 'Sergipe' },
-  '81': { uf: 'PE', regiao: 'Recife e região' },
-  '82': { uf: 'AL', regiao: 'Alagoas' },
-  '83': { uf: 'PB', regiao: 'Paraíba' },
-  '84': { uf: 'RN', regiao: 'Rio Grande do Norte' },
-  '85': { uf: 'CE', regiao: 'Fortaleza e região' },
-  '86': { uf: 'PI', regiao: 'Teresina e Norte do Piauí' },
-  '87': { uf: 'PE', regiao: 'Sertão de Pernambuco' },
-  '88': { uf: 'CE', regiao: 'Interior do Ceará' },
-  '89': { uf: 'PI', regiao: 'Sul do Piauí' },
-  '91': { uf: 'PA', regiao: 'Belém e região' },
-  '92': { uf: 'AM', regiao: 'Manaus e região' },
-  '93': { uf: 'PA', regiao: 'Santarém e Oeste do Pará' },
-  '94': { uf: 'PA', regiao: 'Marabá e Sudeste do Pará' },
-  '95': { uf: 'RR', regiao: 'Roraima' },
-  '96': { uf: 'AP', regiao: 'Amapá' },
-  '97': { uf: 'AM', regiao: 'Interior do Amazonas' },
-  '98': { uf: 'MA', regiao: 'São Luís e Norte do Maranhão' },
-  '99': { uf: 'MA', regiao: 'Sul do Maranhão' },
+// Macrorregiões do IBGE — os mesmos nomes da planilha importada.
+const REGIOES = ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'] as const
+const REGIAO_DA_UF: Record<string, (typeof REGIOES)[number]> = {
+  AC: 'Norte', AM: 'Norte', AP: 'Norte', PA: 'Norte', RO: 'Norte', RR: 'Norte', TO: 'Norte',
+  AL: 'Nordeste', BA: 'Nordeste', CE: 'Nordeste', MA: 'Nordeste', PB: 'Nordeste', PE: 'Nordeste', PI: 'Nordeste', RN: 'Nordeste', SE: 'Nordeste',
+  DF: 'Centro-Oeste', GO: 'Centro-Oeste', MS: 'Centro-Oeste', MT: 'Centro-Oeste',
+  ES: 'Sudeste', MG: 'Sudeste', RJ: 'Sudeste', SP: 'Sudeste',
+  PR: 'Sul', RS: 'Sul', SC: 'Sul',
+}
+
+// DDD → UF. Usado ao corrigir o telefone (a região sai da UF).
+const UF_DO_DDD: Record<string, string> = {
+  '11': 'SP', '12': 'SP', '13': 'SP', '14': 'SP', '15': 'SP', '16': 'SP', '17': 'SP', '18': 'SP',
+  '19': 'SP', '21': 'RJ', '22': 'RJ', '24': 'RJ', '27': 'ES', '28': 'ES', '31': 'MG', '32': 'MG',
+  '33': 'MG', '34': 'MG', '35': 'MG', '37': 'MG', '38': 'MG', '41': 'PR', '42': 'PR', '43': 'PR',
+  '44': 'PR', '45': 'PR', '46': 'PR', '47': 'SC', '48': 'SC', '49': 'SC', '51': 'RS', '53': 'RS',
+  '54': 'RS', '55': 'RS', '61': 'DF', '62': 'GO', '63': 'TO', '64': 'GO', '65': 'MT', '66': 'MT',
+  '67': 'MS', '68': 'AC', '69': 'RO', '71': 'BA', '73': 'BA', '74': 'BA', '75': 'BA', '77': 'BA',
+  '79': 'SE', '81': 'PE', '82': 'AL', '83': 'PB', '84': 'RN', '85': 'CE', '86': 'PI', '87': 'PE',
+  '88': 'CE', '89': 'PI', '91': 'PA', '92': 'AM', '93': 'PA', '94': 'PA', '95': 'RR', '96': 'AP',
+  '97': 'AM', '98': 'MA', '99': 'MA',
 }
 
 // Só recebe mensagem quem está na fila ou já recebeu, com celular (fixo não tem WhatsApp garantido).
@@ -205,7 +157,7 @@ export default function GestaoContatos() {
   const [cfg, setCfg] = useState<ConfigDisparo | null>(null)
   const [contagem, setContagem] = useState<Record<StatusContato, number> | null>(null)
   const [enviadosHoje, setEnviadosHoje] = useState<number | null>(null)
-  const [opcoes, setOpcoes] = useState<{ uf: string[]; regiao: string[]; ddd: string[]; veiculo: string[] }>({ uf: [], regiao: [], ddd: [], veiculo: [] })
+  const [opcoes, setOpcoes] = useState<{ uf: string[]; ddd: string[]; veiculo: string[] }>({ uf: [], ddd: [], veiculo: [] })
 
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_INICIAIS)
   const [buscaDigitada, setBuscaDigitada] = useState('')
@@ -246,21 +198,20 @@ export default function GestaoContatos() {
         setCfg({ link_cadastro: v.link_cadastro ?? '', rodape_saida: v.rodape_saida ?? '', limite_diario: Number(v.limite_diario ?? 0) })
       })
     ;(async () => {
-      const uf = new Set<string>(), regiao = new Set<string>(), ddd = new Set<string>(), veiculo = new Set<string>()
+      const uf = new Set<string>(), ddd = new Set<string>(), veiculo = new Set<string>()
       // Lê só as colunas dos filtros, de mil em mil.
       for (let de = 0; de < 20000; de += 1000) {
-        const { data } = await db.from('contatos_motoristas').select('uf, regiao, ddd, tipo_veiculo').range(de, de + 999)
-        const linhas = (data ?? []) as Pick<Contato, 'uf' | 'regiao' | 'ddd' | 'tipo_veiculo'>[]
+        const { data } = await db.from('contatos_motoristas').select('uf, ddd, tipo_veiculo').range(de, de + 999)
+        const linhas = (data ?? []) as Pick<Contato, 'uf' | 'ddd' | 'tipo_veiculo'>[]
         for (const l of linhas) {
           if (l.uf) uf.add(l.uf)
-          if (l.regiao) regiao.add(l.regiao)
           if (l.ddd) ddd.add(l.ddd)
           if (l.tipo_veiculo) veiculo.add(l.tipo_veiculo)
         }
         if (linhas.length < 1000) break
       }
       const ord = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, 'pt-BR'))
-      setOpcoes({ uf: ord(uf), regiao: ord(regiao), ddd: ord(ddd), veiculo: ord(veiculo) })
+      setOpcoes({ uf: ord(uf), ddd: ord(ddd), veiculo: ord(veiculo) })
     })()
     carregarResumo()
   }, [carregarResumo])
@@ -400,7 +351,8 @@ export default function GestaoContatos() {
     setOk(null)
     const celular = normalizarCelular(telefoneEditado[contato.id] ?? contato.celular)
     if (!celular) return setErro('Telefone inválido. Digite DDD + número (10 ou 11 dígitos).')
-    const local = DDD_INFO[celular.slice(2, 4)]
+    const ufNova = UF_DO_DDD[celular.slice(2, 4)]
+    const local = ufNova ? { uf: ufNova, regiao: REGIAO_DA_UF[ufNova] } : null
     setOcupadoId(contato.id)
     const { error } = await db
       .from('contatos_motoristas')
@@ -494,7 +446,7 @@ export default function GestaoContatos() {
                 style={inputStyle}
               />
               {selectFiltro(filtros.uf, (uf) => setFiltros({ ...filtros, uf }), 'UF', comoOpcoes(opcoes.uf))}
-              {selectFiltro(filtros.regiao, (regiao) => setFiltros({ ...filtros, regiao }), 'Região', comoOpcoes(opcoes.regiao))}
+              {selectFiltro(filtros.regiao, (regiao) => setFiltros({ ...filtros, regiao }), 'Região', comoOpcoes([...REGIOES]))}
               {selectFiltro(filtros.ddd, (ddd) => setFiltros({ ...filtros, ddd }), 'DDD', comoOpcoes(opcoes.ddd))}
               {selectFiltro(filtros.veiculo, (veiculo) => setFiltros({ ...filtros, veiculo }), 'Veículo', comoOpcoes(opcoes.veiculo))}
               {selectFiltro(
@@ -544,11 +496,15 @@ export default function GestaoContatos() {
                           </span>
                         )}
                       </div>
+                      {c.observacao?.startsWith('Nome na agenda:') && (
+                        <div className="text-[11px] text-[color:var(--rbr-muted)]">{c.observacao.split('\n')[0]}</div>
+                      )}
                       <div className="text-sm tabular-nums">{formatarCelular(c.celular)}</div>
                       <div className="text-xs text-[color:var(--rbr-muted)]">
                         {[c.ddd && `DDD ${c.ddd}`, c.uf, c.regiao, c.tipo_veiculo].filter(Boolean).join(' · ') || '—'}
                       </div>
                       <div className="text-xs text-[color:var(--rbr-muted)]">
+                        {c.status === 'cadastrado' && c.cadastrado_em ? `Cadastrado no app em ${formatDateTime(c.cadastrado_em)} · ` : ''}
                         {c.total_envios === 0 ? 'Nenhum envio ainda' : `${c.total_envios} ${c.total_envios === 1 ? 'envio' : 'envios'} · último em ${formatDateTime(c.ultimo_envio_em)}`}
                       </div>
                       {c.status === 'conferir' && (

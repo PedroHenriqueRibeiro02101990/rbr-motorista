@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatDate } from '@rbr/shared/format'
@@ -6,9 +6,11 @@ import { IconChevronRight } from '@rbr/shared/icons'
 import { useSearchParams } from 'react-router-dom'
 import { BadgeAprovacao } from '@rbr/shared/cadastro'
 import { formatarDoc } from '@rbr/shared/documento'
-import { consultarCnpj, consultarCep, resumoCnpj, preencherVazios, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
+import { preencherVazios, soDigitos, type DadosCep, type DadosCnpj } from '@rbr/shared/consultaCadastro'
+import { buscarCep, buscarCnpj } from '../lib/consultaReceita'
 import Pendencias from '../components/cadastros/Pendencias'
 import GestaoContatos from '../components/cadastros/GestaoContatos'
+import RiscoComercial from '../components/cadastros/RiscoComercial'
 import PainelCadastro from '../components/cadastros/PainelCadastro'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
@@ -96,6 +98,7 @@ const CLIENTE_INICIAL = {
   email: '',
   celular_whatsapp: '',
   nome_contato_comercial: '',
+  cnae: '',
 }
 
 const MOTORISTA_INICIAL = {
@@ -564,43 +567,224 @@ export default function Cadastros() {
   }
 
   // ---------- Consulta automática (CNPJ + IE, CEP) ----------
+  // Dispara ao completar os dígitos (ou pelo botão "Buscar CNPJ"). Preenche só os campos vazios;
+  // se a Receita trouxer algo diferente do que já está no formulário, pergunta antes de trocar.
 
-  const [avisoConsulta, setAvisoConsulta] = useState<{ alvo: string; texto: string } | null>(null)
+  type Aviso = { alvo: string; tipo: 'info' | 'atencao' | 'erro'; texto: string }
+  type Divergencia = { alvo: string; campos: { chave: string; rotulo: string; valor: string }[]; aplicar: () => void }
+  const [avisoConsulta, setAvisoConsulta] = useState<Aviso | null>(null)
   const [consultando, setConsultando] = useState<string | null>(null)
+  const [divergencia, setDivergencia] = useState<Divergencia | null>(null)
+  // Formulários em que a IE não veio na última consulta de CNPJ.
+  const [ieSemConsulta, setIeSemConsulta] = useState<Record<string, boolean>>({})
+  // Evita chamar duas vezes o mesmo CNPJ/CEP (enquanto uma consulta está em andamento ou logo depois dela).
+  const consultasEmAndamento = useRef(new Set<string>())
+  const ultimaConsulta = useRef<Record<string, string>>({})
+
+  const ROTULOS: Record<string, string> = {
+    razao_social: 'Razão social',
+    nome: 'Nome',
+    nome_fantasia: 'Nome fantasia',
+    inscricao_estadual: 'Inscrição estadual',
+    email: 'E-mail',
+    celular: 'Telefone',
+    celular_whatsapp: 'Telefone',
+    cnae: 'CNAE',
+    cep: 'CEP',
+    logradouro: 'Logradouro',
+    numero_endereco: 'Número',
+    complemento: 'Complemento',
+    bairro: 'Bairro',
+    cidade: 'Cidade',
+    uf: 'UF',
+  }
+  // Telefone, CEP e IE com ou sem pontuação contam como o mesmo valor.
+  const soNumeros = (x: string) => /^[\d\s().+\-/]*$/.test(x)
+  const mesmoValor = (a: string, b: string) =>
+    a.trim().toLowerCase() === b.trim().toLowerCase() || (soNumeros(a) && soNumeros(b) && soDigitos(a) !== '' && soDigitos(a) === soDigitos(b))
+
+  // Preenche os vazios e guarda as diferenças para a pessoa decidir.
+  function aplicarConsulta<T extends object>(
+    alvo: string,
+    formAtual: T,
+    setForm: (fn: (f: T) => T) => void,
+    novos: { [K in keyof T]?: string | null | undefined },
+  ) {
+    setForm((f) => preencherVazios(f, novos))
+    const atual = formAtual as Record<string, unknown>
+    const campos = Object.entries(novos as Record<string, string | null | undefined>)
+      .filter(([k, v]) => v != null && v !== '' && String(atual[k] ?? '').trim() !== '' && !mesmoValor(String(atual[k]), String(v)))
+      .map(([k, v]) => ({ chave: k, rotulo: ROTULOS[k] ?? k, valor: String(v) }))
+    if (campos.length === 0) {
+      setDivergencia((d) => (d?.alvo === alvo ? null : d))
+      return
+    }
+    setDivergencia({
+      alvo,
+      campos,
+      aplicar: () => {
+        setForm((f) => ({ ...f, ...Object.fromEntries(campos.map((c) => [c.chave, c.valor])) }))
+        setDivergencia(null)
+      },
+    })
+  }
 
   async function autoCnpj<T extends object>(
     alvo: string,
     valor: string,
+    formAtual: T,
     setForm: (fn: (f: T) => T) => void,
     mapa: (d: DadosCnpj) => { [K in keyof T]?: string | null | undefined },
+    forcar = false,
   ) {
-    if (soDigitos(valor).length !== 14) return
-    setConsultando(alvo)
-    setAvisoConsulta(null)
-    const r = await consultarCnpj(valor)
-    setConsultando(null)
-    if (!r.dados) {
-      if (r.erro) setAvisoConsulta({ alvo, texto: r.erro })
+    const cnpj = soDigitos(valor)
+    if (cnpj.length !== 14) {
+      if (forcar) setAvisoConsulta({ alvo, tipo: 'erro', texto: 'Informe um CNPJ com 14 dígitos.' })
       return
     }
-    const d = r.dados
-    setForm((f) => preencherVazios(f, mapa(d)))
-    setAvisoConsulta({ alvo, texto: resumoCnpj(d, r.ieIndisponivel) })
+    const chave = `cnpj:${cnpj}`
+    if (consultasEmAndamento.current.has(chave)) return
+    if (!forcar && ultimaConsulta.current[`${alvo}:cnpj`] === cnpj) return
+    consultasEmAndamento.current.add(chave)
+    ultimaConsulta.current[`${alvo}:cnpj`] = cnpj
+    setConsultando(alvo)
+    setAvisoConsulta(null)
+    try {
+      const r = await buscarCnpj(cnpj)
+      if (!r.dados) {
+        setAvisoConsulta({ alvo, tipo: 'erro', texto: r.erro ?? 'Não consegui consultar agora. Preencha à mão.' })
+        return
+      }
+      const d = r.dados
+      aplicarConsulta(alvo, formAtual, setForm, mapa(d))
+      setIeSemConsulta((m) => ({ ...m, [alvo]: !d.inscricao_estadual }))
+      setAvisoConsulta(
+        d.ativa === false
+          ? { alvo, tipo: 'atencao', texto: `Esta empresa não está ativa na Receita (situação: ${d.situacao_cadastral || 'não informada'}).` }
+          : { alvo, tipo: 'info', texto: 'Dados preenchidos pela Receita Federal. Confira antes de salvar.' },
+      )
+    } finally {
+      consultasEmAndamento.current.delete(chave)
+      setConsultando((c) => (c === alvo ? null : c))
+    }
   }
 
-  async function autoCep<T extends object>(valor: string, setForm: (fn: (f: T) => T) => void) {
-    const d = await consultarCep(valor)
-    if (!d) return
-    setForm((f) => preencherVazios(f, { logradouro: d.logradouro, bairro: d.bairro, cidade: d.cidade, uf: d.uf } as { [K in keyof T]?: string | null }))
+  async function autoCep<T extends object>(alvo: string, valor: string, formAtual: T, setForm: (fn: (f: T) => T) => void) {
+    const cep = soDigitos(valor)
+    if (cep.length !== 8) return
+    const chave = `cep:${alvo}:${cep}`
+    if (consultasEmAndamento.current.has(chave) || ultimaConsulta.current[`${alvo}:cep`] === cep) return
+    consultasEmAndamento.current.add(chave)
+    ultimaConsulta.current[`${alvo}:cep`] = cep
+    setConsultando(`${alvo}:cep`)
+    try {
+      const r = await buscarCep(cep)
+      if (!r.dados) {
+        setAvisoConsulta({ alvo, tipo: 'erro', texto: r.erro ?? 'Não consegui consultar o CEP. Preencha à mão.' })
+        return
+      }
+      const d: DadosCep = r.dados
+      aplicarConsulta(alvo, formAtual, setForm, { logradouro: d.logradouro, bairro: d.bairro, cidade: d.cidade, uf: d.uf } as { [K in keyof T]?: string | null })
+    } finally {
+      consultasEmAndamento.current.delete(chave)
+      setConsultando((c) => (c === `${alvo}:cep` ? null : c))
+    }
+  }
+
+  // Ao trocar de formulário (novo/editar), esquece a última consulta para poder consultar de novo.
+  function esquecerConsulta(alvo: string) {
+    delete ultimaConsulta.current[`${alvo}:cnpj`]
+    delete ultimaConsulta.current[`${alvo}:cep`]
+    setAvisoConsulta((a) => (a?.alvo === alvo ? null : a))
+    setDivergencia((d) => (d?.alvo === alvo ? null : d))
+    setIeSemConsulta((m) => ({ ...m, [alvo]: false }))
+  }
+
+  // Campo CNPJ + botão "Buscar CNPJ". É uma função que devolve JSX (não um componente), para o
+  // campo não perder o foco a cada letra digitada.
+  function campoCnpj(
+    alvo: string,
+    valor: string,
+    onValor: (v: string) => void,
+    buscar: (v: string, forcar: boolean) => void,
+    className = '',
+  ) {
+    return (
+      <div className={`flex gap-2 min-w-0 ${className}`}>
+        <input
+          placeholder="CNPJ *"
+          inputMode="numeric"
+          value={valor}
+          onChange={(e) => {
+            const v = e.target.value
+            onValor(v)
+            if (soDigitos(v).length === 14) buscar(v, false)
+          }}
+          onBlur={() => buscar(valor, false)}
+          className={`${inputClass} flex-1 min-w-0`}
+          style={inputStyle}
+        />
+        <button
+          type="button"
+          onClick={() => buscar(valor, true)}
+          disabled={consultando === alvo}
+          className="text-xs font-bold px-3 py-2 rounded-lg border whitespace-nowrap disabled:opacity-60"
+          style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+        >
+          {consultando === alvo ? 'Buscando…' : 'Buscar CNPJ'}
+        </button>
+      </div>
+    )
+  }
+
+  function dicaIe(alvo: string, ie: string) {
+    if (!ieSemConsulta[alvo] || ie.trim()) return null
+    return <div className="text-[11px] text-[color:var(--rbr-muted)] mt-1">Não veio da consulta. Preencha à mão se precisar.</div>
   }
 
   function AvisoConsulta({ alvo }: { alvo: string }) {
-    if (consultando === alvo) return <div className="text-xs text-[color:var(--rbr-muted)]">Consultando Receita Federal…</div>
-    if (avisoConsulta?.alvo !== alvo) return null
+    const cores = {
+      info: { background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' },
+      atencao: { background: 'var(--rbr-warning-bg)', color: '#7A5A12' },
+      erro: { background: '#FDF6E7', color: '#7A5A12' },
+    }
+    const div = divergencia?.alvo === alvo ? divergencia : null
     return (
-      <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
-        {avisoConsulta.texto}
-      </div>
+      <>
+        {(consultando === alvo || consultando === `${alvo}:cep`) && (
+          <div className="text-xs text-[color:var(--rbr-muted)]">{consultando === alvo ? 'Consultando a Receita Federal…' : 'Buscando o endereço do CEP…'}</div>
+        )}
+        {avisoConsulta?.alvo === alvo && (
+          <div className="text-xs rounded-xl px-3 py-2.5" style={cores[avisoConsulta.tipo]}>
+            {avisoConsulta.texto}
+          </div>
+        )}
+        {div && (
+          <div className="text-xs rounded-xl px-3 py-2.5 flex flex-col gap-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
+            <div>A consulta trouxe dados diferentes do que já está preenchido. Quer usar os da consulta?</div>
+            <ul className="flex flex-col gap-0.5">
+              {div.campos.map((c) => (
+                <li key={c.chave}>
+                  <span className="font-semibold">{c.rotulo}:</span> {c.valor}
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2 flex-wrap">
+              <button type="button" onClick={div.aplicar} className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+                Usar dados da consulta
+              </button>
+              <button
+                type="button"
+                onClick={() => setDivergencia(null)}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+              >
+                Manter o que está
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     )
   }
 
@@ -624,6 +808,7 @@ export default function Cadastros() {
       email: novoCliente.email.trim() || null,
       celular_whatsapp: novoCliente.celular_whatsapp.trim() || null,
       nome_contato_comercial: novoCliente.nome_contato_comercial.trim() || null,
+      cnae: novoCliente.cnae.trim() || null,
     }
   }
 
@@ -659,6 +844,7 @@ export default function Cadastros() {
   }
 
   function editarCliente(c: Cliente) {
+    esquecerConsulta('cliente')
     setErroCliente(null)
     setEditingClienteId(c.id)
     setNovoCliente({
@@ -678,11 +864,13 @@ export default function Cadastros() {
       email: c.email ?? '',
       celular_whatsapp: c.celular_whatsapp ?? '',
       nome_contato_comercial: c.nome_contato_comercial ?? '',
+      cnae: c.cnae ?? '',
     })
     setShowNovoCliente(true)
   }
 
   function fecharFormCliente() {
+    esquecerConsulta('cliente')
     setNovoCliente(CLIENTE_INICIAL)
     setShowNovoCliente(false)
     setEditingClienteId(null)
@@ -750,6 +938,7 @@ export default function Cadastros() {
   }
 
   function editarMotorista(m: Pessoa) {
+    esquecerConsulta('motorista')
     setErroMotorista(null)
     setEditingMotoristaId(m.id)
     setNovoMotorista({
@@ -780,6 +969,7 @@ export default function Cadastros() {
   }
 
   function fecharFormMotorista() {
+    esquecerConsulta('motorista')
     setNovoMotorista(MOTORISTA_INICIAL)
     setShowNovoMotorista(false)
     setEditingMotoristaId(null)
@@ -1083,6 +1273,7 @@ export default function Cadastros() {
   }
 
   function editarAgenciador(a: Pessoa) {
+    esquecerConsulta('agenciador')
     setErroAgenciador(null)
     setEditingAgenciadorId(a.id)
     setNovoAgenciador({
@@ -1105,6 +1296,7 @@ export default function Cadastros() {
   }
 
   function fecharFormAgenciador() {
+    esquecerConsulta('agenciador')
     setNovoAgenciador(AGENCIADOR_INICIAL)
     setShowNovoAgenciador(false)
     setEditingAgenciadorId(null)
@@ -1171,6 +1363,7 @@ export default function Cadastros() {
   }
 
   function editarFornecedor(f: Fornecedor) {
+    esquecerConsulta('fornecedor')
     setErroFornecedor(null)
     setEditingFornecedorId(f.id)
     setNovoFornecedor({
@@ -1195,6 +1388,7 @@ export default function Cadastros() {
   }
 
   function fecharFormFornecedor() {
+    esquecerConsulta('fornecedor')
     setNovoFornecedor(FORNECEDOR_INICIAL)
     setShowNovoFornecedor(false)
     setEditingFornecedorId(null)
@@ -1258,6 +1452,7 @@ export default function Cadastros() {
   }
 
   function editarPrestador(p: PrestadorParceiro) {
+    esquecerConsulta('prestador')
     setErroPrestador(null)
     setEditingPrestadorId(p.id)
     setNovoPrestador({
@@ -1279,6 +1474,7 @@ export default function Cadastros() {
   }
 
   function fecharFormPrestador() {
+    esquecerConsulta('prestador')
     setNovoPrestador(PRESTADOR_INICIAL)
     setShowNovoPrestador(false)
     setEditingPrestadorId(null)
@@ -1386,14 +1582,13 @@ export default function Cadastros() {
               )}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {novoCliente.tipo_pessoa_doc === 'PJ' ? (
-                  <input
-                    placeholder="CNPJ *"
-                    value={novoCliente.cnpj}
-                    onChange={(e) => setNovoCliente((f) => ({ ...f, cnpj: e.target.value }))}
-                    onBlur={() => autoCnpj('cliente', novoCliente.cnpj, setNovoCliente, (d) => ({ razao_social: d.razao_social, nome_fantasia: d.nome_fantasia, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular_whatsapp: d.telefone, cep: d.cep, logradouro: d.logradouro, numero_endereco: d.numero_endereco, complemento: d.complemento, bairro: d.bairro, cidade: d.cidade, uf: d.uf }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  campoCnpj(
+                    'cliente',
+                    novoCliente.cnpj,
+                    (v) => setNovoCliente((f) => ({ ...f, cnpj: v })),
+                    (v, forcar) => autoCnpj('cliente', v, novoCliente, setNovoCliente, (d) => ({ razao_social: d.razao_social, nome_fantasia: d.nome_fantasia, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular_whatsapp: d.telefone, cnae: d.cnae, cep: d.cep, logradouro: d.logradouro, numero_endereco: d.numero_endereco, complemento: d.complemento, bairro: d.bairro, cidade: d.cidade, uf: d.uf }), forcar),
+                    'col-span-2 md:col-span-1',
+                  )
                 ) : (
                   <input
                     placeholder="CPF *"
@@ -1404,13 +1599,16 @@ export default function Cadastros() {
                   />
                 )}
                 {novoCliente.tipo_pessoa_doc === 'PJ' && (
-                  <input
-                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
-                    value={novoCliente.inscricao_estadual}
-                    onChange={(e) => setNovoCliente((f) => ({ ...f, inscricao_estadual: e.target.value }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  <div>
+                    <input
+                      placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                      value={novoCliente.inscricao_estadual}
+                      onChange={(e) => setNovoCliente((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+                      className={`${inputClass} w-full`}
+                      style={inputStyle}
+                    />
+                    {dicaIe('cliente', novoCliente.inscricao_estadual)}
+                  </div>
                 )}
                 <input
                   placeholder="E-mail"
@@ -1431,8 +1629,13 @@ export default function Cadastros() {
                 <input
                   placeholder="CEP"
                   value={novoCliente.cep}
-                  onChange={(e) => setNovoCliente((f) => ({ ...f, cep: e.target.value }))}
-                  onBlur={() => autoCep(novoCliente.cep, setNovoCliente)}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setNovoCliente((f) => ({ ...f, cep: v }))
+                    if (soDigitos(v).length === 8) autoCep('cliente', v, novoCliente, setNovoCliente)
+                  }}
+                  onBlur={() => autoCep('cliente', novoCliente.cep, novoCliente, setNovoCliente)}
                   className={inputClass}
                   style={inputStyle}
                 />
@@ -1482,16 +1685,28 @@ export default function Cadastros() {
                   style={inputStyle}
                 />
               </div>
-              <input
-                placeholder="Nome do contato comercial"
-                value={novoCliente.nome_contato_comercial}
-                onChange={(e) => setNovoCliente((f) => ({ ...f, nome_contato_comercial: e.target.value }))}
-                className={inputClass}
-                style={inputStyle}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  placeholder="Nome do contato comercial"
+                  value={novoCliente.nome_contato_comercial}
+                  onChange={(e) => setNovoCliente((f) => ({ ...f, nome_contato_comercial: e.target.value }))}
+                  className={inputClass}
+                  style={inputStyle}
+                />
+                {novoCliente.tipo_pessoa_doc === 'PJ' && (
+                  <input
+                    placeholder="CNAE (atividade principal) — vem do CNPJ"
+                    value={novoCliente.cnae}
+                    onChange={(e) => setNovoCliente((f) => ({ ...f, cnae: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                )}
+              </div>
               <div className="text-[11px] text-[color:var(--rbr-muted)]">
                 Condição de pagamento/prazo não fica no cadastro do cliente — é definida por cotação/operação.
               </div>
+              {novoCliente.tipo_pessoa_doc === 'PJ' && <RiscoComercial cnpj={novoCliente.cnpj} />}
               <button
                 onClick={salvarCliente}
                 disabled={salvandoCliente}
@@ -1574,6 +1789,7 @@ export default function Cadastros() {
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
                 {editingMotoristaId ? 'Editar motorista' : 'Novo motorista'}
               </div>
+              <AvisoConsulta alvo="motorista" />
               {erroMotorista && (
                 <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {erroMotorista}
@@ -1615,8 +1831,13 @@ export default function Cadastros() {
                 <input
                   placeholder="CEP"
                   value={novoMotorista.cep}
-                  onChange={(e) => setNovoMotorista((f) => ({ ...f, cep: e.target.value }))}
-                  onBlur={() => autoCep(novoMotorista.cep, setNovoMotorista)}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setNovoMotorista((f) => ({ ...f, cep: v }))
+                    if (soDigitos(v).length === 8) autoCep('motorista', v, novoMotorista, setNovoMotorista)
+                  }}
+                  onBlur={() => autoCep('motorista', novoMotorista.cep, novoMotorista, setNovoMotorista)}
                   className={inputClass}
                   style={inputStyle}
                 />
@@ -2518,23 +2739,24 @@ export default function Cadastros() {
                     style={inputStyle}
                   />
                 ) : (
-                  <input
-                    placeholder="CNPJ *"
-                    value={novoAgenciador.cnpj}
-                    onChange={(e) => setNovoAgenciador((f) => ({ ...f, cnpj: e.target.value }))}
-                    onBlur={() => autoCnpj('agenciador', novoAgenciador.cnpj, setNovoAgenciador, (d) => ({ nome: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone, cep: d.cep, logradouro: d.logradouro, numero_endereco: d.numero_endereco, complemento: d.complemento, bairro: d.bairro, cidade: d.cidade, uf: d.uf }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  campoCnpj(
+                    'agenciador',
+                    novoAgenciador.cnpj,
+                    (v) => setNovoAgenciador((f) => ({ ...f, cnpj: v })),
+                    (v, forcar) => autoCnpj('agenciador', v, novoAgenciador, setNovoAgenciador, (d) => ({ nome: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone, cep: d.cep, logradouro: d.logradouro, numero_endereco: d.numero_endereco, complemento: d.complemento, bairro: d.bairro, cidade: d.cidade, uf: d.uf }), forcar),
+                  )
                 )}
                 {novoAgenciador.tipo_pessoa_doc === 'PJ' && (
-                  <input
-                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
-                    value={novoAgenciador.inscricao_estadual}
-                    onChange={(e) => setNovoAgenciador((f) => ({ ...f, inscricao_estadual: e.target.value }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  <div>
+                    <input
+                      placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                      value={novoAgenciador.inscricao_estadual}
+                      onChange={(e) => setNovoAgenciador((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+                      className={`${inputClass} w-full`}
+                      style={inputStyle}
+                    />
+                    {dicaIe('agenciador', novoAgenciador.inscricao_estadual)}
+                  </div>
                 )}
                 <input
                   placeholder="E-mail"
@@ -2555,8 +2777,13 @@ export default function Cadastros() {
                 <input
                   placeholder="CEP"
                   value={novoAgenciador.cep}
-                  onChange={(e) => setNovoAgenciador((f) => ({ ...f, cep: e.target.value }))}
-                  onBlur={() => autoCep(novoAgenciador.cep, setNovoAgenciador)}
+                  inputMode="numeric"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setNovoAgenciador((f) => ({ ...f, cep: v }))
+                    if (soDigitos(v).length === 8) autoCep('agenciador', v, novoAgenciador, setNovoAgenciador)
+                  }}
+                  onBlur={() => autoCep('agenciador', novoAgenciador.cep, novoAgenciador, setNovoAgenciador)}
                   className={inputClass}
                   style={inputStyle}
                 />
@@ -2737,14 +2964,12 @@ export default function Cadastros() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {novoFornecedor.tipo_pessoa_doc === 'PJ' ? (
-                  <input
-                    placeholder="CNPJ *"
-                    value={novoFornecedor.cnpj}
-                    onChange={(e) => setNovoFornecedor((f) => ({ ...f, cnpj: e.target.value }))}
-                    onBlur={() => autoCnpj('fornecedor', novoFornecedor.cnpj, setNovoFornecedor, (d) => ({ nome: d.nome_fantasia || d.razao_social, razao_social: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  campoCnpj(
+                    'fornecedor',
+                    novoFornecedor.cnpj,
+                    (v) => setNovoFornecedor((f) => ({ ...f, cnpj: v })),
+                    (v, forcar) => autoCnpj('fornecedor', v, novoFornecedor, setNovoFornecedor, (d) => ({ nome: d.nome_fantasia || d.razao_social, razao_social: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone }), forcar),
+                  )
                 ) : (
                   <input
                     placeholder="CPF *"
@@ -2764,13 +2989,16 @@ export default function Cadastros() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {novoFornecedor.tipo_pessoa_doc === 'PJ' && (
-                  <input
-                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
-                    value={novoFornecedor.inscricao_estadual}
-                    onChange={(e) => setNovoFornecedor((f) => ({ ...f, inscricao_estadual: e.target.value }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  <div>
+                    <input
+                      placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                      value={novoFornecedor.inscricao_estadual}
+                      onChange={(e) => setNovoFornecedor((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+                      className={`${inputClass} w-full`}
+                      style={inputStyle}
+                    />
+                    {dicaIe('fornecedor', novoFornecedor.inscricao_estadual)}
+                  </div>
                 )}
                 <input
                   placeholder="E-mail"
@@ -2981,14 +3209,12 @@ export default function Cadastros() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {novoPrestador.tipo_pessoa_doc === 'PJ' ? (
-                  <input
-                    placeholder="CNPJ *"
-                    value={novoPrestador.cnpj}
-                    onChange={(e) => setNovoPrestador((f) => ({ ...f, cnpj: e.target.value }))}
-                    onBlur={() => autoCnpj('prestador', novoPrestador.cnpj, setNovoPrestador, (d) => ({ razao_social: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  campoCnpj(
+                    'prestador',
+                    novoPrestador.cnpj,
+                    (v) => setNovoPrestador((f) => ({ ...f, cnpj: v })),
+                    (v, forcar) => autoCnpj('prestador', v, novoPrestador, setNovoPrestador, (d) => ({ nome: d.nome_fantasia || d.razao_social, razao_social: d.razao_social, inscricao_estadual: d.inscricao_estadual, email: d.email?.toLowerCase(), celular: d.telefone }), forcar),
+                  )
                 ) : (
                   <input
                     placeholder="CPF *"
@@ -3009,13 +3235,16 @@ export default function Cadastros() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {novoPrestador.tipo_pessoa_doc === 'PJ' && (
-                  <input
-                    placeholder="Inscrição estadual (IE) — vem do CNPJ"
-                    value={novoPrestador.inscricao_estadual}
-                    onChange={(e) => setNovoPrestador((f) => ({ ...f, inscricao_estadual: e.target.value }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  <div>
+                    <input
+                      placeholder="Inscrição estadual (IE) — vem do CNPJ"
+                      value={novoPrestador.inscricao_estadual}
+                      onChange={(e) => setNovoPrestador((f) => ({ ...f, inscricao_estadual: e.target.value }))}
+                      className={`${inputClass} w-full`}
+                      style={inputStyle}
+                    />
+                    {dicaIe('prestador', novoPrestador.inscricao_estadual)}
+                  </div>
                 )}
                 <input
                   placeholder="E-mail"

@@ -29,12 +29,45 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   return (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null
 }
 
+// Falhas passageiras do provedor de IA (fila cheia, limite de uso): vale tentar de novo sozinho.
+const ERRO_PASSAGEIRO = /\b(503|429)\b|UNAVAILABLE|high demand|overloaded/i
+const ESPERAS_MS = [2000, 5000]
+
+type Falha = { tipo: 'sobrecarga' | 'geral'; pergunta: string } | { tipo: 'microfone' }
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// O texto bruto (JSON, nome do provedor, código) só vai para o console, nunca para a tela.
+async function perguntarUmaVez(corpo: object): Promise<{ resposta: string } | { erroBruto: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('assistente-ajuda', { body: corpo })
+    if (!error && data?.sucesso) return { resposta: String(data.resposta ?? '') }
+    let bruto = String(data?.erro ?? '')
+    if (error) {
+      // supabase-js zera `data` quando a Edge Function responde 4xx/5xx — o
+      // corpo real do erro (com o campo `erro`) vem em error.context.
+      try {
+        const ctx = (error as unknown as { context?: Response }).context
+        const status = ctx?.status ? `HTTP ${ctx.status} ` : ''
+        const json = await ctx?.json()
+        bruto = status + String(json?.erro ?? (error as { message?: string }).message ?? '')
+      } catch {
+        bruto = String((error as { message?: string }).message ?? bruto)
+      }
+    }
+    return { erroBruto: bruto || 'resposta sem sucesso' }
+  } catch (e) {
+    return { erroBruto: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export default function AjudaFlutuante({ app }: { app: AppNome }) {
   const [aberto, setAberto] = useState(false)
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
   const [pergunta, setPergunta] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
+  const [falha, setFalha] = useState<Falha | null>(null)
+  const [tentandoDeNovo, setTentandoDeNovo] = useState(false)
   const [ouvindo, setOuvindo] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
@@ -63,7 +96,7 @@ export default function AjudaFlutuante({ app }: { app: AppNome }) {
     recognition.onend = () => setOuvindo(false)
     recognition.onerror = () => {
       setOuvindo(false)
-      setErro('Não consegui ouvir — confere se o microfone está liberado pro navegador.')
+      setFalha({ tipo: 'microfone' })
     }
     recognition.onresult = (event: any) => {
       const texto = event.results?.[0]?.[0]?.transcript
@@ -74,55 +107,61 @@ export default function AjudaFlutuante({ app }: { app: AppNome }) {
     recognition.start()
   }
 
-  async function enviar(texto: string) {
+  // `reenvio`: a pergunta já está no histórico (botão "Tentar de novo"), não repete o balão.
+  async function enviar(texto: string, reenvio = false) {
     const textoLimpo = texto.trim()
     if (!textoLimpo || enviando) return
 
-    const novasMensagens: Mensagem[] = [...mensagens, { role: 'user', texto: textoLimpo }]
-    setMensagens(novasMensagens)
-    setPergunta('')
+    const historico: Mensagem[] = reenvio ? mensagens : [...mensagens, { role: 'user', texto: textoLimpo }]
+    if (!reenvio) {
+      setMensagens(historico)
+      setPergunta('')
+    }
     setEnviando(true)
-    setErro(null)
+    setFalha(null)
 
-    const { data, error } = await supabase.functions.invoke('assistente-ajuda', {
-      body: {
-        app,
-        pergunta: textoLimpo,
-        historico: novasMensagens.slice(-6),
-      },
-    })
+    const corpo = { app, pergunta: textoLimpo, historico: historico.slice(-6) }
+    let resultado = await perguntarUmaVez(corpo)
+    for (const espera of ESPERAS_MS) {
+      if (!('erroBruto' in resultado) || !ERRO_PASSAGEIRO.test(resultado.erroBruto)) break
+      console.error('[assistente-ajuda] falha passageira, tentando de novo:', resultado.erroBruto)
+      setTentandoDeNovo(true)
+      await esperar(espera)
+      resultado = await perguntarUmaVez(corpo)
+    }
 
+    setTentandoDeNovo(false)
     setEnviando(false)
 
-    if (error || !data?.sucesso) {
-      // supabase-js zera `data` quando a Edge Function responde 4xx/5xx — o
-      // corpo real do erro (com o campo `erro`) vem em error.context.
-      let texto = data?.erro ?? 'Não consegui responder agora. Tenta de novo em instantes.'
-      if (error) {
-        try {
-          const corpo = await (error as unknown as { context: Response }).context.json()
-          texto = corpo?.erro ?? (error as { message?: string })?.message ?? texto
-        } catch {
-          texto = (error as { message?: string })?.message ?? texto
-        }
-      }
-      setErro(texto)
+    if ('erroBruto' in resultado) {
+      console.error('[assistente-ajuda] falhou:', resultado.erroBruto)
+      setFalha({ tipo: ERRO_PASSAGEIRO.test(resultado.erroBruto) ? 'sobrecarga' : 'geral', pergunta: textoLimpo })
       return
     }
 
-    setMensagens((m) => [...m, { role: 'assistant', texto: data.resposta }])
+    setMensagens((m) => [...m, { role: 'assistant', texto: resultado.resposta }])
   }
+
+  // Esc também fecha o painel.
+  useEffect(() => {
+    if (!aberto) return
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setAberto(false)
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [aberto])
 
   return (
     <>
       {aberto && (
         <div
-          className="fixed z-50 bg-white border rounded-[20px] flex flex-col overflow-hidden right-4 bottom-24 md:bottom-24"
+          className="fixed z-50 bg-white border rounded-[20px] flex flex-col overflow-hidden right-4"
           style={{
+            // Fica acima do botão redondo (bottom-24 + 52 px + folga), sem cobrir o "Enviar" do chat.
+            bottom: 'calc(6rem + 60px)',
             borderColor: 'var(--rbr-border)',
             boxShadow: '0 8px 30px rgba(18,23,61,0.18)',
             width: 'min(360px, calc(100vw - 32px))',
-            height: 'min(480px, calc(100vh - 200px))',
+            height: 'min(480px, calc(100dvh - 260px))',
           }}
         >
           <div
@@ -130,7 +169,12 @@ export default function AjudaFlutuante({ app }: { app: AppNome }) {
             style={{ background: 'var(--rbr-navy)', color: '#FFFFFF' }}
           >
             <div className="text-sm font-bold">Precisa de ajuda?</div>
-            <button onClick={() => setAberto(false)} aria-label="Fechar" className="text-white/80 hover:text-white text-lg leading-none">
+            <button
+              type="button"
+              onClick={() => setAberto(false)}
+              aria-label="Fechar"
+              className="text-white/80 hover:text-white text-xl leading-none w-9 h-9 -mr-2 flex items-center justify-center rounded-lg"
+            >
               ×
             </button>
           </div>
@@ -173,11 +217,35 @@ export default function AjudaFlutuante({ app }: { app: AppNome }) {
                 className="text-xs rounded-xl px-3 py-2"
                 style={{ alignSelf: 'flex-start', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
               >
-                Pensando…
+                {tentandoDeNovo ? 'O assistente está com muita procura. Tentando de novo...' : 'Pensando…'}
               </div>
             )}
 
-            {erro && <div className="text-xs text-[color:var(--rbr-danger)]">{erro}</div>}
+            {falha && (
+              <div
+                role="status"
+                className="text-xs rounded-xl px-3 py-2 flex flex-col gap-1.5 max-w-[85%]"
+                style={{ alignSelf: 'flex-start', background: '#FDF6E7', color: '#7A5A12', border: '1px solid #F1DFB4' }}
+              >
+                <div>
+                  {falha.tipo === 'microfone'
+                    ? 'Não consegui ouvir. Confira se o microfone está liberado para o navegador.'
+                    : falha.tipo === 'sobrecarga'
+                      ? 'O assistente está sobrecarregado agora. Tente de novo em instantes.'
+                      : 'Não consegui responder agora. Tente de novo.'}
+                </div>
+                {falha.tipo !== 'microfone' && (
+                  <button
+                    type="button"
+                    onClick={() => enviar(falha.pergunta, true)}
+                    className="self-start text-xs font-bold px-2.5 py-1 rounded-lg"
+                    style={{ background: '#fff', color: 'var(--rbr-navy)', border: '1px solid #E5D3A5' }}
+                  >
+                    Tentar de novo
+                  </button>
+                )}
+              </div>
+            )}
 
             {ouvindo && (
               <div
@@ -234,7 +302,8 @@ export default function AjudaFlutuante({ app }: { app: AppNome }) {
       <button
         onClick={() => setAberto((a) => !a)}
         aria-label="Precisa de ajuda?"
-        className="fixed z-50 rounded-full flex items-center justify-center font-bold text-lg right-4 bottom-24"
+        // z-40: janelas de confirmação (z-50) ficam por cima do botão, que não cobre os botões delas.
+        className="fixed z-40 rounded-full flex items-center justify-center font-bold text-lg right-4 bottom-24"
         style={{
           width: 52,
           height: 52,
