@@ -10,7 +10,8 @@ import { preencherVazios, soDigitos, type DadosCep, type DadosCnpj } from '@rbr/
 import { buscarCep, buscarCnpj } from '../lib/consultaReceita'
 import Pendencias from '../components/cadastros/Pendencias'
 import GestaoContatos from '../components/cadastros/GestaoContatos'
-import RiscoComercial from '../components/cadastros/RiscoComercial'
+import RiscoComercial, { SeloProtestoLista } from '../components/cadastros/RiscoComercial'
+import { estadoDaConsulta, lerRegraProtesto, lerUltimasConsultas, type EstadoConsulta } from '../lib/protesto'
 import PainelCadastro from '../components/cadastros/PainelCadastro'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
@@ -383,13 +384,24 @@ export default function Cadastros() {
   const [buscaPrestador, setBuscaPrestador] = useState('')
   const [mostrarInativosPrestador, setMostrarInativosPrestador] = useState(false)
 
+  // Selinho de protesto na lista: uma consulta só para todos os CNPJs listados.
+  const [selosProtesto, setSelosProtesto] = useState<Record<string, EstadoConsulta>>({})
+  const carregarSelosProtesto = useCallback(async (lista: Cliente[]) => {
+    const cnpjs = lista.map((c) => c.cnpj ?? '').filter((c) => soDigitos(c).length === 14)
+    if (!cnpjs.length) return setSelosProtesto({})
+    const [regra, consultas] = await Promise.all([lerRegraProtesto(), lerUltimasConsultas(cnpjs)])
+    if (!regra) return setSelosProtesto({})
+    setSelosProtesto(Object.fromEntries(Object.entries(consultas).map(([cnpj, c]) => [cnpj, estadoDaConsulta(c, regra)])))
+  }, [])
+
   const loadClientes = useCallback(async () => {
     setLoadingClientes(true)
     const { data, error } = await supabase.from('clientes').select('*').order('created_at', { ascending: false }).limit(300)
     if (error) setErroCliente(error.message)
     setClientes(data ?? [])
     setLoadingClientes(false)
-  }, [])
+    carregarSelosProtesto(data ?? [])
+  }, [carregarSelosProtesto])
 
   const loadMotoristas = useCallback(async () => {
     setLoadingMotoristas(true)
@@ -1706,7 +1718,13 @@ export default function Cadastros() {
               <div className="text-[11px] text-[color:var(--rbr-muted)]">
                 Condição de pagamento/prazo não fica no cadastro do cliente — é definida por cotação/operação.
               </div>
-              {novoCliente.tipo_pessoa_doc === 'PJ' && <RiscoComercial cnpj={novoCliente.cnpj} />}
+              {novoCliente.tipo_pessoa_doc === 'PJ' && (
+                <RiscoComercial
+                  cnpj={novoCliente.cnpj}
+                  cliente={{ razao_social: novoCliente.razao_social, nome_fantasia: novoCliente.nome_fantasia, cidade: novoCliente.cidade, uf: novoCliente.uf }}
+                  onConsultado={() => clientes && carregarSelosProtesto(clientes)}
+                />
+              )}
               <button
                 onClick={salvarCliente}
                 disabled={salvandoCliente}
@@ -1731,9 +1749,12 @@ export default function Cadastros() {
               clientesFiltrados.map((c) => (
                 <div key={c.id} className="bg-white border rounded-[16px] px-4 py-3.5" style={cardStyle}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <div className="text-sm font-bold">{c.razao_social ?? c.nome_fantasia ?? 'Sem razão social'}</div>
                       <StatusBadge status={c.status} />
+                      {selosProtesto[soDigitos(c.cnpj)] && (
+                        <SeloProtestoLista situacao={selosProtesto[soDigitos(c.cnpj)].situacao} vencida={selosProtesto[soDigitos(c.cnpj)].vencida} />
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => editarCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
