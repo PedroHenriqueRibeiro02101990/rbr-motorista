@@ -180,6 +180,9 @@ export default function Fiscal() {
   const [docsPorOperacao, setDocsPorOperacao] = useState<Map<string, DocumentacaoOperacao[]>>(new Map())
   const [emAndamento, setEmAndamento] = useState<Set<string>>(new Set())
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
+  // Resultado da NF-e de teste (só homologação), por operação.
+  const [infoPorOperacao, setInfoPorOperacao] = useState<Record<string, string | null>>({})
+  const [ambienteFiscal, setAmbienteFiscal] = useState<string | null>(null)
   // Card de conferência aberto antes de emitir CT-e/MDF-e.
   const [conferencia, setConferencia] = useState<{ op: OperacaoEnriquecida; tipo: TipoConferencia } | null>(null)
   // Eventos fiscais pós-emissão (cancelar MDF-e/CT-e, carta de correção, trocar condutor).
@@ -236,6 +239,8 @@ export default function Fiscal() {
     }))
     setOperacoes(mapeadas)
     setLoading(false)
+    const { data: pf } = await supabase.from('parametros_fiscais').select('ambiente').eq('ativo', true).maybeSingle()
+    setAmbienteFiscal(pf?.ambiente ?? null)
     await carregarDocumentos(mapeadas.map((op) => op.id))
   }, [carregarDocumentos])
 
@@ -300,6 +305,48 @@ export default function Fiscal() {
     } finally {
       marcarEmAndamento(chave, false)
       await carregarDocumentos([op.id])
+    }
+  }
+
+  // NF-e de teste (homologação): a RBR emite uma NF-e com os dados da cotação e, autorizada, a chave vai pra
+  // cotação — é a nota que o CT-e de homologação cita (a SEFAZ-SP confere se ela existe).
+  async function nfeTeste(op: OperacaoEnriquecida, acao: 'emitir' | 'consultar') {
+    const chave = `${op.id}:nfe-teste:${acao}`
+    marcarEmAndamento(chave, true)
+    setErroPorOperacao((prev) => ({ ...prev, [op.id]: null }))
+    setInfoPorOperacao((prev) => ({ ...prev, [op.id]: null }))
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        sucesso: boolean
+        erro?: string
+        motivos?: string[]
+        status?: string
+        mensagem_sefaz?: string
+        chave?: string | null
+        gravada_na_cotacao?: boolean
+        aviso?: string
+      }>('emitir-nfe-teste', { body: { operacao_id: op.id, acao } })
+      if (error) {
+        const detalhe = await extrairDetalheErroInvoke(error)
+        setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
+      } else if (data && data.sucesso === false) {
+        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos } }))
+      } else if (data) {
+        const texto =
+          acao === 'emitir'
+            ? (data.aviso ?? 'NF-e de teste enviada.')
+            : data.gravada_na_cotacao
+              ? `NF-e de teste autorizada — chave ${data.chave} gravada na cotação. Agora o CT-e pode ser emitido citando ela.`
+              : `NF-e de teste: ${data.status ?? 'sem status'}${data.mensagem_sefaz ? ` — ${data.mensagem_sefaz}` : ''}`
+        setInfoPorOperacao((prev) => ({ ...prev, [op.id]: texto }))
+      }
+    } catch (e) {
+      setErroPorOperacao((prev) => ({
+        ...prev,
+        [op.id]: { erro: e instanceof Error ? e.message : 'Erro inesperado na NF-e de teste.' },
+      }))
+    } finally {
+      marcarEmAndamento(chave, false)
     }
   }
 
@@ -470,6 +517,7 @@ export default function Fiscal() {
             const docNfse = docs.find((d) => d.tipo === 'nfse')
             const docMdfe = docs.find((d) => d.tipo === 'mdfe')
             const erroCard = erroPorOperacao[op.id]
+            const infoCard = infoPorOperacao[op.id]
 
             const chaveCte = `${op.id}:cte`
             const chaveMdfe = `${op.id}:mdfe`
@@ -816,6 +864,12 @@ export default function Fiscal() {
                   </div>
                 )}
 
+                {infoCard && (
+                  <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>
+                    {infoCard}
+                  </div>
+                )}
+
                 {docMdfe && (
                   <FinalizarViagem
                     operacaoId={op.id}
@@ -861,6 +915,27 @@ export default function Fiscal() {
                   >
                     {emAndamento.has(chaveNfse) ? 'Enviando…' : 'Emitir NFS-e (intramunicipal)'}
                   </button>
+                  {ambienteFiscal === 'homologacao' && (
+                    <>
+                      <button
+                        onClick={() => nfeTeste(op, 'emitir')}
+                        disabled={emAndamento.has(`${op.id}:nfe-teste:emitir`)}
+                        title="Só homologação: a RBR emite uma NF-e de teste com os dados da cotação, para o CT-e citar uma nota que existe na SEFAZ."
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                        style={{ borderColor: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                      >
+                        {emAndamento.has(`${op.id}:nfe-teste:emitir`) ? 'Enviando…' : 'Gerar NF-e de teste'}
+                      </button>
+                      <button
+                        onClick={() => nfeTeste(op, 'consultar')}
+                        disabled={emAndamento.has(`${op.id}:nfe-teste:consultar`)}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                        style={{ borderColor: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                      >
+                        {emAndamento.has(`${op.id}:nfe-teste:consultar`) ? 'Consultando…' : 'Consultar NF-e de teste'}
+                      </button>
+                    </>
+                  )}
                   {docCte?.status === 'pendente' && (
                     <button
                       onClick={() => consultarStatus(op, 'cte')}
