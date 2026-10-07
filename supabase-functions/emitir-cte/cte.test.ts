@@ -7,7 +7,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chaveNfeValida, cnpjValido, montarCte, NOME_HOMOLOGACAO, type DadosCte } from "./cte.ts";
+import { readFileSync } from "node:fs";
+import { chaveNfeValida, type ClienteCte, cnpjValido, montarCte, NOME_HOMOLOGACAO, type DadosCte } from "./cte.ts";
 
 const CHAVE_TESTE = "35260969115969000104550010000000011123456789"; // DV correto, NF-e inventada
 const RBR = "69115969000104";
@@ -57,6 +58,8 @@ function base(sobrescrever: Partial<DadosCte> & { op?: Record<string, unknown> }
       endereco_uf: "SP",
       responsavel_tecnico_cnpj: RBR,
       responsavel_tecnico_email: "fiscal@rbr.com.br",
+      responsavel_tecnico_contato: "Fulano",
+      responsavel_tecnico_telefone: "(11) 3333-4444",
       rntrc: "012345678",
       telefone_contato: "1133334444",
     },
@@ -68,6 +71,7 @@ function base(sobrescrever: Partial<DadosCte> & { op?: Record<string, unknown> }
       nf_destinatario_ie: null,
       tomador_papel: null,
     },
+    cliente: null,
     ibge: { inicio: "3550308", fim: "3509502" },
     municipioEmitente: "São Paulo",
     agora: new Date("2026-10-07T12:00:00Z"),
@@ -102,6 +106,13 @@ test("operação de teste em homologação: sem bloqueios e com os nomes exigido
   assert.equal(r.payload.modal_rodoviario.rntrc, "12345678");
   assert.deepEqual(r.payload.nfes, [{ chave_nfe: CHAVE_TESTE }]);
   assert.equal(r.payload.quantidades[0].quantidade, 1000);
+  assert.equal(r.payload.municipio_emitente, "São Paulo");
+  assert.equal(r.payload.telefone_remetente, "1133334444");
+  assert.equal(r.payload.telefone_destinatario, "11999999999");
+  assert.equal(r.payload.cnpj_responsavel_tecnico, RBR);
+  assert.equal(r.payload.telefone_responsavel_tecnico, "1133334444");
+  assert.equal(r.payload.responsavel_tecnico, undefined);
+  assert.equal(r.payload.icms_origem, undefined);
   assert.ok(r.avisos.some((a) => a.includes("646/649")));
   assert.ok(r.avisos.some((a) => a.includes("661") && a.includes("HOMOLOGAÇÃO")));
 });
@@ -133,6 +144,7 @@ test("remetente terceiro: usa endereço e IE da aba NF-e da cotação", () => {
           municipio: "SAO PAULO",
           uf: "SP",
           codigo_ibge: "3550308",
+          telefone: "1155556666",
         },
         nf_remetente_ie: "123456789012",
         nf_destinatario_endereco: null,
@@ -145,14 +157,16 @@ test("remetente terceiro: usa endereço e IE da aba NF-e da cotação", () => {
   assert.equal(r.payload.logradouro_remetente, "RUA DAS INDUSTRIAS");
   assert.equal(r.payload.cep_remetente, "04567000");
   assert.equal(r.payload.inscricao_estadual_remetente, "123456789012");
-  assert.equal(r.payload.telefone_remetente, undefined);
+  assert.equal(r.payload.telefone_remetente, "1155556666");
+  assert.equal(r.payload.codigo_municipio_remetente, "3550308");
   // A chave de teste é de uma NF-e "emitida" pela RBR, não por esse remetente: avisa para conferir.
   assert.ok(r.avisos.some((a) => a.includes("CNPJ dentro da chave")));
 });
 
-test("remetente terceiro sem endereço na cotação bloqueia", () => {
+test("remetente terceiro sem endereço nem telefone bloqueia", () => {
   const r = montarCte(base({ op: { nf_remetente_cnpj: "11222333000181" } }));
   assert.ok(r.bloqueios.some((b) => b.startsWith("Endereço do remetente incompleto")));
+  assert.ok(r.bloqueios.some((b) => b.startsWith("Telefone do remetente")));
 });
 
 test("origem fora de São Paulo funciona quando o IBGE é encontrado", () => {
@@ -175,17 +189,56 @@ test("chave da NF-e e CNPJ inválidos bloqueiam antes de chegar na SEFAZ", () =>
   assert.ok(r.bloqueios.some((b) => b.startsWith("CNPJ do destinatário inválido")));
 });
 
-test("tomador: destinatário vira 3; terceiro bloqueia", () => {
+const CLIENTE_CADASTRO: ClienteCte = {
+  cnpj: "11444777000161",
+  cpf: null,
+  razao_social: "CLIENTE TESTE HOMOLOGACAO LTDA",
+  nome_fantasia: "TESTE",
+  inscricao_estadual: "111222333444",
+  celular_whatsapp: "+55 (11) 98888-7777",
+  email: "cliente@teste.com",
+  logradouro: "Rua do Cliente",
+  numero_endereco: "10",
+  complemento: null,
+  bairro: "Centro",
+  cidade: "Campinas",
+  uf: "SP",
+  cep: "13010-000",
+};
+
+test("tomador: destinatário vira 3", () => {
   const dest = montarCte(
     base({ cotacao: { ...base().cotacao!, tomador_papel: "destinatario", nf_destinatario_ie: "987654321000" } }),
   );
+  assert.deepEqual(dest.bloqueios, []);
   assert.equal(dest.payload.tomador, "3");
   assert.equal(dest.payload.indicador_inscricao_estadual_tomador, "1");
-  const terceiro = montarCte(base({ cotacao: { ...base().cotacao!, tomador_papel: "terceiro" } }));
-  assert.ok(terceiro.bloqueios.some((b) => b.includes('"terceiro"')));
+  assert.equal(dest.payload.cnpj_tomador, undefined);
 });
 
-test("destinatário: endereço da NF-e tem prioridade e telefone não bloqueia", () => {
+test("tomador terceiro (cliente da cotação) vira 4 com os dados do cadastro", () => {
+  const dados = base({ cotacao: { ...base().cotacao!, tomador_papel: "terceiro" }, cliente: CLIENTE_CADASTRO });
+  const r = montarCte(dados);
+  assert.deepEqual(r.bloqueios, []);
+  assert.equal(r.payload.tomador, "4");
+  assert.equal(r.payload.cnpj_tomador, "11444777000161");
+  assert.equal(r.payload.inscricao_estadual_tomador, "111222333444");
+  assert.equal(r.payload.indicador_inscricao_estadual_tomador, "1");
+  assert.equal(r.payload.telefone_tomador, "5511988887777");
+  assert.equal(r.payload.cep_tomador, "13010000");
+  assert.equal(r.payload.nome_tomador, NOME_HOMOLOGACAO); // homologação
+  const prod = montarCte({ ...dados, op: { ...dados.op, ambiente_fiscal: "producao" } });
+  assert.equal(prod.payload.nome_tomador, "CLIENTE TESTE HOMOLOGACAO LTDA");
+});
+
+test("tomador terceiro com cadastro incompleto bloqueia", () => {
+  const r = montarCte(
+    base({ cotacao: { ...base().cotacao!, tomador_papel: "terceiro" }, cliente: { ...CLIENTE_CADASTRO, celular_whatsapp: null } }),
+  );
+  assert.ok(r.bloqueios.some((b) => b.startsWith("Tomador é o cliente da cotação")));
+});
+
+test("destinatário: endereço e telefone da NF-e têm prioridade", () => {
   const r = montarCte(
     base({
       op: { destinatario_telefone: null },
@@ -198,12 +251,36 @@ test("destinatário: endereço da NF-e tem prioridade e telefone não bloqueia",
           cep: "13010000",
           municipio: "CAMPINAS",
           uf: "SP",
+          codigo_ibge: "3509502",
+          telefone: "1932221111",
         },
       },
     }),
   );
   assert.deepEqual(r.bloqueios, []);
   assert.equal(r.payload.logradouro_destinatario, "AVENIDA CENTRAL");
+  assert.equal(r.payload.telefone_destinatario, "1932221111");
+  assert.equal(r.payload.codigo_municipio_destinatario, "3509502");
+});
+
+test("destinatário sem telefone bloqueia (obrigatório na Focus)", () => {
+  const r = montarCte(base({ op: { destinatario_telefone: null } }));
+  assert.ok(r.bloqueios.some((b) => b.startsWith("Telefone do destinatário")));
+});
+
+// Todo campo enviado precisa existir na doc de campos da Focus (ConhecimentoTransporteXML, baixada em
+// 2026-10-07 e salva em campos-focus-cte.txt). modal_rodoviario fica de fora: ele é descrito em outra página
+// da doc (modal rodoviário), ainda não conferida.
+test("todos os campos do payload existem na doc da Focus", () => {
+  const doc = new Set(
+    readFileSync(new URL("./campos-focus-cte.txt", import.meta.url), "utf8").split("\n").map((l) => l.trim()),
+  );
+  const pendentes = new Set(["modal_rodoviario"]);
+  const completo = montarCte(
+    base({ cotacao: { ...base().cotacao!, tomador_papel: "terceiro" }, cliente: CLIENTE_CADASTRO }),
+  ).payload;
+  const fora = Object.keys(completo).filter((k) => !doc.has(k) && !pendentes.has(k));
+  assert.deepEqual(fora, []);
 });
 
 test("frete na mesma cidade continua indo para NFS-e", () => {

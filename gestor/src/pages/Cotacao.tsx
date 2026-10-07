@@ -1253,6 +1253,7 @@ export default function Cotacao() {
           codigo_ibge: pega(atual.codigo_ibge, d.codigo_ibge),
           uf: pega(atual.uf, d.uf),
           cep: pega(atual.cep, d.cep),
+          telefone: pega(atual.telefone ?? null, d.telefone),
         },
       }
     })
@@ -2747,6 +2748,13 @@ export default function Cotacao() {
                         })
                       }}
                       className={inputClass}
+                      style={inputStyle}
+                    />
+                    <input
+                      placeholder="Telefone (obrigatório no CT-e)"
+                      value={end.telefone ?? ''}
+                      onChange={(e) => set('telefone', e.target.value)}
+                      className={`${inputClass} col-span-2`}
                       style={inputStyle}
                     />
                   </div>

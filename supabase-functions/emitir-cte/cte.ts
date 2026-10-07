@@ -19,6 +19,25 @@ export interface EnderecoNf {
   uf?: string | null;
   cep?: string | null;
   codigo_ibge?: string | null;
+  telefone?: string | null; // <fone> do XML da NF-e (gravado a partir de 2026-10-07)
+}
+
+// Cliente da cotação (tabela clientes) — usado como tomador "terceiro" e como reserva de telefone/endereço.
+export interface ClienteCte {
+  cnpj: string | null;
+  cpf: string | null;
+  razao_social: string | null;
+  nome_fantasia: string | null;
+  inscricao_estadual: string | null;
+  celular_whatsapp: string | null;
+  email: string | null;
+  logradouro: string | null;
+  numero_endereco: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -35,6 +54,7 @@ export interface DadosCte {
     nf_destinatario_ie: string | null;
     tomador_papel: string | null;
   } | null;
+  cliente: ClienteCte | null;
   // Códigos IBGE resolvidos em municipios_ibge (null = não encontrado).
   ibge: { inicio: string | null; fim: string | null };
   // Nome do município da sede da RBR (de parametros_fiscais.endereco_codigo_municipio).
@@ -96,19 +116,26 @@ export function chaveNfeValida(valor: unknown): boolean {
   return (r < 2 ? 0 : 11 - r) === Number(k[43]);
 }
 
+// fone do CT-e: só dígitos, 6 a 14 (Focus/SEFAZ). Devolve null se não der um telefone válido.
+export function telefone(valor: unknown): string | null {
+  const t = digitos(valor);
+  return t.length >= 6 && t.length <= 14 ? t : null;
+}
+
 function enderecoCompleto(e: EnderecoNf | null | undefined): e is EnderecoNf {
   return Boolean(e?.logradouro && e?.numero && e?.bairro && e?.cep && e?.municipio && e?.uf);
 }
 
-// tomador_papel da cotação -> código da Focus (toma3): 0 remetente, 3 destinatário.
-// null mantém o comportamento anterior (remetente).
-const TOMADOR: Record<string, { codigo: string; descricao: string }> = {
-  remetente: { codigo: "0", descricao: "remetente" },
-  destinatario: { codigo: "3", descricao: "destinatário" },
-};
+// tomador_papel da cotação -> código da Focus (toma): 0 remetente, 3 destinatário, 4 outros (o cliente da
+// cotação, com os dados do cadastro dele). null mantém o comportamento anterior (remetente).
+const TOMADOR: Record<string, string> = { remetente: "0", destinatario: "3", terceiro: "4" };
 
 export function montarCte(d: DadosCte): ResultadoCte {
-  const { op, pf, cotacao, ibge } = d;
+  const { op, pf, cotacao, ibge, cliente } = d;
+  const cnpjCliente = digitos(cliente?.cnpj);
+  // Telefone do cadastro do cliente, quando a parte (remetente/destinatário) é o próprio cliente.
+  const foneSeCliente = (cnpj: unknown) =>
+    cnpjCliente && digitos(cnpj) === cnpjCliente ? telefone(cliente?.celular_whatsapp) : null;
   const ambiente: Ambiente = op.ambiente_fiscal === "producao" ? "producao" : "homologacao";
   const bloqueios: string[] = [];
   const avisos: string[] = [];
@@ -221,12 +248,13 @@ export function montarCte(d: DadosCte): ResultadoCte {
     }
     remetente = {
       inscricao_estadual_remetente: op.emitente_ie,
-      telefone_remetente: pf?.telefone_contato,
+      telefone_remetente: telefone(pf?.telefone_contato) ?? undefined,
       logradouro_remetente: pf?.endereco_logradouro,
       numero_remetente: pf?.endereco_numero,
       complemento_remetente: pf?.endereco_complemento || undefined,
       bairro_remetente: pf?.endereco_bairro,
       municipio_remetente: d.municipioEmitente,
+      codigo_municipio_remetente: pf?.endereco_codigo_municipio,
       uf_remetente: pf?.endereco_uf,
       cep_remetente: pf?.endereco_cep,
     };
@@ -236,13 +264,21 @@ export function montarCte(d: DadosCte): ResultadoCte {
         "Endereço do remetente incompleto na aba NF-e da cotação (logradouro/número/bairro/CEP/cidade/UF) — obrigatório no CT-e. Importe o XML da NF-e ou complete à mão.",
       );
     }
+    const foneRem = telefone(endRemNf?.telefone) ?? foneSeCliente(op.nf_remetente_cnpj);
+    if (op.nf_remetente_cnpj && !foneRem) {
+      bloqueios.push(
+        "Telefone do remetente não encontrado — obrigatório no CT-e (Focus). Informe no endereço do remetente, na aba NF-e da cotação (o XML da NF-e costuma trazer).",
+      );
+    }
     remetente = {
       inscricao_estadual_remetente: cotacao?.nf_remetente_ie || undefined,
+      telefone_remetente: foneRem ?? undefined,
       logradouro_remetente: endRemNf?.logradouro,
       numero_remetente: endRemNf?.numero,
       complemento_remetente: endRemNf?.complemento || undefined,
       bairro_remetente: endRemNf?.bairro,
       municipio_remetente: endRemNf?.municipio,
+      codigo_municipio_remetente: endRemNf?.codigo_ibge || undefined,
       uf_remetente: endRemNf?.uf,
       cep_remetente: digitos(endRemNf?.cep) || undefined,
     };
@@ -250,15 +286,25 @@ export function montarCte(d: DadosCte): ResultadoCte {
 
   // --- Destinatário: endereço da NF-e (cotação) ou, sem ele, o cadastro do cliente ----------------------
   const endDestNf = cotacao?.nf_destinatario_endereco ?? null;
+  const foneDest =
+    telefone(endDestNf?.telefone) ?? foneSeCliente(op.nf_destinatario_cnpj) ??
+      (enderecoCompleto(endDestNf) ? null : telefone(op.destinatario_telefone));
+  if (op.nf_destinatario_cnpj && !foneDest) {
+    bloqueios.push(
+      "Telefone do destinatário não encontrado — obrigatório no CT-e (Focus). Informe no endereço do destinatário, na aba NF-e da cotação.",
+    );
+  }
   let destinatario: Linha;
   if (enderecoCompleto(endDestNf)) {
     destinatario = {
       inscricao_estadual_destinatario: cotacao?.nf_destinatario_ie || undefined,
+      telefone_destinatario: foneDest ?? undefined,
       logradouro_destinatario: endDestNf.logradouro,
       numero_destinatario: endDestNf.numero,
       complemento_destinatario: endDestNf.complemento || undefined,
       bairro_destinatario: endDestNf.bairro,
       municipio_destinatario: endDestNf.municipio,
+      codigo_municipio_destinatario: endDestNf.codigo_ibge || undefined,
       uf_destinatario: endDestNf.uf,
       cep_destinatario: digitos(endDestNf.cep),
     };
@@ -277,7 +323,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
     }
     destinatario = {
       inscricao_estadual_destinatario: cotacao?.nf_destinatario_ie || undefined,
-      telefone_destinatario: op.destinatario_telefone || undefined,
+      telefone_destinatario: foneDest ?? undefined,
       logradouro_destinatario: op.destinatario_logradouro,
       numero_destinatario: op.destinatario_numero,
       complemento_destinatario: op.destinatario_complemento || undefined,
@@ -289,16 +335,47 @@ export function montarCte(d: DadosCte): ResultadoCte {
   }
 
   // --- Tomador do serviço ------------------------------------------------------------------------------
-  const papel = cotacao?.tomador_papel ?? "remetente";
-  const tomador = TOMADOR[papel];
-  if (!tomador) {
-    bloqueios.push(
-      `Tomador do serviço "${papel}" ainda não suportado na emissão automática (só remetente ou destinatário). Ajuste o tomador na cotação ou emita este CT-e fora do sistema.`,
-    );
+  const papel = cotacao?.tomador_papel || "remetente";
+  const codigoTomador = TOMADOR[papel];
+  let tomadorOutros: Linha = {};
+  let ieTomador: unknown;
+  if (!codigoTomador) {
+    bloqueios.push(`Tomador do serviço "${papel}" não reconhecido — ajuste "Quem paga o frete" na cotação.`);
+  } else if (papel === "terceiro") {
+    // Tomador = o cliente da cotação, com os dados do cadastro dele (grupo toma4).
+    const docCliente = digitos(cliente?.cnpj) || digitos(cliente?.cpf);
+    const foneTomador = telefone(cliente?.celular_whatsapp);
+    if (
+      !cliente || !docCliente || !cliente.razao_social || !foneTomador || !cliente.logradouro ||
+      !cliente.numero_endereco || !cliente.bairro || !cliente.cidade || !cliente.uf || !cliente.cep
+    ) {
+      bloqueios.push(
+        "Tomador é o cliente da cotação (terceiro), mas o cadastro dele está incompleto — o CT-e exige CNPJ/CPF, razão social, telefone e endereço completo (logradouro/número/bairro/CEP/cidade/UF). Complete o cadastro do cliente.",
+      );
+    }
+    ieTomador = cliente?.inscricao_estadual || undefined;
+    tomadorOutros = {
+      ...(digitos(cliente?.cnpj) ? { cnpj_tomador: digitos(cliente?.cnpj) } : { cpf_tomador: digitos(cliente?.cpf) || undefined }),
+      inscricao_estadual_tomador: ieTomador,
+      nome_tomador: cliente?.razao_social,
+      nome_fantasia_tomador: cliente?.nome_fantasia || undefined,
+      telefone_tomador: foneTomador ?? undefined,
+      logradouro_tomador: cliente?.logradouro,
+      numero_tomador: cliente?.numero_endereco,
+      complemento_tomador: cliente?.complemento || undefined,
+      bairro_tomador: cliente?.bairro,
+      municipio_tomador: cliente?.cidade,
+      uf_tomador: cliente?.uf,
+      cep_tomador: digitos(cliente?.cep) || undefined,
+      codigo_pais_tomador: "1058",
+      pais_tomador: "Brasil",
+      email_tomador: cliente?.email || undefined,
+    };
+  } else {
+    ieTomador = papel === "destinatario"
+      ? destinatario.inscricao_estadual_destinatario
+      : remetente.inscricao_estadual_remetente;
   }
-  const ieTomador = papel === "destinatario"
-    ? destinatario.inscricao_estadual_destinatario
-    : remetente.inscricao_estadual_remetente;
 
   // --- Peso ------------------------------------------------------------------------------------------
   const pesoBrutoKg = cotacao?.peso_bruto_kg ?? null;
@@ -312,8 +389,9 @@ export function montarCte(d: DadosCte): ResultadoCte {
   if (ambiente === "homologacao") {
     nomeRemetente = NOME_HOMOLOGACAO;
     nomeDestinatario = NOME_HOMOLOGACAO;
+    if (tomadorOutros.nome_tomador) tomadorOutros.nome_tomador = NOME_HOMOLOGACAO;
     avisos.push(
-      `Homologação: nome do remetente e do destinatário enviados como "${NOME_HOMOLOGACAO}" (exigência da SEFAZ, rejeições 646/649). Em produção vão os nomes reais: ${op.nf_remetente_razao_social ?? "—"} / ${op.nf_destinatario_razao_social ?? "—"}.`,
+      `Homologação: nome do remetente e do destinatário${tomadorOutros.nome_tomador ? " (e do tomador)" : ""} enviados como "${NOME_HOMOLOGACAO}" (exigência da SEFAZ, rejeições 646/649). Em produção vão os nomes reais: ${op.nf_remetente_razao_social ?? "—"} / ${op.nf_destinatario_razao_social ?? "—"}.`,
     );
   }
 
@@ -344,8 +422,9 @@ export function montarCte(d: DadosCte): ResultadoCte {
     retirar_mercadoria: "1",
     detalhes_retirar: "Entrega no endereço do destinatário — sem retirada em filial/porto/aeroporto.",
 
-    tomador: tomador?.codigo ?? "0",
+    tomador: codigoTomador ?? "0",
     indicador_inscricao_estadual_tomador: ieTomador ? "1" : "9",
+    ...tomadorOutros,
 
     cnpj_emitente: op.emitente_cnpj,
     inscricao_estadual_emitente: op.emitente_ie,
@@ -355,6 +434,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
     complemento_emitente: pf?.endereco_complemento || undefined,
     bairro_emitente: pf?.endereco_bairro,
     cep_emitente: pf?.endereco_cep,
+    municipio_emitente: d.municipioEmitente,
     codigo_municipio_emitente: pf?.endereco_codigo_municipio,
     uf_emitente: pf?.endereco_uf,
 
@@ -384,7 +464,6 @@ export function montarCte(d: DadosCte): ResultadoCte {
     nfes: op.nf_chave_acesso ? [{ chave_nfe: digitos(op.nf_chave_acesso) }] : [],
 
     // ICMS pra Simples Nacional no CT-e: código fixo "90_simples_nacional" + indicador "1", sem destaque de valor.
-    icms_origem: "0",
     icms_situacao_tributaria: "90_simples_nacional",
     icms_indicador_simples_nacional: "1",
 
@@ -395,12 +474,11 @@ export function montarCte(d: DadosCte): ResultadoCte {
       },
     ],
 
-    responsavel_tecnico: {
-      cnpj: pf?.responsavel_tecnico_cnpj,
-      contato: pf?.responsavel_tecnico_contato || "RBR Cargo",
-      email: pf?.responsavel_tecnico_email,
-      fone: pf?.responsavel_tecnico_telefone || undefined,
-    },
+    // Responsável técnico (infRespTec): campos planos, como na doc da Focus.
+    cnpj_responsavel_tecnico: digitos(pf?.responsavel_tecnico_cnpj) || undefined,
+    contato_responsavel_tecnico: pf?.responsavel_tecnico_contato || "RBR Cargo",
+    email_responsavel_tecnico: pf?.responsavel_tecnico_email,
+    telefone_responsavel_tecnico: telefone(pf?.responsavel_tecnico_telefone) ?? undefined,
   };
 
   return { ambiente, bloqueios, avisos, intramunicipal, payload };

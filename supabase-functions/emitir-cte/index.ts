@@ -1,8 +1,14 @@
-// Edge Function: emitir-cte (v16)
+// Edge Function: emitir-cte (v17)
 //
 // Emite o CT-e de uma operação via Focus NFe (POST /v2/cte, resposta assíncrona 202; status final via
 // consultar-documento-fiscal). Lê os dados -> monta payload e bloqueios (cte.ts, testado em cte.test.ts) ->
 // chama Focus -> grava em documentacao_operacao (upsert por operacao_id+tipo).
+//
+// v17 (2026-10-07): conferido com a doc de campos da Focus (ConhecimentoTransporteXML): telefone de remetente e
+// destinatário é obrigatório na Focus (volta a bloquear; vem do <fone> da NF-e ou do cadastro do cliente);
+// municipio_emitente e códigos IBGE de remetente/destinatário; responsável técnico em campos planos
+// (cnpj_/contato_/email_/telefone_responsavel_tecnico — o objeto aninhado não existe na Focus); sem icms_origem
+// (não existe no CT-e); tomador "terceiro" = toma 4 com os dados do cadastro do cliente (nome literal em homologação).
 //
 // v16 (2026-10-07): homologação passa pelo MESMO caminho da produção. (1) Em homologação, nome de remetente e
 // destinatário vão como "CT-E EMITIDO EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL" (exigência SEFAZ, rejeições
@@ -88,15 +94,25 @@ Deno.serve(async (req: Request) => {
       .eq("id", op.parametros_fiscais_id)
       .maybeSingle();
 
-    // Dados da aba NF-e que a view não traz (endereços estruturados, IEs, tomador, peso).
+    // Dados da aba NF-e que a view não traz (endereços estruturados, IEs, tomador, peso) + cadastro do cliente
+    // (tomador "terceiro" e reserva de telefone).
     let cotacao = null;
+    let cliente = null;
     if (op.cotacao_id) {
       const { data: cot } = await supabaseAdmin
         .from("cotacoes")
-        .select("peso_bruto_kg, nf_remetente_endereco, nf_remetente_ie, nf_destinatario_endereco, nf_destinatario_ie, tomador_papel")
+        .select("cliente_id, peso_bruto_kg, nf_remetente_endereco, nf_remetente_ie, nf_destinatario_endereco, nf_destinatario_ie, tomador_papel")
         .eq("id", op.cotacao_id)
         .maybeSingle();
       if (cot) cotacao = { ...cot, peso_bruto_kg: cot.peso_bruto_kg != null ? Number(cot.peso_bruto_kg) : null };
+      if (cot?.cliente_id) {
+        const { data: cl } = await supabaseAdmin
+          .from("clientes")
+          .select("cnpj, cpf, razao_social, nome_fantasia, inscricao_estadual, celular_whatsapp, email, logradouro, numero_endereco, complemento, bairro, cidade, uf, cep")
+          .eq("id", cot.cliente_id)
+          .maybeSingle();
+        cliente = cl;
+      }
     }
 
     // Código IBGE pela cidade/UF da cotação (comparação sem acento/caixa, como no resto do sistema).
@@ -120,6 +136,7 @@ Deno.serve(async (req: Request) => {
       op,
       pf,
       cotacao,
+      cliente,
       ibge: {
         inicio: await codigoIbge(op.cidade_origem, op.uf_origem),
         fim: await codigoIbge(op.cidade_destino, op.uf_destino),

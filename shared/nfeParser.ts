@@ -16,6 +16,8 @@ export interface EnderecoNFe {
   codigo_ibge: string | null
   uf: string | null
   cep: string | null
+  // <fone> do endereço no XML (o CT-e exige telefone de remetente e destinatário).
+  telefone?: string | null
 }
 
 export interface DadosNFe {
@@ -59,6 +61,7 @@ function lerEndereco(el: Element | undefined): EnderecoNFe | null {
     codigo_ibge: textOf(el, 'cMun'),
     uf: textOf(el, 'UF'),
     cep: textOf(el, 'CEP'),
+    telefone: textOf(el, 'fone'),
   }
 }
 

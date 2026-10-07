@@ -58,7 +58,7 @@ const CAMPOS_CTE: Campo[] = [
   },
   { grupo: 'Remetente (quem entrega a carga)', label: 'Razão social', caminho: 'nome_remetente', origem: 'Cotação — aba NF-e' },
   { grupo: 'Remetente (quem entrega a carga)', label: 'CNPJ', caminho: 'cnpj_remetente', origem: 'Cotação — aba NF-e', tipo: 'cnpj' },
-  { grupo: 'Remetente (quem entrega a carga)', label: 'Telefone', caminho: 'telefone_remetente', origem: 'Cadastro fiscal da RBR', opcional: true },
+  { grupo: 'Remetente (quem entrega a carga)', label: 'Telefone', caminho: 'telefone_remetente', origem: 'Cotação — aba NF-e' },
   {
     grupo: 'Remetente (quem entrega a carga)',
     label: 'Endereço',
@@ -79,7 +79,7 @@ const CAMPOS_CTE: Campo[] = [
         .filter(Boolean)
         .join(', ') || null,
   },
-  { grupo: 'Destinatário (quem recebe)', label: 'Telefone', caminho: 'telefone_destinatario', origem: 'Cadastro do cliente', opcional: true },
+  { grupo: 'Destinatário (quem recebe)', label: 'Telefone', caminho: 'telefone_destinatario', origem: 'Cotação — aba NF-e' },
   { grupo: 'Percurso', label: 'Origem', origem: 'Cotação', valor: (p) => (p.municipio_inicio ? `${p.municipio_inicio}/${p.uf_inicio}` : null) },
   { grupo: 'Percurso', label: 'Destino', origem: 'Cotação', valor: (p) => (p.municipio_fim ? `${p.municipio_fim}/${p.uf_fim}` : null) },
   { grupo: 'Percurso', label: 'CFOP', caminho: 'cfop', origem: 'Calculado pelo sistema' },
@@ -89,10 +89,10 @@ const CAMPOS_CTE: Campo[] = [
   { grupo: 'Carga e documento', label: 'Produto predominante', caminho: 'produto_predominante', origem: 'Cotação' },
   { grupo: 'Carga e documento', label: 'Natureza da operação', caminho: 'natureza_operacao', origem: 'Cotação' },
   { grupo: 'Serviço de frete', label: 'Valor do frete cobrado do cliente', caminho: 'valor_total', origem: 'Cotação', tipo: 'dinheiro' },
-  { grupo: 'Serviço de frete', label: 'Tomador do serviço', origem: 'Cotação', valor: (p) => ({ '0': 'Remetente', '3': 'Destinatário' } as Record<string, string>)[p.tomador] ?? null },
+  { grupo: 'Serviço de frete', label: 'Tomador do serviço', origem: 'Cotação', valor: (p) => ({ '0': 'Remetente', '3': 'Destinatário', '4': `Cliente da cotação${p.cnpj_tomador ? ` (CNPJ ${p.cnpj_tomador})` : ''}` } as Record<string, string>)[p.tomador] ?? null },
   { grupo: 'Tributação', label: 'ICMS', origem: 'Fixo do sistema', valor: (p) => (p.icms_situacao_tributaria === '90_simples_nacional' ? 'Simples Nacional (sem destaque)' : p.icms_situacao_tributaria) },
-  { grupo: 'Responsável técnico', label: 'Contato', caminho: 'responsavel_tecnico.contato', origem: 'Cadastro fiscal da RBR' },
-  { grupo: 'Responsável técnico', label: 'E-mail', caminho: 'responsavel_tecnico.email', origem: 'Cadastro fiscal da RBR' },
+  { grupo: 'Responsável técnico', label: 'Contato', caminho: 'contato_responsavel_tecnico', origem: 'Cadastro fiscal da RBR' },
+  { grupo: 'Responsável técnico', label: 'E-mail', caminho: 'email_responsavel_tecnico', origem: 'Cadastro fiscal da RBR' },
 ]
 
 const CAMPOS_MDFE: Campo[] = [
