@@ -58,19 +58,28 @@ const CAMPOS_CTE: Campo[] = [
   },
   { grupo: 'Remetente (quem entrega a carga)', label: 'Razão social', caminho: 'nome_remetente', origem: 'Cotação — aba NF-e' },
   { grupo: 'Remetente (quem entrega a carga)', label: 'CNPJ', caminho: 'cnpj_remetente', origem: 'Cotação — aba NF-e', tipo: 'cnpj' },
-  { grupo: 'Remetente (quem entrega a carga)', label: 'Telefone', caminho: 'telefone_remetente', origem: 'Cadastro fiscal da RBR' },
+  { grupo: 'Remetente (quem entrega a carga)', label: 'Telefone', caminho: 'telefone_remetente', origem: 'Cadastro fiscal da RBR', opcional: true },
+  {
+    grupo: 'Remetente (quem entrega a carga)',
+    label: 'Endereço',
+    origem: 'Cotação — aba NF-e',
+    valor: (p) =>
+      [p.logradouro_remetente, p.numero_remetente, p.bairro_remetente, p.municipio_remetente, p.uf_remetente, p.cep_remetente]
+        .filter(Boolean)
+        .join(', ') || null,
+  },
   { grupo: 'Destinatário (quem recebe)', label: 'Razão social', caminho: 'nome_destinatario', origem: 'Cotação — aba NF-e' },
   { grupo: 'Destinatário (quem recebe)', label: 'CNPJ', caminho: 'cnpj_destinatario', origem: 'Cotação — aba NF-e', tipo: 'cnpj' },
   {
     grupo: 'Destinatário (quem recebe)',
     label: 'Endereço',
-    origem: 'Cadastro do cliente',
+    origem: 'Cotação — aba NF-e',
     valor: (p) =>
       [p.logradouro_destinatario, p.numero_destinatario, p.bairro_destinatario, p.municipio_destinatario, p.uf_destinatario, p.cep_destinatario]
         .filter(Boolean)
         .join(', ') || null,
   },
-  { grupo: 'Destinatário (quem recebe)', label: 'Telefone', caminho: 'telefone_destinatario', origem: 'Cadastro do cliente' },
+  { grupo: 'Destinatário (quem recebe)', label: 'Telefone', caminho: 'telefone_destinatario', origem: 'Cadastro do cliente', opcional: true },
   { grupo: 'Percurso', label: 'Origem', origem: 'Cotação', valor: (p) => (p.municipio_inicio ? `${p.municipio_inicio}/${p.uf_inicio}` : null) },
   { grupo: 'Percurso', label: 'Destino', origem: 'Cotação', valor: (p) => (p.municipio_fim ? `${p.municipio_fim}/${p.uf_fim}` : null) },
   { grupo: 'Percurso', label: 'CFOP', caminho: 'cfop', origem: 'Calculado pelo sistema' },
@@ -80,7 +89,7 @@ const CAMPOS_CTE: Campo[] = [
   { grupo: 'Carga e documento', label: 'Produto predominante', caminho: 'produto_predominante', origem: 'Cotação' },
   { grupo: 'Carga e documento', label: 'Natureza da operação', caminho: 'natureza_operacao', origem: 'Cotação' },
   { grupo: 'Serviço de frete', label: 'Valor do frete cobrado do cliente', caminho: 'valor_total', origem: 'Cotação', tipo: 'dinheiro' },
-  { grupo: 'Serviço de frete', label: 'Tomador do serviço', origem: 'Fixo do sistema', valor: () => 'Remetente (a RBR)' },
+  { grupo: 'Serviço de frete', label: 'Tomador do serviço', origem: 'Cotação', valor: (p) => ({ '0': 'Remetente', '3': 'Destinatário' } as Record<string, string>)[p.tomador] ?? null },
   { grupo: 'Tributação', label: 'ICMS', origem: 'Fixo do sistema', valor: (p) => (p.icms_situacao_tributaria === '90_simples_nacional' ? 'Simples Nacional (sem destaque)' : p.icms_situacao_tributaria) },
   { grupo: 'Responsável técnico', label: 'Contato', caminho: 'responsavel_tecnico.contato', origem: 'Cadastro fiscal da RBR' },
   { grupo: 'Responsável técnico', label: 'E-mail', caminho: 'responsavel_tecnico.email', origem: 'Cadastro fiscal da RBR' },
@@ -200,6 +209,8 @@ interface Previa {
   previa?: boolean
   ambiente?: string
   bloqueios?: string[]
+  // O que muda por ser homologação e o que só a SEFAZ confere (ex.: se a NF-e existe).
+  avisos?: string[]
   payload?: Payload
   erro?: string
 }
@@ -262,6 +273,7 @@ export default function ConferenciaEmissaoModal({
   }, [linhas])
 
   const bloqueios = previa?.bloqueios ?? []
+  const avisos = previa?.avisos ?? []
   const faltando = linhas.filter((l) => l.vazio)
   const podeEmitir = !carregando && !erroCarga && bloqueios.length === 0
 
@@ -291,6 +303,17 @@ export default function ConferenciaEmissaoModal({
               <ul className="list-disc pl-4 flex flex-col gap-0.5">
                 {bloqueios.map((b, i) => (
                   <li key={i}>{b}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!carregando && !erroCarga && avisos.length > 0 && (
+            <div className="text-xs rounded-lg px-3 py-2.5 flex flex-col gap-1" style={{ background: '#FFF6E0', color: 'var(--rbr-navy-dark)' }}>
+              <strong>Atenção:</strong>
+              <ul className="list-disc pl-4 flex flex-col gap-0.5">
+                {avisos.map((a, i) => (
+                  <li key={i}>{a}</li>
                 ))}
               </ul>
             </div>
