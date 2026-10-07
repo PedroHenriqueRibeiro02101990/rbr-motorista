@@ -1,20 +1,9 @@
-// Edge Function: emitir-mdfe
-//
+// Edge Function: emitir-mdfe (v4)
 // Emite o MDF-e de uma operação via Focus NFe (POST /v2/mdfe, resposta assíncrona 202).
-// Pré-requisito: CT-e já AUTORIZADO (status 'emitido' + chave) — o MDF-e referencia a chave do CT-e.
-//
-// v3 (2026-10-01): alinhado à doc completa da Focus (campos.focusnfe.com.br/mdfe/MDFeXML.html +
-// TransporteRodoviarioXML.html): condutores DENTRO de veiculo_tracao, uf_licenciamento, códigos de 2 dígitos
-// (tpRod/tpCar), responsável técnico em campos planos, RNTRC do emitente (registro_nacional_transporte),
-// tipo_carga/descricao_produto/NCM, proprietário do veículo (TAC), e os blocos novos do modal rodoviário:
-// ciot, dispositivos_vale_pedagio (IDVPO), contratantes e pagamentos (IPEF). CIOT/VPO vêm de
-// operacao_ciot_vpo (manual pelo portal da Repom ou, no futuro, por API).
-// v2 (2026-10-01): (1) modo `previa: true` — devolve o payload que SERIA enviado + bloqueios, sem gravar
-// nem chamar a Focus (alimenta o card de conferência da tela Fiscal); (2) campos conforme
-// campos.focusnfe.com.br/mdfe: seguros_carga (plural), municipios_descarregamento, valor_total_carga,
-// codigo_unidade_medida_peso_bruto, peso_bruto, dados do emitente. Subgrupos veiculo_tracao/condutores
-// seguem a convenção snake_case da Focus (a doc pública não detalha) — se a Focus recusar, o erro dela
-// aparece em documentacao_operacao.mensagem_erro e é só ajustar o nome do campo.
+// Pré-requisito: CT-e já AUTORIZADO (status 'emitido' + chave).
+// v4: busca de município tolerante a acento/caixa (RPC buscar_municipio) sobre a tabela IBGE completa.
+// v3: alinhado à doc da Focus (condutores dentro de veiculo_tracao, códigos de 2 dígitos, RNTRC, tipo_carga, proprietário, CIOT/VPO/pagamentos).
+// Modo `previa: true` devolve payload + bloqueios sem gravar nem chamar a Focus.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -35,7 +24,6 @@ function somenteDigitos(v: string | null | undefined): string {
   return (v ?? "").replace(/\D/g, "");
 }
 
-// Códigos SEFAZ padrão -- tpRod (2 dígitos).
 function mapearTipoRodado(texto: string | null | undefined): string | null {
   const t = (texto ?? "").toLowerCase();
   if (!t) return null;
@@ -47,7 +35,6 @@ function mapearTipoRodado(texto: string | null | undefined): string | null {
   return null;
 }
 
-// Códigos SEFAZ padrão -- tpCar (2 dígitos).
 function mapearTipoCarroceria(texto: string | null | undefined): string | null {
   const t = (texto ?? "").toLowerCase();
   if (!t) return null;
@@ -60,7 +47,6 @@ function mapearTipoCarroceria(texto: string | null | undefined): string | null {
   return null;
 }
 
-// tpCarga (Resolução ANTT 5.849/2019).
 function mapearTipoCarga(texto: string | null | undefined): string | null {
   const t = (texto ?? "").toLowerCase();
   if (!t) return null;
@@ -75,7 +61,6 @@ function mapearTipoCarga(texto: string | null | undefined): string | null {
   return null;
 }
 
-// categCombVeic a partir da quantidade de eixos.
 function categoriaCombinacao(eixos: number | null | undefined): string | null {
   const mapa: Record<number, string> = { 2: "02", 3: "04", 4: "06", 5: "07", 6: "08", 7: "10", 8: "11" };
   return eixos != null ? (mapa[eixos] ?? null) : null;
@@ -101,7 +86,6 @@ async function buscarMunicipio(
   uf: string | null,
 ): Promise<{ codigo_ibge: string; cidade: string } | null> {
   if (!cidade || !uf) return null;
-  // Tolerante a acento/caixa ("SAO PAULO" == "São Paulo"); tabela carregada com os 5.571 municípios do IBGE.
   const { data } = await supabaseAdmin.rpc("buscar_municipio", { p_cidade: cidade, p_uf: uf });
   return Array.isArray(data) && data.length ? data[0] : null;
 }
@@ -209,7 +193,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Proprietário do veículo (obrigatório quando o caminhão é de TAC parceiro; omitido se o veículo é da própria RBR).
     // deno-lint-ignore no-explicit-any
     let titular: Record<string, any> | null = null;
     if (veiculo && !veiculo.is_veiculo_proprio) {
@@ -235,17 +218,16 @@ Deno.serve(async (req: Request) => {
     const munCarregamento = await buscarMunicipio(supabaseAdmin, op.cidade_origem, op.uf_origem);
     if (!munCarregamento) {
       bloqueios.push(
-        `Município de carregamento "${op.cidade_origem ?? "vazio"}/${op.uf_origem ?? ""}" não está em municipios_ibge (código IBGE necessário pro MDF-e).`,
+        `Município de carregamento "${op.cidade_origem ?? "vazio"}/${op.uf_origem ?? ""}" não foi encontrado na tabela do IBGE (confira a grafia da cidade e a UF na cotação).`,
       );
     }
     const munDescarregamento = await buscarMunicipio(supabaseAdmin, op.cidade_destino, op.uf_destino);
     if (!munDescarregamento) {
       bloqueios.push(
-        `Município de descarregamento "${op.cidade_destino ?? "vazio"}/${op.uf_destino ?? ""}" não está em municipios_ibge (código IBGE necessário pro MDF-e).`,
+        `Município de descarregamento "${op.cidade_destino ?? "vazio"}/${op.uf_destino ?? ""}" não foi encontrado na tabela do IBGE (confira a grafia da cidade e a UF na cotação).`,
       );
     }
 
-    // Cotação: peso, tipo de carga, produto predominante, NCM e pedágio.
     let pesoBrutoKg: number | null = null;
     let tipoCarga: string | null = null;
     let descricaoProduto: string | null = null;
@@ -317,7 +299,6 @@ Deno.serve(async (req: Request) => {
       municipioEmitente = m?.cidade ?? null;
     }
 
-    // Motorista (conta/PIX para o pagamento do frete) e cliente contratante.
     // deno-lint-ignore no-explicit-any
     let motoristaPessoa: Record<string, any> | null = null;
     if (op.motorista_id) {
@@ -337,7 +318,6 @@ Deno.serve(async (req: Request) => {
     }
     if (!cliente || (!cliente.cnpj && !cliente.cpf)) bloqueios.push("Cliente contratante sem CNPJ/CPF — obrigatório no grupo de contratantes do MDF-e.");
 
-    // CIOT / VPO / pagamento do frete.
     const { data: ciotVpo } = await supabaseAdmin.from("operacao_ciot_vpo").select("*").eq("operacao_id", operacao_id).maybeSingle();
     const { data: cond } = await supabaseAdmin
       .from("condicoes_pagamento_operacao")
@@ -358,7 +338,6 @@ Deno.serve(async (req: Request) => {
       if (idvpo && !ciotVpo?.vpo_cnpj_fornecedora) bloqueios.push("CNPJ da empresa fornecedora do Vale-Pedágio (Repom) não informado.");
     }
 
-    // Pagamento do frete (infPag) — só quando há valor de contrato conhecido.
     const valorContratoFrete = cond?.valor_total_contrato != null ? Number(cond.valor_total_contrato) : null;
     const adiant = cond?.valor_adiantamento != null ? Number(cond.valor_adiantamento) : 0;
     const prazoDias = cond?.saldo_prazo_dias != null ? Number(cond.saldo_prazo_dias) : 0;
@@ -410,8 +389,8 @@ Deno.serve(async (req: Request) => {
 
     const payload = {
       data_emissao: new Date().toISOString(),
-      emitente: "1", // 1 = prestador de serviço de transporte
-      tipo_transporte: "1", // 1 = ETC
+      emitente: "1",
+      tipo_transporte: "1",
       uf_inicio: op.uf_origem,
       uf_fim: op.uf_destino,
 
@@ -440,7 +419,7 @@ Deno.serve(async (req: Request) => {
       codigo_ncm_produto: ncm && ncm.length === 8 ? ncm : undefined,
 
       valor_total_carga: valorCarga,
-      codigo_unidade_medida_peso_bruto: "01", // 01 = KG
+      codigo_unidade_medida_peso_bruto: "01",
       peso_bruto: pesoBrutoKg,
 
       seguros_carga: [
@@ -453,7 +432,6 @@ Deno.serve(async (req: Request) => {
         },
       ],
 
-      // --- Modal rodoviário ---
       registro_nacional_transporte: rntrcEmitente || undefined,
       ciot: ciotNum.length === 12 ? [{ ciot: ciotNum, cnpj_responsavel: somenteDigitos(ciotVpo?.ciot_cnpj_responsavel as string) || somenteDigitos(op.emitente_cnpj as string) }] : undefined,
       dispositivos_vale_pedagio: idvpo
@@ -492,7 +470,7 @@ Deno.serve(async (req: Request) => {
               rntrc_proprietario: somenteDigitos(titular.rntrc_numero),
               razao_social_proprietario: titular.nome,
               uf_proprietario: titular.uf,
-              tipo_proprietario: "1", // 1 = TAC independente (0 = TAC agregado, 2 = outros)
+              tipo_proprietario: "1",
             }
           : {}),
         condutores: [{ nome: op.motorista_nome, cpf: somenteDigitos(op.motorista_cpf as string) }],
@@ -504,7 +482,6 @@ Deno.serve(async (req: Request) => {
       telefone_responsavel_tecnico: somenteDigitos(pf?.responsavel_tecnico_telefone as string) || undefined,
     };
 
-    // Modo prévia (card de conferência): devolve o que SERIA enviado + o que falta, sem gravar nem chamar a Focus.
     if (previa === true) {
       return jsonResponse({
         sucesso: true,
