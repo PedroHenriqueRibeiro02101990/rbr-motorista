@@ -269,8 +269,8 @@ test("destinatário sem telefone bloqueia (obrigatório na Focus)", () => {
 });
 
 // Todo campo enviado precisa existir na doc de campos da Focus (ConhecimentoTransporteXML, baixada em
-// 2026-10-07 e salva em campos-focus-cte.txt). modal_rodoviario fica de fora: ele é descrito em outra página
-// da doc (modal rodoviário), ainda não conferida.
+// 2026-10-07 e salva em campos-focus-cte.txt). modal_rodoviario é descrito em outra página
+// (TransporteRodoviarioXML, tag <rodo>): só rntrc é obrigatório, String[8] — conferido no teste abaixo.
 test("todos os campos do payload existem na doc da Focus", () => {
   const doc = new Set(
     readFileSync(new URL("./campos-focus-cte.txt", import.meta.url), "utf8").split("\n").map((l) => l.trim()),
@@ -281,6 +281,8 @@ test("todos os campos do payload existem na doc da Focus", () => {
   ).payload;
   const fora = Object.keys(completo).filter((k) => !doc.has(k) && !pendentes.has(k));
   assert.deepEqual(fora, []);
+  assert.deepEqual(Object.keys(completo.modal_rodoviario), ["rntrc"]);
+  assert.match(completo.modal_rodoviario.rntrc, /^\d{8}$/);
 });
 
 test("frete na mesma cidade continua indo para NFS-e", () => {
