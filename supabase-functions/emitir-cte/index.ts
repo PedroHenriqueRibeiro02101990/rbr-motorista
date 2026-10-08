@@ -1,8 +1,11 @@
-// Edge Function: emitir-cte (v17)
+// Edge Function: emitir-cte (v18)
 //
 // Emite o CT-e de uma operação via Focus NFe (POST /v2/cte, resposta assíncrona 202; status final via
 // consultar-documento-fiscal). Lê os dados -> monta payload e bloqueios (cte.ts, testado em cte.test.ts) ->
 // chama Focus -> grava em documentacao_operacao (upsert por operacao_id+tipo).
+//
+// v18 (2026-10-08): comparado com um CT-e real autorizado em SP: telefone do destinatário vira aviso (a SEFAZ
+// aceita sem); componentes_valor com o frete.
 //
 // v17 (2026-10-07): conferido com a doc de campos da Focus (ConhecimentoTransporteXML): telefone de remetente e
 // destinatário é obrigatório na Focus (volta a bloquear; vem do <fone> da NF-e ou do cadastro do cliente);

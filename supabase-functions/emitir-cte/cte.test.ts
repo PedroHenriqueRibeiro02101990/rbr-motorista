@@ -263,9 +263,15 @@ test("destinatário: endereço e telefone da NF-e têm prioridade", () => {
   assert.equal(r.payload.codigo_municipio_destinatario, "3509502");
 });
 
-test("destinatário sem telefone bloqueia (obrigatório na Focus)", () => {
+test("destinatário sem telefone não bloqueia, só avisa (CT-e real autorizado em SP saiu sem)", () => {
   const r = montarCte(base({ op: { destinatario_telefone: null } }));
-  assert.ok(r.bloqueios.some((b) => b.startsWith("Telefone do destinatário")));
+  assert.deepEqual(r.bloqueios, []);
+  assert.equal(r.payload.telefone_destinatario, undefined);
+  assert.ok(r.avisos.some((a) => a.startsWith("Destinatário sem telefone")));
+});
+
+test("componentes do valor: frete inteiro", () => {
+  assert.deepEqual(montarCte(base()).payload.componentes_valor, [{ nome: "Frete", valor: 2399.56 }]);
 });
 
 // Todo campo enviado precisa existir na doc de campos da Focus (ConhecimentoTransporteXML, baixada em

@@ -289,9 +289,12 @@ export function montarCte(d: DadosCte): ResultadoCte {
   const foneDest =
     telefone(endDestNf?.telefone) ?? foneSeCliente(op.nf_destinatario_cnpj) ??
       (enderecoCompleto(endDestNf) ? null : telefone(op.destinatario_telefone));
+  // A doc da Focus marca o fone do destinatário como obrigatório, mas o leiaute da SEFAZ não exige — CT-e real
+  // autorizado em SP (DACTE de referência, 2026-07) saiu sem ele. Por isso só avisa; se a Focus recusar, o erro dela
+  // aparece na tela Fiscal.
   if (op.nf_destinatario_cnpj && !foneDest) {
-    bloqueios.push(
-      "Telefone do destinatário não encontrado — obrigatório no CT-e (Focus). Informe no endereço do destinatário, na aba NF-e da cotação.",
+    avisos.push(
+      "Destinatário sem telefone — vai sem (a SEFAZ aceita). Se a Focus recusar por isso, informe o telefone no endereço do destinatário, na aba NF-e da cotação.",
     );
   }
   let destinatario: Linha;
@@ -452,6 +455,8 @@ export function montarCte(d: DadosCte): ResultadoCte {
 
     valor_total: op.valor_total_cotacao,
     valor_receber: op.valor_total_cotacao,
+    // Componente do valor da prestação (como nos CT-e reais): o frete inteiro.
+    componentes_valor: op.valor_total_cotacao ? [{ nome: "Frete", valor: op.valor_total_cotacao }] : undefined,
     valor_total_carga: op.valor_nf ?? op.valor_total_cotacao,
     produto_predominante: op.tipo_carga || "Carga geral",
     quantidades: [
