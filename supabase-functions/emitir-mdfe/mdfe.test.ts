@@ -116,22 +116,51 @@ test("reboque sem tara/capacidade/carroceria bloqueia", () => {
   assert.ok(bloqueios.some((b) => b.includes("tipo de carroceria")));
 });
 
-test("veículo de terceiro (TAC) leva proprietário com IE e exige CIOT", () => {
-  const tac: VeiculoMdfe = {
-    ...CARRETA,
-    tipo_veiculo: "Truck",
-    tipo_carroceria: "Baú",
-    is_veiculo_proprio: false,
-    titular: { nome: "Fulano TAC", cpf: "123.456.789-09", cnpj: null, inscricao_estadual: null, uf: "SP", rntrc_numero: "87654321" },
-  };
-  const r = montarMdfe(base({ tracao: tac, reboques: [] }));
-  assert.ok(r.bloqueios.some((b) => b.startsWith("CIOT não informado")));
+const TAC: VeiculoMdfe = {
+  ...CARRETA,
+  tipo_veiculo: "Truck",
+  tipo_carroceria: "Baú",
+  is_veiculo_proprio: false,
+  // RNTRC como a ANTT mostra: 9 dígitos com zero à esquerda.
+  titular: { nome: "Fulano TAC", cpf: "123.456.789-09", cnpj: null, inscricao_estadual: null, uf: "SP", rntrc_numero: "048445388" },
+};
+
+test("veículo de terceiro (TAC) leva proprietário com IE e RNTRC de 8 dígitos", () => {
+  const r = montarMdfe(base({ tracao: TAC, reboques: [] }));
   const m = r.payload.modal_rodoviario;
   assert.equal(m.cpf_proprietario_veiculo, "12345678909");
-  assert.equal(m.rntrc_proprietario_veiculo, "87654321");
+  assert.equal(m.rntrc_proprietario_veiculo, "48445388");
   assert.equal(m.inscricao_estadual_proprietario_veiculo, "ISENTO");
   assert.equal(m.tipo_proprietario_veiculo, "1");
   assert.equal(m.tipo_carroceria_veiculo, "02");
+  assert.ok(!r.bloqueios.some((b) => b.includes("RNTRC")));
+});
+
+test("homologação: CIOT ausente e pagamento sem destino viram aviso, e pagamentos é omitido", () => {
+  const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null } }));
+  assert.deepEqual(r.bloqueios, []);
+  assert.ok(r.avisos.some((a) => a.startsWith("Homologação: CIOT não informado")));
+  assert.ok(r.avisos.some((a) => a.startsWith("Homologação: Pagamento do frete sem destino")));
+  assert.equal(r.payload.modal_rodoviario.pagamentos, undefined);
+});
+
+test("produção: CIOT ausente e pagamento sem destino continuam bloqueando", () => {
+  const b = base();
+  const r = montarMdfe({
+    ...b,
+    op: { ...b.op, ambiente_fiscal: "producao" },
+    tracao: TAC,
+    reboques: [],
+    motorista: { pix: null, banco_codigo: null, banco_agencia: null },
+  });
+  assert.ok(r.bloqueios.some((x) => x.startsWith("CIOT não informado")));
+  assert.ok(r.bloqueios.some((x) => x.startsWith("Pagamento do frete sem destino")));
+  assert.equal(r.payload.modal_rodoviario.pagamentos.length, 1);
+});
+
+test("data_emissao sai no fuso de Brasília (-03:00)", () => {
+  const { payload } = montarMdfe(base());
+  assert.equal(payload.data_emissao, "2026-10-07T09:00:00-03:00");
 });
 
 test("sem CT-e autorizado bloqueia", () => {

@@ -5,6 +5,8 @@
 //
 // RBR no Simples Nacional (Anexo III, transporte): CRT 1. Como é uma remessa de teste sem venda, o item vai com
 // CSOSN 400 (não tributada pelo Simples Nacional) e PIS/COFINS CST 49 (outras operações de saída).
+//
+// v2: destinatário contribuinte — com nf_destinatario_ie na cotação, vai indIEDest 1 + IE e consumidor_final 0.
 
 export const NOME_DEST_HOMOLOGACAO = "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL";
 
@@ -40,6 +42,7 @@ export interface DadosNfeTeste {
   cotacao: {
     nf_remetente_cnpj: string | null;
     nf_destinatario_cnpj: string | null;
+    nf_destinatario_ie?: string | null;
     valor_nf: number | null;
     peso_bruto_kg: number | null;
     produto: string | null;
@@ -83,6 +86,8 @@ export function montarNfeTeste(d: DadosNfeTeste): { bloqueios: string[]; payload
   const interna = Boolean(e.uf && dest.uf && e.uf === dest.uf);
   const ncm = digitos(c.ncm).length === 8 ? digitos(c.ncm) : NCM_PADRAO;
   const valor2 = Number(valor.toFixed(2));
+  const ieDest = digitos(c.nf_destinatario_ie);
+  const contribuinte = ieDest.length > 0;
 
   const payload: Linha = {
     natureza_operacao: "REMESSA PARA TESTE DE TRANSPORTE (HOMOLOGACAO)",
@@ -91,8 +96,8 @@ export function montarNfeTeste(d: DadosNfeTeste): { bloqueios: string[]; payload
     tipo_documento: 1, // saída
     local_destino: interna ? 1 : 2,
     finalidade_emissao: 1,
-    // Destinatário como não contribuinte (indIEDest 9) exige consumidor final = 1.
-    consumidor_final: 1,
+    // Destinatário como não contribuinte (indIEDest 9) exige consumidor final = 1; contribuinte, 0.
+    consumidor_final: contribuinte ? 0 : 1,
     presenca_comprador: 9,
 
     cnpj_emitente: digitos(e.cnpj),
@@ -109,7 +114,8 @@ export function montarNfeTeste(d: DadosNfeTeste): { bloqueios: string[]; payload
     // Homologação: a SEFAZ exige este nome literal no destinatário.
     nome_destinatario: NOME_DEST_HOMOLOGACAO,
     cnpj_destinatario: digitos(c.nf_destinatario_cnpj),
-    indicador_inscricao_estadual_destinatario: 9,
+    indicador_inscricao_estadual_destinatario: contribuinte ? 1 : 9,
+    inscricao_estadual_destinatario: contribuinte ? ieDest : undefined,
     logradouro_destinatario: dest.logradouro,
     numero_destinatario: dest.numero,
     bairro_destinatario: dest.bairro,

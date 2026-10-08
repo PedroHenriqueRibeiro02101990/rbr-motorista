@@ -1,8 +1,11 @@
-// Edge Function: emitir-nfe-teste (v1)
+// Edge Function: emitir-nfe-teste (v2)
 //
 // SÓ HOMOLOGAÇÃO. A RBR emite uma NF-e de teste (Focus NFe POST /v2/nfe, assíncrona) com os dados da cotação da
 // operação e, quando autorizada, grava a chave na cotação (nf_chave_acesso/nf_numero/nf_serie/nf_data_emissao).
 // Assim o CT-e de homologação cita uma NF-e que existe na base da SEFAZ (SP confere — rejeição 661).
+//
+// v2: destinatário contribuinte de ICMS — se a cotação tem nf_destinatario_ie, a NF-e vai com indIEDest 1 + IE
+// (sem IE continua como não contribuinte, indIEDest 9).
 //
 // Body: { operacao_id, acao: "emitir" | "consultar" }. Regras e payload em nfe.ts (testado em nfe.test.ts).
 
@@ -135,7 +138,7 @@ Deno.serve(async (req: Request) => {
     }
     const { data: cot } = await supabaseAdmin
       .from("cotacoes")
-      .select("nf_remetente_cnpj, nf_destinatario_cnpj, valor_nf, peso_bruto_kg, nf_produto_predominante, tipo_carga, ncms_produtos, nf_destinatario_endereco")
+      .select("nf_remetente_cnpj, nf_destinatario_cnpj, nf_destinatario_ie, valor_nf, peso_bruto_kg, nf_produto_predominante, tipo_carga, ncms_produtos, nf_destinatario_endereco")
       .eq("id", op.cotacao_id)
       .maybeSingle();
 
@@ -168,6 +171,7 @@ Deno.serve(async (req: Request) => {
       cotacao: {
         nf_remetente_cnpj: cot?.nf_remetente_cnpj ?? null,
         nf_destinatario_cnpj: cot?.nf_destinatario_cnpj ?? null,
+        nf_destinatario_ie: cot?.nf_destinatario_ie ?? null,
         valor_nf: cot?.valor_nf != null ? Number(cot.valor_nf) : null,
         peso_bruto_kg: cot?.peso_bruto_kg != null ? Number(cot.peso_bruto_kg) : null,
         produto: cot?.nf_produto_predominante || cot?.tipo_carga || null,

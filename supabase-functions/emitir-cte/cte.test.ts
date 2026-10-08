@@ -104,6 +104,8 @@ test("operação de teste em homologação: sem bloqueios e com os nomes exigido
   assert.equal(r.payload.indicador_inscricao_estadual_tomador, "1");
   assert.equal(r.payload.inscricao_estadual_remetente, "162095813113");
   assert.equal(r.payload.modal_rodoviario.rntrc, "12345678");
+  // Mesmo instante de 2026-10-07T12:00:00Z, escrito no fuso de Brasília.
+  assert.equal(r.payload.data_emissao, "2026-10-07T09:00:00-03:00");
   assert.deepEqual(r.payload.nfes, [{ chave_nfe: CHAVE_TESTE }]);
   assert.equal(r.payload.quantidades[0].quantidade, 1000);
   assert.equal(r.payload.municipio_emitente, "São Paulo");

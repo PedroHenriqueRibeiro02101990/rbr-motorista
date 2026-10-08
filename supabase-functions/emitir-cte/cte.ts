@@ -87,6 +87,13 @@ export function formatarRntrc(valor: string): string {
   return limpo.replace(/^0+(?=\d{8}$)/, "");
 }
 
+// Data/hora de emissão no fuso de Brasília (-03:00, sem horário de verão desde 2019): mesmo instante que o
+// toISOString() em UTC, só escrito com o fuso da SEFAZ-SP (ex.: 2026-10-08T12:17:13-03:00).
+export function dataEmissaoBrasilia(agora: Date): string {
+  const local = new Date(agora.getTime() - 3 * 60 * 60 * 1000);
+  return `${local.toISOString().slice(0, 19)}-03:00`;
+}
+
 function digitos(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "");
 }
@@ -403,7 +410,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
 
   const payload: Linha = {
     natureza_operacao: op.natureza_operacao || "Prestação de serviço de transporte",
-    data_emissao: d.agora.toISOString(),
+    data_emissao: dataEmissaoBrasilia(d.agora),
     tipo_documento: "0",
     tipo_servico: "0",
     modal: "01",

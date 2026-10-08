@@ -1,7 +1,11 @@
-// Edge Function: emitir-mdfe (v5)
+// Edge Function: emitir-mdfe (v6)
 // Emite o MDF-e de uma operação via Focus NFe (POST /v2/mdfe, resposta assíncrona 202).
 // Pré-requisito: CT-e já AUTORIZADO (status 'emitido' + chave). Lê os dados -> monta payload e bloqueios em
 // mdfe.ts (testado em mdfe.test.ts) -> chama Focus -> grava em documentacao_operacao.
+// v6 (2026-10-08): (1) RNTRC do proprietário com 9 dígitos e zero à esquerda (ex.: 048445388) vira 8 dígitos, como no
+// CT-e; (2) em HOMOLOGAÇÃO, regras só do nosso sistema (CIOT do TAC, destino de pagamento PIX/banco/IPEF) viram aviso
+// em vez de bloqueio — o teste segue só as regras da SEFAZ; em produção continuam bloqueando; (3) data_emissao com
+// fuso de Brasília (-03:00). O pré-requisito do CT-e autorizado continua bloqueando.
 // v5 (2026-10-07): estrutura conferida com a doc de campos da Focus: dados do modal em `modal_rodoviario`, veículo de
 // tração em campos *_veiculo, condutores e veiculos_reboque dentro do modal; reboques vêm de operacao_reboques
 // (cavalo mecânico deixa de ser bloqueado quando há carreta vinculada); proprietário com IE e tipo PF/PJ.
@@ -305,6 +309,7 @@ Deno.serve(async (req: Request) => {
       sucesso: true,
       status: "processando_autorizacao",
       referencia: ref,
+      avisos,
       aviso:
         ambiente === "homologacao"
           ? "Ambiente de homologação — este MDF-e NÃO tem validade fiscal."

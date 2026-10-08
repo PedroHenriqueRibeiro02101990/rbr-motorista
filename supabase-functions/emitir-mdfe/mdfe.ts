@@ -4,6 +4,9 @@
 // mdfe/TransporteRodoviarioXML.html, 2026-10-07): os dados do modal rodoviário vão no objeto `modal_rodoviario`
 // (como no CT-e), com o veículo de tração em campos planos *_veiculo (placa_veiculo, tara_veiculo…),
 // `condutores` e `veiculos_reboque` dentro dele. A v4 mandava tudo isso no topo e o veículo em `veiculo_tracao`.
+//
+// v6 (2026-10-08): RNTRC do proprietário normalizado para 8 dígitos; em homologação, CIOT do TAC e destino de
+// pagamento (regras só do nosso sistema) viram aviso, não bloqueio; data_emissao com fuso -03:00.
 
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
@@ -55,6 +58,17 @@ export interface DadosMdfe {
 
 export function digitos(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "");
+}
+
+// RNTRC da ANTT aparece com 9 dígitos e zero à esquerda (ex.: 048445388); a tag da SEFAZ exige 8 dígitos.
+export function rntrc8(v: unknown): string {
+  return digitos(v).replace(/^0+(?=\d{8}$)/, "");
+}
+
+// Data/hora de emissão no fuso de Brasília (-03:00): mesmo instante do toISOString() em UTC.
+export function dataEmissaoBrasilia(agora: Date): string {
+  const local = new Date(agora.getTime() - 3 * 60 * 60 * 1000);
+  return `${local.toISOString().slice(0, 19)}-03:00`;
 }
 
 export function mapearTipoRodado(texto: string | null | undefined): string | null {
@@ -127,11 +141,12 @@ function proprietario(v: VeiculoMdfe, rotulo: string, bloqueios: string[]) {
     return null;
   }
   if (!t.cpf && !t.cnpj) bloqueios.push(`${rotulo}: proprietário sem CPF/CNPJ cadastrado.`);
-  if (digitos(t.rntrc_numero).length !== 8) bloqueios.push(`${rotulo}: proprietário sem RNTRC (8 dígitos) — obrigatório no MDF-e.`);
+  const rntrcProp = rntrc8(t.rntrc_numero);
+  if (rntrcProp.length !== 8) bloqueios.push(`${rotulo}: proprietário sem RNTRC (8 dígitos) — obrigatório no MDF-e.`);
   if (!t.uf) bloqueios.push(`${rotulo}: proprietário sem UF cadastrada.`);
   return {
     doc: t.cnpj ? { tipo: "cnpj" as const, valor: digitos(t.cnpj) } : { tipo: "cpf" as const, valor: digitos(t.cpf) },
-    rntrc: digitos(t.rntrc_numero),
+    rntrc: rntrcProp,
     nome: t.nome,
     ie: t.inscricao_estadual || "ISENTO",
     uf: t.uf,
@@ -271,7 +286,13 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   const ehTac = Boolean(v && !v.is_veiculo_proprio);
   const ciotNum = digitos(ciotVpo?.ciot);
   if (ehTac && ciotNum.length !== 12) {
-    bloqueios.push("CIOT não informado (12 dígitos) — gere no portal da Repom e preencha aqui. Obrigatório quando o veículo é de transportador autônomo (TAC).");
+    const msgCiot =
+      "CIOT não informado (12 dígitos) — gere no portal da Repom e preencha aqui. Obrigatório quando o veículo é de transportador autônomo (TAC).";
+    if (ambiente === "homologacao") {
+      avisos.push(`Homologação: ${msgCiot} Regra do nosso sistema, não da SEFAZ: o teste segue sem CIOT e a SEFAZ diz se exige.`);
+    } else {
+      bloqueios.push(msgCiot);
+    }
   }
   const idvpo = digitos(ciotVpo?.vpo_idvpo);
   const vpoValor = ciotVpo?.vpo_valor != null ? Number(ciotVpo.vpo_valor) : null;
@@ -310,21 +331,32 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
       : cnpjIpef
       ? { cnpj_instituicao_pagamento: cnpjIpef }
       : null;
-    if (!destinoPagamento) bloqueios.push("Pagamento do frete sem destino (PIX, banco/agência ou IPEF) — cadastre o PIX do motorista.");
-    pagamentos = [
-      {
-        nome: op.emitente_razao_social,
-        cnpj: cnpjEmitente,
-        componentes,
-        valor_total_contrato: totalContrato,
-        forma_pagamento: aPrazo ? "1" : "0",
-        valor_adiantamento: aPrazo && adiant > 0 ? adiant : undefined,
-        indicador_adiantamento: aPrazo ? (adiant > 0 ? "1" : "0") : undefined,
-        parcelas: aPrazo ? parcelas : undefined,
-        tipo_permissao_antecipacao: aPrazo ? "0" : undefined,
-        ...(destinoPagamento ?? {}),
-      },
-    ];
+    if (!destinoPagamento) {
+      const msgPag = "Pagamento do frete sem destino (PIX, banco/agência ou IPEF) — cadastre o PIX do motorista.";
+      if (ambiente === "homologacao") {
+        avisos.push(
+          `Homologação: ${msgPag} Regra do nosso sistema: o MDF-e de teste vai sem o grupo de pagamento, para a SEFAZ dizer se exige.`,
+        );
+      } else {
+        bloqueios.push(msgPag);
+      }
+    }
+    pagamentos = !destinoPagamento && ambiente === "homologacao"
+      ? undefined
+      : [
+        {
+          nome: op.emitente_razao_social,
+          cnpj: cnpjEmitente,
+          componentes,
+          valor_total_contrato: totalContrato,
+          forma_pagamento: aPrazo ? "1" : "0",
+          valor_adiantamento: aPrazo && adiant > 0 ? adiant : undefined,
+          indicador_adiantamento: aPrazo ? (adiant > 0 ? "1" : "0") : undefined,
+          parcelas: aPrazo ? parcelas : undefined,
+          tipo_permissao_antecipacao: aPrazo ? "0" : undefined,
+          ...(destinoPagamento ?? {}),
+        },
+      ];
   } else if (ehTac) {
     bloqueios.push("Condição de pagamento do motorista (valor do contrato) ainda não definida na operação — obrigatória no MDF-e.");
   }
@@ -334,7 +366,7 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   }
 
   const payload: Linha = {
-    data_emissao: d.agora.toISOString(),
+    data_emissao: dataEmissaoBrasilia(d.agora),
     emitente: "1", // prestador de serviço de transporte
     tipo_transporte: "1", // ETC
     uf_inicio: op.uf_origem,

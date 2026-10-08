@@ -1,8 +1,11 @@
-// Edge Function: emitir-cte (v18)
+// Edge Function: emitir-cte (v19)
 //
 // Emite o CT-e de uma operação via Focus NFe (POST /v2/cte, resposta assíncrona 202; status final via
 // consultar-documento-fiscal). Lê os dados -> monta payload e bloqueios (cte.ts, testado em cte.test.ts) ->
 // chama Focus -> grava em documentacao_operacao (upsert por operacao_id+tipo).
+//
+// v19 (2026-10-08): data_emissao do CT-e vai com o fuso de Brasília (-03:00) em vez de UTC (+00:00). Mesmo
+// instante, só muda a forma de escrever — elimina o fuso como dúvida na investigação da rejeição 230.
 //
 // v18 (2026-10-08): comparado com um CT-e real autorizado em SP: telefone do destinatário vira aviso (a SEFAZ
 // aceita sem); componentes_valor com o frete.
