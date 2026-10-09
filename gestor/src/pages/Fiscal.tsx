@@ -6,6 +6,10 @@ import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPane
 import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
+import CancelarDocumentoModal, {
+  type TipoCancelamento,
+  urlXmlCancelamento,
+} from '../components/operacao/CancelarDocumentoModal'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -38,6 +42,7 @@ type OperacaoEnriquecida = Operacao & {
   ufOrigem?: string | null
   cidadeDestino?: string | null
   ufDestino?: string | null
+  nfChaveAcesso?: string | null
 }
 
 // Tipos de documento fiscal exibidos nesta tela — a esteira também grava
@@ -185,8 +190,20 @@ export default function Fiscal() {
   const [ambienteFiscal, setAmbienteFiscal] = useState<string | null>(null)
   // Card de conferência aberto antes de emitir CT-e/MDF-e.
   const [conferencia, setConferencia] = useState<{ op: OperacaoEnriquecida; tipo: TipoConferencia } | null>(null)
-  // Eventos fiscais pós-emissão (cancelar MDF-e/CT-e, carta de correção, trocar condutor).
+  // Eventos fiscais pós-emissão (carta de correção, trocar condutor). Cancelamento usa CancelarDocumentoModal.
   const [evento, setEvento] = useState<{ op: OperacaoEnriquecida; acao: AcaoEventoFiscal } | null>(null)
+  // Cancelamento de MDF-e/CT-e/NF-e de teste (cancelar-documento-fiscal).
+  const [cancelamento, setCancelamento] = useState<{
+    op: OperacaoEnriquecida
+    tipo: TipoCancelamento
+    ambiente: string | null
+    chave: string | null
+  } | null>(null)
+  // Link do XML de cancelamento devolvido pela Focus, por operação.
+  const [xmlCancelamentoPorOperacao, setXmlCancelamentoPorOperacao] = useState<
+    Record<string, { tipo: TipoCancelamento; url: string } | null>
+  >({})
+  const [toast, setToast] = useState<string | null>(null)
 
   // Registro manual de CT-e/MDF-e/CIOT emitidos fora do sistema.
   const [formNovoDocOperacaoId, setFormNovoDocOperacaoId] = useState<string | null>(null)
@@ -222,7 +239,7 @@ export default function Fiscal() {
     setErrorMsg(null)
     const { data, error } = await supabase
       .from('operacoes')
-      .select('*, clientes(razao_social, nome_fantasia), cotacoes(valor_total, cidade_origem, uf_origem, cidade_destino, uf_destino)')
+      .select('*, clientes(razao_social, nome_fantasia), cotacoes(valor_total, cidade_origem, uf_origem, cidade_destino, uf_destino, nf_chave_acesso)')
       .order('created_at', { ascending: false })
       .limit(100)
 
@@ -236,6 +253,7 @@ export default function Fiscal() {
       ufOrigem: (op as any).cotacoes?.uf_origem ?? null,
       cidadeDestino: (op as any).cotacoes?.cidade_destino ?? null,
       ufDestino: (op as any).cotacoes?.uf_destino ?? null,
+      nfChaveAcesso: (op as any).cotacoes?.nf_chave_acesso ?? null,
     }))
     setOperacoes(mapeadas)
     setLoading(false)
@@ -247,6 +265,12 @@ export default function Fiscal() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   function marcarEmAndamento(chave: string, ativo: boolean) {
     setEmAndamento((prev) => {
@@ -477,6 +501,42 @@ export default function Fiscal() {
           onConcluido={() => carregarDocumentos([evento.op.id])}
         />
       )}
+      {cancelamento && (
+        <CancelarDocumentoModal
+          operacaoId={cancelamento.op.id}
+          tipo={cancelamento.tipo}
+          ambiente={cancelamento.ambiente}
+          chave={cancelamento.chave}
+          onFechar={() => setCancelamento(null)}
+          onCancelado={async (resp) => {
+            const { op, tipo, ambiente } = cancelamento
+            setCancelamento(null)
+            setToast('Documento cancelado')
+            setXmlCancelamentoPorOperacao((prev) => ({
+              ...prev,
+              [op.id]: resp.xml_cancelamento
+                ? { tipo, url: urlXmlCancelamento(resp.xml_cancelamento, resp.ambiente ?? ambiente) }
+                : null,
+            }))
+            if (tipo === 'nfe') {
+              // A NF-e de teste vive na cotação; a função limpa a chave lá ao cancelar.
+              setOperacoes((prev) => prev?.map((o) => (o.id === op.id ? { ...o, nfChaveAcesso: null } : o)) ?? prev)
+              setInfoPorOperacao((prev) => ({ ...prev, [op.id]: 'NF-e de teste cancelada.' }))
+            } else {
+              await carregarDocumentos([op.id])
+            }
+          }}
+        />
+      )}
+      {toast && (
+        <div
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] text-xs font-bold px-4 py-2.5 rounded-lg text-white"
+          style={{ background: 'var(--rbr-navy-dark)', boxShadow: '0 6px 18px rgba(18,23,61,0.25)' }}
+          role="status"
+        >
+          {toast}
+        </div>
+      )}
       {conferencia && (
         <ConferenciaEmissaoModal
           operacaoId={conferencia.op.id}
@@ -518,6 +578,7 @@ export default function Fiscal() {
             const docMdfe = docs.find((d) => d.tipo === 'mdfe')
             const erroCard = erroPorOperacao[op.id]
             const infoCard = infoPorOperacao[op.id]
+            const xmlCancelamento = xmlCancelamentoPorOperacao[op.id]
 
             const chaveCte = `${op.id}:cte`
             const chaveMdfe = `${op.id}:mdfe`
@@ -870,6 +931,18 @@ export default function Fiscal() {
                   </div>
                 )}
 
+                {xmlCancelamento && (
+                  <a
+                    href={xmlCancelamento.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="self-start text-[11px] font-bold underline"
+                    style={{ color: 'var(--rbr-navy)' }}
+                  >
+                    XML de cancelamento ({xmlCancelamento.tipo === 'nfe' ? 'NF-e de teste' : TIPO_DOC_LABEL[xmlCancelamento.tipo]})
+                  </a>
+                )}
+
                 {docMdfe && (
                   <FinalizarViagem
                     operacaoId={op.id}
@@ -955,32 +1028,51 @@ export default function Fiscal() {
                       >
                         Trocar condutor
                       </button>
-                      <button
-                        onClick={() => setEvento({ op, acao: 'cancelar_mdfe' })}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                        style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                      >
-                        Cancelar MDF-e
-                      </button>
                     </>
                   )}
                   {docCte?.status === 'emitido' && (
-                    <>
-                      <button
-                        onClick={() => setEvento({ op, acao: 'carta_correcao_cte' })}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                      >
-                        Carta de correção CT-e
-                      </button>
-                      <button
-                        onClick={() => setEvento({ op, acao: 'cancelar_cte' })}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                        style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                      >
-                        Cancelar CT-e
-                      </button>
-                    </>
+                    <button
+                      onClick={() => setEvento({ op, acao: 'carta_correcao_cte' })}
+                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                    >
+                      Carta de correção CT-e
+                    </button>
+                  )}
+                  {/* Cancelamentos na ordem exigida: MDF-e, depois CT-e, depois NF-e de teste. */}
+                  {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
+                    <button
+                      onClick={() =>
+                        setCancelamento({ op, tipo: 'mdfe', ambiente: docMdfe.ambiente, chave: docMdfe.chave_acesso })
+                      }
+                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                      style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                    >
+                      Cancelar MDF-e
+                    </button>
+                  )}
+                  {docCte?.status === 'emitido' && (
+                    <button
+                      onClick={() =>
+                        setCancelamento({ op, tipo: 'cte', ambiente: docCte.ambiente, chave: docCte.chave_acesso })
+                      }
+                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                      style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                    >
+                      Cancelar CT-e
+                    </button>
+                  )}
+                  {/* Só a NF-e de teste: em produção a chave da cotação é a NF-e real do cliente, que a RBR não cancela. */}
+                  {ambienteFiscal === 'homologacao' && op.nfChaveAcesso && (
+                    <button
+                      onClick={() =>
+                        setCancelamento({ op, tipo: 'nfe', ambiente: 'homologacao', chave: op.nfChaveAcesso ?? null })
+                      }
+                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                      style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                    >
+                      Cancelar NF-e de teste
+                    </button>
                   )}
                   {docNfse?.status === 'pendente' && (
                     <button
