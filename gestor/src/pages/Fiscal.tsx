@@ -10,6 +10,8 @@ import CancelarDocumentoModal, {
   type TipoCancelamento,
   urlXmlCancelamento,
 } from '../components/operacao/CancelarDocumentoModal'
+import BaixarDocumentoFiscal from '../components/operacao/BaixarDocumentoFiscal'
+import EmitirNfeProducaoModal from '../components/operacao/EmitirNfeProducaoModal'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -204,6 +206,11 @@ export default function Fiscal() {
     Record<string, { tipo: TipoCancelamento; url: string } | null>
   >({})
   const [toast, setToast] = useState<string | null>(null)
+  // NF-e de teste em PRODUÇÃO (emitir-nfe-teste-producao): modal de confirmação aberto e erro/motivos de bloqueio.
+  const [nfeProducao, setNfeProducao] = useState<OperacaoEnriquecida | null>(null)
+  const [erroNfeProducao, setErroNfeProducao] = useState<DetalheErro | null>(null)
+  // NF-e cancelada nesta sessão: a função limpa a chave da cotação, mas o comprovante ainda pode ser baixado.
+  const [nfeCanceladaPorOperacao, setNfeCanceladaPorOperacao] = useState<Record<string, boolean>>({})
 
   // Registro manual de CT-e/MDF-e/CIOT emitidos fora do sistema.
   const [formNovoDocOperacaoId, setFormNovoDocOperacaoId] = useState<string | null>(null)
@@ -374,6 +381,64 @@ export default function Fiscal() {
     }
   }
 
+  // NF-e de teste em PRODUÇÃO: nota REAL de R$ 1,00 da RBR para ela mesma, para o teste ponta a ponta do CT-e.
+  // Autorizada (ao consultar), a função grava a chave em cotacoes.nf_chave_acesso.
+  async function nfeTesteProducao(op: OperacaoEnriquecida, acao: 'emitir' | 'consultar') {
+    const chave = `${op.id}:nfe-producao:${acao}`
+    marcarEmAndamento(chave, true)
+    if (acao === 'emitir') setErroNfeProducao(null)
+    else setErroPorOperacao((prev) => ({ ...prev, [op.id]: null }))
+    setInfoPorOperacao((prev) => ({ ...prev, [op.id]: null }))
+    const mostrarErro = (detalhe: DetalheErro) =>
+      acao === 'emitir' ? setErroNfeProducao(detalhe) : setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        sucesso: boolean
+        erro?: string
+        motivos?: string[]
+        status?: string
+        status_sefaz?: string
+        mensagem_sefaz?: string
+        numero?: string | number | null
+        serie?: string | number | null
+        chave?: string | null
+        gravada_na_cotacao?: boolean
+        aviso?: string
+      }>('emitir-nfe-teste-producao', {
+        body: acao === 'emitir' ? { operacao_id: op.id, acao, confirmar: true } : { operacao_id: op.id, acao },
+      })
+      if (error) {
+        mostrarErro(await extrairDetalheErroInvoke(error))
+      } else if (data && data.sucesso === false) {
+        mostrarErro({ erro: data.erro, motivos: data.motivos })
+      } else if (data) {
+        if (acao === 'emitir') {
+          setNfeProducao(null)
+          setInfoPorOperacao((prev) => ({ ...prev, [op.id]: data.aviso ?? 'NF-e de teste (produção) enviada.' }))
+        } else {
+          const partes = [
+            `NF-e (produção): ${data.status ?? 'sem status'}`,
+            data.numero != null ? `nº ${data.numero}` : null,
+            data.serie != null ? `série ${data.serie}` : null,
+            data.chave ? `chave ${data.chave}` : null,
+          ].filter(Boolean)
+          const texto = `${partes.join(' — ')}${data.mensagem_sefaz ? ` (${data.mensagem_sefaz})` : ''}${
+            data.gravada_na_cotacao ? '. Chave gravada na cotação; o CT-e já pode citar esta nota.' : ''
+          }`
+          setInfoPorOperacao((prev) => ({ ...prev, [op.id]: texto }))
+          if (data.gravada_na_cotacao && data.chave) {
+            setOperacoes((prev) => prev?.map((o) => (o.id === op.id ? { ...o, nfChaveAcesso: data.chave } : o)) ?? prev)
+            setNfeCanceladaPorOperacao((prev) => ({ ...prev, [op.id]: false }))
+          }
+        }
+      }
+    } catch (e) {
+      mostrarErro({ erro: e instanceof Error ? e.message : 'Erro inesperado na NF-e de teste (produção).' })
+    } finally {
+      marcarEmAndamento(chave, false)
+    }
+  }
+
   function abrirFormNovoDocumento(opId: string, tipoInicial: TipoDocumentoFiscal) {
     setFormNovoDocOperacaoId(opId)
     setNovoDocForm(criarFormDocumentoManual(tipoInicial))
@@ -521,11 +586,24 @@ export default function Fiscal() {
             if (tipo === 'nfe') {
               // A NF-e de teste vive na cotação; a função limpa a chave lá ao cancelar.
               setOperacoes((prev) => prev?.map((o) => (o.id === op.id ? { ...o, nfChaveAcesso: null } : o)) ?? prev)
+              setNfeCanceladaPorOperacao((prev) => ({ ...prev, [op.id]: true }))
               setInfoPorOperacao((prev) => ({ ...prev, [op.id]: 'NF-e de teste cancelada.' }))
             } else {
               await carregarDocumentos([op.id])
             }
           }}
+        />
+      )}
+      {nfeProducao && (
+        <EmitirNfeProducaoModal
+          enviando={emAndamento.has(`${nfeProducao.id}:nfe-producao:emitir`)}
+          erro={erroNfeProducao?.erro ?? null}
+          motivos={erroNfeProducao?.motivos}
+          onFechar={() => {
+            setNfeProducao(null)
+            setErroNfeProducao(null)
+          }}
+          onConfirmar={() => nfeTesteProducao(nfeProducao, 'emitir')}
         />
       )}
       {toast && (
@@ -579,6 +657,7 @@ export default function Fiscal() {
             const erroCard = erroPorOperacao[op.id]
             const infoCard = infoPorOperacao[op.id]
             const xmlCancelamento = xmlCancelamentoPorOperacao[op.id]
+            const nfeCancelada = nfeCanceladaPorOperacao[op.id] === true
 
             const chaveCte = `${op.id}:cte`
             const chaveMdfe = `${op.id}:mdfe`
@@ -736,6 +815,11 @@ export default function Fiscal() {
                                     Homologação — sem validade fiscal
                                   </span>
                                 )}
+                                {(doc.tipo === 'cte' || doc.tipo === 'mdfe') &&
+                                  (doc.status === 'emitido' || doc.status === 'cancelado') &&
+                                  doc.referencia && (
+                                    <BaixarDocumentoFiscal operacaoId={op.id} tipo={doc.tipo} chave={doc.chave_acesso} />
+                                  )}
                                 {documentoManual && (
                                   <span className="flex gap-2 ml-auto">
                                     <button
@@ -772,6 +856,62 @@ export default function Fiscal() {
                         </div>
                       )
                     })}
+                  </div>
+                )}
+
+                {/* NF-e de teste: vive na cotação (nf_chave_acesso), não em documentacao_operacao. */}
+                {(op.nfChaveAcesso || nfeCancelada) && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold w-14 flex-shrink-0">NF-e</span>
+                    <span
+                      className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                      style={{ background: statusDocBackground(op.nfChaveAcesso ? 'emitido' : 'cancelado') }}
+                    >
+                      {op.nfChaveAcesso ? 'Autorizada' : STATUS_DOC_LABEL.cancelado}
+                    </span>
+                    {op.nfChaveAcesso && (
+                      <span className="text-[11px] text-[color:var(--rbr-muted)] font-mono break-all">{op.nfChaveAcesso}</span>
+                    )}
+                    <BaixarDocumentoFiscal operacaoId={op.id} tipo="nfe" chave={op.nfChaveAcesso ?? null} />
+                  </div>
+                )}
+
+                {ambienteFiscal === 'producao' && (
+                  <div
+                    className="flex flex-col gap-2 rounded-lg p-2.5 border"
+                    style={{ borderColor: 'var(--rbr-danger)' }}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold">NF-e de teste (produção)</span>
+                      <span
+                        className="text-[11px] font-extrabold uppercase tracking-wide text-white px-2 py-0.5 rounded-full"
+                        style={{ background: 'var(--rbr-danger)' }}
+                      >
+                        Produção
+                      </span>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {!op.nfChaveAcesso && (
+                        <button
+                          onClick={() => {
+                            setErroNfeProducao(null)
+                            setNfeProducao(op)
+                          }}
+                          className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                          style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                        >
+                          Emitir NF-e de teste (R$ 1,00)
+                        </button>
+                      )}
+                      <button
+                        onClick={() => nfeTesteProducao(op, 'consultar')}
+                        disabled={emAndamento.has(`${op.id}:nfe-producao:consultar`)}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                      >
+                        {emAndamento.has(`${op.id}:nfe-producao:consultar`) ? 'Consultando…' : 'Consultar NF-e'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1062,11 +1202,11 @@ export default function Fiscal() {
                       Cancelar CT-e
                     </button>
                   )}
-                  {/* Só a NF-e de teste: em produção a chave da cotação é a NF-e real do cliente, que a RBR não cancela. */}
-                  {ambienteFiscal === 'homologacao' && op.nfChaveAcesso && (
+                  {/* A função só cancela a NF-e de teste da RBR (ref rbr-nfe-teste-/rbr-nfe-prod-<cotação>), no ambiente atual. */}
+                  {ambienteFiscal && op.nfChaveAcesso && (
                     <button
                       onClick={() =>
-                        setCancelamento({ op, tipo: 'nfe', ambiente: 'homologacao', chave: op.nfChaveAcesso ?? null })
+                        setCancelamento({ op, tipo: 'nfe', ambiente: ambienteFiscal, chave: op.nfChaveAcesso ?? null })
                       }
                       className="text-xs font-bold px-3.5 py-2 rounded-lg border"
                       style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
