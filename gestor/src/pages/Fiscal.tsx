@@ -206,6 +206,8 @@ export default function Fiscal() {
     Record<string, { tipo: TipoCancelamento; url: string } | null>
   >({})
   const [toast, setToast] = useState<string | null>(null)
+  // Resposta crua da Averba (aberta sob demanda), por operação.
+  const [respostaAverba, setRespostaAverba] = useState<Record<string, string>>({})
   // NF-e de teste em PRODUÇÃO (emitir-nfe-teste-producao): modal de confirmação aberto e erro/motivos de bloqueio.
   const [nfeProducao, setNfeProducao] = useState<OperacaoEnriquecida | null>(null)
   const [erroNfeProducao, setErroNfeProducao] = useState<DetalheErro | null>(null)
@@ -312,6 +314,55 @@ export default function Fiscal() {
       marcarEmAndamento(chave, false)
       await carregarDocumentos([op.id])
     }
+  }
+
+  // Averbação do seguro (RCTR-C) na NS Tech/Averba: envia o XML do CT-e autorizado. O robô de status não
+  // cuida disso; aqui o gestor vê o resultado e, se a Averba recusar, a resposta crua para diagnóstico.
+  async function averbarCte(op: OperacaoEnriquecida) {
+    const chave = `${op.id}:averbar`
+    marcarEmAndamento(chave, true)
+    setErroPorOperacao((prev) => ({ ...prev, [op.id]: null }))
+    try {
+      const { data, error } = await supabase.functions.invoke<{ sucesso: boolean; erro?: string; motivos?: string[]; numero_averbacao?: string | null }>(
+        'enviar-averbacao',
+        { body: { operacao_id: op.id } },
+      )
+      if (error) {
+        const detalhe = await extrairDetalheErroInvoke(error)
+        setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
+      } else if (data && data.sucesso === false) {
+        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos } }))
+      } else if (data?.sucesso && !data.numero_averbacao) {
+        setToast('Averbação enviada. A Averba não devolveu o número: confira a resposta e digite o número na conferência do MDF-e.')
+      } else {
+        setToast('CT-e averbado.')
+      }
+    } catch (e) {
+      setErroPorOperacao((prev) => ({
+        ...prev,
+        [op.id]: { erro: e instanceof Error ? e.message : 'Erro inesperado ao averbar.' },
+      }))
+    } finally {
+      marcarEmAndamento(chave, false)
+      await carregarDocumentos([op.id])
+    }
+  }
+
+  async function verRespostaAverba(op: OperacaoEnriquecida) {
+    if (respostaAverba[op.id] !== undefined) {
+      setRespostaAverba((prev) => {
+        const { [op.id]: _descartado, ...resto } = prev
+        return resto
+      })
+      return
+    }
+    const { data } = await supabase
+      .from('documentacao_operacao')
+      .select('payload_resposta')
+      .eq('operacao_id', op.id)
+      .eq('tipo', 'atm')
+      .maybeSingle()
+    setRespostaAverba((prev) => ({ ...prev, [op.id]: JSON.stringify(data?.payload_resposta ?? null, null, 2) }))
   }
 
   async function consultarStatus(op: OperacaoEnriquecida, tipo: 'cte' | 'mdfe' | 'nfse') {
@@ -858,6 +909,79 @@ export default function Fiscal() {
                     })}
                   </div>
                 )}
+
+                {/* Averbação do seguro (NS Tech/Averba): depende do CT-e autorizado e alimenta o MDF-e. */}
+                {docCte && (() => {
+                  const docAtm = docs.find((d) => d.tipo === 'atm')
+                  const cteAutorizado = docCte.status === 'emitido'
+                  const averbado = docAtm?.status === 'emitido'
+                  const emProducao = docCte.ambiente !== 'homologacao'
+                  const rotulo = averbado
+                    ? 'Averbado'
+                    : !cteAutorizado
+                      ? 'Aguardando CT-e'
+                      : docAtm?.status === 'erro'
+                        ? 'Erro'
+                        : docAtm?.status === 'bloqueado'
+                          ? 'Bloqueado'
+                          : 'Pendente'
+                  const cor = averbado ? '#137A45' : docAtm?.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy)'
+                  const ocupado = emAndamento.has(`${op.id}:averbar`)
+                  return (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold w-14 flex-shrink-0">Averb.</span>
+                        <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: cor }}>
+                          {rotulo}
+                        </span>
+                        {docAtm?.numero_documento && (
+                          <span className="text-[11px] text-[color:var(--rbr-muted)]">Nº {docAtm.numero_documento}</span>
+                        )}
+                        <span className="text-[11px] text-[color:var(--rbr-muted)]">seguro RCTR-C · NS Tech/Averba</span>
+                        {docAtm?.atualizado_em && (
+                          <span className="text-[11px] text-[color:var(--rbr-muted)]">atualizado em {formatDateTime(docAtm.atualizado_em)}</span>
+                        )}
+                        {cteAutorizado && !averbado && emProducao && (
+                          <button
+                            onClick={() => averbarCte(op)}
+                            disabled={ocupado}
+                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                          >
+                            {ocupado ? 'Enviando…' : docAtm?.status === 'erro' ? 'Tentar averbar de novo' : 'Averbar CT-e'}
+                          </button>
+                        )}
+                        {docAtm && (
+                          <button onClick={() => verRespostaAverba(op)} className="text-[11px] font-bold underline" style={{ color: 'var(--rbr-navy)' }}>
+                            {respostaAverba[op.id] !== undefined ? 'Ocultar resposta' : 'Ver resposta da Averba'}
+                          </button>
+                        )}
+                      </div>
+                      {cteAutorizado && !emProducao && (
+                        <div className="text-[11px] text-[color:var(--rbr-muted)]">CT-e de homologação não é averbado (sem validade fiscal).</div>
+                      )}
+                      {!cteAutorizado && (
+                        <div className="text-[11px] text-[color:var(--rbr-muted)]">A averbação só pode ser enviada depois que o CT-e for autorizado.</div>
+                      )}
+                      {docAtm && (docAtm.status === 'bloqueado' || docAtm.status === 'erro') && docAtm.mensagem_erro && (
+                        <div
+                          className="text-[11px] rounded-lg px-3 py-2"
+                          style={{
+                            background: docAtm.status === 'erro' ? '#FBE9E9' : 'var(--rbr-warning-bg)',
+                            color: docAtm.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
+                          }}
+                        >
+                          {docAtm.mensagem_erro}
+                        </div>
+                      )}
+                      {respostaAverba[op.id] !== undefined && (
+                        <pre className="text-[10px] rounded-lg p-2.5 overflow-x-auto" style={{ background: 'var(--rbr-muted-bg)' }}>
+                          {respostaAverba[op.id]}
+                        </pre>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* NF-e de teste: vive na cotação (nf_chave_acesso), não em documentacao_operacao. */}
                 {(op.nfChaveAcesso || nfeCancelada) && (

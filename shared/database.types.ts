@@ -1220,6 +1220,7 @@ export type Database = {
         Row: {
           ciot: string | null
           ciot_cnpj_responsavel: string | null
+          numero_averbacao: string | null
           created_at: string
           id: string
           operacao_id: string
@@ -1239,6 +1240,7 @@ export type Database = {
         Insert: {
           ciot?: string | null
           ciot_cnpj_responsavel?: string | null
+          numero_averbacao?: string | null
           created_at?: string
           id?: string
           operacao_id: string
@@ -1258,6 +1260,7 @@ export type Database = {
         Update: {
           ciot?: string | null
           ciot_cnpj_responsavel?: string | null
+          numero_averbacao?: string | null
           created_at?: string
           id?: string
           operacao_id?: string

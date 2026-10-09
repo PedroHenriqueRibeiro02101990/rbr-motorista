@@ -6,6 +6,7 @@ import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
 import { IconQuote, IconChevronRight, IconCheck } from '@rbr/shared/icons'
 import { IconX } from '../icons-local'
+import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
@@ -2385,7 +2386,7 @@ export default function Cotacao() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             <div>
-              <label className={labelClass}>Origem</label>
+              <label className={labelClass}>Origem<Obrig entidade="cotacoes" campo="cidade_origem" /></label>
               {clienteSelecionado ? (
                 <div
                   className="text-xs rounded-lg px-3 py-2.5 border"
@@ -2401,7 +2402,7 @@ export default function Cotacao() {
             </div>
 
             <div>
-              <label className={labelClass}>Destino</label>
+              <label className={labelClass}>Destino<Obrig entidade="cotacoes" campo="cidade_destino" /></label>
               {destinos.length > 0 ? (
                 <div className="text-[11px] text-[color:var(--rbr-muted)]">
                   Cidade/UF destino ficam de fora — essa cotação tem vários destinos (aba avançada, cada um com endereço próprio).
@@ -2485,7 +2486,7 @@ export default function Cotacao() {
             </div>
 
             <div>
-              <label className={labelClass}>Valor da mercadoria (R$)</label>
+              <label className={labelClass}>Valor da mercadoria (R$)<Obrig entidade="cotacoes" campo="valor_nf" /></label>
               <input
                 type="number"
                 min={0}
@@ -2624,7 +2625,7 @@ export default function Cotacao() {
             {/* Dados da NF-e */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Chave de acesso da NF-e</label>
+              <label className={labelClass}>Chave de acesso da NF-e<Obrig entidade="cotacoes" campo="nf_chave_acesso" /></label>
               <input
                 value={form.nf_chave_acesso}
                 onChange={(e) => setForm((f) => (f ? { ...f, nf_chave_acesso: e.target.value } : f))}
@@ -2651,7 +2652,7 @@ export default function Cotacao() {
               />
             </div>
             <div>
-              <label className={labelClass}>Remetente — CNPJ</label>
+              <label className={labelClass}>Remetente — CNPJ<Obrig entidade="cotacoes" campo="nf_remetente_cnpj" /></label>
               <input
                 value={form.nf_remetente_cnpj}
                 onChange={(e) => setForm((f) => (f ? { ...f, nf_remetente_cnpj: e.target.value } : f))}
@@ -2670,7 +2671,7 @@ export default function Cotacao() {
               />
             </div>
             <div>
-              <label className={labelClass}>Destinatário — CNPJ/CPF</label>
+              <label className={labelClass}>Destinatário — CNPJ/CPF<Obrig entidade="cotacoes" campo="nf_destinatario_cnpj" /></label>
               <input
                 value={form.nf_destinatario_cnpj}
                 onChange={(e) => setForm((f) => (f ? { ...f, nf_destinatario_cnpj: e.target.value } : f))}
@@ -2700,7 +2701,7 @@ export default function Cotacao() {
               <input inputMode="decimal" value={form.nf_quantidade_volumes} onChange={(e) => setForm((f) => (f ? { ...f, nf_quantidade_volumes: e.target.value } : f))} className={inputClass} style={inputStyle} />
             </div>
             <div className="col-span-2">
-              <label className={labelClass}>Produto predominante</label>
+              <label className={labelClass}>Produto predominante<Obrig entidade="cotacoes" campo="nf_produto_predominante" /></label>
               <input value={form.nf_produto_predominante} onChange={(e) => setForm((f) => (f ? { ...f, nf_produto_predominante: e.target.value } : f))} className={inputClass} style={inputStyle} />
             </div>
             <div>
@@ -2725,6 +2726,7 @@ export default function Cotacao() {
                 <div key={parte} className="rounded-lg border p-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
                   <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
                     Endereço do {parte === 'remetente' ? 'remetente' : 'destinatário'}
+                    {parte === 'remetente' && <Obrig entidade="cotacoes" campo="nf_remetente_endereco" />}
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     <input placeholder="Logradouro" value={end.logradouro ?? ''} onChange={(e) => set('logradouro', e.target.value)} className={`${inputClass} col-span-3`} style={inputStyle} />
@@ -2764,7 +2766,7 @@ export default function Cotacao() {
           </div>
 
           <div>
-            <label className={labelClass}>Quem paga o frete (tomador do CT-e)</label>
+            <label className={labelClass}>Quem paga o frete (tomador do CT-e)<Obrig entidade="cotacoes" campo="tomador_papel" /></label>
             <div className="flex items-center gap-2 flex-wrap">
               <select
                 value={form.tomador_papel}
@@ -3033,7 +3035,7 @@ export default function Cotacao() {
           {abaCotacao === 'avancada' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className={labelClass}>Peso bruto (kg)</label>
+                <label className={labelClass}>Peso bruto (kg)<Obrig entidade="cotacoes" campo="peso_bruto_kg" /></label>
                 <input
                   type="number"
                   value={form.peso_bruto_kg}
@@ -3043,7 +3045,7 @@ export default function Cotacao() {
                 />
               </div>
               <div>
-                <label className={labelClass}>NCMs dos produtos</label>
+                <label className={labelClass}>NCMs dos produtos<Obrig entidade="cotacoes" campo="ncms_produtos" /></label>
                 <input
                   placeholder="separados por vírgula"
                   value={form.ncms_produtos}
@@ -3453,7 +3455,7 @@ export default function Cotacao() {
               )}
 
               <div className="md:col-span-2">
-                <label className={labelClass}>Valor final ao cliente (R$)</label>
+                <label className={labelClass}>Valor final ao cliente (R$)<Obrig entidade="cotacoes" campo="valor_total" /></label>
                 <input
                   type="number"
                   min={0}

@@ -1,3 +1,4 @@
+import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -547,7 +548,7 @@ function Pagamento({ d, salvando, executar }: { d: DetalheOperacao; salvando: bo
       <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Pagamento ao motorista</div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div>
-          <label className={labelClass}>Total do contrato (R$)</label>
+          <label className={labelClass}>Total do contrato (R$)<Obrig entidade="condicoes_pagamento_operacao" campo="valor_total_contrato" /></label>
           <input inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} className={inputClass} style={inputStyle} />
           {sugerido != null && parseBRL(total) !== sugerido && (
             <button type="button" onClick={() => setTotal(String(sugerido))} className="text-[11px] underline font-semibold mt-1">

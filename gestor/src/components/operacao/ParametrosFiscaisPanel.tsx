@@ -1,3 +1,4 @@
+import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -38,14 +39,19 @@ function Campo({
   label,
   children,
   hint,
+  obrig,
 }: {
   label: string
   children: React.ReactNode
   hint?: string
+  obrig?: string
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] font-bold text-[color:var(--rbr-muted)] uppercase tracking-wide">{label}</span>
+      <span className="text-[11px] font-bold text-[color:var(--rbr-muted)] uppercase tracking-wide">
+        {label}
+        {obrig && <Obrig entidade="parametros_fiscais" campo={obrig} />}
+      </span>
       {children}
       {hint && <span className="text-[10px] text-[color:var(--rbr-muted)]">{hint}</span>}
     </label>
@@ -222,7 +228,7 @@ export default function ParametrosFiscaisPanel() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="Inscrição Estadual (IE)">
+              <Campo label="Inscrição Estadual (IE)" obrig="inscricao_estadual">
                 <input
                   value={pf.inscricao_estadual ?? ''}
                   onChange={(e) => set('inscricao_estadual', e.target.value || null)}
@@ -238,7 +244,7 @@ export default function ParametrosFiscaisPanel() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="RNTRC (ETC)">
+              <Campo label="RNTRC (ETC)" obrig="rntrc">
                 <input
                   value={pf.rntrc ?? ''}
                   onChange={(e) => set('rntrc', e.target.value || null)}
@@ -252,7 +258,7 @@ export default function ParametrosFiscaisPanel() {
           <section className="flex flex-col gap-2.5">
             <div className="text-xs font-bold text-[color:var(--rbr-navy)]">Endereço do estabelecimento</div>
             <div className="grid grid-cols-2 gap-2.5">
-              <Campo label="Logradouro">
+              <Campo label="Logradouro" obrig="endereco_logradouro">
                 <input
                   value={pf.endereco_logradouro ?? ''}
                   onChange={(e) => set('endereco_logradouro', e.target.value || null)}
@@ -307,7 +313,7 @@ export default function ParametrosFiscaisPanel() {
           <section className="flex flex-col gap-2.5">
             <div className="text-xs font-bold text-[color:var(--rbr-navy)]">Contato comercial (aparece no documento)</div>
             <div className="grid grid-cols-2 gap-2.5">
-              <Campo label="Telefone">
+              <Campo label="Telefone" obrig="telefone_contato">
                 <input
                   value={pf.telefone_contato ?? ''}
                   onChange={(e) => set('telefone_contato', e.target.value || null)}
@@ -377,7 +383,7 @@ export default function ParametrosFiscaisPanel() {
           <section className="flex flex-col gap-2.5">
             <div className="text-xs font-bold text-[color:var(--rbr-navy)]">Responsável técnico (exigência da SEFAZ)</div>
             <div className="grid grid-cols-2 gap-2.5">
-              <Campo label="CNPJ">
+              <Campo label="CNPJ" obrig="responsavel_tecnico_cnpj">
                 <input
                   value={pf.responsavel_tecnico_cnpj ?? ''}
                   onChange={(e) => set('responsavel_tecnico_cnpj', e.target.value || null)}
@@ -385,7 +391,7 @@ export default function ParametrosFiscaisPanel() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="Contato">
+              <Campo label="Contato" obrig="responsavel_tecnico_cnpj">
                 <input
                   value={pf.responsavel_tecnico_contato ?? ''}
                   onChange={(e) => set('responsavel_tecnico_contato', e.target.value || null)}
@@ -393,7 +399,7 @@ export default function ParametrosFiscaisPanel() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="E-mail">
+              <Campo label="E-mail" obrig="responsavel_tecnico_cnpj">
                 <input
                   value={pf.responsavel_tecnico_email ?? ''}
                   onChange={(e) => set('responsavel_tecnico_email', e.target.value || null)}
@@ -401,7 +407,7 @@ export default function ParametrosFiscaisPanel() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="Telefone">
+              <Campo label="Telefone" obrig="responsavel_tecnico_cnpj">
                 <input
                   value={pf.responsavel_tecnico_telefone ?? ''}
                   onChange={(e) => set('responsavel_tecnico_telefone', e.target.value || null)}

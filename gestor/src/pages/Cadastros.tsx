@@ -1,3 +1,4 @@
+import { CampoFiscal } from '@rbr/shared/camposObrigatorios'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -1602,13 +1603,15 @@ export default function Cadastros() {
                     'col-span-2 md:col-span-1',
                   )
                 ) : (
-                  <input
-                    placeholder="CPF *"
-                    value={novoCliente.cpf}
-                    onChange={(e) => setNovoCliente((f) => ({ ...f, cpf: e.target.value }))}
-                    className={inputClass}
-                    style={inputStyle}
-                  />
+                  <CampoFiscal entidade="clientes" campo="cnpj" rotulo="CPF">
+                    <input
+                      placeholder="CPF *"
+                      value={novoCliente.cpf}
+                      onChange={(e) => setNovoCliente((f) => ({ ...f, cpf: e.target.value }))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                  </CampoFiscal>
                 )}
                 {novoCliente.tipo_pessoa_doc === 'PJ' && (
                   <div>
@@ -1629,35 +1632,41 @@ export default function Cadastros() {
                   className={inputClass}
                   style={inputStyle}
                 />
-                <input
-                  placeholder="Celular/WhatsApp"
-                  value={novoCliente.celular_whatsapp}
-                  onChange={(e) => setNovoCliente((f) => ({ ...f, celular_whatsapp: e.target.value }))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
+                <CampoFiscal entidade="clientes" campo="celular_whatsapp" rotulo="Celular/WhatsApp">
+                  <input
+                    placeholder="Celular/WhatsApp"
+                    value={novoCliente.celular_whatsapp}
+                    onChange={(e) => setNovoCliente((f) => ({ ...f, celular_whatsapp: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <input
-                  placeholder="CEP"
-                  value={novoCliente.cep}
-                  inputMode="numeric"
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setNovoCliente((f) => ({ ...f, cep: v }))
-                    if (soDigitos(v).length === 8) autoCep('cliente', v, novoCliente, setNovoCliente)
-                  }}
-                  onBlur={() => autoCep('cliente', novoCliente.cep, novoCliente, setNovoCliente)}
-                  className={inputClass}
-                  style={inputStyle}
-                />
-                <input
-                  placeholder="Logradouro"
-                  value={novoCliente.logradouro}
-                  onChange={(e) => setNovoCliente((f) => ({ ...f, logradouro: e.target.value }))}
-                  className={`${inputClass} col-span-2 md:col-span-2`}
-                  style={inputStyle}
-                />
+                <CampoFiscal entidade="clientes" campo="cep" rotulo="CEP">
+                  <input
+                    placeholder="CEP"
+                    value={novoCliente.cep}
+                    inputMode="numeric"
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setNovoCliente((f) => ({ ...f, cep: v }))
+                      if (soDigitos(v).length === 8) autoCep('cliente', v, novoCliente, setNovoCliente)
+                    }}
+                    onBlur={() => autoCep('cliente', novoCliente.cep, novoCliente, setNovoCliente)}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
+                <CampoFiscal entidade="clientes" campo="logradouro" rotulo="Logradouro" className="col-span-2 md:col-span-2">
+                  <input
+                    placeholder="Logradouro"
+                    value={novoCliente.logradouro}
+                    onChange={(e) => setNovoCliente((f) => ({ ...f, logradouro: e.target.value }))}
+                    className={`${inputClass} col-span-2 md:col-span-2`}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
                 <input
                   placeholder="Número"
                   value={novoCliente.numero_endereco}
@@ -1817,20 +1826,24 @@ export default function Cadastros() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  placeholder="Nome *"
-                  value={novoMotorista.nome}
-                  onChange={(e) => setNovoMotorista((f) => ({ ...f, nome: e.target.value }))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
-                <input
-                  placeholder="CPF *"
-                  value={novoMotorista.cpf}
-                  onChange={(e) => setNovoMotorista((f) => ({ ...f, cpf: e.target.value }))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
+                <CampoFiscal entidade="pessoas" campo="nome" rotulo="Nome">
+                  <input
+                    placeholder="Nome *"
+                    value={novoMotorista.nome}
+                    onChange={(e) => setNovoMotorista((f) => ({ ...f, nome: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
+                <CampoFiscal entidade="pessoas" campo="cpf" rotulo="CPF">
+                  <input
+                    placeholder="CPF *"
+                    value={novoMotorista.cpf}
+                    onChange={(e) => setNovoMotorista((f) => ({ ...f, cpf: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input
@@ -1943,13 +1956,15 @@ export default function Cadastros() {
 
               <div className={labelClass}>RNTRC</div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <input
-                  placeholder="Nº RNTRC"
-                  value={novoMotorista.rntrc_numero}
-                  onChange={(e) => setNovoMotorista((f) => ({ ...f, rntrc_numero: e.target.value }))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
+                <CampoFiscal entidade="pessoas" campo="rntrc_numero" rotulo="Nº RNTRC">
+                  <input
+                    placeholder="Nº RNTRC"
+                    value={novoMotorista.rntrc_numero}
+                    onChange={(e) => setNovoMotorista((f) => ({ ...f, rntrc_numero: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
                 <select
                   value={novoMotorista.rntrc_status}
                   onChange={(e) => setNovoMotorista((f) => ({ ...f, rntrc_status: e.target.value }))}
@@ -1977,13 +1992,15 @@ export default function Cadastros() {
                 Pagamento do frete (vai no CIOT/MDF-e — a conta tem que ser do próprio transportador)
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                <input
-                  placeholder="Chave PIX"
-                  value={novoMotorista.pix}
-                  onChange={(e) => setNovoMotorista((f) => ({ ...f, pix: e.target.value }))}
-                  className={`${inputClass} col-span-2 md:col-span-1`}
-                  style={inputStyle}
-                />
+                <CampoFiscal entidade="pessoas" campo="pix" rotulo="Chave PIX" className="col-span-2 md:col-span-1">
+                  <input
+                    placeholder="Chave PIX"
+                    value={novoMotorista.pix}
+                    onChange={(e) => setNovoMotorista((f) => ({ ...f, pix: e.target.value }))}
+                    className={`${inputClass} col-span-2 md:col-span-1`}
+                    style={inputStyle}
+                  />
+                </CampoFiscal>
                 <input
                   placeholder="Banco (código)"
                   value={novoMotorista.banco_codigo}
@@ -2293,13 +2310,15 @@ export default function Cadastros() {
                           <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
                             <div className="text-xs font-bold">{editingVeiculoId ? 'Editar veículo' : 'Novo veículo'}</div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                              <input
-                                placeholder="Placa *"
-                                value={novoVeiculo.placa}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, placa: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
+                              <CampoFiscal entidade="veiculos" campo="placa" rotulo="Placa">
+                                <input
+                                  placeholder="Placa *"
+                                  value={novoVeiculo.placa}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, placa: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
                               <input
                                 placeholder="RENAVAM *"
                                 value={novoVeiculo.renavam}
@@ -2343,36 +2362,44 @@ export default function Cadastros() {
                                 className={miniInputClass}
                                 style={inputStyle}
                               />
-                              <input
-                                placeholder="Tipo de veículo"
-                                value={novoVeiculo.tipo_veiculo}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, tipo_veiculo: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
-                              <input
-                                placeholder="Tipo de carroceria"
-                                value={novoVeiculo.tipo_carroceria}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, tipo_carroceria: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
-                              <input
-                                placeholder="Capacidade de carga (kg)"
-                                type="number"
-                                value={novoVeiculo.capacidade_carga}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, capacidade_carga: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
-                              <input
-                                placeholder="Tara (kg)"
-                                type="number"
-                                value={novoVeiculo.tara_kg}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, tara_kg: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
+                              <CampoFiscal entidade="veiculos" campo="tipo_veiculo" rotulo="Tipo de veículo">
+                                <input
+                                  placeholder="Tipo de veículo"
+                                  value={novoVeiculo.tipo_veiculo}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, tipo_veiculo: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
+                              <CampoFiscal entidade="veiculos" campo="tipo_carroceria" rotulo="Tipo de carroceria">
+                                <input
+                                  placeholder="Tipo de carroceria"
+                                  value={novoVeiculo.tipo_carroceria}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, tipo_carroceria: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
+                              <CampoFiscal entidade="veiculos" campo="capacidade_carga" rotulo="Capacidade de carga (kg)">
+                                <input
+                                  placeholder="Capacidade de carga (kg)"
+                                  type="number"
+                                  value={novoVeiculo.capacidade_carga}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, capacidade_carga: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
+                              <CampoFiscal entidade="veiculos" campo="tara_kg" rotulo="Tara (kg)">
+                                <input
+                                  placeholder="Tara (kg)"
+                                  type="number"
+                                  value={novoVeiculo.tara_kg}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, tara_kg: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
                               <input
                                 placeholder="Potência (cv)"
                                 type="number"
@@ -2381,14 +2408,16 @@ export default function Cadastros() {
                                 className={miniInputClass}
                                 style={inputStyle}
                               />
-                              <input
-                                placeholder="Qtd. eixos"
-                                type="number"
-                                value={novoVeiculo.quantidade_eixos}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, quantidade_eixos: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
+                              <CampoFiscal entidade="veiculos" campo="quantidade_eixos" rotulo="Qtd. eixos">
+                                <input
+                                  placeholder="Qtd. eixos"
+                                  type="number"
+                                  value={novoVeiculo.quantidade_eixos}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, quantidade_eixos: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
                               <input
                                 placeholder="Qtd. pneus"
                                 type="number"
@@ -2415,25 +2444,29 @@ export default function Cadastros() {
                                 />
                                 É carreta / semirreboque (sem motor)
                               </label>
-                              <input
-                                placeholder="UF da placa"
-                                maxLength={2}
-                                value={novoVeiculo.uf_licenciamento}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, uf_licenciamento: e.target.value.toUpperCase() }))}
-                                className={miniInputClass}
-                                style={{ ...inputStyle, maxWidth: 110 }}
-                              />
+                              <CampoFiscal entidade="veiculos" campo="uf_licenciamento" rotulo="UF de licenciamento">
+                                <input
+                                  placeholder="UF da placa"
+                                  maxLength={2}
+                                  value={novoVeiculo.uf_licenciamento}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, uf_licenciamento: e.target.value.toUpperCase() }))}
+                                  className={miniInputClass}
+                                  style={{ ...inputStyle, maxWidth: 110 }}
+                                />
+                              </CampoFiscal>
                             </div>
 
                             <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-1">RNTRC do veículo</div>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                              <input
-                                placeholder="RNTRC número"
-                                value={novoVeiculo.rntrc_numero}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, rntrc_numero: e.target.value }))}
-                                className={miniInputClass}
-                                style={inputStyle}
-                              />
+                              <CampoFiscal entidade="veiculos" campo="rntrc_numero" rotulo="RNTRC número">
+                                <input
+                                  placeholder="RNTRC número"
+                                  value={novoVeiculo.rntrc_numero}
+                                  onChange={(e) => setNovoVeiculo((f) => ({ ...f, rntrc_numero: e.target.value }))}
+                                  className={miniInputClass}
+                                  style={inputStyle}
+                                />
+                              </CampoFiscal>
                               <select
                                 value={novoVeiculo.rntrc_status}
                                 onChange={(e) => setNovoVeiculo((f) => ({ ...f, rntrc_status: e.target.value }))}

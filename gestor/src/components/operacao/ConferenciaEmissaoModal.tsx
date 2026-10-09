@@ -1,3 +1,4 @@
+import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
@@ -397,6 +398,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
   const [valor, setValor] = useState('')
   const [cnpjForn, setCnpjForn] = useState('')
   const [tipoVpo, setTipoVpo] = useState('')
+  const [averbacao, setAverbacao] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -410,6 +412,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
       setValor(data.vpo_valor != null ? String(data.vpo_valor) : '')
       setCnpjForn(data.vpo_cnpj_fornecedora ?? '')
       setTipoVpo(data.vpo_tipo ?? '')
+      setAverbacao(data.numero_averbacao ?? '')
     })()
     return () => {
       vivo = false
@@ -428,6 +431,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
         vpo_valor: valor ? Number(valor.replace(',', '.')) : null,
         vpo_cnpj_fornecedora: digitos(cnpjForn) || null,
         vpo_tipo: tipoVpo || null,
+        numero_averbacao: averbacao.trim() || null,
         origem: 'manual',
         updated_at: new Date().toISOString(),
       },
@@ -447,15 +451,15 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
   return (
     <div className="rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
       <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] border-b" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)' }}>
-        Preencher agora — CIOT e Vale-Pedágio (portal Repom)
+        Preencher agora — CIOT, Vale-Pedágio (portal Repom) e averbação
       </div>
       <div className="p-3 grid gap-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
-          CIOT (12 dígitos)
+          <span>CIOT (12 dígitos)<Obrig entidade="operacao_ciot_vpo" campo="ciot" /></span>
           <input className={campo} style={estilo} value={ciot} onChange={(e) => setCiot(e.target.value)} inputMode="numeric" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
-          IDVPO (comprovante do pedágio)
+          <span>IDVPO (comprovante do pedágio)<Obrig entidade="operacao_ciot_vpo" campo="vpo_idvpo" /></span>
           <input className={campo} style={estilo} value={idvpo} onChange={(e) => setIdvpo(e.target.value)} inputMode="numeric" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
@@ -465,6 +469,10 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
           CNPJ da credenciada (Repom)
           <input className={campo} style={estilo} value={cnpjForn} onChange={(e) => setCnpjForn(e.target.value)} inputMode="numeric" />
+        </label>
+        <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+          <span>Número da averbação do seguro<Obrig entidade="operacao_ciot_vpo" campo="numero_averbacao" /></span>
+          <input className={campo} style={estilo} value={averbacao} onChange={(e) => setAverbacao(e.target.value)} placeholder="Protocolo/número da averbação do CT-e" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
           Tipo do vale-pedágio
