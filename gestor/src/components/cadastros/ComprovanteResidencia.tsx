@@ -27,7 +27,16 @@ export default function ComprovanteResidencia({
       const { error } = await supabase.storage.from('documentos-pessoais').upload(path, file, { contentType: file.type || undefined })
       if (error) throw error
       onChange(path, data || new Date().toISOString().slice(0, 10))
-      setMsg({ tipo: 'ok', texto: '✓ Comprovante enviado. Salve o cadastro para guardar.' })
+      setMsg({ tipo: 'ok', texto: '✓ Comprovante enviado. Lendo a data automaticamente…' })
+      // Leitura automática da data de emissão (não bloqueia: se falhar, o gestor digita a data).
+      const { data: lido } = await supabase.functions.invoke('extrair-documento', { body: { tipo: 'comprovante_residencia', path } })
+      const emissao = lido?.sucesso ? (lido.campos?.data_emissao as string | null) : null
+      if (emissao && /^\d{4}-\d{2}-\d{2}$/.test(emissao)) {
+        onChange(path, emissao)
+        setMsg({ tipo: 'ok', texto: `✓ Comprovante enviado; data lida: ${emissao.split('-').reverse().join('/')}. Salve o cadastro para guardar.` })
+      } else {
+        setMsg({ tipo: 'ok', texto: '✓ Comprovante enviado. Não consegui ler a data: confira o campo ao lado e salve o cadastro.' })
+      }
     } catch (e) {
       setMsg({ tipo: 'erro', texto: '✗ ' + msgErro(e) })
     } finally {
