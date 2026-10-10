@@ -6,6 +6,7 @@ import { formatMoney, initials, STATUS_OPERACAO_LABEL } from '@rbr/shared/format
 import { IconQuote } from '@rbr/shared/icons'
 import FrotaMap, { type FrotaMapPonto } from '@rbr/shared/FrotaMap'
 import { StatusCadastro } from '@rbr/shared/cadastro'
+import PainelPendencias from '../components/PainelPendencias'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -148,6 +149,8 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
           {error}
         </div>
       )}
+
+      <PainelPendencias />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div
