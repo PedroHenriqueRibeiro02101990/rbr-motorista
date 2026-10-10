@@ -3,6 +3,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime } from '@rbr/shared/format'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
+import PainelPendencias from '../components/PainelPendencias'
 import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
@@ -607,6 +608,8 @@ export default function Fiscal() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Fiscal</h1>
       </div>
+
+      <PainelPendencias modulo="fiscal" />
 
       <ParametrosFiscaisPanel />
       {evento && (

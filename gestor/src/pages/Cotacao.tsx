@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
@@ -9,6 +9,13 @@ import { IconX } from '../icons-local'
 import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
+import PainelPendencias from '../components/PainelPendencias'
+import { db } from '../lib/novoDb'
+import { Aviso, Botao } from '../components/financeiro/ui'
+import { useConfirmacao } from '../components/Confirmacao'
+import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
+import PedagioSugerido from '../components/cotacao/PedagioSugerido'
+import { CancelarCotacaoModal, ConfirmarConversaoModal, ProgramarOperacoesModal, rotuloOperacao, type ResumoConversao } from '../components/cotacao/ConversaoModais'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
 import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao, lerParametro, whatsappLink } from '../lib/financeiro'
 import { type GiroParams, type ResultadoGiro, GIRO_PARAMS_PADRAO, calcularGiro, diasTransito, giroParamsDeLinhas } from '../lib/giro'
@@ -59,6 +66,7 @@ interface DestinoLinha {
   frete_motorista: string
   pedagio: string
   margem_pct: string
+  cargas?: string // cargas previstas (cotacao_destinos.cargas_previstas)
   // legado — cotações antigas gravadas antes do endereço completo existir
   cidade?: string
   uf?: string
@@ -76,6 +84,7 @@ function destinoDeLinha(r: CotacaoDestinoRow): DestinoLinha {
     frete_motorista: r.frete_motorista != null ? String(r.frete_motorista) : '',
     pedagio: r.pedagio != null ? String(r.pedagio) : '',
     margem_pct: r.margem_pct != null ? String(round2(r.margem_pct * 100)) : '',
+    cargas: String((r as unknown as { cargas_previstas?: number | null }).cargas_previstas ?? 1),
     cidade: r.cidade_destino ?? '',
     uf: r.uf_destino ?? '',
   }
@@ -602,6 +611,19 @@ export default function Cotacao() {
   // "avançada" reúne tudo que o dia a dia às vezes precisa mas não está no preview (origem de
   // agenciador, detalhes fiscais da NF-e, peso bruto/NCMs, vários destinos, custos adicionais,
   // condições de pagamento, ajuste manual de alíquota de imposto).
+  // Tipo da cotação (carga única / veículos juntos / várias entregas) e fluxo de conversão.
+  const navigate = useNavigate()
+  const { confirmacao, rodar: rodarAcao, ocupado: ocupadoAcao } = useConfirmacao()
+  const [tipoCotacao, setTipoCotacao] = useState<TipoCotacaoValor>('carga_unica')
+  const [qtdVeiculos, setQtdVeiculos] = useState(2)
+  const [confirmarConv, setConfirmarConv] = useState(false)
+  const [programarAberto, setProgramarAberto] = useState(false)
+  const [modalCancel, setModalCancel] = useState<'cancelar' | 'apagar' | null>(null)
+  const [bannerConv, setBannerConv] = useState<{ texto: string; opId: string | null } | null>(null)
+  const [infoConv, setInfoConv] = useState<{
+    ops: { id: string; status: string; grupo_saida_id: string | null }[]
+    saldo: { cargas_total: number; cargas_abertas: number } | null
+  } | null>(null)
   const [abaCotacao, setAbaCotacao] = useState<'padrao' | 'avancada'>('padrao')
   const [cargaComplexaAberta, setCargaComplexaAberta] = useState(false)
 
@@ -1027,6 +1049,10 @@ export default function Cotacao() {
     setTipoParaAdicionar('')
     setPracasPedagio([])
     setDestinos([])
+    setTipoCotacao('carga_unica')
+    setQtdVeiculos(2)
+    setBannerConv(null)
+    setInfoConv(null)
     setAbaCotacao('padrao')
     setCargaComplexaAberta(false)
   }
@@ -1152,6 +1178,9 @@ export default function Cotacao() {
     setItens([])
     carregarItens(c.id)
     carregarDestinos(c.id)
+    const ext = c as unknown as { tipo_cotacao?: TipoCotacaoValor | null; qtd_veiculos?: number | null }
+    setTipoCotacao(ext.tipo_cotacao ?? 'carga_unica')
+    setQtdVeiculos(Math.max(2, ext.qtd_veiculos ?? 2))
   }
 
   // Cliente já negociou antes? Repete o último prazo combinado com ele.
@@ -1559,6 +1588,11 @@ export default function Cotacao() {
   }
 
   function validarDestinos(): string | null {
+    if (tipoCotacao === 'varias_entregas' && destinos.length === 0) return 'Várias entregas: adicione ao menos um destino.'
+    for (const d of destinos) {
+      const n = Number(d.cargas ?? '1')
+      if (!Number.isInteger(n) || n < 1) return 'Número de cargas de cada destino precisa ser um inteiro maior que zero.'
+    }
     for (const d of destinos) {
       if (!d.endereco.trim()) return 'Preencha o endereço de entrega em todo destino lançado.'
       const r = calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro)
@@ -1590,6 +1624,16 @@ export default function Cotacao() {
       const { error } = await supabase.from('cotacoes').update(patch).eq('id', id)
       if (error) throw error
     }
+    const tipoGrav: TipoCotacaoValor = destinos.length > 0 ? 'varias_entregas' : tipoCotacao
+    const { error: errTipo } = await db
+      .from('cotacoes')
+      .update({
+        tipo_cotacao: tipoGrav,
+        qtd_veiculos: tipoGrav === 'veiculos_juntos' ? qtdVeiculos : 1,
+        cargas_total: tipoGrav === 'varias_entregas' ? destinos.reduce((a, d) => a + Math.max(1, Math.floor(Number(d.cargas) || 1)), 0) : tipoGrav === 'veiculos_juntos' ? qtdVeiculos : 1,
+      })
+      .eq('id', id)
+    if (errTipo) throw errTipo
     const { error: errItens } = await supabase.rpc('salvar_custos_adicionais_cotacao', {
       p_cotacao_id: id,
       p_itens: itensParaBanco(),
@@ -1601,7 +1645,7 @@ export default function Cotacao() {
     const { error: errDelDestinos } = await supabase.from('cotacao_destinos').delete().eq('cotacao_id', id)
     if (errDelDestinos) throw errDelDestinos
     if (destinos.length > 0) {
-      const { error: errInsDestinos } = await supabase.from('cotacao_destinos').insert(
+      const { error: errInsDestinos } = await db.from('cotacao_destinos').insert(
         destinos.map((d, i) => ({
           cotacao_id: id as string,
           ordem: i,
@@ -1618,6 +1662,7 @@ export default function Cotacao() {
           margem_pct: (numOrNull(d.margem_pct) ?? 0) / 100,
           valor: calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro).valorFinal ?? 0,
           custo_financeiro: finDestino(d),
+          cargas_previstas: Math.max(1, Math.floor(Number(d.cargas) || 1)),
         })),
       )
       if (errInsDestinos) throw errInsDestinos
@@ -1714,53 +1759,151 @@ export default function Cotacao() {
   }
 
 
-  async function converter() {
-    if (!form || !editingId) return
+  // Validações antes de converter. Devolve a mensagem de erro ou null.
+  function erroParaConverter(): string | null {
+    if (!form) return 'Formulário vazio.'
+    if (!form.cliente_id) return 'Selecione um cliente antes de converter em operação.'
+    const erroDest = validarDestinos()
+    if (erroDest) return erroDest
+    if (destinos.length === 0) {
+      if (composicao?.frete == null || composicao.valorFinal == null) return 'Preencha o frete do motorista (e o restante da composição do preço) antes de converter em operação.'
+      if (composicao.erro) return composicao.erro
+      if (freteAbaixoDoPiso) {
+        return `O frete do motorista (${formatMoney(composicao.frete)}) está abaixo do piso mínimo ANTT (${formatMoney(pisoReferencia)}). Pela lei o motorista não pode receber menos que o piso — o CIOT é rejeitado. Ajuste antes de converter.`
+      }
+    }
+    if (obrigatoriosFaltando.length > 0) return `Custo obrigatório faltando: ${obrigatoriosFaltando.map((t) => t.nome).join(', ')}.`
+    return validarItens()
+  }
+
+  const tipoEfetivo: TipoCotacaoValor = destinos.length > 0 ? 'varias_entregas' : tipoCotacao
+  const cargasTotalForm =
+    tipoEfetivo === 'varias_entregas' ? destinos.reduce((a, d) => a + Math.max(1, Math.floor(Number(d.cargas) || 1)), 0) : tipoEfetivo === 'veiculos_juntos' ? qtdVeiculos : 1
+
+  // Botão "Converter em operação": valida e abre SEMPRE a janela de confirmação.
+  function abrirConfirmacaoConversao() {
     setFormError(null)
     setSuccessMsg(null)
-    if (!form.cliente_id) {
-      setFormError('Selecione um cliente antes de converter em operação.')
+    const erro = erroParaConverter()
+    if (erro) {
+      setFormError(erro)
       return
     }
+    setConfirmarConv(true)
+  }
+
+  function resumoConversao(): ResumoConversao {
+    const cliente = clienteNomePorId.get(form?.cliente_id ?? '') || 'Cliente a confirmar'
+    const origem = `${form?.cidade_origem || '?'}/${form?.uf_origem || '?'}`
     if (destinos.length > 0) {
-      setFormError('Cotação com múltiplos destinos ainda não converte em operação automaticamente — crie a operação de cada trecho manualmente em Operações.')
-      return
+      const calc = destinos.map((d) => calcularCustoDestino(d, aliquotaDestinos, finDestino(d), repassarGiro))
+      const valor = calc.reduce((a, r) => a + (r.valorFinal ?? 0), 0)
+      const lucro = calc.reduce((a, r) => a + (r.lucro ?? 0), 0)
+      const eixos = Array.from(new Set(destinos.map((d) => d.eixos).filter(Boolean)))
+      return {
+        cliente,
+        rota: `${origem} → ${destinos.length} destino${destinos.length > 1 ? 's' : ''}`,
+        veiculo: eixos.length ? `${eixos.join(' / ')} eixos` : 'A definir',
+        preco: round2(valor),
+        margem: valor > 0 ? formatPct(lucro / valor, 1) : '—',
+      }
     }
-    if (composicao?.frete == null || composicao.valorFinal == null) {
-      setFormError('Preencha o frete do motorista (e o restante da composição do preço) antes de converter em operação.')
-      return
+    return {
+      cliente,
+      rota: `${origem} → ${form?.cidade_destino || '?'}/${form?.uf_destino || '?'}`,
+      veiculo: [form?.tipo_carga, form?.eixos ? `${form.eixos} eixos` : ''].filter(Boolean).join(' · ') || 'A definir',
+      preco: composicao?.valorFinal ?? null,
+      margem: composicao?.margem != null ? formatPct(composicao.margem, 1) : '—',
     }
-    if (composicao.erro) {
-      setFormError(composicao.erro)
-      return
+  }
+
+  // Alimenta o histórico de pedágio (fonte 'cotacao') quando a cotação é convertida.
+  async function registrarPedagioHistorico(cotacaoId: string) {
+    if (!form) return
+    const linhas: Record<string, unknown>[] = []
+    const base = { fonte: 'cotacao', cotacao_id: cotacaoId, cidade_origem: form.cidade_origem.trim(), uf_origem: form.uf_origem.trim().toUpperCase() }
+    if (destinos.length === 0) {
+      const v = numOrNull(form.pedagio) ?? 0
+      const eixos = numOrNull(form.eixos)
+      if (v > 0 && eixos && base.cidade_origem && base.uf_origem && form.cidade_destino.trim() && form.uf_destino.trim()) {
+        linhas.push({ ...base, cidade_destino: form.cidade_destino.trim(), uf_destino: form.uf_destino.trim().toUpperCase(), eixos, valor: v })
+      }
+    } else {
+      for (const d of destinos) {
+        const v = numOrNull(d.pedagio) ?? 0
+        const eixos = numOrNull(d.eixos)
+        if (v > 0 && eixos && base.cidade_origem && base.uf_origem && d.cidade?.trim() && d.uf?.trim()) {
+          linhas.push({ ...base, cidade_destino: d.cidade.trim(), uf_destino: d.uf.trim().toUpperCase(), eixos, valor: v })
+        }
+      }
     }
-    if (freteAbaixoDoPiso) {
-      setFormError(
-        `O frete do motorista (${formatMoney(composicao.frete)}) está abaixo do piso mínimo ANTT (${formatMoney(pisoReferencia)}). Pela lei o motorista não pode receber menos que o piso — o CIOT é rejeitado. Ajuste antes de converter.`,
-      )
-      return
+    if (linhas.length === 0) return
+    await db.from('pedagio_historico').delete().eq('cotacao_id', cotacaoId).eq('fonte', 'cotacao')
+    await db.from('pedagio_historico').insert(linhas)
+  }
+
+  const recarregarConversao = useCallback(async (cotacaoId: string) => {
+    const [o, sd] = await Promise.all([
+      db.from('operacoes').select('id, status, grupo_saida_id').eq('cotacao_id', cotacaoId).order('created_at', { ascending: true }),
+      db.from('v_cotacao_saldo').select('cargas_total, cargas_abertas').eq('cotacao_id', cotacaoId).maybeSingle(),
+    ])
+    if (o.error) return null
+    const r = {
+      ops: (o.data ?? []) as { id: string; status: string; grupo_saida_id: string | null }[],
+      saldo: (sd.data as { cargas_total: number; cargas_abertas: number } | null) ?? null,
     }
-    if (obrigatoriosFaltando.length > 0) {
-      setFormError(`Custo obrigatório faltando: ${obrigatoriosFaltando.map((t) => t.nome).join(', ')}.`)
-      return
-    }
-    const erroItens = validarItens()
-    if (erroItens) {
-      setFormError(erroItens)
-      return
-    }
+    setInfoConv(r)
+    return r
+  }, [])
+
+  useEffect(() => {
+    if (editingId && editingStatus === 'convertida') void recarregarConversao(editingId)
+    else setInfoConv(null)
+  }, [editingId, editingStatus, recarregarConversao])
+
+  // Executa a conversão (chamado pela janela de confirmação). Erros sobem para o ✗ da janela.
+  async function converter() {
+    if (!form || !editingId) return
+    const erro = erroParaConverter()
+    if (erro) throw new Error(erro)
     setSaving(true)
     try {
       const final = await gravarTudo({ status: 'convertida' })
       sincronizarComBanco(final)
       setEditingStatus('convertida')
-      setSuccessMsg('Cotação convertida — operação criada automaticamente.')
+      try {
+        await registrarPedagioHistorico(final.id)
+      } catch {
+        /* histórico de pedágio é auxiliar: não derruba a conversão */
+      }
+      const r = await recarregarConversao(final.id)
+      const ativas = (r?.ops ?? []).filter((o) => o.status !== 'cancelada')
+      setConfirmarConv(false)
+      if (tipoEfetivo === 'varias_entregas') {
+        setBannerConv({ texto: 'Cotação convertida. Programe quantas operações abrir.', opId: null })
+        setProgramarAberto(true)
+      } else if (ativas.length === 1) {
+        setBannerConv({ texto: `Operação ${rotuloOperacao(ativas[0].id)} criada`, opId: ativas[0].id })
+      } else if (ativas.length > 1) {
+        setBannerConv({ texto: `${ativas.length} operações criadas (saída conjunta)`, opId: ativas[0].id })
+      } else {
+        setBannerConv({ texto: 'Cotação convertida', opId: null })
+      }
       await load()
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Erro ao converter cotação em operação.')
     } finally {
       setSaving(false)
     }
+  }
+
+  async function reabrirConvertida() {
+    if (!editingId) return
+    await rodarAcao('Cotação reaberta; voltou para enviada', async () => {
+      const { error } = await db.rpc('reabrir_cotacao', { p_cotacao: editingId })
+      if (error) throw error
+      setEditingStatus('enviada')
+      setBannerConv(null)
+      await load()
+    })
   }
 
   async function marcarPerdida() {
@@ -1811,21 +1954,38 @@ export default function Cotacao() {
   // como cinto de segurança extra. Destinos e custos adicionais somem sozinhos (cascade).
   async function apagarCotacao() {
     if (!editingId) return
-    if (!window.confirm('Apagar esta cotação de vez? Não dá pra desfazer.')) return
-    setFormError(null)
-    setSuccessMsg(null)
-    setSaving(true)
-    const { error } = await supabase.from('cotacoes').delete().eq('id', editingId)
-    setSaving(false)
-    if (error) {
-      setFormError(
-        error.code === '23503'
-          ? 'Essa cotação já tem operação, fatura ou lançamento financeiro vinculado — não dá pra apagar.'
-          : error.message,
-      )
+    setModalCancel('apagar')
+  }
+
+  // Executado pela janela: apagar de vez (sem operação) ou cancelar mantendo o histórico (motivo obrigatório).
+  async function confirmarCancelamento(motivo: string) {
+    if (!editingId) return
+    if (modalCancel === 'apagar') {
+      const { error } = await supabase.from('cotacoes').delete().eq('id', editingId)
+      if (error) {
+        throw new Error(
+          error.code === '23503'
+            ? 'Essa cotação já tem operação, fatura ou lançamento financeiro vinculado — não dá pra apagar; cancele mantendo o histórico.'
+            : error.message,
+        )
+      }
+      setModalCancel(null)
+      fecharForm()
+      await load()
       return
     }
-    fecharForm()
+    if (!motivo) throw new Error('Informe o motivo do cancelamento.')
+    if (editingStatus === 'convertida') {
+      const { error: errR } = await db.rpc('reabrir_cotacao', { p_cotacao: editingId })
+      if (errR) throw errR
+    }
+    const { error } = await db
+      .from('cotacoes')
+      .update({ status: 'perdida', motivo_perda: 'outro', motivo_perda_detalhe: motivo, cancelada_em: new Date().toISOString(), cancelada_motivo: motivo })
+      .eq('id', editingId)
+    if (error) throw error
+    setEditingStatus('perdida')
+    setModalCancel(null)
     await load()
   }
 
@@ -2001,8 +2161,11 @@ export default function Cotacao() {
         frete_motorista: '',
         pedagio: '',
         margem_pct: '',
+        cargas: '1',
       },
     ])
+    // Segundo destino numa carga única: vira "Várias entregas" sozinho.
+    setTipoCotacao('varias_entregas')
   }
 
   function editarDestino(key: string, campo: keyof DestinoLinha, valor: string) {
@@ -2163,6 +2326,8 @@ export default function Cotacao() {
         </div>
       </div>
 
+      <PainelPendencias modulo="cotacoes" />
+
       {listError && (
         <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {listError}
@@ -2253,17 +2418,89 @@ export default function Cotacao() {
             </div>
           )}
 
+          {confirmacao}
+
           {editingStatus === 'convertida' && (
-            <div className="rounded-xl px-3.5 py-3 flex flex-col gap-1" style={{ background: 'var(--rbr-warning-bg)' }}>
-              <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Cotação já convertida</div>
-              <div className="text-xs text-[color:var(--rbr-navy-dark)]">
-                A operação correspondente já foi criada automaticamente. Alterações salvas aqui não são refletidas nela.{' '}
-                <Link to="/operacoes" className="underline font-semibold">
-                  Ver operações
-                </Link>
+            <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2" style={{ background: 'var(--rbr-warning-bg)' }}>
+              {bannerConv && (
+                <Aviso tipo="ok">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span>✓ {bannerConv.texto}</span>
+                    {bannerConv.opId && (
+                      <Botao variante="primario" onClick={() => navigate(`/operacoes?op=${bannerConv.opId}`)}>
+                        Abrir operação
+                      </Botao>
+                    )}
+                  </div>
+                </Aviso>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">Cotação convertida · {TIPO_LABEL[tipoEfetivo]}</div>
+                {infoConv?.saldo && infoConv.saldo.cargas_total > 1 && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white" style={{ color: 'var(--rbr-navy)' }}>
+                    {infoConv.saldo.cargas_abertas} de {infoConv.saldo.cargas_total} abertas
+                  </span>
+                )}
               </div>
+              {(() => {
+                const ativas = (infoConv?.ops ?? []).filter((o) => o.status !== 'cancelada')
+                const saldoRest = infoConv?.saldo ? infoConv.saldo.cargas_total - infoConv.saldo.cargas_abertas : 0
+                return (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {ativas.length > 0 && (
+                      <Botao variante="primario" onClick={() => navigate(`/operacoes?op=${ativas[0].id}`)}>
+                        {ativas.length > 1 ? `Abrir operações (${ativas.length})` : 'Abrir operação'}
+                      </Botao>
+                    )}
+                    {tipoEfetivo === 'varias_entregas' && saldoRest > 0 && (
+                      <Botao variante="ouro" onClick={() => setProgramarAberto(true)}>
+                        Abrir próximas cargas
+                      </Botao>
+                    )}
+                    {infoConv && ativas.length === 0 && (
+                      <>
+                        <Botao variante="secundario" disabled={ocupadoAcao} onClick={reabrirConvertida}>
+                          {ocupadoAcao ? 'Enviando…' : 'Reabrir cotação'}
+                        </Botao>
+                        {infoConv.ops.length === 0 ? (
+                          <Botao variante="perigo" onClick={() => setModalCancel('apagar')}>
+                            Apagar cotação
+                          </Botao>
+                        ) : (
+                          <Botao variante="perigo" onClick={() => setModalCancel('cancelar')}>
+                            Cancelar cotação
+                          </Botao>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
+              {infoConv && infoConv.ops.some((o) => o.status !== 'cancelada') && (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">Para reabrir ou cancelar a cotação, cancele antes as operações em Operações.</div>
+              )}
             </div>
           )}
+
+          <TipoCotacao
+            tipo={tipoEfetivo}
+            onTipo={(t) => {
+              if (t !== 'varias_entregas' && destinos.length > 0) {
+                setFormError('Remova os destinos extras (aba avançada) antes de voltar para este tipo.')
+                return
+              }
+              setTipoCotacao(t)
+            }}
+            qtdVeiculos={qtdVeiculos}
+            onQtd={setQtdVeiculos}
+            destinos={destinos.map((d, i) => ({ key: d.key, nome: d.endereco || `Destino ${i + 1}`, cargas: d.cargas ?? '1' }))}
+            onCargas={(key, v) => setDestinos((l) => l.map((d) => (d.key === key ? { ...d, cargas: v } : d)))}
+            onAdicionarDestinos={() => {
+              setAbaCotacao('avancada')
+              adicionarDestino()
+            }}
+            travado={editingStatus !== 'rascunho'}
+          />
 
           {/* Cliente e documento fiscal — card com fundo levemente colorido e borda à
               esquerda, pra separar visualmente das outras seções (igual ao preview aprovado). */}
@@ -2815,8 +3052,7 @@ export default function Cotacao() {
               <div className="text-[11px] text-[color:var(--rbr-muted)]">
                 Pra cotação com um CD ou origem única distribuindo pra várias cidades — cada linha é um destino com o valor final
                 cobrado do cliente naquele trecho. Ao usar essa lista, o valor total da cotação vira a soma das linhas (a composição de
-                preço de rota única abaixo fica de fora). "Converter em operação" fica desabilitado — crie a operação de cada trecho
-                manualmente depois.
+                preço de rota única abaixo fica de fora). Ao converter, você programa quantas operações abrir por destino.
               </div>
 
               {destinos.map((d) => {
@@ -2953,6 +3189,15 @@ export default function Cotacao() {
                           onChange={(e) => editarDestino(d.key, 'pedagio', e.target.value)}
                           className={inputClass}
                           style={{ ...inputStyle, background: '#fff' }}
+                        />
+                        <PedagioSugerido
+                          cidadeOrigem={form.cidade_origem}
+                          ufOrigem={form.uf_origem}
+                          cidadeDestino={d.cidade ?? ''}
+                          ufDestino={d.uf ?? ''}
+                          eixos={d.eixos}
+                          pedagioAtual={d.pedagio}
+                          onUsar={(v) => editarDestino(d.key, 'pedagio', String(v))}
                         />
                       </div>
                     </div>
@@ -3375,6 +3620,17 @@ export default function Cotacao() {
                   className={inputClass}
                   style={{ ...inputStyle, background: '#fff', opacity: pracasPedagio.length > 0 ? 0.6 : 1 }}
                 />
+                {pracasPedagio.length === 0 && (
+                  <PedagioSugerido
+                    cidadeOrigem={form.cidade_origem}
+                    ufOrigem={form.uf_origem}
+                    cidadeDestino={form.cidade_destino}
+                    ufDestino={form.uf_destino}
+                    eixos={form.eixos}
+                    pedagioAtual={form.pedagio}
+                    onUsar={(v) => setForm((f) => (f ? { ...f, pedagio: String(v) } : f))}
+                  />
+                )}
               </div>
             </div>
             {!carregandoPiso && !pisoInfo && (
@@ -4115,9 +4371,8 @@ export default function Cotacao() {
 
             {editingId && (editingStatus === 'rascunho' || editingStatus === 'enviada') && (
               <button
-                onClick={converter}
-                disabled={saving || destinos.length > 0}
-                title={destinos.length > 0 ? 'Cotação com múltiplos destinos — crie a operação de cada trecho manualmente em Operações' : undefined}
+                onClick={abrirConfirmacaoConversao}
+                disabled={saving}
                 className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
                 style={{ background: 'var(--rbr-positive)', color: '#fff' }}
               >
@@ -4295,6 +4550,30 @@ export default function Cotacao() {
             )
           })}
       </div>
+
+      {confirmarConv && form && (
+        <ConfirmarConversaoModal
+          resumo={resumoConversao()}
+          tipo={tipoEfetivo}
+          qtdVeiculos={qtdVeiculos}
+          cargasTotal={cargasTotalForm}
+          onConfirmar={converter}
+          onFechar={() => setConfirmarConv(false)}
+        />
+      )}
+      {programarAberto && editingId && (
+        <ProgramarOperacoesModal
+          cotacaoId={editingId}
+          onFechar={() => setProgramarAberto(false)}
+          onMudou={() => {
+            void recarregarConversao(editingId)
+            void load()
+          }}
+        />
+      )}
+      {modalCancel && (
+        <CancelarCotacaoModal modo={modalCancel} onConfirmar={confirmarCancelamento} onFechar={() => setModalCancel(null)} />
+      )}
     </div>
   )
 }

@@ -5,6 +5,10 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
+import { db } from '../lib/novoDb'
+import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../components/financeiro/ui'
+import { useConfirmacao } from '../components/Confirmacao'
+import PainelPendencias from '../components/PainelPendencias'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
 import DadosEmissao from '../components/operacao/DadosEmissao'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
@@ -119,6 +123,12 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
 
   const [motivoLiberacao, setMotivoLiberacao] = useState('')
   const [motivoCancelamento, setMotivoCancelamento] = useState('')
+  // Saída conjunta / carga N de M (colunas novas, lidas sem tipagem).
+  const [extras, setExtras] = useState<Record<string, { sequencia: number | null; grupo: string | null; total: number | null }>>({})
+  const [cancelFeito, setCancelFeito] = useState(false)
+  const [cancelando, setCancelando] = useState<OperacaoEnriquecida | null>(null)
+  const [bloqueioCancel, setBloqueioCancel] = useState<{ documentos: { tipo: string; status: string; numero: string | null }[]; ordem: string } | null>(null)
+  const { confirmacao: confCancel, rodar: rodarCancel, ocupado: ocupadoCancel } = useConfirmacao()
   const [busca, setBusca] = useState('')
   const [showDadosEmissao, setShowDadosEmissao] = useState(false)
   const [assessoria, setAssessoria] = useState<AssessoriaContato>({ nome: '', whatsapp: '', email: '' })
@@ -155,6 +165,15 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       cotacaoDetalhe: (op as any).cotacoes ?? null,
     }))
     setOperacoes(mapeadas)
+    db.from('operacoes')
+      .select('id, sequencia, grupo_saida_id, cotacoes(cargas_total)')
+      .order('updated_at', { ascending: false })
+      .limit(300)
+      .then(({ data: ex }: { data: Record<string, any>[] | null }) => {
+        const m: Record<string, { sequencia: number | null; grupo: string | null; total: number | null }> = {}
+        for (const r of ex ?? []) m[r.id] = { sequencia: r.sequencia ?? null, grupo: r.grupo_saida_id ?? null, total: r.cotacoes?.cargas_total ?? null }
+        setExtras(m)
+      })
     setLoading(false)
     primeiraCarga.current = false
     carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))
@@ -270,19 +289,37 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     setMotivoLiberacao('')
   }
 
-  // Não apaga a linha do banco — operação já tem lançamento financeiro/documento fiscal
-  // amarrado, e apagar de verdade quebraria isso. "Cancelar" usa o status que já existe no
-  // schema (cancelada_em/cancelada_por/motivo_cancelamento) — some das listas ativas, mas o
-  // histórico continua íntegro.
-  async function cancelarOperacao(op: OperacaoEnriquecida) {
-    if (!window.confirm('Cancelar esta operação? Ela some das listas ativas, mas o histórico financeiro/fiscal fica registrado (não dá pra desfazer sozinho depois).')) return
-    const ok = await atualizarOperacao(op.id, {
-      status: 'cancelada',
-      cancelada_em: new Date().toISOString(),
-      cancelada_por: gestor.id,
-      motivo_cancelamento: motivoCancelamento.trim() || null,
+  // Não apaga a linha do banco: cancelar_operacao devolve a carga ao saldo da cotação e recusa quando há
+  // CT-e/MDF-e emitido (nesse caso mostra os documentos e a ordem certa de cancelamento).
+  function abrirCancelamento(op: OperacaoEnriquecida) {
+    setMotivoCancelamento('')
+    setBloqueioCancel(null)
+    setCancelFeito(false)
+    setCancelando(op)
+  }
+
+  async function confirmarCancelamento() {
+    if (!cancelando) return
+    const motivo = motivoCancelamento.trim()
+    if (!motivo) {
+      setBloqueioCancel(null)
+      await rodarCancel('', async () => {
+        throw new Error('Informe o motivo do cancelamento.')
+      })
+      return
+    }
+    await rodarCancel('Operação cancelada; a carga voltou ao saldo da cotação', async () => {
+      const { data, error } = await db.rpc('cancelar_operacao', { p_operacao: cancelando.id, p_motivo: motivo })
+      if (error) throw error
+      const r = data as { cancelada: boolean; documentos?: { tipo: string; status: string; numero: string | null }[]; ordem?: string }
+      if (!r?.cancelada) {
+        setBloqueioCancel({ documentos: r?.documentos ?? [], ordem: r?.ordem ?? 'Cancele primeiro o MDF-e e depois o CT-e na tela Fiscal.' })
+        throw new Error('Não cancelei: há documento fiscal emitido nesta operação.')
+      }
+      setBloqueioCancel(null)
+      setCancelFeito(true)
+      await load()
     })
-    if (ok) setMotivoCancelamento('')
   }
 
   async function togglePagamentoPosEntrega(op: OperacaoEnriquecida) {
@@ -446,14 +483,31 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const lista = useMemo(() => {
     const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     const termo = norm(busca.trim())
-    return (operacoes ?? []).filter((op) => {
+    const filtradas = (operacoes ?? []).filter((op) => {
       if (filtro !== 'todas' && op.status !== filtro) return false
       if (!termo) return true
       const cot = op.cotacaoDetalhe
       const campos = [op.clienteNome ?? '', cot?.cidade_origem ?? '', cot?.cidade_destino ?? '', cot?.uf_origem ?? '', cot?.uf_destino ?? '', op.id.slice(0, 8)]
       return campos.some((c) => norm(c).includes(termo))
     })
-  }, [operacoes, filtro, busca])
+    // Operações da mesma saída conjunta ficam juntas (na posição da primeira).
+    const grupos = new Map<string, OperacaoEnriquecida[]>()
+    for (const op of filtradas) {
+      const g = extras[op.id]?.grupo
+      if (g) grupos.set(g, [...(grupos.get(g) ?? []), op])
+    }
+    const vistos = new Set<string>()
+    const saida: OperacaoEnriquecida[] = []
+    for (const op of filtradas) {
+      const g = extras[op.id]?.grupo
+      if (!g) saida.push(op)
+      else if (!vistos.has(g)) {
+        vistos.add(g)
+        saida.push(...(grupos.get(g) ?? []).sort((x, y) => (extras[x.id]?.sequencia ?? 0) - (extras[y.id]?.sequencia ?? 0)))
+      }
+    }
+    return saida
+  }, [operacoes, filtro, busca, extras])
 
   return (
     <div className="flex flex-col gap-4">
@@ -507,6 +561,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
       </div>
 
+      <PainelPendencias modulo="operacoes" />
+
       <AvisoCargasAguardando
         cargas={cargasAguardando}
         rotulo={(c) => operacoes?.find((o) => o.id === c.operacao_id)?.clienteNome}
@@ -540,7 +596,12 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
             const isExpanded = expandedId === op.id
             const averbacao = averbacoes[op.id]
             return (
-              <div key={op.id} id={`op-${op.id}`} className="bg-white border rounded-[20px] overflow-hidden" style={cardStyle}>
+              <div
+                key={op.id}
+                id={`op-${op.id}`}
+                className="bg-white border rounded-[20px] overflow-hidden"
+                style={extras[op.id]?.grupo ? { ...cardStyle, borderLeft: '4px solid var(--rbr-gold)' } : cardStyle}
+              >
                 <button className="w-full text-left p-[18px]" onClick={() => toggleExpand(op)}>
                   <div className="flex items-center justify-between mb-2.5 gap-3 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -550,6 +611,16 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                       >
                         {STATUS_OPERACAO_LABEL[op.status]}
                       </span>
+                      {extras[op.id]?.grupo && (
+                        <span className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
+                          Saída conjunta
+                        </span>
+                      )}
+                      {extras[op.id]?.sequencia != null && (extras[op.id]?.total ?? 1) > 1 && (
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
+                          carga {extras[op.id]?.sequencia} de {extras[op.id]?.total}
+                        </span>
+                      )}
                       {op.bloqueio_fiscal && (
                         <span
                           className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
@@ -968,25 +1039,10 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                     </div>
 
                     {op.status !== 'cancelada' && (
-                      <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2 border" style={{ borderColor: 'var(--rbr-danger)' }}>
-                        <div className="text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+                      <div>
+                        <Botao variante="perigo" onClick={() => abrirCancelamento(op)}>
                           Cancelar operação
-                        </div>
-                        <input
-                          value={motivoCancelamento}
-                          onChange={(e) => setMotivoCancelamento(e.target.value)}
-                          placeholder="Motivo do cancelamento (opcional)"
-                          className="border rounded-lg px-3 py-2 text-xs outline-none bg-white"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                        <button
-                          onClick={() => cancelarOperacao(op)}
-                          disabled={saving}
-                          className="self-start text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                          style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                        >
-                          {saving ? 'Salvando…' : 'Cancelar operação'}
-                        </button>
+                        </Botao>
                       </div>
                     )}
                   </div>
@@ -995,6 +1051,48 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
             )
           })}
       </div>
+
+      {cancelando && (
+        <Modal titulo="Cancelar operação" onFechar={ocupadoCancel ? () => {} : () => setCancelando(null)} largura="max-w-md">
+          <div className="flex flex-col gap-3">
+            <div className="text-xs text-[color:var(--rbr-muted)]">
+              {cancelando.clienteNome ?? 'Cliente a confirmar'} · #{cancelando.id.slice(0, 8)}. A carga volta ao saldo da cotação.
+            </div>
+            <Campo label="Motivo (obrigatório)">
+              <input
+                value={motivoCancelamento}
+                onChange={(e) => setMotivoCancelamento(e.target.value)}
+                className={inputClass}
+                style={inputStyle}
+                placeholder="Ex.: cliente adiou a carga"
+              />
+            </Campo>
+            {bloqueioCancel && (
+              <Aviso tipo="atencao">
+                <div className="font-bold mb-1">Há documento fiscal emitido</div>
+                {bloqueioCancel.documentos.map((d, i) => (
+                  <div key={i}>
+                    {d.tipo === 'mdfe' ? 'MDF-e' : d.tipo === 'cte' ? 'CT-e' : d.tipo.toUpperCase()} {d.numero ?? ''} · {d.status}
+                  </div>
+                ))}
+                <div className="mt-1">{bloqueioCancel.ordem}</div>
+                <Link to="/fiscal" className="underline font-bold">
+                  Ir para Fiscal
+                </Link>
+              </Aviso>
+            )}
+            {confCancel}
+            <div className="flex justify-end gap-2">
+              <Botao variante="secundario" onClick={() => setCancelando(null)} disabled={ocupadoCancel}>
+                {cancelFeito ? 'Fechar' : 'Voltar'}
+              </Botao>
+              <Botao variante="perigo" disabled={ocupadoCancel || cancelFeito || !motivoCancelamento.trim()} onClick={() => void confirmarCancelamento()}>
+                {ocupadoCancel ? 'Enviando…' : 'Cancelar operação'}
+              </Botao>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

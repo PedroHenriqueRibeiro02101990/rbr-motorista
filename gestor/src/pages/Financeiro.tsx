@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { carregarApoio, erroMsg, type Apoio } from '../lib/financeiro'
+import PainelPendencias from '../components/PainelPendencias'
 import { Aviso, Carregando } from '../components/financeiro/ui'
 
 const VisaoGeral = lazy(() => import('../components/financeiro/VisaoGeral'))
@@ -68,6 +69,8 @@ export default function Financeiro() {
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Financeiro</h1>
       </div>
+
+      <PainelPendencias modulo="financeiro" recarregarKey={versao} />
 
       <nav className="-mx-1 overflow-x-auto" aria-label="Seções do financeiro">
         <div className="flex gap-1 px-1 border-b min-w-max" style={{ borderColor: 'var(--rbr-border)' }}>

@@ -14,6 +14,9 @@ import GestaoContatos from '../components/cadastros/GestaoContatos'
 import RiscoComercial, { SeloProtestoLista } from '../components/cadastros/RiscoComercial'
 import { estadoDaConsulta, lerRegraProtesto, lerUltimasConsultas, type EstadoConsulta } from '../lib/protesto'
 import PainelCadastro from '../components/cadastros/PainelCadastro'
+import ComprovanteResidencia from '../components/cadastros/ComprovanteResidencia'
+import FichaCliente from '../components/cadastros/FichaCliente'
+import PainelPendencias from '../components/PainelPendencias'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -126,6 +129,10 @@ const MOTORISTA_INICIAL = {
   banco_agencia: '',
   banco_conta: '',
   banco_tipo_conta: '',
+  data_nascimento: '',
+  vinculo: '',
+  comprovante_residencia_url: '',
+  comprovante_residencia_data: '',
 }
 
 const AGENCIADOR_INICIAL = {
@@ -218,6 +225,7 @@ const VEICULO_INICIAL = {
   seguro_veiculo_seguradora: '',
   seguro_veiculo_apolice_numero: '',
   seguro_veiculo_vencimento: '',
+  crlv_exercicio: '',
 }
 
 function cnhVencidaOuAusente(validade: string | null | undefined): boolean {
@@ -329,6 +337,7 @@ export default function Cadastros() {
   const [veiculosPorMotorista, setVeiculosPorMotorista] = useState<Record<string, Veiculo[]>>({})
   const [showNovoVeiculoId, setShowNovoVeiculoId] = useState<string | null>(null)
   const [novoVeiculo, setNovoVeiculo] = useState(VEICULO_INICIAL)
+  const [fichaCliente, setFichaCliente] = useState<Cliente | null>(null)
   const [salvandoVeiculo, setSalvandoVeiculo] = useState(false)
   const [erroVeiculo, setErroVeiculo] = useState<string | null>(null)
   const [editingVeiculoId, setEditingVeiculoId] = useState<string | null>(null)
@@ -921,6 +930,10 @@ export default function Cadastros() {
       banco_agencia: novoMotorista.banco_agencia.trim() || null,
       banco_conta: novoMotorista.banco_conta.trim() || null,
       banco_tipo_conta: novoMotorista.banco_tipo_conta || null,
+      data_nascimento: novoMotorista.data_nascimento || null,
+      vinculo: novoMotorista.vinculo || null,
+      comprovante_residencia_url: novoMotorista.comprovante_residencia_url || null,
+      comprovante_residencia_data: novoMotorista.comprovante_residencia_data || null,
     }
   }
 
@@ -938,8 +951,8 @@ export default function Cadastros() {
     try {
       const payload = montarPayloadMotorista()
       const { error } = editingMotoristaId
-        ? await supabase.from('pessoas').update(payload).eq('id', editingMotoristaId)
-        : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
+        ? await supabase.from('pessoas').update(payload as never).eq('id', editingMotoristaId)
+        : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' } as never)
       if (error) throw error
       fecharFormMotorista()
       await loadMotoristas()
@@ -977,6 +990,15 @@ export default function Cadastros() {
       banco_agencia: m.banco_agencia ?? '',
       banco_conta: m.banco_conta ?? '',
       banco_tipo_conta: m.banco_tipo_conta ?? '',
+      ...(() => {
+        const x = m as unknown as Record<string, string | null | undefined>
+        return {
+          data_nascimento: x.data_nascimento ?? '',
+          vinculo: x.vinculo ?? '',
+          comprovante_residencia_url: x.comprovante_residencia_url ?? '',
+          comprovante_residencia_data: x.comprovante_residencia_data ?? '',
+        }
+      })(),
     })
     setShowNovoMotorista(true)
   }
@@ -1025,6 +1047,7 @@ export default function Cadastros() {
       seguro_veiculo_seguradora: novoVeiculo.seguro_veiculo_seguradora.trim() || null,
       seguro_veiculo_apolice_numero: novoVeiculo.seguro_veiculo_apolice_numero.trim() || null,
       seguro_veiculo_vencimento: novoVeiculo.seguro_veiculo_vencimento || null,
+      crlv_exercicio: novoVeiculo.crlv_exercicio ? Number(novoVeiculo.crlv_exercicio) : null,
     }
   }
 
@@ -1042,8 +1065,8 @@ export default function Cadastros() {
     try {
       const payload = montarPayloadVeiculo()
       const { error } = editingVeiculoId
-        ? await supabase.from('veiculos').update(payload).eq('id', editingVeiculoId)
-        : await supabase.from('veiculos').insert({ ...payload, titular_id: motoristaId })
+        ? await supabase.from('veiculos').update(payload as never).eq('id', editingVeiculoId)
+        : await supabase.from('veiculos').insert({ ...payload, titular_id: motoristaId } as never)
       if (error) throw error
       fecharFormVeiculo()
       await carregarVeiculosDoMotorista(motoristaId)
@@ -1085,6 +1108,7 @@ export default function Cadastros() {
       seguro_veiculo_seguradora: v.seguro_veiculo_seguradora ?? '',
       seguro_veiculo_apolice_numero: v.seguro_veiculo_apolice_numero ?? '',
       seguro_veiculo_vencimento: v.seguro_veiculo_vencimento ?? '',
+      crlv_exercicio: String((v as unknown as { crlv_exercicio?: number | null }).crlv_exercicio ?? ''),
     })
     setShowNovoVeiculoId(motoristaId)
   }
@@ -1505,6 +1529,8 @@ export default function Cadastros() {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Cadastros</h1>
       </div>
 
+      <PainelPendencias modulo="cadastros" />
+
       <div className="flex items-center gap-2 flex-wrap">
         {TABS.map((t) => (
           <button
@@ -1529,6 +1555,8 @@ export default function Cadastros() {
           </button>
         ))}
       </div>
+
+      {fichaCliente && <FichaCliente cliente={{ ...fichaCliente, cnpj: fichaCliente.cnpj }} onFechar={() => setFichaCliente(null)} />}
 
       {tab === 'pendencias' && <Pendencias onContagem={setQtdPendencias} />}
 
@@ -1766,6 +1794,9 @@ export default function Cadastros() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
+                      <button onClick={() => setFichaCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>
+                        Ficha
+                      </button>
                       <button onClick={() => editarCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
                         Editar
                       </button>
@@ -1921,6 +1952,37 @@ export default function Cadastros() {
                   style={inputStyle}
                 />
               </div>
+
+              <div className={labelClass}>Dados do motorista</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+                  Data de nascimento
+                  <input
+                    type="date"
+                    value={novoMotorista.data_nascimento}
+                    onChange={(e) => setNovoMotorista((f) => ({ ...f, data_nascimento: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+                  Vínculo
+                  <select value={novoMotorista.vinculo} onChange={(e) => setNovoMotorista((f) => ({ ...f, vinculo: e.target.value }))} className={inputClass} style={inputStyle}>
+                    <option value="">Escolha…</option>
+                    <option value="proprio">Próprio</option>
+                    <option value="agregado">Agregado</option>
+                    <option value="terceiro">Terceiro</option>
+                    <option value="autonomo">Autônomo</option>
+                    <option value="funcionario">Funcionário</option>
+                  </select>
+                </label>
+              </div>
+              <ComprovanteResidencia
+                pessoaId={editingMotoristaId}
+                url={novoMotorista.comprovante_residencia_url}
+                data={novoMotorista.comprovante_residencia_data}
+                onChange={(url, data) => setNovoMotorista((f) => ({ ...f, comprovante_residencia_url: url, comprovante_residencia_data: data }))}
+              />
 
               <div className={labelClass}>CNH</div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -2556,6 +2618,15 @@ export default function Cadastros() {
                                 type="date"
                                 value={novoVeiculo.seguro_veiculo_vencimento}
                                 onChange={(e) => setNovoVeiculo((f) => ({ ...f, seguro_veiculo_vencimento: e.target.value }))}
+                                className={miniInputClass}
+                                style={inputStyle}
+                              />
+                              <input
+                                placeholder="Exercício do CRLV (ano)"
+                                inputMode="numeric"
+                                maxLength={4}
+                                value={novoVeiculo.crlv_exercicio}
+                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, crlv_exercicio: e.target.value.replace(/\D/g, '') }))}
                                 className={miniInputClass}
                                 style={inputStyle}
                               />

@@ -17,6 +17,8 @@ import {
   whatsappLink,
 } from '../../lib/financeiro'
 import type { BancoFatura, EmpresaFatura } from '../../lib/faturaPdf'
+import VencimentoBoleto, { type EscolhaVencimento } from './VencimentoBoleto'
+import { db } from '../../lib/novoDb'
 import { Aviso, Botao, Campo, Card, Carregando, Chips, Modal, Pill, Vazio, inputClass, inputStyle } from './ui'
 import { BaixaModal, Copiar } from './LancamentoModais'
 
@@ -153,6 +155,7 @@ export function NovaFaturaModal({
   const [obs, setObs] = useState('')
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [escolha, setEscolha] = useState<EscolhaVencimento | null>(null)
 
   useEffect(() => {
     if (!cliente) {
@@ -188,9 +191,18 @@ export function NovaFaturaModal({
     if (!escolhidos.length) return setErro('Selecione ao menos um item.')
     if (!venc) return setErro('Informe o vencimento.')
     setSalvando(true)
-    const { data, error } = await supabase.rpc('criar_fatura', { p_lancamentos: escolhidos.map((l) => l.id!), p_vencimento: venc, p_forma: forma, p_obs: obs || undefined })
+    const dataFinal = escolha?.data ?? venc
+    const { data, error } = await supabase.rpc('criar_fatura', { p_lancamentos: escolhidos.map((l) => l.id!), p_vencimento: dataFinal, p_forma: forma, p_obs: obs || undefined })
+    if (error) {
+      setSalvando(false)
+      return setErro('✗ ' + error.message)
+    }
+    const { error: e2 } = await db
+      .from('faturas')
+      .update({ vencimento_original: escolha?.original ?? venc, vencimento_ajuste: escolha?.ajuste ?? 'manter', boleto_emitido_em: hojeISO() })
+      .eq('id', data as string)
     setSalvando(false)
-    if (error) return setErro(error.message)
+    if (e2) setErro('Fatura criada, mas não consegui gravar o ajuste do vencimento: ' + e2.message)
     onCriada(data as string)
   }
 
@@ -252,6 +264,7 @@ export function NovaFaturaModal({
       <Campo label="Observações (saem na fatura)">
         <input value={obs} onChange={(e) => setObs(e.target.value)} className={inputClass} style={inputStyle} />
       </Campo>
+      <VencimentoBoleto clienteId={cliente} emissao={hojeISO()} venc={venc} onChange={setEscolha} />
       <div className="text-[11px] text-[color:var(--rbr-muted)]">Ao criar, o vencimento de todos os itens passa a ser o da fatura.</div>
       {erro && <Aviso>{erro}</Aviso>}
       <div className="flex justify-end gap-2">
@@ -259,7 +272,7 @@ export function NovaFaturaModal({
           Cancelar
         </Botao>
         <Botao onClick={criar} disabled={salvando}>
-          {salvando ? 'Criando…' : 'Criar fatura'}
+          {salvando ? 'enviando…' : 'Criar fatura'}
         </Botao>
       </div>
     </Modal>
@@ -273,6 +286,7 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
   const [pix, setPix] = useState('')
   const [erro, setErro] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+  const [alterando, setAlterando] = useState(false)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [baixa, setBaixa] = useState(false)
 
@@ -421,15 +435,8 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
     carregar()
   }
 
-  async function alterarVenc() {
-    const nova = window.prompt('Novo vencimento (DD/MM/AAAA):', f ? fmtData(f.data_vencimento) : '')
-    if (!nova) return
-    const m = nova.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-    if (!m) return setErro('Use o formato DD/MM/AAAA.')
-    const { error } = await supabase.rpc('alterar_vencimento_fatura', { p_fatura: id, p_vencimento: `${m[3]}-${m[2]}-${m[1]}` })
-    if (error) return setErro(error.message)
-    carregar()
-    onMudou()
+  function alterarVenc() {
+    setAlterando(true)
   }
 
   async function cancelar() {
@@ -551,6 +558,20 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
           )}
         </div>
       </Modal>
+      {alterando && (
+        <AlterarVencimentoModal
+          faturaId={id}
+          clienteId={f.cliente_id}
+          vencAtual={f.data_vencimento}
+          onFechar={() => setAlterando(false)}
+          onFeito={() => {
+            setAlterando(false)
+            setOk('Vencimento alterado.')
+            carregar()
+            onMudou()
+          }}
+        />
+      )}
       {baixa && (
         <BaixaModal
           lancamentos={abertos}
@@ -563,5 +584,79 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
         />
       )}
     </>
+  )
+}
+
+function AlterarVencimentoModal({
+  faturaId,
+  clienteId,
+  vencAtual,
+  onFechar,
+  onFeito,
+}: {
+  faturaId: string
+  clienteId: string | null | undefined
+  vencAtual: string | null | undefined
+  onFechar: () => void
+  onFeito: () => void
+}) {
+  const [venc, setVenc] = useState(vencAtual ?? '')
+  const [escolha, setEscolha] = useState<EscolhaVencimento | null>(null)
+  const [emissao, setEmissao] = useState(hojeISO())
+  const [erro, setErro] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+
+  useEffect(() => {
+    db.from('faturas')
+      .select('boleto_emitido_em')
+      .eq('id', faturaId)
+      .maybeSingle()
+      .then(({ data }) => {
+        const e = (data as { boleto_emitido_em?: string | null } | null)?.boleto_emitido_em
+        if (e) setEmissao(e)
+      })
+  }, [faturaId])
+
+  async function confirmar() {
+    if (!venc) return setErro('✗ Informe a nova data.')
+    setSalvando(true)
+    setErro(null)
+    const dataFinal = escolha?.data ?? venc
+    const { error } = await supabase.rpc('alterar_vencimento_fatura', { p_fatura: faturaId, p_vencimento: dataFinal })
+    if (error) {
+      setSalvando(false)
+      return setErro('✗ ' + error.message)
+    }
+    const { data: atual } = await db.from('faturas').select('vencimento_original, boleto_emitido_em').eq('id', faturaId).maybeSingle()
+    const a = atual as { vencimento_original?: string | null; boleto_emitido_em?: string | null } | null
+    const { error: e2 } = await db
+      .from('faturas')
+      .update({
+        vencimento_original: a?.vencimento_original ?? escolha?.original ?? venc,
+        vencimento_ajuste: escolha?.ajuste ?? 'manter',
+        ...(a?.boleto_emitido_em ? {} : { boleto_emitido_em: hojeISO() }),
+      })
+      .eq('id', faturaId)
+    setSalvando(false)
+    if (e2) return setErro('✗ Vencimento alterado, mas não consegui gravar o ajuste: ' + e2.message)
+    onFeito()
+  }
+
+  return (
+    <Modal titulo="Alterar vencimento" onFechar={onFechar} largura="max-w-lg">
+      <Campo label="Nova data de vencimento">
+        <input type="date" value={venc} onChange={(e) => setVenc(e.target.value)} className={inputClass} style={inputStyle} />
+      </Campo>
+      <VencimentoBoleto clienteId={clienteId} emissao={emissao} venc={venc} onChange={setEscolha} />
+      {erro && <Aviso>{erro}</Aviso>}
+      <div className="flex justify-end gap-2">
+        <Botao variante="secundario" onClick={onFechar}>
+          Cancelar
+        </Botao>
+        <Botao onClick={confirmar} disabled={salvando}>
+          {salvando ? 'enviando…' : 'Confirmar'}
+        </Botao>
+      </div>
+    </Modal>
   )
 }
