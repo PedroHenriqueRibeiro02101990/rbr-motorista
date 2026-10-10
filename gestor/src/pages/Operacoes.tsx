@@ -129,6 +129,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [cancelando, setCancelando] = useState<OperacaoEnriquecida | null>(null)
   const [bloqueioCancel, setBloqueioCancel] = useState<{ documentos: { tipo: string; status: string; numero: string | null }[]; ordem: string } | null>(null)
   const { confirmacao: confCancel, rodar: rodarCancel, ocupado: ocupadoCancel } = useConfirmacao()
+  const { confirmacao: confIndicacao, rodar: rodarIndicacao, ocupado: ocupadoIndicacao } = useConfirmacao()
+  const [painelKey, setPainelKey] = useState(0)
   const [busca, setBusca] = useState('')
   const [showDadosEmissao, setShowDadosEmissao] = useState(false)
   const [assessoria, setAssessoria] = useState<AssessoriaContato>({ nome: '', whatsapp: '', email: '' })
@@ -561,7 +563,49 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
       </div>
 
-      <PainelPendencias modulo="operacoes" />
+      {confIndicacao}
+      <PainelPendencias
+        modulo="operacoes"
+        recarregarKey={painelKey}
+        acao={(p) =>
+          p.ref_tipo === 'indicacao' ? (
+            <span className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={ocupadoIndicacao}
+                className="text-xs font-bold text-[color:var(--rbr-navy)] disabled:opacity-50"
+                onClick={async () => {
+                  const ok = await rodarIndicacao('Indicação aceita: motorista alocado na operação', async () => {
+                    const { error } = await db.rpc('resolver_indicacao_motorista', { p_indicacao: p.ref_id, p_aceitar: true })
+                    if (error) throw error
+                    return true
+                  })
+                  if (ok) { setPainelKey((k) => k + 1); void load() }
+                }}
+              >
+                Aceitar
+              </button>
+              <button
+                type="button"
+                disabled={ocupadoIndicacao}
+                className="text-xs font-bold text-[color:var(--rbr-danger)] disabled:opacity-50"
+                onClick={async () => {
+                  const motivo = window.prompt('Motivo da recusa (o agenciador vê):') ?? ''
+                  if (!motivo.trim()) return
+                  const ok = await rodarIndicacao('Indicação recusada', async () => {
+                    const { error } = await db.rpc('resolver_indicacao_motorista', { p_indicacao: p.ref_id, p_aceitar: false, p_motivo: motivo.trim() })
+                    if (error) throw error
+                    return true
+                  })
+                  if (ok) setPainelKey((k) => k + 1)
+                }}
+              >
+                Recusar
+              </button>
+            </span>
+          ) : undefined
+        }
+      />
 
       <AvisoCargasAguardando
         cargas={cargasAguardando}
