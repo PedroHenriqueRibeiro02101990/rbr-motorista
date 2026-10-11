@@ -1,0 +1,22 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { supabase } from './supabaseClient'
+
+// Cliente SEM tipagem, só para as tabelas, colunas e RPCs criadas pelas migrations supabase-migrations/20261011_*.sql,
+// que ainda NÃO existem no banco real (kwscmegsfbtvlnyxougt) e por isso não estão no database.types.ts.
+// Tudo o que já existe no banco continua usando `supabase` (tipado).
+// Quando essas migrations forem aplicadas e os tipos regenerados (supabase gen types), trocar cada `dbNovo` por
+// `supabase`, deixar o tsc apontar os ajustes e apagar este arquivo.
+export const dbNovo = supabase as unknown as SupabaseClient
+
+// Colunas novas de pessoas (20261011_01 e seguintes). Uma linha lida com select('*') já traz esses campos em runtime;
+// `novos()` só dá o tipo a eles. Some junto com este arquivo quando os tipos forem regenerados.
+export type TipoParceiro = 'tac_pf' | 'mei_caminhoneiro' | 'etc'
+export type ClassificacaoCiot = 'tac' | 'etc_equiparada_tac' | 'etc_ciot_proprio' | 'etc_frota_nao_informada'
+export type PessoaNova = {
+  tipo_parceiro?: TipoParceiro | null
+  qtd_veiculos_rntrc?: number | null
+  opcao_inss_direto?: boolean | null
+  data_comunicacao_inss_direto?: string | null
+  classificacao_ciot?: ClassificacaoCiot | null
+}
+export const novos = <T extends object>(linha: T) => linha as T & PessoaNova

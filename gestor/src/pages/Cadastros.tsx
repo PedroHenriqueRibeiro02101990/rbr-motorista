@@ -17,6 +17,8 @@ import PainelCadastro from '../components/cadastros/PainelCadastro'
 import ComprovanteResidencia from '../components/cadastros/ComprovanteResidencia'
 import FichaCliente from '../components/cadastros/FichaCliente'
 import PainelPendencias from '../components/PainelPendencias'
+import { CamposParceiro, SeloClassificacao } from '../components/cadastros/ParceiroFiscal'
+import { dbNovo, novos } from '@rbr/shared/dbNovo'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -133,6 +135,12 @@ const MOTORISTA_INICIAL = {
   vinculo: '',
   comprovante_residencia_url: '',
   comprovante_residencia_data: '',
+  // Tarefa 1 (colunas de 20261011_01)
+  tipo_parceiro: '',
+  cnpj: '',
+  qtd_veiculos_rntrc: '',
+  opcao_inss_direto: false,
+  data_comunicacao_inss_direto: '',
 }
 
 const AGENCIADOR_INICIAL = {
@@ -934,6 +942,12 @@ export default function Cadastros() {
       vinculo: novoMotorista.vinculo || null,
       comprovante_residencia_url: novoMotorista.comprovante_residencia_url || null,
       comprovante_residencia_data: novoMotorista.comprovante_residencia_data || null,
+      tipo_parceiro: novoMotorista.tipo_parceiro || null,
+      cnpj: novoMotorista.cnpj || null,
+      qtd_veiculos_rntrc: novoMotorista.tipo_parceiro === 'etc' && novoMotorista.qtd_veiculos_rntrc ? Number(novoMotorista.qtd_veiculos_rntrc) : null,
+      opcao_inss_direto: novoMotorista.tipo_parceiro === 'tac_pf' && novoMotorista.opcao_inss_direto,
+      data_comunicacao_inss_direto:
+        novoMotorista.tipo_parceiro === 'tac_pf' && novoMotorista.opcao_inss_direto ? novoMotorista.data_comunicacao_inss_direto || null : null,
     }
   }
 
@@ -950,9 +964,10 @@ export default function Cadastros() {
     setSalvandoMotorista(true)
     try {
       const payload = montarPayloadMotorista()
+      // dbNovo: o payload leva as colunas do parceiro (20261011_01), que ainda não estão nos tipos.
       const { error } = editingMotoristaId
-        ? await supabase.from('pessoas').update(payload).eq('id', editingMotoristaId)
-        : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
+        ? await dbNovo.from('pessoas').update(payload).eq('id', editingMotoristaId)
+        : await dbNovo.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
       if (error) throw error
       fecharFormMotorista()
       await loadMotoristas()
@@ -994,6 +1009,11 @@ export default function Cadastros() {
       vinculo: m.vinculo ?? '',
       comprovante_residencia_url: m.comprovante_residencia_url ?? '',
       comprovante_residencia_data: m.comprovante_residencia_data ?? '',
+      tipo_parceiro: novos(m).tipo_parceiro ?? '',
+      cnpj: m.cnpj ?? '',
+      qtd_veiculos_rntrc: novos(m).qtd_veiculos_rntrc != null ? String(novos(m).qtd_veiculos_rntrc) : '',
+      opcao_inss_direto: !!novos(m).opcao_inss_direto,
+      data_comunicacao_inss_direto: novos(m).data_comunicacao_inss_direto ?? '',
     })
     setShowNovoMotorista(true)
   }
@@ -1979,6 +1999,14 @@ export default function Cadastros() {
                 onChange={(url, data) => setNovoMotorista((f) => ({ ...f, comprovante_residencia_url: url, comprovante_residencia_data: data }))}
               />
 
+              <div className={labelClass}>Parceiro (CIOT e INSS)</div>
+              <CamposParceiro
+                valor={novoMotorista}
+                onChange={(p) => setNovoMotorista((f) => ({ ...f, ...p }))}
+                inputClass={inputClass}
+                inputStyle={inputStyle}
+              />
+
               <div className={labelClass}>CNH</div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <input
@@ -2130,6 +2158,7 @@ export default function Cadastros() {
                           <div className="text-sm font-bold">{m.nome}</div>
                           <StatusBadge status={m.status} />
                           <BadgeAprovacao status={m.aprovacao_status} />
+                          <SeloClassificacao c={novos(m).classificacao_ciot} />
                         </div>
                         <IconChevronRight
                           width={16}
