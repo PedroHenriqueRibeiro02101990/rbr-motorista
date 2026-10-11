@@ -131,6 +131,23 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const { confirmacao: confCancel, rodar: rodarCancel, ocupado: ocupadoCancel } = useConfirmacao()
   const { confirmacao: confIndicacao, rodar: rodarIndicacao, ocupado: ocupadoIndicacao } = useConfirmacao()
   const [painelKey, setPainelKey] = useState(0)
+  const [recusando, setRecusando] = useState<{ id: string; titulo: string } | null>(null)
+  const [motivoRecusa, setMotivoRecusa] = useState('')
+
+  async function confirmarRecusa() {
+    if (!recusando) return
+    const motivo = motivoRecusa.trim()
+    const ok = await rodarIndicacao('Indicação recusada; o agenciador vê o motivo', async () => {
+      if (!motivo) throw new Error('Informe o motivo da recusa.')
+      const { error } = await db.rpc('resolver_indicacao_motorista', { p_indicacao: recusando.id, p_aceitar: false, p_motivo: motivo })
+      if (error) throw error
+      return true
+    })
+    if (ok) {
+      setRecusando(null)
+      setPainelKey((k) => k + 1)
+    }
+  }
   const [busca, setBusca] = useState('')
   const [showDadosEmissao, setShowDadosEmissao] = useState(false)
   const [assessoria, setAssessoria] = useState<AssessoriaContato>({ nome: '', whatsapp: '', email: '' })
@@ -563,7 +580,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
       </div>
 
-      {confIndicacao}
+      {!recusando && confIndicacao}
       <PainelPendencias
         modulo="operacoes"
         recarregarKey={painelKey}
@@ -589,15 +606,9 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 type="button"
                 disabled={ocupadoIndicacao}
                 className="text-xs font-bold text-[color:var(--rbr-danger)] disabled:opacity-50"
-                onClick={async () => {
-                  const motivo = window.prompt('Motivo da recusa (o agenciador vê):') ?? ''
-                  if (!motivo.trim()) return
-                  const ok = await rodarIndicacao('Indicação recusada', async () => {
-                    const { error } = await db.rpc('resolver_indicacao_motorista', { p_indicacao: p.ref_id, p_aceitar: false, p_motivo: motivo.trim() })
-                    if (error) throw error
-                    return true
-                  })
-                  if (ok) setPainelKey((k) => k + 1)
+                onClick={() => {
+                  setMotivoRecusa('')
+                  setRecusando({ id: p.ref_id, titulo: p.titulo })
                 }}
               >
                 Recusar
@@ -1132,6 +1143,32 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
               </Botao>
               <Botao variante="perigo" disabled={ocupadoCancel || cancelFeito || !motivoCancelamento.trim()} onClick={() => void confirmarCancelamento()}>
                 {ocupadoCancel ? 'Enviando…' : 'Cancelar operação'}
+              </Botao>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {recusando && (
+        <Modal titulo="Recusar indicação" onFechar={ocupadoIndicacao ? () => {} : () => setRecusando(null)} largura="max-w-md">
+          <div className="flex flex-col gap-3">
+            <div className="text-xs text-[color:var(--rbr-muted)]">{recusando.titulo}</div>
+            <Campo label="Motivo (obrigatório; o agenciador vê)">
+              <input
+                value={motivoRecusa}
+                onChange={(e) => setMotivoRecusa(e.target.value)}
+                className={inputClass}
+                style={inputStyle}
+                placeholder="Ex.: veículo sem rastreador por satélite"
+              />
+            </Campo>
+            {confIndicacao}
+            <div className="flex justify-end gap-2">
+              <Botao variante="secundario" onClick={() => setRecusando(null)} disabled={ocupadoIndicacao}>
+                Voltar
+              </Botao>
+              <Botao variante="perigo" disabled={ocupadoIndicacao || !motivoRecusa.trim()} onClick={() => void confirmarRecusa()}>
+                {ocupadoIndicacao ? 'Enviando…' : 'Recusar indicação'}
               </Botao>
             </div>
           </div>
