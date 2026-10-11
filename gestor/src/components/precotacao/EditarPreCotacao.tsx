@@ -3,6 +3,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import { brl, msgErro } from '../../lib/novoDb'
 import { Modal, Botao, Aviso, Campo, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
+import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import { AVISO_PRE_COTACAO, BASE_LABEL, TIPOS_VEICULO, type BaseValor, type Item, type PreCotacao } from './tipos'
 
 type Linha = {
@@ -199,6 +200,7 @@ export default function EditarPreCotacao({
                 <input placeholder="Viagens" type="number" min={1} value={l.viagens} onChange={(e) => set(l.key, { viagens: e.target.value })} className={inputClass} style={inputStyle} />
               </div>
             </div>
+            <AvisoDocumentoCliente compacto origem={{ cidade: l.cidade_origem, uf: l.uf_origem }} destinos={[{ cidade: l.cidade_destino, uf: l.uf_destino }]} />
 
             <div className="grid md:grid-cols-3 gap-3">
               <Campo label="Valor da mercadoria (R$)">

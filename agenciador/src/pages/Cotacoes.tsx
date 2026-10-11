@@ -5,6 +5,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate } from '@rbr/shared/format'
 import { parseNFeXml, type DadosNFe } from '@rbr/shared/nfeParser'
 import { IconPlus, IconX, IconAlertTriangle } from '../icons-local'
+import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -862,6 +863,8 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
               Margem fora da faixa recomendada (26%–40%). Não bloqueia o salvamento, apenas fica registrada para auditoria.
             </div>
           )}
+
+          <AvisoDocumentoCliente origem={{ cidade: form.cidade_origem, uf: form.uf_origem }} destinos={[{ cidade: form.cidade_destino, uf: form.uf_destino }]} />
 
           <label className="flex flex-col gap-1 text-xs font-semibold text-[color:var(--rbr-muted)]">
             Status

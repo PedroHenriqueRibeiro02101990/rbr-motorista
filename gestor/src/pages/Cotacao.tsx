@@ -9,6 +9,7 @@ import { IconX } from '../icons-local'
 import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
+import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import PainelPendencias from '../components/PainelPendencias'
 import { Aviso, Botao } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
@@ -2500,6 +2501,12 @@ export default function Cotacao() {
             travado={editingStatus !== 'rascunho'}
           />
 
+          {/* Tarefa 6: documento ao cliente detectado pela origem e destino (IBGE). */}
+          <AvisoDocumentoCliente
+            origem={{ cidade: form.cidade_origem, uf: form.uf_origem }}
+            destinos={destinos.length > 0 ? destinos.map((d) => ({ cidade: d.cidade, uf: d.uf })) : [{ cidade: form.cidade_destino, uf: form.uf_destino }]}
+          />
+
           {/* Cliente e documento fiscal — card com fundo levemente colorido e borda à
               esquerda, pra separar visualmente das outras seções (igual ao preview aprovado). */}
           <div
@@ -3082,6 +3089,23 @@ export default function Cotacao() {
                         className={inputClass}
                         style={inputStyle}
                       />
+                    </div>
+                    {/* Cidade e UF do trecho: definem CT-e+MDF-e ou NFS-e (Tarefa 6) e o histórico de pedágio. */}
+                    <div className="grid grid-cols-[1fr_72px] gap-2">
+                      <div>
+                        <label className={labelClass}>Cidade do destino</label>
+                        <input value={d.cidade ?? ''} onChange={(e) => editarDestino(d.key, 'cidade', e.target.value)} className={inputClass} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>UF</label>
+                        <input
+                          maxLength={2}
+                          value={d.uf ?? ''}
+                          onChange={(e) => editarDestino(d.key, 'uf', e.target.value.toUpperCase())}
+                          className={inputClass}
+                          style={inputStyle}
+                        />
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">

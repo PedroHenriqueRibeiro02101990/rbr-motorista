@@ -20,6 +20,8 @@ import { type Apoio, type Lancamento, type ResultadoOperacao, carregarApoio } fr
 import { BaixaModal } from '../financeiro/LancamentoModais'
 import CiotOperacao from './CiotOperacao'
 import RetencaoInss from './RetencaoInss'
+import { novosOp } from '@rbr/shared/dbNovo'
+import { DOCUMENTO_CLIENTE_LABEL, estiloDeteccao } from '@rbr/shared/DocumentoCliente'
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
 
@@ -165,6 +167,7 @@ export default function OperacaoFluxo({
         </div>
       )}
 
+      <DocumentoDaOperacao d={d} />
       <ResumoPreco d={d} />
       <Alocacao d={d} editavel={editavelAlocacao} salvando={salvando} executar={executar} />
       {o.veiculo_id && o.pessoa_alocada_id && <Pagamento d={d} salvando={salvando} executar={executar} />}
@@ -177,6 +180,26 @@ export default function OperacaoFluxo({
         <FinanceiroOperacao operacaoId={o.id} versao={`${o.status}|${o.updated_at}|${d.condicao?.updated_at ?? ''}|${d.cotacao.updated_at ?? ''}`} />
       )}
       <StatusELiberacao d={d} salvando={salvando} executar={executar} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Tarefa 6: documento ao cliente detectado pela origem/destino (IBGE), recalculado pelo banco se a rota mudar.
+function DocumentoDaOperacao({ d }: { d: DetalheOperacao }) {
+  const o = novosOp(d.operacao)
+  if (o.tipo_documento_cliente === undefined) return null
+  return (
+    <div className="rounded-xl px-3.5 py-2.5 text-xs flex flex-col gap-0.5" style={estiloDeteccao(o.tipo_documento_cliente)}>
+      <div>
+        <b>Documento ao cliente:</b> {o.tipo_documento_cliente ? DOCUMENTO_CLIENTE_LABEL[o.tipo_documento_cliente] : 'não definido'}
+        {o.tipo_documento_aviso ? ` · ${o.tipo_documento_aviso}` : ''}
+      </div>
+      {o.tipo_documento_mudou_em && (
+        <div className="font-semibold">
+          A origem ou o destino mudou em {formatDateTime(o.tipo_documento_mudou_em)} e o documento foi recalculado. Confira antes de emitir.
+        </div>
+      )}
     </div>
   )
 }
