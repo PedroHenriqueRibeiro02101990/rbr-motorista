@@ -18,6 +18,7 @@ import ComprovanteResidencia from '../components/cadastros/ComprovanteResidencia
 import FichaCliente from '../components/cadastros/FichaCliente'
 import PainelPendencias from '../components/PainelPendencias'
 import { CamposParceiro, SeloClassificacao } from '../components/cadastros/ParceiroFiscal'
+import { SeloTermo, useAceitesPrestador } from '../components/cadastros/SeloTermo'
 import { dbNovo, novos } from '@rbr/shared/dbNovo'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
@@ -346,6 +347,7 @@ export default function Cadastros() {
   const [showNovoVeiculoId, setShowNovoVeiculoId] = useState<string | null>(null)
   const [novoVeiculo, setNovoVeiculo] = useState(VEICULO_INICIAL)
   const [fichaCliente, setFichaCliente] = useState<Cliente | null>(null)
+  const aceitesPrestador = useAceitesPrestador()
   const [salvandoVeiculo, setSalvandoVeiculo] = useState(false)
   const [erroVeiculo, setErroVeiculo] = useState<string | null>(null)
   const [editingVeiculoId, setEditingVeiculoId] = useState<string | null>(null)
@@ -2159,6 +2161,7 @@ export default function Cadastros() {
                           <StatusBadge status={m.status} />
                           <BadgeAprovacao status={m.aprovacao_status} />
                           <SeloClassificacao c={novos(m).classificacao_ciot} />
+                          <SeloTermo pessoaId={m.id} a={aceitesPrestador} />
                         </div>
                         <IconChevronRight
                           width={16}

@@ -19,6 +19,7 @@ const NAV = [
   { to: '/fiscal', label: 'Fiscal', Icon: IconFileText, end: false },
   { to: '/notas-parceiros', label: 'Notas parceiros', Icon: IconFileText, end: false },
   { to: '/risco', label: 'Risco', Icon: IconAlertTriangle, end: false },
+  { to: '/conformidade', label: 'Conformidade', Icon: IconClipboard, end: false },
   { to: '/cadastros', label: 'Cadastros', Icon: IconClipboard, end: false },
 ]
 

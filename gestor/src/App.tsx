@@ -7,6 +7,7 @@ import Inicio from './pages/Inicio'
 import Cotacao from './pages/Cotacao'
 import PreCotacao from './pages/PreCotacao'
 import NotasParceiros from './pages/NotasParceiros'
+import Conformidade from './pages/Conformidade'
 import Operacoes from './pages/Operacoes'
 import Financeiro from './pages/Financeiro'
 import Mapa from './pages/Mapa'
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/cotacao" element={<Cotacao />} />
           <Route path="/pre-cotacao" element={<PreCotacao />} />
           <Route path="/notas-parceiros" element={<NotasParceiros />} />
+          <Route path="/conformidade" element={<Conformidade />} />
           <Route path="/operacoes" element={<Operacoes gestor={auth.pessoa} />} />
           <Route path="/pessoas" element={<Navigate to="/cadastros?aba=motoristas" replace />} />
           <Route path="/financeiro" element={<Financeiro />} />
