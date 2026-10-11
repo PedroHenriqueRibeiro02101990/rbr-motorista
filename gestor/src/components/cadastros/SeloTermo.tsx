@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { jsPDF } from 'jspdf'
 import { dbNovo } from '@rbr/shared/dbNovo'
+import { abrirPdfContrato, gerarESalvarPdfAceite } from '@rbr/shared/pdfAceite'
 
 // Tarefas 7/9: o parceiro aceitou a versão publicada do termo/contrato? (aceites_termo; só o gestor lê)
 
@@ -24,16 +26,34 @@ export function useAceitesPrestador(): AceitesPrestador {
 }
 
 export function SeloTermo({ pessoaId, a }: { pessoaId: string; a: AceitesPrestador }) {
+  const [erro, setErro] = useState<string | null>(null)
+  const [abrindo, setAbrindo] = useState(false)
   if (a.versao == null) return null
   const aceite = a.aceites.get(pessoaId)
+  // Tarefa 9: clique abre o PDF do contrato aceito (ou gera, se o app do motorista não conseguiu gerar).
   return aceite ? (
+    <>
     <span
-      title={`Aceito em ${new Date(aceite.aceito_em).toLocaleString('pt-BR')}`}
-      className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap"
+      role="button"
+      tabIndex={0}
+      title={`Aceito em ${new Date(aceite.aceito_em).toLocaleString('pt-BR')}. Clique para abrir o PDF.`}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (abrindo) return
+        setErro(null)
+        setAbrindo(true)
+        void gerarESalvarPdfAceite(jsPDF, aceite.aceite_id)
+          .then(abrirPdfContrato)
+          .catch((err: unknown) => setErro('✗ ' + (err instanceof Error ? err.message : String(err))))
+          .finally(() => setAbrindo(false))
+      }}
+      className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap cursor-pointer underline"
       style={{ background: '#E7F5EC', color: 'var(--rbr-positive)' }}
     >
-      Contrato v{a.versao} aceito
+      {abrindo ? 'abrindo…' : `Contrato v${a.versao} aceito · PDF`}
     </span>
+    {erro && <span className="text-[10px] font-semibold" style={{ color: 'var(--rbr-danger)' }}>{erro}</span>}
+    </>
   ) : (
     <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
       Falta aceite v{a.versao}

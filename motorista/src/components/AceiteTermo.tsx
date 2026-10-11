@@ -55,8 +55,12 @@ export default function AceiteTermo({
       const { data, error } = await dbNovo.rpc('aceitar_termo', { p_termo: termo.termo_id, p_clausulas: marcadas, p_user_agent: navigator.userAgent })
       if (error) throw new Error(error.message)
       const a = data as AceiteFeito
-      setFeito(`✓ Aceite registrado em ${new Date(a.aceito_em).toLocaleString('pt-BR')}.`)
-      await onAceito?.(termo, a)
+      setFeito(`✓ Aceite registrado em ${new Date(a.aceito_em).toLocaleString('pt-BR')}. Gerando o PDF do contrato…`)
+      try {
+        await onAceito?.(termo, a)
+      } catch {
+        // O aceite já está gravado; o PDF pode ser gerado depois em Perfil > Meus contratos.
+      }
       await carregar()
     } catch (e) {
       setErro('✗ ' + (e instanceof Error ? e.message : String(e)))

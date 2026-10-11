@@ -15,7 +15,7 @@ type JsPDFLike = {
   line: (x1: number, y1: number, x2: number, y2: number) => unknown
   output: (t: 'blob') => Blob
 }
-type JsPDFCtor = new (o: { unit: 'mm'; format: 'a4' }) => JsPDFLike
+export type JsPDFCtor = new (o: { unit: 'mm'; format: 'a4' }) => JsPDFLike
 
 export type AssinaturaPdf = { papel: string; nome: string; documento?: string | null; detalhe: string }
 export type ComprovacaoPdf = {

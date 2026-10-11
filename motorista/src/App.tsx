@@ -9,9 +9,12 @@ import Caixa from './pages/Caixa'
 import Pontos from './pages/Pontos'
 import Perfil from './pages/Perfil'
 import AceiteTermo from './components/AceiteTermo'
+import { jsPDF } from 'jspdf'
+import { gerarESalvarPdfAceite } from '@rbr/shared/pdfAceite'
 
 function AceiteGate({ ativo, children }: { ativo: boolean; children: React.ReactNode }) {
-  return ativo ? <AceiteTermo>{children}</AceiteTermo> : <>{children}</>
+  // Tarefa 9: ao aceitar, gera o PDF do contrato (assinaturas dos dois lados + página de comprovação) e guarda.
+  return ativo ? <AceiteTermo onAceito={async (_t, a) => void (await gerarESalvarPdfAceite(jsPDF, a.aceite_id))}>{children}</AceiteTermo> : <>{children}</>
 }
 
 export default function App() {
