@@ -18,7 +18,6 @@ import {
 } from '../../lib/financeiro'
 import type { BancoFatura, EmpresaFatura } from '../../lib/faturaPdf'
 import VencimentoBoleto, { type EscolhaVencimento } from './VencimentoBoleto'
-import { db } from '../../lib/novoDb'
 import { Aviso, Botao, Campo, Card, Carregando, Chips, Modal, Pill, Vazio, inputClass, inputStyle } from './ui'
 import { BaixaModal, Copiar } from './LancamentoModais'
 
@@ -197,7 +196,7 @@ export function NovaFaturaModal({
       setSalvando(false)
       return setErro('✗ ' + error.message)
     }
-    const { error: e2 } = await db
+    const { error: e2 } = await supabase
       .from('faturas')
       .update({ vencimento_original: escolha?.original ?? venc, vencimento_ajuste: escolha?.ajuste ?? 'manter', boleto_emitido_em: hojeISO() })
       .eq('id', data as string)
@@ -607,7 +606,7 @@ function AlterarVencimentoModal({
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => {
-    db.from('faturas')
+    supabase.from('faturas')
       .select('boleto_emitido_em')
       .eq('id', faturaId)
       .maybeSingle()
@@ -627,9 +626,9 @@ function AlterarVencimentoModal({
       setSalvando(false)
       return setErro('✗ ' + error.message)
     }
-    const { data: atual } = await db.from('faturas').select('vencimento_original, boleto_emitido_em').eq('id', faturaId).maybeSingle()
+    const { data: atual } = await supabase.from('faturas').select('vencimento_original, boleto_emitido_em').eq('id', faturaId).maybeSingle()
     const a = atual as { vencimento_original?: string | null; boleto_emitido_em?: string | null } | null
-    const { error: e2 } = await db
+    const { error: e2 } = await supabase
       .from('faturas')
       .update({
         vencimento_original: a?.vencimento_original ?? escolha?.original ?? venc,

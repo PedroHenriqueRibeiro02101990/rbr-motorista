@@ -1,5 +1,5 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
-import { db } from '../../lib/novoDb'
 
 type Item = { doc: string; item: string; ok: boolean; motivo: string }
 
@@ -11,10 +11,10 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
 
   useEffect(() => {
     let vivo = true
-    db.rpc('checar_pre_voo', { p_operacao: operacaoId }).then(({ data, error }) => {
+    supabase.rpc('checar_pre_voo', { p_operacao: operacaoId }).then(({ data, error }) => {
       if (!vivo) return
       if (error || !data) return setErro(true)
-      setItens((data.itens ?? []) as Item[])
+      setItens((data as { itens?: Item[] }).itens ?? [])
     })
     return () => {
       vivo = false

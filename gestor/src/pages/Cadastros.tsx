@@ -951,8 +951,8 @@ export default function Cadastros() {
     try {
       const payload = montarPayloadMotorista()
       const { error } = editingMotoristaId
-        ? await supabase.from('pessoas').update(payload as never).eq('id', editingMotoristaId)
-        : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' } as never)
+        ? await supabase.from('pessoas').update(payload).eq('id', editingMotoristaId)
+        : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
       if (error) throw error
       fecharFormMotorista()
       await loadMotoristas()
@@ -990,15 +990,10 @@ export default function Cadastros() {
       banco_agencia: m.banco_agencia ?? '',
       banco_conta: m.banco_conta ?? '',
       banco_tipo_conta: m.banco_tipo_conta ?? '',
-      ...(() => {
-        const x = m as unknown as Record<string, string | null | undefined>
-        return {
-          data_nascimento: x.data_nascimento ?? '',
-          vinculo: x.vinculo ?? '',
-          comprovante_residencia_url: x.comprovante_residencia_url ?? '',
-          comprovante_residencia_data: x.comprovante_residencia_data ?? '',
-        }
-      })(),
+      data_nascimento: m.data_nascimento ?? '',
+      vinculo: m.vinculo ?? '',
+      comprovante_residencia_url: m.comprovante_residencia_url ?? '',
+      comprovante_residencia_data: m.comprovante_residencia_data ?? '',
     })
     setShowNovoMotorista(true)
   }
@@ -1065,8 +1060,8 @@ export default function Cadastros() {
     try {
       const payload = montarPayloadVeiculo()
       const { error } = editingVeiculoId
-        ? await supabase.from('veiculos').update(payload as never).eq('id', editingVeiculoId)
-        : await supabase.from('veiculos').insert({ ...payload, titular_id: motoristaId } as never)
+        ? await supabase.from('veiculos').update(payload).eq('id', editingVeiculoId)
+        : await supabase.from('veiculos').insert({ ...payload, titular_id: motoristaId })
       if (error) throw error
       fecharFormVeiculo()
       await carregarVeiculosDoMotorista(motoristaId)
@@ -1108,7 +1103,7 @@ export default function Cadastros() {
       seguro_veiculo_seguradora: v.seguro_veiculo_seguradora ?? '',
       seguro_veiculo_apolice_numero: v.seguro_veiculo_apolice_numero ?? '',
       seguro_veiculo_vencimento: v.seguro_veiculo_vencimento ?? '',
-      crlv_exercicio: String((v as unknown as { crlv_exercicio?: number | null }).crlv_exercicio ?? ''),
+      crlv_exercicio: String(v.crlv_exercicio ?? ''),
     })
     setShowNovoVeiculoId(motoristaId)
   }

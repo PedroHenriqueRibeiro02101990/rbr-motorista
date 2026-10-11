@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { db, dataBr } from '../lib/novoDb'
+import { dataBr } from '../lib/novoDb'
 import { Botao, Aviso, Card, Chips, Vazio, Carregando } from '../components/financeiro/ui'
 import EditarPreCotacao, { type ClienteOpt } from '../components/precotacao/EditarPreCotacao'
 import DetalhePreCotacao from '../components/precotacao/DetalhePreCotacao'
@@ -18,7 +18,7 @@ export default function PreCotacaoPage() {
   const [msg, setMsg] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
-    const { data, error } = await db.from('pre_cotacoes').select('*, pre_cotacao_itens(*)').order('numero', { ascending: false }).limit(300)
+    const { data, error } = await supabase.from('pre_cotacoes').select('*, pre_cotacao_itens(*)').order('numero', { ascending: false }).limit(300)
     if (error) return setErro(error.message)
     setErro(null)
     const l = ((data ?? []) as PreCotacao[]).map((p) => ({ ...p, pre_cotacao_itens: [...(p.pre_cotacao_itens ?? [])].sort((a, b) => a.ordem - b.ordem) }))

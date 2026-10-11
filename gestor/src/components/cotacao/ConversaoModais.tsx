@@ -1,5 +1,6 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
-import { db, brl, dataBr, msgErro } from '../../lib/novoDb'
+import { brl, dataBr, msgErro } from '../../lib/novoDb'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 import type { TipoCotacaoValor } from './TipoCotacao'
@@ -91,8 +92,8 @@ export function ProgramarOperacoesModal({
     let vivo = true
     ;(async () => {
       const [d, o] = await Promise.all([
-        db.from('cotacao_destinos').select('id, ordem, cidade_destino, uf_destino, endereco_entrega, cargas_previstas').eq('cotacao_id', cotacaoId).order('ordem', { ascending: true }),
-        db.from('operacoes').select('cotacao_destino_id, status').eq('cotacao_id', cotacaoId).neq('status', 'cancelada'),
+        supabase.from('cotacao_destinos').select('id, ordem, cidade_destino, uf_destino, endereco_entrega, cargas_previstas').eq('cotacao_id', cotacaoId).order('ordem', { ascending: true }),
+        supabase.from('operacoes').select('cotacao_destino_id, status').eq('cotacao_id', cotacaoId).neq('status', 'cancelada'),
       ])
       if (!vivo) return
       if (d.error || o.error) {
@@ -133,7 +134,7 @@ export function ProgramarOperacoesModal({
     }
     let abertas = 0
     for (const d of lista) {
-      const { data, error } = await db.rpc('abrir_operacoes_cotacao', {
+      const { data, error } = await supabase.rpc('abrir_operacoes_cotacao', {
         p_cotacao: cotacaoId,
         p_destino: d.id,
         p_quantidade: Math.floor(Number(d.qtd)),
@@ -148,11 +149,11 @@ export function ProgramarOperacoesModal({
     // Data prevista é informativa: sem coluna própria, fica registrada na observação da cotação.
     const comData = lista.filter((d) => d.data)
     if (comData.length > 0) {
-      const { data: c } = await db.from('cotacoes').select('observacoes').eq('id', cotacaoId).maybeSingle()
+      const { data: c } = await supabase.from('cotacoes').select('observacoes').eq('id', cotacaoId).maybeSingle()
       const hoje = new Date().toLocaleDateString('pt-BR')
       const nota = comData.map((d) => `${d.nome}: ${Math.floor(Number(d.qtd))} carga(s) a partir de ${dataBr(d.data)}`).join('; ')
       const novo = [(c as { observacoes?: string | null } | null)?.observacoes, `Programação (${hoje}): ${nota}`].filter(Boolean).join('\n')
-      await db.from('cotacoes').update({ observacoes: novo }).eq('id', cotacaoId)
+      await supabase.from('cotacoes').update({ observacoes: novo }).eq('id', cotacaoId)
     }
     onMudou()
     return `${abertas} operação(ões) aberta(s) — ${totalAb + abertas} de ${totalPrev} abertas${juntas ? ', saindo juntas' : ''}`

@@ -1,6 +1,7 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { db, brl, msgErro } from '../../lib/novoDb'
+import { brl, msgErro } from '../../lib/novoDb'
 import { Modal, Botao, Aviso, Pill } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 import {
@@ -23,7 +24,7 @@ export default function DetalhePreCotacao({
 
   async function marcarEnviada() {
     if (pre.status !== 'rascunho') return
-    const { error } = await db.from('pre_cotacoes').update({ status: 'enviada', enviada_em: new Date().toISOString() }).eq('id', pre.id)
+    const { error } = await supabase.from('pre_cotacoes').update({ status: 'enviada', enviada_em: new Date().toISOString() }).eq('id', pre.id)
     if (error) throw error
     onMudou()
   }
@@ -44,7 +45,7 @@ export default function DetalhePreCotacao({
 
   const pdf = () =>
     rodar('PDF gerado e baixado. Pré-cotação marcada como enviada.', async () => {
-      const { data } = await db.from('parametros_sistema').select('valor').eq('chave', 'dados_empresa').maybeSingle()
+      const { data } = await supabase.from('parametros_sistema').select('valor').eq('chave', 'dados_empresa').maybeSingle()
       const blob = await gerarPdfPre(pre, itens, cliente, (data?.valor ?? {}) as Record<string, string>)
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
@@ -56,11 +57,11 @@ export default function DetalhePreCotacao({
 
   const decidir = (i: Item, status: StatusItem) =>
     rodar(`Rota ${status === 'aceita' ? 'aceita' : status === 'recusada' ? 'recusada' : 'voltou a pendente'}.`, async () => {
-      const { error } = await db.from('pre_cotacao_itens').update({ status }).eq('id', i.id)
+      const { error } = await supabase.from('pre_cotacao_itens').update({ status }).eq('id', i.id)
       if (error) throw error
       const novo = itens.map((x) => (x.id === i.id ? { ...x, status } : x))
       const st = derivarStatus(pre.status === 'rascunho' ? 'enviada' : pre.status, novo)
-      const { error: e2 } = await db.from('pre_cotacoes').update({ status: st, ...(pre.status === 'rascunho' ? { enviada_em: new Date().toISOString() } : {}) }).eq('id', pre.id)
+      const { error: e2 } = await supabase.from('pre_cotacoes').update({ status: st, ...(pre.status === 'rascunho' ? { enviada_em: new Date().toISOString() } : {}) }).eq('id', pre.id)
       if (e2) throw e2
       onMudou()
     })
@@ -69,7 +70,7 @@ export default function DetalhePreCotacao({
     rodar(
       (n: number) => `${n} cotação(ões) criada(s) em rascunho.`,
       async () => {
-        const { data, error } = await db.rpc('converter_pre_cotacao', { p_pre: pre.id })
+        const { data, error } = await supabase.rpc('converter_pre_cotacao', { p_pre: pre.id })
         if (error) throw new Error(msgErro(error))
         const n = ((data as { cotacoes?: string[] } | null)?.cotacoes ?? []).length
         setCriadas(n)

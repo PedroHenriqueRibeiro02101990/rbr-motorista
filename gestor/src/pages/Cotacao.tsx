@@ -10,7 +10,6 @@ import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import PainelPendencias from '../components/PainelPendencias'
-import { db } from '../lib/novoDb'
 import { Aviso, Botao } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
@@ -84,7 +83,7 @@ function destinoDeLinha(r: CotacaoDestinoRow): DestinoLinha {
     frete_motorista: r.frete_motorista != null ? String(r.frete_motorista) : '',
     pedagio: r.pedagio != null ? String(r.pedagio) : '',
     margem_pct: r.margem_pct != null ? String(round2(r.margem_pct * 100)) : '',
-    cargas: String((r as unknown as { cargas_previstas?: number | null }).cargas_previstas ?? 1),
+    cargas: String(r.cargas_previstas ?? 1),
     cidade: r.cidade_destino ?? '',
     uf: r.uf_destino ?? '',
   }
@@ -1178,9 +1177,8 @@ export default function Cotacao() {
     setItens([])
     carregarItens(c.id)
     carregarDestinos(c.id)
-    const ext = c as unknown as { tipo_cotacao?: TipoCotacaoValor | null; qtd_veiculos?: number | null }
-    setTipoCotacao(ext.tipo_cotacao ?? 'carga_unica')
-    setQtdVeiculos(Math.max(2, ext.qtd_veiculos ?? 2))
+    setTipoCotacao((c.tipo_cotacao as TipoCotacaoValor | null) ?? 'carga_unica')
+    setQtdVeiculos(Math.max(2, c.qtd_veiculos ?? 2))
   }
 
   // Cliente já negociou antes? Repete o último prazo combinado com ele.
@@ -1625,7 +1623,7 @@ export default function Cotacao() {
       if (error) throw error
     }
     const tipoGrav: TipoCotacaoValor = destinos.length > 0 ? 'varias_entregas' : tipoCotacao
-    const { error: errTipo } = await db
+    const { error: errTipo } = await supabase
       .from('cotacoes')
       .update({
         tipo_cotacao: tipoGrav,
@@ -1645,7 +1643,7 @@ export default function Cotacao() {
     const { error: errDelDestinos } = await supabase.from('cotacao_destinos').delete().eq('cotacao_id', id)
     if (errDelDestinos) throw errDelDestinos
     if (destinos.length > 0) {
-      const { error: errInsDestinos } = await db.from('cotacao_destinos').insert(
+      const { error: errInsDestinos } = await supabase.from('cotacao_destinos').insert(
         destinos.map((d, i) => ({
           cotacao_id: id as string,
           ordem: i,
@@ -1820,7 +1818,7 @@ export default function Cotacao() {
   // Alimenta o histórico de pedágio (fonte 'cotacao') quando a cotação é convertida.
   async function registrarPedagioHistorico(cotacaoId: string) {
     if (!form) return
-    const linhas: Record<string, unknown>[] = []
+    const linhas: Database['public']['Tables']['pedagio_historico']['Insert'][] = []
     const base = { fonte: 'cotacao', cotacao_id: cotacaoId, cidade_origem: form.cidade_origem.trim(), uf_origem: form.uf_origem.trim().toUpperCase() }
     if (destinos.length === 0) {
       const v = numOrNull(form.pedagio) ?? 0
@@ -1838,14 +1836,14 @@ export default function Cotacao() {
       }
     }
     if (linhas.length === 0) return
-    await db.from('pedagio_historico').delete().eq('cotacao_id', cotacaoId).eq('fonte', 'cotacao')
-    await db.from('pedagio_historico').insert(linhas)
+    await supabase.from('pedagio_historico').delete().eq('cotacao_id', cotacaoId).eq('fonte', 'cotacao')
+    await supabase.from('pedagio_historico').insert(linhas)
   }
 
   const recarregarConversao = useCallback(async (cotacaoId: string) => {
     const [o, sd] = await Promise.all([
-      db.from('operacoes').select('id, status, grupo_saida_id').eq('cotacao_id', cotacaoId).order('created_at', { ascending: true }),
-      db.from('v_cotacao_saldo').select('cargas_total, cargas_abertas').eq('cotacao_id', cotacaoId).maybeSingle(),
+      supabase.from('operacoes').select('id, status, grupo_saida_id').eq('cotacao_id', cotacaoId).order('created_at', { ascending: true }),
+      supabase.from('v_cotacao_saldo').select('cargas_total, cargas_abertas').eq('cotacao_id', cotacaoId).maybeSingle(),
     ])
     if (o.error) return null
     const r = {
@@ -1898,7 +1896,7 @@ export default function Cotacao() {
   async function reabrirConvertida() {
     if (!editingId) return
     await rodarAcao('Cotação reaberta; voltou para enviada', async () => {
-      const { error } = await db.rpc('reabrir_cotacao', { p_cotacao: editingId })
+      const { error } = await supabase.rpc('reabrir_cotacao', { p_cotacao: editingId })
       if (error) throw error
       setEditingStatus('enviada')
       setBannerConv(null)
@@ -1976,10 +1974,10 @@ export default function Cotacao() {
     }
     if (!motivo) throw new Error('Informe o motivo do cancelamento.')
     if (editingStatus === 'convertida') {
-      const { error: errR } = await db.rpc('reabrir_cotacao', { p_cotacao: editingId })
+      const { error: errR } = await supabase.rpc('reabrir_cotacao', { p_cotacao: editingId })
       if (errR) throw errR
     }
-    const { error } = await db
+    const { error } = await supabase
       .from('cotacoes')
       .update({ status: 'perdida', motivo_perda: 'outro', motivo_perda_detalhe: motivo, cancelada_em: new Date().toISOString(), cancelada_motivo: motivo })
       .eq('id', editingId)

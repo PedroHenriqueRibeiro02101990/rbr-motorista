@@ -1,5 +1,5 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useCallback, useEffect, useState } from 'react'
-import { db } from '../lib/novoDb'
 import { Card } from './financeiro/ui'
 
 export type ModuloPainel = 'cotacoes' | 'operacoes' | 'fiscal' | 'financeiro' | 'risco' | 'cadastros'
@@ -22,7 +22,7 @@ export default function PainelPendencias({
   const [todas, setTodas] = useState(false)
 
   const carregar = useCallback(async () => {
-    const { data, error } = await db.from('v_pendencias_painel').select('*').eq('modulo', modulo)
+    const { data, error } = await supabase.from('v_pendencias_painel').select('*').eq('modulo', modulo)
     if (error) {
       setErro(error.message)
       return

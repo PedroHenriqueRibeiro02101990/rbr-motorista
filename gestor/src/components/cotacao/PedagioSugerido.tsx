@@ -1,5 +1,6 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
-import { db, brl, dataBr } from '../../lib/novoDb'
+import { brl, dataBr } from '../../lib/novoDb'
 
 type Sugestao = { valor: number | null; registrado_em: string | null; fonte: string | null; amostras: number | null }
 
@@ -32,7 +33,7 @@ export default function PedagioSugerido({
     if (!pronto || !vazio) return
     let vivo = true
     const t = setTimeout(async () => {
-      const { data, error } = await db.rpc('sugerir_pedagio', {
+      const { data, error } = await supabase.rpc('sugerir_pedagio', {
         p_cidade_origem: cidadeOrigem.trim(),
         p_uf_origem: ufOrigem.trim().toUpperCase(),
         p_cidade_destino: cidadeDestino.trim(),

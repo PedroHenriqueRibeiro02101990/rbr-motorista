@@ -1,9 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { supabase } from '@rbr/shared/supabaseClient'
-
-// Cliente sem tipagem para as views e funções criadas em 10/10/2026 (ainda não estão em database.types.ts).
-// Quando os tipos forem regenerados, trocar por `supabase` direto.
-export const db = supabase as unknown as SupabaseClient
+// Helpers de exibição usados pelas telas do redesenho de 10/10.
 
 export function msgErro(e: unknown): string {
   if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message)

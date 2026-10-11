@@ -1,5 +1,6 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
-import { db, dataBr, msgErro } from '../../lib/novoDb'
+import { dataBr, msgErro } from '../../lib/novoDb'
 import { Aviso } from './ui'
 
 export type AjusteVencimento = 'manter' | 'proximo_dia_util' | 'dia_util_anterior'
@@ -62,12 +63,12 @@ export default function VencimentoBoleto({
         let ibge: string | null = null
         let uf: string | null = null
         if (clienteId) {
-          const r = await db.rpc('municipio_ibge_cliente', { p_cliente: clienteId })
+          const r = await supabase.rpc('municipio_ibge_cliente', { p_cliente: clienteId })
           if (!r.error) ibge = (r.data as string | null) ?? null
-          const c = await db.from('clientes').select('uf').eq('id', clienteId).maybeSingle()
+          const c = await supabase.from('clientes').select('uf').eq('id', clienteId).maybeSingle()
           uf = (c.data as { uf?: string | null } | null)?.uf ?? null
         }
-        const { data, error } = await db.rpc('sugerir_vencimento', { p_emissao: emissao, p_prazo_dias: Math.max(prazo, 0), p_municipio_ibge: ibge, p_uf: uf })
+        const { data, error } = await supabase.rpc('sugerir_vencimento', { p_emissao: emissao, p_prazo_dias: Math.max(prazo, 0), p_municipio_ibge: ibge ?? undefined, p_uf: uf ?? undefined })
         if (error) throw error
         if (!vivo) return
         const s = data as Sugestao

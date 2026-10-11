@@ -1,5 +1,6 @@
+import { supabase } from '@rbr/shared/supabaseClient'
 import { useCallback, useEffect, useState } from 'react'
-import { db, brl, dataBr, msgErro } from '../../lib/novoDb'
+import { brl, dataBr, msgErro } from '../../lib/novoDb'
 import { Aviso, Botao, Campo, Card, Kpi, Modal, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 import RiscoComercial, { type ClienteRisco } from './RiscoComercial'
@@ -98,9 +99,9 @@ export default function FichaCliente({ cliente, onFechar }: { cliente: ClienteRi
 
   const carregar = useCallback(async () => {
     const [q, h, p] = await Promise.all([
-      db.from('v_qualidade_cliente').select('*').eq('cliente_id', cliente.id).maybeSingle(),
-      db.from('v_historico_pagamento_cliente').select('*').eq('cliente_id', cliente.id).order('boleto_emitido_em', { ascending: false, nullsFirst: false }),
-      db.from('v_protesto_cliente').select('*').eq('cliente_id', cliente.id).maybeSingle(),
+      supabase.from('v_qualidade_cliente').select('*').eq('cliente_id', cliente.id).maybeSingle(),
+      supabase.from('v_historico_pagamento_cliente').select('*').eq('cliente_id', cliente.id).order('boleto_emitido_em', { ascending: false, nullsFirst: false }),
+      supabase.from('v_protesto_cliente').select('*').eq('cliente_id', cliente.id).maybeSingle(),
     ])
     const e = q.error ?? h.error ?? p.error
     setErro(e ? msgErro(e) : null)
@@ -215,7 +216,7 @@ export default function FichaCliente({ cliente, onFechar }: { cliente: ClienteRi
           onFechar={() => setConfirmando(null)}
           onConfirmar={async (obs) => {
             const r = await rodar(`Atraso da fatura #${confirmando.numero} marcado como confirmado com o banco`, async () => {
-              const { error } = await db.from('faturas').update({ atraso_confirmado_banco: true, atraso_confirmacao_obs: obs.trim() || null }).eq('id', confirmando.fatura_id)
+              const { error } = await supabase.from('faturas').update({ atraso_confirmado_banco: true, atraso_confirmacao_obs: obs.trim() || null }).eq('id', confirmando.fatura_id)
               if (error) throw error
               return true
             })

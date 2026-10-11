@@ -5,7 +5,6 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
-import { db } from '../lib/novoDb'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import PainelPendencias from '../components/PainelPendencias'
@@ -139,7 +138,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     const motivo = motivoRecusa.trim()
     const ok = await rodarIndicacao('Indicação recusada; o agenciador vê o motivo', async () => {
       if (!motivo) throw new Error('Informe o motivo da recusa.')
-      const { error } = await db.rpc('resolver_indicacao_motorista', { p_indicacao: recusando.id, p_aceitar: false, p_motivo: motivo })
+      const { error } = await supabase.rpc('resolver_indicacao_motorista', { p_indicacao: recusando.id, p_aceitar: false, p_motivo: motivo })
       if (error) throw error
       return true
     })
@@ -184,7 +183,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       cotacaoDetalhe: (op as any).cotacoes ?? null,
     }))
     setOperacoes(mapeadas)
-    db.from('operacoes')
+    supabase.from('operacoes')
       .select('id, sequencia, grupo_saida_id, cotacoes(cargas_total)')
       .order('updated_at', { ascending: false })
       .limit(300)
@@ -328,7 +327,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       return
     }
     await rodarCancel('Operação cancelada; a carga voltou ao saldo da cotação', async () => {
-      const { data, error } = await db.rpc('cancelar_operacao', { p_operacao: cancelando.id, p_motivo: motivo })
+      const { data, error } = await supabase.rpc('cancelar_operacao', { p_operacao: cancelando.id, p_motivo: motivo })
       if (error) throw error
       const r = data as { cancelada: boolean; documentos?: { tipo: string; status: string; numero: string | null }[]; ordem?: string }
       if (!r?.cancelada) {
@@ -593,7 +592,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 className="text-xs font-bold text-[color:var(--rbr-navy)] disabled:opacity-50"
                 onClick={async () => {
                   const ok = await rodarIndicacao('Indicação aceita: motorista alocado na operação', async () => {
-                    const { error } = await db.rpc('resolver_indicacao_motorista', { p_indicacao: p.ref_id, p_aceitar: true })
+                    const { error } = await supabase.rpc('resolver_indicacao_motorista', { p_indicacao: p.ref_id, p_aceitar: true })
                     if (error) throw error
                     return true
                   })

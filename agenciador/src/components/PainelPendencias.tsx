@@ -21,10 +21,8 @@ function IndicarMotorista({ operacaoId, onFechar, onFeito }: { operacaoId: strin
   const [base, setBase] = useState<BaseItem[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
-  const cli = supabase as unknown as { rpc: (n: string, a?: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-
   useEffect(() => {
-    void cli.rpc('base_motoristas_agenciador').then(({ data, error }) => {
+    void supabase.rpc('base_motoristas_agenciador').then(({ data, error }) => {
       if (error) setErro(error.message)
       else setBase((data ?? []) as BaseItem[])
     })
@@ -33,7 +31,7 @@ function IndicarMotorista({ operacaoId, onFechar, onFeito }: { operacaoId: strin
 
   async function enviar(b: BaseItem) {
     setEnviando(true); setErro(null)
-    const { error } = await cli.rpc('indicar_motorista', { p_operacao: operacaoId, p_motorista: b.motorista_id, p_veiculo: b.veiculo_id })
+    const { error } = await supabase.rpc('indicar_motorista', { p_operacao: operacaoId, p_motorista: b.motorista_id, p_veiculo: b.veiculo_id ?? undefined })
     setEnviando(false)
     if (error) { setErro(error.message); return }
     onFeito(`Indicação de ${b.nome.split(' ')[0]} enviada. A RBR confirma.`)
@@ -77,8 +75,7 @@ export default function PainelPendencias({ recarregarKey }: { recarregarKey?: nu
   const [aviso, setAviso] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
-    const cliente = supabase as unknown as { rpc: (n: string) => Promise<{ data: unknown; error: { message: string } | null }> }
-    const { data, error } = await cliente.rpc('pendencias_agenciador')
+    const { data, error } = await supabase.rpc('pendencias_agenciador')
     if (error) { setItens(null); return }
     const lista = ((data ?? []) as Item[]).slice().sort((a, b) => a.ordem - b.ordem)
     setItens(lista)

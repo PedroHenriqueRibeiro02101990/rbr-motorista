@@ -296,13 +296,11 @@ function Alocacao({ d, editavel, salvando, executar }: { d: DetalheOperacao; edi
         add('RNTRC do transportador', (titular?.rntrc_status ?? '').toLowerCase() === 'ativo')
         add('CNH válida', !!p.cnh_validade && p.cnh_validade >= hoje())
         // Cadastro completo para CIOT/VPO, MDF-e e gerenciamento de risco (campos de 10/10/2026).
-        const pn = p as unknown as { data_nascimento?: string | null }
-        const vn = v as unknown as { crlv_exercicio?: number | null }
         add('CPF do motorista', !!p.cpf)
-        add('Data de nascimento', !!pn.data_nascimento)
+        add('Data de nascimento', !!p.data_nascimento)
         add('PIX do motorista', !!p.pix)
         add('Tara e capacidade do veículo', v.tara_kg != null && v.capacidade_carga != null)
-        add('CRLV do exercício vigente', !!vn.crlv_exercicio && vn.crlv_exercicio >= new Date().getFullYear() - 1)
+        add('CRLV do exercício vigente', !!v.crlv_exercicio && v.crlv_exercicio >= new Date().getFullYear() - 1)
         if (v.seguro_veiculo_vencimento) add('Seguro do veículo', v.seguro_veiculo_vencimento >= hoje(), false)
         if (precisaSatelite) add('Rastreador por satélite', v.rastreador_tipo === 'wialon' && v.rastreador_ativo)
         add('Livre (sem outra carga)', !ocupados.has(v.id) && !ocupados.has(p.id))

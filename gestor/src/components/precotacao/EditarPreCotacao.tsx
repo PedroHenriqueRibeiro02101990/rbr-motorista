@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { db, brl, msgErro } from '../../lib/novoDb'
+import { brl, msgErro } from '../../lib/novoDb'
 import { Modal, Botao, Aviso, Campo, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 import { AVISO_PRE_COTACAO, BASE_LABEL, TIPOS_VEICULO, type BaseValor, type Item, type PreCotacao } from './tipos'
@@ -83,8 +83,8 @@ export default function EditarPreCotacao({
       linhas.forEach(async (l) => {
         if (l.cidade_origem.trim().length < 2 || l.cidade_destino.trim().length < 2 || l.uf_origem.length !== 2 || l.uf_destino.length !== 2) return
         const [ped, val] = await Promise.all([
-          db.rpc('sugerir_pedagio', { p_cidade_origem: l.cidade_origem.trim(), p_uf_origem: l.uf_origem, p_cidade_destino: l.cidade_destino.trim(), p_uf_destino: l.uf_destino, p_eixos: l.eixos ? Number(l.eixos) : null }),
-          clienteId ? db.rpc('sugerir_valor_mercadoria', { p_cliente: clienteId, p_cidade_origem: l.cidade_origem.trim(), p_cidade_destino: l.cidade_destino.trim() }) : Promise.resolve({ data: null }),
+          l.eixos ? supabase.rpc('sugerir_pedagio', { p_cidade_origem: l.cidade_origem.trim(), p_uf_origem: l.uf_origem, p_cidade_destino: l.cidade_destino.trim(), p_uf_destino: l.uf_destino, p_eixos: Number(l.eixos) }) : Promise.resolve({ data: null }),
+          clienteId ? supabase.rpc('sugerir_valor_mercadoria', { p_cliente: clienteId, p_cidade_origem: l.cidade_origem.trim(), p_cidade_destino: l.cidade_destino.trim() }) : Promise.resolve({ data: null }),
         ])
         set(l.key, { sugPedagio: (ped.data as Linha['sugPedagio']) ?? undefined, sugValor: (val.data as Linha['sugValor']) ?? undefined })
       })
@@ -130,12 +130,12 @@ export default function EditarPreCotacao({
         const cab = { cliente_id: clienteId || null, cliente_nome_livre: clienteId ? null : nomeLivre.trim(), validade_dias: Number(validade) || 7, observacoes: obs.trim() || null }
         let id = pre?.id
         if (id) {
-          const { error } = await db.from('pre_cotacoes').update(cab).eq('id', id)
+          const { error } = await supabase.from('pre_cotacoes').update(cab).eq('id', id)
           if (error) throw error
-          const { error: e2 } = await db.from('pre_cotacao_itens').delete().eq('pre_cotacao_id', id)
+          const { error: e2 } = await supabase.from('pre_cotacao_itens').delete().eq('pre_cotacao_id', id)
           if (e2) throw e2
         } else {
-          const { data, error } = await db.from('pre_cotacoes').insert({ ...cab, status: 'rascunho' }).select('id').single()
+          const { data, error } = await supabase.from('pre_cotacoes').insert({ ...cab, status: 'rascunho' }).select('id').single()
           if (error) throw error
           id = data.id as string
         }
@@ -147,7 +147,7 @@ export default function EditarPreCotacao({
           pedagio: num(l.pedagio), pedagio_base: num(l.pedagio) == null ? null : l.pedagio_base ?? 'digitado',
           preco_viagem: num(l.preco_viagem), status: 'pendente',
         }))
-        const { error: e3 } = await db.from('pre_cotacao_itens').insert(rows)
+        const { error: e3 } = await supabase.from('pre_cotacao_itens').insert(rows)
         if (e3) throw e3
         onSalvo(`Pré-cotação ${pre ? 'atualizada' : 'criada'} com ${rows.length} rota(s).`)
         return rows.length
