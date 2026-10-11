@@ -7,6 +7,8 @@ import { parseNFeXml, type DadosNFe } from '@rbr/shared/nfeParser'
 import { IconPlus, IconX, IconAlertTriangle } from '../icons-local'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import { useContratoAgenciador } from '../components/ContratoAgenciador'
+import DeclaracaoCarga from '../components/DeclaracaoCarga'
+import { dbNovo } from '@rbr/shared/dbNovo'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -138,6 +140,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
   // Tarefa 8: sem contrato validado (ou suspenso) não fecha carga. undefined/null = função ainda não aplicada no banco.
   const { situacao: contrato } = useContratoAgenciador()
   const contratoPendente = !!contrato && contrato.status !== 'validado'
+  const [declarando, setDeclarando] = useState<string | null>(null)
   const [cotacoes, setCotacoes] = useState<CotacaoComCliente[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
@@ -436,15 +439,36 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
       eixos: form.eixos ? Number(form.eixos) : null,
     }
 
+    // Tarefa 10.1: fechar a carga exige a declaração. Salva como "enviada", pede a declaração e só então converte.
+    const jaConvertida = !!form.id && cotacoes.find((c) => c.id === form.id)?.status === 'convertida'
+    const precisaDeclarar = form.status === 'convertida' && !jaConvertida && !!contrato
+    const dados = precisaDeclarar ? { ...payload, status: 'enviada' as StatusCotacao } : payload
+
     const result = form.id
-      ? await supabase.from('cotacoes').update(payload).eq('id', form.id)
-      : await supabase.from('cotacoes').insert({ ...payload, agenciador_id: pessoa.id, origem: 'agenciador' })
+      ? await supabase.from('cotacoes').update(dados).eq('id', form.id).select('id').single()
+      : await supabase.from('cotacoes').insert({ ...dados, agenciador_id: pessoa.id, origem: 'agenciador' }).select('id').single()
 
     setSaving(false)
     if (result.error) {
       setError(result.error.message)
       return
     }
+    if (precisaDeclarar && result.data) {
+      const id = result.data.id
+      setForm((f) => ({ ...f, id }))
+      const { data: declarada } = await dbNovo.rpc('carga_declarada', { p_cotacao: id })
+      if (declarada) await converterDeclarada(id)
+      else setDeclarando(id)
+      return
+    }
+    setFormOpen(false)
+    load()
+  }
+
+  async function converterDeclarada(id: string) {
+    const { error: e2 } = await supabase.from('cotacoes').update({ status: 'convertida' }).eq('id', id)
+    if (e2) throw new Error(e2.message)
+    setDeclarando(null)
     setFormOpen(false)
     load()
   }
@@ -890,6 +914,25 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
             <div className="text-xs rounded-xl p-2.5 font-semibold" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
               Contrato pendente: sem o contrato validado pela RBR a cotação não vira carga fechada. Veja o passo a passo no Início.
             </div>
+          )}
+
+          {declarando && (
+            <DeclaracaoCarga
+              cotacaoId={declarando}
+              iniciais={{
+                embarcador_nome: form.nf_remetente_razao_social,
+                embarcador_documento: form.nf_remetente_cnpj,
+                valor: form.valor_nf,
+                nf_chave: form.nf_chave_acesso,
+                endereco_coleta: [form.cidade_origem, form.uf_origem].filter(Boolean).join('/'),
+                endereco_entrega: [form.cidade_destino, form.uf_destino].filter(Boolean).join('/'),
+              }}
+              onFechar={() => {
+                setDeclarando(null)
+                setError('A cotação foi salva como "enviada". Para fechar a carga, faça a declaração.')
+              }}
+              onDeclarado={() => converterDeclarada(declarando)}
+            />
           )}
 
           {form.status === 'convertida' && (

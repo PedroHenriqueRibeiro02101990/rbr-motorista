@@ -143,6 +143,8 @@ const MOTORISTA_INICIAL = {
   qtd_veiculos_rntrc: '',
   opcao_inss_direto: false,
   data_comunicacao_inss_direto: '',
+  // Tarefa 10.6 (20261011_10)
+  validade_exame_toxicologico: '',
 }
 
 const AGENCIADOR_INICIAL = {
@@ -236,6 +238,23 @@ const VEICULO_INICIAL = {
   seguro_veiculo_apolice_numero: '',
   seguro_veiculo_vencimento: '',
   crlv_exercicio: '',
+}
+
+// Tarefa 10.6: exame toxicológico exigido para CNH C, D ou E.
+function cnhExigeToxicologico(categoria: string | null | undefined): boolean {
+  return /[CDE]/i.test(categoria ?? '')
+}
+
+function AvisoToxicologico({ categoria, validade }: { categoria: string | null | undefined; validade: string | null | undefined }) {
+  if (!cnhExigeToxicologico(categoria) || validade === undefined) return null
+  if (!validade) return <span style={{ color: '#8A5A00', fontWeight: 600 }}>Toxicológico: não informado</span>
+  const dias = Math.round((new Date(validade + 'T12:00:00').getTime() - Date.now()) / 86400000)
+  const cor = dias < 0 ? 'var(--rbr-danger)' : dias <= 30 ? '#8A5A00' : undefined
+  return (
+    <span style={cor ? { color: cor, fontWeight: 600 } : undefined}>
+      Toxicológico: {dias < 0 ? `vencido em ${formatDate(validade)} ⚠` : `até ${formatDate(validade)}${dias <= 30 ? ` (vence em ${dias} dia(s))` : ''}`}
+    </span>
+  )
 }
 
 function cnhVencidaOuAusente(validade: string | null | undefined): boolean {
@@ -951,6 +970,7 @@ export default function Cadastros() {
       opcao_inss_direto: novoMotorista.tipo_parceiro === 'tac_pf' && novoMotorista.opcao_inss_direto,
       data_comunicacao_inss_direto:
         novoMotorista.tipo_parceiro === 'tac_pf' && novoMotorista.opcao_inss_direto ? novoMotorista.data_comunicacao_inss_direto || null : null,
+      validade_exame_toxicologico: cnhExigeToxicologico(novoMotorista.cnh_categoria) ? novoMotorista.validade_exame_toxicologico || null : null,
     }
   }
 
@@ -1017,6 +1037,7 @@ export default function Cadastros() {
       qtd_veiculos_rntrc: novos(m).qtd_veiculos_rntrc != null ? String(novos(m).qtd_veiculos_rntrc) : '',
       opcao_inss_direto: !!novos(m).opcao_inss_direto,
       data_comunicacao_inss_direto: novos(m).data_comunicacao_inss_direto ?? '',
+      validade_exame_toxicologico: novos(m).validade_exame_toxicologico ?? '',
     })
     setShowNovoMotorista(true)
   }
@@ -2041,6 +2062,33 @@ export default function Cadastros() {
                   style={inputStyle}
                 />
               </div>
+              {/* Tarefa 10.6: exame toxicológico só para CNH C, D ou E. Consentimento de antecedentes: só o motorista dá, no app. */}
+              {cnhExigeToxicologico(novoMotorista.cnh_categoria) && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+                    Validade do exame toxicológico
+                    <input
+                      type="date"
+                      value={novoMotorista.validade_exame_toxicologico}
+                      onChange={(e) => setNovoMotorista((f) => ({ ...f, validade_exame_toxicologico: e.target.value }))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                  </label>
+                </div>
+              )}
+              {editingMotoristaId && (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Consulta de antecedentes:{' '}
+                  {(() => {
+                    const m = (motoristas ?? []).find((x) => x.id === editingMotoristaId)
+                    const n = m ? novos(m) : null
+                    return n?.consentimento_consulta_antecedentes
+                      ? `autorizada pelo motorista em ${n.consentimento_antecedentes_em ? formatDate(n.consentimento_antecedentes_em) : '—'}`
+                      : 'o motorista ainda não autorizou (ele autoriza no app, em Perfil)'
+                  })()}
+                </div>
+              )}
 
               <div className={labelClass}>RNTRC</div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -2185,6 +2233,7 @@ export default function Cadastros() {
                           CNH válida até: {m.cnh_validade ? formatDate(m.cnh_validade) : 'não informado'}
                           {vencida ? ' ⚠' : ''}
                         </span>
+                        <AvisoToxicologico categoria={m.cnh_categoria} validade={novos(m).validade_exame_toxicologico} />
                         <span>RNTRC: {m.rntrc_status ?? '—'}</span>
                       </div>
                     </button>

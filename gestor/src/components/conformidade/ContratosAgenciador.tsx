@@ -16,6 +16,7 @@ type Agenciador = {
   status_contrato_motivo: string | null
   responsavel_nome: string | null
   responsavel_cpf: string | null
+  nivel_confianca: 'novo' | 'verificado' | 'restrito'
 }
 type Envio = {
   id: string
@@ -76,6 +77,7 @@ export default function ContratosAgenciador() {
           status_contrato_motivo: n.status_contrato_motivo ?? null,
           responsavel_nome: n.responsavel_nome ?? null,
           responsavel_cpf: n.responsavel_cpf ?? null,
+          nivel_confianca: n.nivel_confianca ?? 'novo',
         }
       }),
     )
@@ -129,7 +131,27 @@ export default function ContratosAgenciador() {
                     {a.status_contrato_motivo ? ` · ${a.status_contrato_motivo}` : ''}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                  {/* Tarefa 10.3: nível de confiança (só o gestor muda), com limite de valor por carga nas Regras. */}
+                  <select
+                    value={a.nivel_confianca}
+                    title="Nível de confiança"
+                    onChange={async (ev) => {
+                      const nivel = ev.target.value
+                      const { error } = await dbNovo.from('pessoas').update({ nivel_confianca: nivel }).eq('id', a.id)
+                      if (error) mostrar('erro', error.message)
+                      else {
+                        mostrar('ok', `${a.nome}: nível "${nivel}".`)
+                        void carregar()
+                      }
+                    }}
+                    className="border rounded-lg px-2 py-1.5 text-xs bg-white"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  >
+                    <option value="novo">Novo</option>
+                    <option value="verificado">Verificado</option>
+                    <option value="restrito">Restrito</option>
+                  </select>
                   <Botao variante="fantasma" onClick={() => setAcao({ a, tipo: 'responsavel' })}>
                     Responsável
                   </Botao>

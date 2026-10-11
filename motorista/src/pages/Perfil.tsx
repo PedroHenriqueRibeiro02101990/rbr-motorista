@@ -10,6 +10,7 @@ import { formatarDoc } from '@rbr/shared/documento'
 import { useCobrancaAtiva } from '@rbr/shared/useCobranca'
 import Condutores from '../components/Condutores'
 import MeusContratos from '../components/MeusContratos'
+import ConsentimentoAntecedentes from '../components/ConsentimentoAntecedentes'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Veiculo = Database['public']['Tables']['veiculos']['Row']
@@ -830,6 +831,7 @@ export default function Perfil({
 
       {ehTitular && <Condutores titular={pessoa} />}
       {ehTitular && <MeusContratos />}
+      <ConsentimentoAntecedentes pessoa={pessoa} onMudou={onRecarregar} />
 
       <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Segurança</div>

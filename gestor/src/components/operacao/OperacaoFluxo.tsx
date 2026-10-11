@@ -20,6 +20,7 @@ import { type Apoio, type Lancamento, type ResultadoOperacao, carregarApoio } fr
 import { BaixaModal } from '../financeiro/LancamentoModais'
 import CiotOperacao from './CiotOperacao'
 import RetencaoInss from './RetencaoInss'
+import ConformidadeOperacao from './ConformidadeOperacao'
 import { novosOp } from '@rbr/shared/dbNovo'
 import { DOCUMENTO_CLIENTE_LABEL, estiloDeteccao } from '@rbr/shared/DocumentoCliente'
 
@@ -168,6 +169,7 @@ export default function OperacaoFluxo({
       )}
 
       <DocumentoDaOperacao d={d} />
+      <ConformidadeOperacao operacaoId={o.id} congeladaMotivo={novosOp(o).congelada_motivo} onMudou={() => void recarregar().then(onChanged)} />
       <ResumoPreco d={d} />
       <Alocacao d={d} editavel={editavelAlocacao} salvando={salvando} executar={executar} />
       {o.veiculo_id && o.pessoa_alocada_id && <Pagamento d={d} salvando={salvando} executar={executar} />}

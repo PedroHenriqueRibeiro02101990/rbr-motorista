@@ -24,6 +24,13 @@ export type PessoaNova = {
   status_contrato_em?: string | null
   responsavel_nome?: string | null
   responsavel_cpf?: string | null
+  // 20261011_10 (escudo contra carga ilícita)
+  nivel_confianca?: 'novo' | 'verificado' | 'restrito' | null
+  suspenso_em?: string | null
+  suspensao_motivo?: string | null
+  validade_exame_toxicologico?: string | null
+  consentimento_consulta_antecedentes?: boolean | null
+  consentimento_antecedentes_em?: string | null
 }
 export const novos = <T extends object>(linha: T) => linha as T & PessoaNova
 
@@ -33,5 +40,8 @@ export type OperacaoNova = {
   tipo_documento_cliente?: 'nfse' | 'cte_mdfe' | null
   tipo_documento_aviso?: string | null
   tipo_documento_mudou_em?: string | null
+  // 20261011_10 (incidente)
+  congelada_em?: string | null
+  congelada_motivo?: string | null
 }
 export const novosOp = <T extends object>(linha: T) => linha as T & OperacaoNova
