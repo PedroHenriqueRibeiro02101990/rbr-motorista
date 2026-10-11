@@ -18,6 +18,7 @@ import {
 } from '../../lib/operacaoDetalhe'
 import { type Apoio, type Lancamento, type ResultadoOperacao, carregarApoio } from '../../lib/financeiro'
 import { BaixaModal } from '../financeiro/LancamentoModais'
+import CiotOperacao from './CiotOperacao'
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
 
@@ -166,6 +167,7 @@ export default function OperacaoFluxo({
       <ResumoPreco d={d} />
       <Alocacao d={d} editavel={editavelAlocacao} salvando={salvando} executar={executar} />
       {o.veiculo_id && o.pessoa_alocada_id && <Pagamento d={d} salvando={salvando} executar={executar} />}
+      {o.veiculo_id && o.pessoa_alocada_id && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {o.status !== 'alocando_motorista' && (
         <Documentos d={d} gestor={gestor} salvando={salvando} executar={executar} recarregar={recarregar} />
       )}
