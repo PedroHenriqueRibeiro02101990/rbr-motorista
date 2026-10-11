@@ -138,8 +138,9 @@ function toNumberOrNull(v: string): number | null {
 
 export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
   // Tarefa 8: sem contrato validado (ou suspenso) não fecha carga. undefined/null = função ainda não aplicada no banco.
+  // A trava só vale depois que a RBR publicou o contrato (versao_publicada); suspensão trava sempre.
   const { situacao: contrato } = useContratoAgenciador()
-  const contratoPendente = !!contrato && contrato.status !== 'validado'
+  const contratoPendente = !!contrato && (contrato.status === 'suspenso' || (contrato.versao_publicada != null && contrato.status !== 'validado'))
   const [declarando, setDeclarando] = useState<string | null>(null)
   const [cotacoes, setCotacoes] = useState<CotacaoComCliente[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])

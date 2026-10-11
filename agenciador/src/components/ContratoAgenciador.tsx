@@ -43,6 +43,8 @@ export default function ContratoAgenciador({ pessoaId }: { pessoaId: string }) {
   const [ocupado, setOcupado] = useState(false)
 
   if (!situacao || situacao.status === 'validado') return null
+  // Antes da RBR publicar o contrato nada trava: não mostra o aviso (exceto suspensão).
+  if (situacao.versao_publicada == null && situacao.status !== 'suspenso') return null
   const st = STATUS_CONTRATO[situacao.status]
 
   async function baixar() {
@@ -93,8 +95,6 @@ export default function ContratoAgenciador({ pessoaId }: { pessoaId: string }) {
       </div>
       {situacao.status === 'suspenso' ? (
         <div className="text-xs">Novas cargas estão travadas. {situacao.motivo ? `Motivo: ${situacao.motivo}.` : ''} Fale com a RBR.</div>
-      ) : situacao.versao_publicada == null ? (
-        <div className="text-xs text-[color:var(--rbr-muted)]">A RBR ainda está finalizando o contrato. Você será avisado aqui.</div>
       ) : (
         <>
           <div className="text-xs">
