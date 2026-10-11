@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '@rbr/shared/supabaseClient'
+import { dbNovo } from '@rbr/shared/dbNovo'
+import { formatMoney } from '@rbr/shared/format'
 
 // As funções do aviso de carga ainda não estão em shared/database.types.ts:
 // usamos o cliente sem tipos e tipos locais mínimos.
@@ -81,6 +83,11 @@ export default function MotoristasSugeridos({
   const [avisandoId, setAvisandoId] = useState<string | null>(null)
   // Avisados nesta tela agora (mostra "Avisado agora" em vez da data).
   const [avisadosAgora, setAvisadosAgora] = useState<Set<string>>(new Set())
+  // Tarefa 5: frete do parceiro abaixo do piso mínimo da operação (aviso antes de mandar a proposta).
+  const [piso, setPiso] = useState<{ piso: number | null; frete: number | null; abaixo: boolean } | null>(null)
+  useEffect(() => {
+    void dbNovo.rpc('checar_piso_operacao', { p_operacao: operacaoId }).then(({ data }) => setPiso((data as typeof piso) ?? null))
+  }, [operacaoId])
 
   const carregar = useCallback(async () => {
     const { data, error } = await db.rpc('sugestoes_motoristas_operacao', { p_operacao: operacaoId })
@@ -131,6 +138,13 @@ export default function MotoristasSugeridos({
         <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Motoristas sugeridos para esta carga</div>
         {carga && <div className="text-xs text-[color:var(--rbr-muted)]">{resumoCarga(carga)}</div>}
       </div>
+
+      {piso?.abaixo && (
+        <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
+          Frete do parceiro ({formatMoney(piso.frete)}) abaixo do piso mínimo ({formatMoney(piso.piso)}). Ajuste antes de mandar a proposta: o CIOT
+          da RBR fica bloqueado abaixo do piso.
+        </div>
+      )}
 
       {erro && (
         <div className="text-xs rounded-lg px-3 py-2.5 flex items-start gap-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>

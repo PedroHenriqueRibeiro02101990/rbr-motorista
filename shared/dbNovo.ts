@@ -20,3 +20,9 @@ export type PessoaNova = {
   classificacao_ciot?: ClassificacaoCiot | null
 }
 export const novos = <T extends object>(linha: T) => linha as T & PessoaNova
+
+// Colunas novas de operacoes (20261011_05 e seguintes).
+export type OperacaoNova = {
+  piso_minimo_valor?: number | null
+}
+export const novosOp = <T extends object>(linha: T) => linha as T & OperacaoNova

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
+import { dbNovo, novosOp } from '@rbr/shared/dbNovo'
 import type { DetalheOperacao } from '../../lib/operacaoDetalhe'
 
 // Tarefa 2: origem do CIOT na operação (RBR na Repom ou CIOT do próprio parceiro ETC com mais de 3 veículos).
@@ -13,7 +13,9 @@ type CiotRow = {
   ciot_status: string
   ciot_inicio_previsto: string | null
   ciot_fim_previsto: string | null
+  ciot_prazo_pagamento: string | null
 }
+type AlertaCiot = { codigo: string; gravidade: 'bloqueia' | 'atencao'; limite: string | null; mensagem: string }
 
 export const ORIGEM_LABEL: Record<OrigemCiot, string> = { rbr_repom: 'RBR gera na Repom', parceiro: 'CIOT do parceiro (ETC)' }
 export const STATUS_CIOT_LABEL: Record<string, string> = {
@@ -37,7 +39,11 @@ export function useCiot(operacaoId: string, versao: string) {
   const [esperada, setEsperada] = useState<OrigemCiot | null>(null)
   const recarregar = useCallback(async () => {
     const [c, e] = await Promise.all([
-      dbNovo.from('operacao_ciot_vpo').select('ciot, ciot_origem, ciot_status, ciot_inicio_previsto, ciot_fim_previsto').eq('operacao_id', operacaoId).maybeSingle(),
+      dbNovo
+        .from('operacao_ciot_vpo')
+        .select('ciot, ciot_origem, ciot_status, ciot_inicio_previsto, ciot_fim_previsto, ciot_prazo_pagamento')
+        .eq('operacao_id', operacaoId)
+        .maybeSingle(),
       dbNovo.rpc('ciot_origem_esperada', { p_operacao: operacaoId }),
     ])
     setCiot((c.data as CiotRow | null) ?? null)
@@ -66,6 +72,21 @@ export default function CiotOperacao({
   const [origem, setOrigem] = useState<OrigemCiot | ''>('')
   const [inicio, setInicio] = useState('')
   const [fim, setFim] = useState('')
+  const [piso, setPiso] = useState('')
+  const [alertas, setAlertas] = useState<AlertaCiot[]>([])
+  const pisoAtual = novosOp(d.operacao).piso_minimo_valor ?? null
+
+  useEffect(() => {
+    setPiso(pisoAtual != null ? String(pisoAtual).replace('.', ',') : '')
+  }, [pisoAtual])
+
+  useEffect(() => {
+    void dbNovo
+      .from('v_alertas_ciot')
+      .select('codigo, gravidade, limite, mensagem')
+      .eq('operacao_id', d.operacao.id)
+      .then(({ data }) => setAlertas((data ?? []) as AlertaCiot[]))
+  }, [d.operacao.id, ciot])
 
   useEffect(() => {
     setNumero(ciot?.ciot ?? '')
@@ -78,6 +99,12 @@ export default function CiotOperacao({
 
   async function salvar() {
     await executar(async () => {
+      const pisoNum = piso.trim() ? Number(piso.replace(/\./g, '').replace(',', '.')) : null
+      if (pisoNum != null && (!Number.isFinite(pisoNum) || pisoNum < 0)) throw new Error('Piso mínimo inválido.')
+      if (pisoNum !== pisoAtual) {
+        const { error: ep } = await dbNovo.from('operacoes').update({ piso_minimo_valor: pisoNum }).eq('id', d.operacao.id)
+        if (ep) throw ep
+      }
       const n = numero.replace(/\D/g, '')
       if (n && n.length !== 12) throw new Error('O CIOT tem 12 dígitos.')
       if (origem === 'parceiro' && !n) throw new Error('Digite o número do CIOT gerado pelo parceiro.')
@@ -134,6 +161,28 @@ export default function CiotOperacao({
           <input type="datetime-local" value={fim} onChange={(e) => setFim(e.target.value)} className={inputClass} style={inputStyle} />
         </div>
       </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+        <div>
+          <label className={labelClass}>Piso mínimo do frete (R$)</label>
+          <input inputMode="decimal" value={piso} onChange={(e) => setPiso(e.target.value)} placeholder="digitar à mão" className={inputClass} style={inputStyle} />
+        </div>
+        <div className="md:col-span-3 text-[11px] text-[color:var(--rbr-muted)] self-end pb-2">
+          Carga lotação: frete pago ao parceiro abaixo do piso gera aviso antes da proposta e bloqueia o CIOT da RBR.
+        </div>
+      </div>
+      <PrazosCiot ciot={ciot} />
+      {alertas.map((a) => (
+        <div
+          key={a.codigo}
+          className="text-xs rounded-lg px-3 py-2"
+          style={a.gravidade === 'bloqueia' ? { background: '#FBE9E9', color: 'var(--rbr-danger)' } : { background: '#FDF1DC', color: '#8A5A00' }}
+        >
+          {a.mensagem}
+        </div>
+      ))}
+      {ciot?.ciot && ciot.ciot_status === 'emitido' && (
+        <div className="text-[11px] text-[color:var(--rbr-muted)]">Trocar o veículo depois do CIOT emitido exige uma nova operação de CIOT.</div>
+      )}
       {origem === 'parceiro' && (
         <div className="text-[11px] text-[color:var(--rbr-muted)]">ETC com mais de 3 veículos gera o próprio CIOT: a RBR não gera, só registra o número.</div>
       )}
@@ -149,5 +198,24 @@ export default function CiotOperacao({
         Salvar CIOT
       </button>
     </div>
+  )
+}
+
+// Linha do tempo dos prazos do CIOT (Portaria SUROC 6/2026 / Lei 15.485/2026).
+function PrazosCiot({ ciot }: { ciot: CiotRow | null }) {
+  if (!ciot || (!ciot.ciot_inicio_previsto && !ciot.ciot_fim_previsto)) return null
+  const fmt = (v: Date) => v.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const itens: [string, string][] = []
+  if (ciot.ciot_inicio_previsto) itens.push(['Cancelar o CIOT só até', fmt(new Date(new Date(ciot.ciot_inicio_previsto).getTime() - 24 * 3600 * 1000))])
+  if (ciot.ciot_fim_previsto) itens.push(['Encerrar o CIOT até', fmt(new Date(new Date(ciot.ciot_fim_previsto).getTime() + 5 * 24 * 3600 * 1000))])
+  if (ciot.ciot_prazo_pagamento) itens.push(['Pagar o frete ao parceiro até', new Date(ciot.ciot_prazo_pagamento + 'T12:00:00').toLocaleDateString('pt-BR') + ' (30 dias úteis)'])
+  return (
+    <ol className="flex flex-col gap-1 border-l-2 pl-3" style={{ borderColor: 'var(--rbr-navy)' }}>
+      {itens.map(([k, v]) => (
+        <li key={k} className="text-xs">
+          <span className="text-[color:var(--rbr-muted)]">{k}</span> <b className="tabular-nums">{v}</b>
+        </li>
+      ))}
+    </ol>
   )
 }
