@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { formatMoney } from '@rbr/shared/format'
 import { whatsappLink } from '../lib/financeiro'
 import { Aviso, Botao, Campo, Card, Carregando, Modal, Vazio, inputClass, inputStyle } from '../components/financeiro/ui'
@@ -56,9 +55,9 @@ export default function NotasParceiros() {
 
   const carregar = useCallback(async () => {
     const [p, f, n] = await Promise.all([
-      dbNovo.from('v_notas_parceiro_pendentes').select('*').order('competencia', { ascending: false }),
-      dbNovo.from('v_frete_pago_parceiro').select('parceiro_id, operacao_id, frete, pago_em, competencia').eq('tem_nota', false),
-      dbNovo.from('notas_parceiro').select('id, numero, valor, competencia, data_emissao, parceiro_id, criado_em').order('criado_em', { ascending: false }).limit(20),
+      supabase.from('v_notas_parceiro_pendentes').select('*').order('competencia', { ascending: false }),
+      supabase.from('v_frete_pago_parceiro').select('parceiro_id, operacao_id, frete, pago_em, competencia').eq('tem_nota', false),
+      supabase.from('notas_parceiro').select('id, numero, valor, competencia, data_emissao, parceiro_id, criado_em').order('criado_em', { ascending: false }).limit(20),
     ])
     const e = p.error ?? f.error ?? n.error
     setErro(e ? e.message : null)
@@ -266,13 +265,13 @@ function AnexarNota({
                   const { error } = await supabase.storage.from('notas-parceiros').upload(path, arquivo, { contentType: arquivo.type || undefined })
                   if (error) throw error
                 }
-                const { data: r, error } = await dbNovo.rpc('anexar_nota_parceiro', {
+                const { data: r, error } = await supabase.rpc('anexar_nota_parceiro', {
                   p_parceiro: p.parceiro_id,
                   p_competencia: p.competencia,
                   p_numero: num.trim(),
                   p_valor: v,
                   p_data_emissao: data,
-                  p_arquivo_url: path,
+                  p_arquivo_url: path as string, // null = nota sem arquivo (a coluna aceita null)
                   p_operacoes: [...marcadas],
                 })
                 if (error) throw error

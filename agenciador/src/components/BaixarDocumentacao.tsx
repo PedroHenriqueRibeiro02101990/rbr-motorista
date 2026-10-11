@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
-import { DOCUMENTO_CLIENTE_LABEL, type TipoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
+import { supabase } from '@rbr/shared/supabaseClient'
+import { ehTipoDocumento, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 
 // Tarefa 6: documentos liberados para o agenciador, já filtrados pelo tipo detectado na operação
 // (NFS-e quando o frete é dentro da capital; CT-e e MDF-e nos demais). RPC documentos_operacao_agenciador.
@@ -8,7 +8,7 @@ import { DOCUMENTO_CLIENTE_LABEL, type TipoDocumentoCliente } from '@rbr/shared/
 type Doc = { tipo: string; numero_documento: string | null; chave_acesso: string | null; url_pdf: string | null; url_xml: string | null; emitido_em: string | null }
 const NOME: Record<string, string> = { nfse: 'NFS-e', cte: 'CT-e', mdfe: 'MDF-e' }
 
-export default function BaixarDocumentacao({ operacaoId, tipo }: { operacaoId: string; tipo: TipoDocumentoCliente | null | undefined }) {
+export default function BaixarDocumentacao({ operacaoId, tipo }: { operacaoId: string; tipo: string | null }) {
   const [aberto, setAberto] = useState(false)
   const [docs, setDocs] = useState<Doc[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -16,7 +16,7 @@ export default function BaixarDocumentacao({ operacaoId, tipo }: { operacaoId: s
   async function abrir() {
     setAberto(true)
     setErro(null)
-    const { data, error } = await dbNovo.rpc('documentos_operacao_agenciador', { p_operacao: operacaoId })
+    const { data, error } = await supabase.rpc('documentos_operacao_agenciador', { p_operacao: operacaoId })
     if (error) setErro(error.message)
     setDocs((data ?? []) as Doc[])
   }
@@ -28,9 +28,7 @@ export default function BaixarDocumentacao({ operacaoId, tipo }: { operacaoId: s
       </button>
       {aberto && (
         <div className="mt-2 flex flex-col gap-1.5">
-          {tipo !== undefined && (
-            <div className="text-[11px] text-[color:var(--rbr-muted)]">Documento desta carga: {tipo ? DOCUMENTO_CLIENTE_LABEL[tipo] : 'a definir pela RBR'}</div>
-          )}
+          <div className="text-[11px] text-[color:var(--rbr-muted)]">Documento desta carga: {ehTipoDocumento(tipo) ? rotuloDocumento(tipo) : 'a definir pela RBR'}</div>
           {erro && <div className="text-xs font-semibold" style={{ color: 'var(--rbr-danger)' }}>✗ {erro}</div>}
           {docs === null && !erro && <div className="text-xs text-[color:var(--rbr-muted)]">Carregando…</div>}
           {docs?.length === 0 && <div className="text-xs text-[color:var(--rbr-muted)]">Nenhum documento liberado ainda.</div>}

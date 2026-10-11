@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
+import { supabase } from '@rbr/shared/supabaseClient'
 
 // Tarefas 7 e 9: antes de usar o app, o parceiro aceita a versão publicada do termo/contrato marcando "Li e aceito"
 // em CADA cláusula, separadamente. Versão nova publicada = novo aceite no próximo acesso.
@@ -31,7 +31,7 @@ export default function AceiteTermo({
   const [feito, setFeito] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
-    const { data, error } = await dbNovo.rpc('meu_termo_pendente', { p_tipo: 'prestador' })
+    const { data, error } = await supabase.rpc('meu_termo_pendente', { p_tipo: 'prestador' })
     // Se a função ainda não existe no banco (migration não aplicada), não trava o app.
     if (error) return setTermo(null)
     setTermo((data as TermoPendente | null) ?? null)
@@ -52,7 +52,7 @@ export default function AceiteTermo({
     setErro(null)
     setEnviando(true)
     try {
-      const { data, error } = await dbNovo.rpc('aceitar_termo', { p_termo: termo.termo_id, p_clausulas: marcadas, p_user_agent: navigator.userAgent })
+      const { data, error } = await supabase.rpc('aceitar_termo', { p_termo: termo.termo_id, p_clausulas: marcadas, p_user_agent: navigator.userAgent })
       if (error) throw new Error(error.message)
       const a = data as AceiteFeito
       setFeito(`✓ Aceite registrado em ${new Date(a.aceito_em).toLocaleString('pt-BR')}. Gerando o PDF do contrato…`)

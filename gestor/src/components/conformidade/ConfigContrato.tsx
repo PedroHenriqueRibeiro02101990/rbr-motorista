@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { Aviso, Botao, Card, Carregando, Modal, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 import { TIPO_TERMO_LABEL, type Clausula, type Termo } from './Termos'
@@ -15,7 +15,7 @@ export function CamposContrato() {
   const { confirmacao, rodar, ocupado } = useConfirmacao()
 
   const carregar = useCallback(async () => {
-    const { data } = await dbNovo.from('contrato_config').select('*').order('tipo').order('chave')
+    const { data } = await supabase.from('contrato_config').select('*').order('tipo').order('chave')
     const l = (data ?? []) as Config[]
     setLista(l)
     setValores(Object.fromEntries(l.map((c) => [`${c.tipo}|${c.chave}`, c.valor ?? ''])))
@@ -65,7 +65,7 @@ export function CamposContrato() {
           void rodar('Campos do contrato salvos.', async () => {
             const mudou = lista.filter((c) => (c.valor ?? '') !== (valores[`${c.tipo}|${c.chave}`] ?? ''))
             for (const c of mudou) {
-              const { error } = await dbNovo
+              const { error } = await supabase
                 .from('contrato_config')
                 .update({ valor: (valores[`${c.tipo}|${c.chave}`] ?? '').trim() || null, updated_at: new Date().toISOString() })
                 .eq('tipo', c.tipo)
@@ -88,7 +88,7 @@ export function ExtraTermo({ t, recarregar }: { t: Termo; recarregar: () => void
   const [importando, setImportando] = useState(false)
   useEffect(() => {
     if (t.status !== 'rascunho') return
-    void dbNovo.rpc('campos_pendentes_termo', { p_termo: t.id }).then(({ data }) => setPend((data as string[] | null) ?? []))
+    void supabase.rpc('campos_pendentes_termo', { p_termo: t.id }).then(({ data }) => setPend((data as string[] | null) ?? []))
   }, [t])
   if (t.status !== 'rascunho') return null
   const naoImportado = t.texto.includes('[IMPORTAR')
@@ -153,13 +153,13 @@ function ImportarMinuta({ t, onFechar, onFeito }: { t: Termo; onFechar: () => vo
   async function salvar() {
     if (!md) throw new Error('Escolha o arquivo .md da minuta.')
     const texto = /minuta para revis/i.test(md) ? md : `MINUTA PARA REVISÃO JURÍDICA\n\n${md}`
-    const { error } = await dbNovo.from('termos_contrato').update({ texto, minuta: true }).eq('id', t.id)
+    const { error } = await supabase.from('termos_contrato').update({ texto, minuta: true }).eq('id', t.id)
     if (error) throw error
     if (t.tipo === 'prestador') {
       if (clausulas.length === 0) throw new Error('Não achei a tabela de cláusulas no fim do arquivo. O texto foi salvo; cadastre as cláusulas em "Editar rascunho".')
-      const { error: e1 } = await dbNovo.from('termos_contrato_clausulas').delete().eq('termo_id', t.id)
+      const { error: e1 } = await supabase.from('termos_contrato_clausulas').delete().eq('termo_id', t.id)
       if (e1) throw e1
-      const { error: e2 } = await dbNovo.from('termos_contrato_clausulas').insert(clausulas.map((c) => ({ termo_id: t.id, ...c })))
+      const { error: e2 } = await supabase.from('termos_contrato_clausulas').insert(clausulas.map((c) => ({ termo_id: t.id, ...c })))
       if (e2) throw e2
     }
     onFeito()

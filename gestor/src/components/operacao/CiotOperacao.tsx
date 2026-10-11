@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dbNovo, novosOp } from '@rbr/shared/dbNovo'
+import { supabase } from '@rbr/shared/supabaseClient'
 import type { DetalheOperacao } from '../../lib/operacaoDetalhe'
 
 // Tarefa 2: origem do CIOT na operação (RBR na Repom ou CIOT do próprio parceiro ETC com mais de 3 veículos).
@@ -39,12 +39,12 @@ export function useCiot(operacaoId: string, versao: string) {
   const [esperada, setEsperada] = useState<OrigemCiot | null>(null)
   const recarregar = useCallback(async () => {
     const [c, e] = await Promise.all([
-      dbNovo
+      supabase
         .from('operacao_ciot_vpo')
         .select('ciot, ciot_origem, ciot_status, ciot_inicio_previsto, ciot_fim_previsto, ciot_prazo_pagamento')
         .eq('operacao_id', operacaoId)
         .maybeSingle(),
-      dbNovo.rpc('ciot_origem_esperada', { p_operacao: operacaoId }),
+      supabase.rpc('ciot_origem_esperada', { p_operacao: operacaoId }),
     ])
     setCiot((c.data as CiotRow | null) ?? null)
     setEsperada((e.data as OrigemCiot | null) ?? null)
@@ -74,14 +74,14 @@ export default function CiotOperacao({
   const [fim, setFim] = useState('')
   const [piso, setPiso] = useState('')
   const [alertas, setAlertas] = useState<AlertaCiot[]>([])
-  const pisoAtual = novosOp(d.operacao).piso_minimo_valor ?? null
+  const pisoAtual = d.operacao.piso_minimo_valor ?? null
 
   useEffect(() => {
     setPiso(pisoAtual != null ? String(pisoAtual).replace('.', ',') : '')
   }, [pisoAtual])
 
   useEffect(() => {
-    void dbNovo
+    void supabase
       .from('v_alertas_ciot')
       .select('codigo, gravidade, limite, mensagem')
       .eq('operacao_id', d.operacao.id)
@@ -102,13 +102,13 @@ export default function CiotOperacao({
       const pisoNum = piso.trim() ? Number(piso.replace(/\./g, '').replace(',', '.')) : null
       if (pisoNum != null && (!Number.isFinite(pisoNum) || pisoNum < 0)) throw new Error('Piso mínimo inválido.')
       if (pisoNum !== pisoAtual) {
-        const { error: ep } = await dbNovo.from('operacoes').update({ piso_minimo_valor: pisoNum }).eq('id', d.operacao.id)
+        const { error: ep } = await supabase.from('operacoes').update({ piso_minimo_valor: pisoNum }).eq('id', d.operacao.id)
         if (ep) throw ep
       }
       const n = numero.replace(/\D/g, '')
       if (n && n.length !== 12) throw new Error('O CIOT tem 12 dígitos.')
       if (origem === 'parceiro' && !n) throw new Error('Digite o número do CIOT gerado pelo parceiro.')
-      const { error } = await dbNovo.from('operacao_ciot_vpo').upsert(
+      const { error } = await supabase.from('operacao_ciot_vpo').upsert(
         {
           operacao_id: d.operacao.id,
           ciot: n || null,

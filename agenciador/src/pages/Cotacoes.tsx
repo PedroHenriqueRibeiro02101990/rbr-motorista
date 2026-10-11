@@ -8,7 +8,6 @@ import { IconPlus, IconX, IconAlertTriangle } from '../icons-local'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import { useContratoAgenciador } from '../components/ContratoAgenciador'
 import DeclaracaoCarga from '../components/DeclaracaoCarga'
-import { dbNovo } from '@rbr/shared/dbNovo'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -457,7 +456,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
     if (precisaDeclarar && result.data) {
       const id = result.data.id
       setForm((f) => ({ ...f, id }))
-      const { data: declarada } = await dbNovo.rpc('carga_declarada', { p_cotacao: id })
+      const { data: declarada } = await supabase.rpc('carga_declarada', { p_cotacao: id })
       if (declarada) await converterDeclarada(id)
       else setDeclarando(id)
       return

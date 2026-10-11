@@ -1,5 +1,4 @@
 import { supabase } from './supabaseClient'
-import { dbNovo } from './dbNovo'
 import { gerarPdfContrato, sha256Hex, type JsPDFCtor } from './contratoPdf'
 
 // Tarefa 9: PDF do contrato aceito, com a assinatura eletrônica do prestador (nome, CPF/CNPJ, data/hora, IP), a
@@ -25,7 +24,7 @@ type DadosPdf = {
 }
 
 export async function gerarESalvarPdfAceite(JsPDF: JsPDFCtor, aceiteId: string): Promise<string> {
-  const { data, error } = await dbNovo.rpc('dados_pdf_aceite', { p_aceite: aceiteId })
+  const { data, error } = await supabase.rpc('dados_pdf_aceite', { p_aceite: aceiteId })
   if (error) throw new Error(error.message)
   const d = data as DadosPdf
   if (d.pdf_path) return d.pdf_path
@@ -56,7 +55,7 @@ export async function gerarESalvarPdfAceite(JsPDF: JsPDFCtor, aceiteId: string):
   const { error: eu } = await supabase.storage.from('contratos').upload(path, blob, { contentType: 'application/pdf', upsert: false })
   // Se o arquivo já subiu numa tentativa anterior, só falta registrar.
   if (eu && !/exist|duplicate/i.test(eu.message)) throw eu
-  const { error: er } = await dbNovo.rpc('registrar_pdf_aceite', { p_aceite: d.aceite_id, p_path: path, p_hash: await sha256Hex(blob) })
+  const { error: er } = await supabase.rpc('registrar_pdf_aceite', { p_aceite: d.aceite_id, p_path: path, p_hash: await sha256Hex(blob) })
   if (er) throw new Error(er.message)
   return path
 }

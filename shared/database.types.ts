@@ -14,6 +14,130 @@ export type Database = {
   }
   public: {
     Tables: {
+      aceites_termo: {
+        Row: {
+          aceito_em: string
+          clausulas: Json
+          hash_texto: string
+          id: string
+          ip: string | null
+          pessoa_id: string
+          termo_id: string
+          texto_aceito: string
+          tipo: string
+          user_agent: string | null
+          versao_termo: number
+        }
+        Insert: {
+          aceito_em?: string
+          clausulas: Json
+          hash_texto: string
+          id?: string
+          ip?: string | null
+          pessoa_id: string
+          termo_id: string
+          texto_aceito: string
+          tipo: string
+          user_agent?: string | null
+          versao_termo: number
+        }
+        Update: {
+          aceito_em?: string
+          clausulas?: Json
+          hash_texto?: string
+          id?: string
+          ip?: string | null
+          pessoa_id?: string
+          termo_id?: string
+          texto_aceito?: string
+          tipo?: string
+          user_agent?: string | null
+          versao_termo?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aceites_termo_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aceites_termo_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "aceites_termo_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "aceites_termo_termo_id_fkey"
+            columns: ["termo_id"]
+            isOneToOne: false
+            referencedRelation: "termos_contrato"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aceites_termo_pdf: {
+        Row: {
+          aceite_id: string
+          created_at: string
+          gerado_por: string | null
+          hash_pdf: string
+          pdf_path: string
+        }
+        Insert: {
+          aceite_id: string
+          created_at?: string
+          gerado_por?: string | null
+          hash_pdf: string
+          pdf_path: string
+        }
+        Update: {
+          aceite_id?: string
+          created_at?: string
+          gerado_por?: string | null
+          hash_pdf?: string
+          pdf_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aceites_termo_pdf_aceite_id_fkey"
+            columns: ["aceite_id"]
+            isOneToOne: true
+            referencedRelation: "aceites_termo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aceites_termo_pdf_gerado_por_fkey"
+            columns: ["gerado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aceites_termo_pdf_gerado_por_fkey"
+            columns: ["gerado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "aceites_termo_pdf_gerado_por_fkey"
+            columns: ["gerado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
       aet_autorizacoes: {
         Row: {
           created_at: string
@@ -76,6 +200,73 @@ export type Database = {
           percentual?: number
         }
         Relationships: []
+      }
+      alertas_conformidade_revisoes: {
+        Row: {
+          codigo: string
+          observacao: string
+          operacao_id: string
+          revisado_em: string
+          revisado_por: string | null
+        }
+        Insert: {
+          codigo: string
+          observacao: string
+          operacao_id: string
+          revisado_em?: string
+          revisado_por?: string | null
+        }
+        Update: {
+          codigo?: string
+          observacao?: string
+          operacao_id?: string
+          revisado_em?: string
+          revisado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alertas_conformidade_revisoes_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alertas_conformidade_revisoes_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "alertas_conformidade_revisoes_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_resultado_operacoes"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "alertas_conformidade_revisoes_revisado_por_fkey"
+            columns: ["revisado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alertas_conformidade_revisoes_revisado_por_fkey"
+            columns: ["revisado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "alertas_conformidade_revisoes_revisado_por_fkey"
+            columns: ["revisado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
       }
       analises_financeiras_ia: {
         Row: {
@@ -1374,43 +1565,79 @@ export type Database = {
         Row: {
           aceito_pelo_motorista_em: string | null
           created_at: string
+          frete_bruto: number | null
           id: string
+          inss_aliquota: number | null
+          inss_base: number | null
+          inss_competencia: string | null
+          inss_retido: number
+          inss_vencimento_recolhimento: string | null
           meio_pagamento: Database["public"]["Enums"]["meio_pagamento"]
           operacao_id: string
           origem: Database["public"]["Enums"]["origem_operacao"]
+          parceiro_id: string | null
           percentual_adiantamento: number | null
+          retencao_aplica: boolean
+          retencao_avisos: Json
+          retencao_calculada_em: string | null
+          retencao_motivo: string | null
           saldo_prazo_dias: number
           tipo: Database["public"]["Enums"]["tipo_pagamento_prazo"]
           updated_at: string
           valor_adiantamento: number | null
+          valor_liquido: number | null
           valor_total_contrato: number
         }
         Insert: {
           aceito_pelo_motorista_em?: string | null
           created_at?: string
+          frete_bruto?: number | null
           id?: string
+          inss_aliquota?: number | null
+          inss_base?: number | null
+          inss_competencia?: string | null
+          inss_retido?: number
+          inss_vencimento_recolhimento?: string | null
           meio_pagamento: Database["public"]["Enums"]["meio_pagamento"]
           operacao_id: string
           origem: Database["public"]["Enums"]["origem_operacao"]
+          parceiro_id?: string | null
           percentual_adiantamento?: number | null
+          retencao_aplica?: boolean
+          retencao_avisos?: Json
+          retencao_calculada_em?: string | null
+          retencao_motivo?: string | null
           saldo_prazo_dias?: number
           tipo: Database["public"]["Enums"]["tipo_pagamento_prazo"]
           updated_at?: string
           valor_adiantamento?: number | null
+          valor_liquido?: number | null
           valor_total_contrato: number
         }
         Update: {
           aceito_pelo_motorista_em?: string | null
           created_at?: string
+          frete_bruto?: number | null
           id?: string
+          inss_aliquota?: number | null
+          inss_base?: number | null
+          inss_competencia?: string | null
+          inss_retido?: number
+          inss_vencimento_recolhimento?: string | null
           meio_pagamento?: Database["public"]["Enums"]["meio_pagamento"]
           operacao_id?: string
           origem?: Database["public"]["Enums"]["origem_operacao"]
+          parceiro_id?: string | null
           percentual_adiantamento?: number | null
+          retencao_aplica?: boolean
+          retencao_avisos?: Json
+          retencao_calculada_em?: string | null
+          retencao_motivo?: string | null
           saldo_prazo_dias?: number
           tipo?: Database["public"]["Enums"]["tipo_pagamento_prazo"]
           updated_at?: string
           valor_adiantamento?: number | null
+          valor_liquido?: number | null
           valor_total_contrato?: number
         }
         Relationships: [
@@ -1434,6 +1661,27 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "v_resultado_operacoes"
             referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "condicoes_pagamento_operacao_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condicoes_pagamento_operacao_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "condicoes_pagamento_operacao_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
           },
         ]
       }
@@ -1687,6 +1935,30 @@ export type Database = {
           },
         ]
       }
+      contrato_config: {
+        Row: {
+          chave: string
+          descricao: string | null
+          tipo: string
+          updated_at: string
+          valor: string | null
+        }
+        Insert: {
+          chave: string
+          descricao?: string | null
+          tipo: string
+          updated_at?: string
+          valor?: string | null
+        }
+        Update: {
+          chave?: string
+          descricao?: string | null
+          tipo?: string
+          updated_at?: string
+          valor?: string | null
+        }
+        Relationships: []
+      }
       contratos_aceite: {
         Row: {
           aceito_em: string
@@ -1733,6 +2005,101 @@ export type Database = {
           {
             foreignKeyName: "contratos_aceite_parte_id_fkey"
             columns: ["parte_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
+      contratos_agenciador: {
+        Row: {
+          agenciador_id: string
+          arquivo_path: string
+          conferencia: Json | null
+          enviado_em: string
+          hash_sha256: string
+          id: string
+          motivo: string | null
+          status: string
+          termo_id: string
+          validado_em: string | null
+          validado_por: string | null
+          versao: number
+        }
+        Insert: {
+          agenciador_id: string
+          arquivo_path: string
+          conferencia?: Json | null
+          enviado_em?: string
+          hash_sha256: string
+          id?: string
+          motivo?: string | null
+          status?: string
+          termo_id: string
+          validado_em?: string | null
+          validado_por?: string | null
+          versao: number
+        }
+        Update: {
+          agenciador_id?: string
+          arquivo_path?: string
+          conferencia?: Json | null
+          enviado_em?: string
+          hash_sha256?: string
+          id?: string
+          motivo?: string | null
+          status?: string
+          termo_id?: string
+          validado_em?: string | null
+          validado_por?: string | null
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contratos_agenciador_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_agenciador_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "contratos_agenciador_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "contratos_agenciador_termo_id_fkey"
+            columns: ["termo_id"]
+            isOneToOne: false
+            referencedRelation: "termos_contrato"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_agenciador_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contratos_agenciador_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "contratos_agenciador_validado_por_fkey"
+            columns: ["validado_por"]
             isOneToOne: false
             referencedRelation: "v_checklist_prontidao"
             referencedColumns: ["motorista_id"]
@@ -1831,6 +2198,7 @@ export type Database = {
           eixos: number | null
           endereco_entrega: string | null
           frete_motorista: number | null
+          ibge_destino: string | null
           id: string
           margem_pct: number | null
           ordem: number
@@ -1852,6 +2220,7 @@ export type Database = {
           eixos?: number | null
           endereco_entrega?: string | null
           frete_motorista?: number | null
+          ibge_destino?: string | null
           id?: string
           margem_pct?: number | null
           ordem?: number
@@ -1873,6 +2242,7 @@ export type Database = {
           eixos?: number | null
           endereco_entrega?: string | null
           frete_motorista?: number | null
+          ibge_destino?: string | null
           id?: string
           margem_pct?: number | null
           ordem?: number
@@ -1937,6 +2307,8 @@ export type Database = {
           giro_repassar: boolean
           giro_repasse_pct: number
           giro_taxa_efetiva: number | null
+          ibge_destino: string | null
+          ibge_origem: string | null
           id: string
           lucro_pct: number | null
           lucro_rbr: number | null
@@ -2019,6 +2391,8 @@ export type Database = {
           giro_repassar?: boolean
           giro_repasse_pct?: number
           giro_taxa_efetiva?: number | null
+          ibge_destino?: string | null
+          ibge_origem?: string | null
           id?: string
           lucro_pct?: number | null
           lucro_rbr?: number | null
@@ -2101,6 +2475,8 @@ export type Database = {
           giro_repassar?: boolean
           giro_repasse_pct?: number
           giro_taxa_efetiva?: number | null
+          ibge_destino?: string | null
+          ibge_origem?: string | null
           id?: string
           lucro_pct?: number | null
           lucro_rbr?: number | null
@@ -2211,6 +2587,145 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projetos"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      declaracoes_carga: {
+        Row: {
+          agenciador_id: string
+          contato_entrega_nome: string
+          contato_entrega_telefone: string
+          cotacao_id: string
+          created_at: string
+          declaracoes: Json
+          embarcador_documento: string
+          embarcador_nome: string
+          endereco_coleta: string
+          endereco_entrega: string
+          hash_texto: string
+          id: string
+          ip: string | null
+          mercadoria: string
+          nf_chave: string
+          nf_numero: string
+          operacao_id: string | null
+          quantidade: string
+          texto_declarado: string
+          user_agent: string | null
+          valor: number
+          versao_contrato: number | null
+        }
+        Insert: {
+          agenciador_id: string
+          contato_entrega_nome: string
+          contato_entrega_telefone: string
+          cotacao_id: string
+          created_at?: string
+          declaracoes: Json
+          embarcador_documento: string
+          embarcador_nome: string
+          endereco_coleta: string
+          endereco_entrega: string
+          hash_texto: string
+          id?: string
+          ip?: string | null
+          mercadoria: string
+          nf_chave: string
+          nf_numero: string
+          operacao_id?: string | null
+          quantidade: string
+          texto_declarado: string
+          user_agent?: string | null
+          valor: number
+          versao_contrato?: number | null
+        }
+        Update: {
+          agenciador_id?: string
+          contato_entrega_nome?: string
+          contato_entrega_telefone?: string
+          cotacao_id?: string
+          created_at?: string
+          declaracoes?: Json
+          embarcador_documento?: string
+          embarcador_nome?: string
+          endereco_coleta?: string
+          endereco_entrega?: string
+          hash_texto?: string
+          id?: string
+          ip?: string | null
+          mercadoria?: string
+          nf_chave?: string
+          nf_numero?: string
+          operacao_id?: string | null
+          quantidade?: string
+          texto_declarado?: string
+          user_agent?: string | null
+          valor?: number
+          versao_contrato?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "declaracoes_carga_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["cotacao_id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_cotacao_saldo"
+            referencedColumns: ["cotacao_id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "declaracoes_carga_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_resultado_operacoes"
+            referencedColumns: ["operacao_id"]
           },
         ]
       }
@@ -3505,6 +4020,190 @@ export type Database = {
         }
         Relationships: []
       }
+      incidentes_carga: {
+        Row: {
+          agenciador_id: string | null
+          descricao: string
+          dossie_gerado_em: string | null
+          dossie_gerado_por: string | null
+          dossie_hash: string | null
+          dossie_path: string | null
+          embarcador_documento: string | null
+          encerrado_em: string | null
+          encerrado_por: string | null
+          encerramento_motivo: string | null
+          id: string
+          operacao_id: string
+          prestador_id: string | null
+          registrado_em: string
+          registrado_por: string | null
+          status: string
+        }
+        Insert: {
+          agenciador_id?: string | null
+          descricao: string
+          dossie_gerado_em?: string | null
+          dossie_gerado_por?: string | null
+          dossie_hash?: string | null
+          dossie_path?: string | null
+          embarcador_documento?: string | null
+          encerrado_em?: string | null
+          encerrado_por?: string | null
+          encerramento_motivo?: string | null
+          id?: string
+          operacao_id: string
+          prestador_id?: string | null
+          registrado_em?: string
+          registrado_por?: string | null
+          status?: string
+        }
+        Update: {
+          agenciador_id?: string | null
+          descricao?: string
+          dossie_gerado_em?: string | null
+          dossie_gerado_por?: string | null
+          dossie_hash?: string | null
+          dossie_path?: string | null
+          embarcador_documento?: string | null
+          encerrado_em?: string | null
+          encerrado_por?: string | null
+          encerramento_motivo?: string | null
+          id?: string
+          operacao_id?: string
+          prestador_id?: string | null
+          registrado_em?: string
+          registrado_por?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incidentes_carga_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_agenciador_id_fkey"
+            columns: ["agenciador_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_dossie_gerado_por_fkey"
+            columns: ["dossie_gerado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_dossie_gerado_por_fkey"
+            columns: ["dossie_gerado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_dossie_gerado_por_fkey"
+            columns: ["dossie_gerado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_encerrado_por_fkey"
+            columns: ["encerrado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_encerrado_por_fkey"
+            columns: ["encerrado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_encerrado_por_fkey"
+            columns: ["encerrado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_resultado_operacoes"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_prestador_id_fkey"
+            columns: ["prestador_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_prestador_id_fkey"
+            columns: ["prestador_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_prestador_id_fkey"
+            columns: ["prestador_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "incidentes_carga_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
       incidentes_seguranca: {
         Row: {
           created_at: string
@@ -4211,6 +4910,132 @@ export type Database = {
         }
         Relationships: []
       }
+      notas_parceiro: {
+        Row: {
+          arquivo_url: string | null
+          competencia: string
+          criado_em: string
+          criado_por: string | null
+          data_emissao: string
+          id: string
+          numero: string
+          observacao: string | null
+          parceiro_id: string
+          valor: number
+        }
+        Insert: {
+          arquivo_url?: string | null
+          competencia: string
+          criado_em?: string
+          criado_por?: string | null
+          data_emissao: string
+          id?: string
+          numero: string
+          observacao?: string | null
+          parceiro_id: string
+          valor: number
+        }
+        Update: {
+          arquivo_url?: string | null
+          competencia?: string
+          criado_em?: string
+          criado_por?: string | null
+          data_emissao?: string
+          id?: string
+          numero?: string
+          observacao?: string | null
+          parceiro_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_parceiro_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
+      notas_parceiro_operacoes: {
+        Row: {
+          nota_id: string
+          operacao_id: string
+        }
+        Insert: {
+          nota_id: string
+          operacao_id: string
+        }
+        Update: {
+          nota_id?: string
+          operacao_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_parceiro_operacoes_nota_id_fkey"
+            columns: ["nota_id"]
+            isOneToOne: false
+            referencedRelation: "notas_parceiro"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_operacoes_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_operacoes_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "notas_parceiro_operacoes_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_resultado_operacoes"
+            referencedColumns: ["operacao_id"]
+          },
+        ]
+      }
       notificacoes: {
         Row: {
           canal: Database["public"]["Enums"]["canal_notificacao"]
@@ -4327,7 +5152,14 @@ export type Database = {
       operacao_ciot_vpo: {
         Row: {
           ciot: string | null
+          ciot_cancelado_em: string | null
           ciot_cnpj_responsavel: string | null
+          ciot_encerrado_em: string | null
+          ciot_fim_previsto: string | null
+          ciot_inicio_previsto: string | null
+          ciot_origem: string | null
+          ciot_prazo_pagamento: string | null
+          ciot_status: string
           created_at: string
           id: string
           numero_averbacao: string | null
@@ -4347,7 +5179,14 @@ export type Database = {
         }
         Insert: {
           ciot?: string | null
+          ciot_cancelado_em?: string | null
           ciot_cnpj_responsavel?: string | null
+          ciot_encerrado_em?: string | null
+          ciot_fim_previsto?: string | null
+          ciot_inicio_previsto?: string | null
+          ciot_origem?: string | null
+          ciot_prazo_pagamento?: string | null
+          ciot_status?: string
           created_at?: string
           id?: string
           numero_averbacao?: string | null
@@ -4367,7 +5206,14 @@ export type Database = {
         }
         Update: {
           ciot?: string | null
+          ciot_cancelado_em?: string | null
           ciot_cnpj_responsavel?: string | null
+          ciot_encerrado_em?: string | null
+          ciot_fim_previsto?: string | null
+          ciot_inicio_previsto?: string | null
+          ciot_origem?: string | null
+          ciot_prazo_pagamento?: string | null
+          ciot_status?: string
           created_at?: string
           id?: string
           numero_averbacao?: string | null
@@ -4617,6 +5463,8 @@ export type Database = {
           comprimento_cm: number | null
           confirmado_em: string | null
           confirmado_por: string | null
+          congelada_em: string | null
+          congelada_motivo: string | null
           cotacao_destino_id: string | null
           cotacao_id: string | null
           created_at: string
@@ -4639,10 +5487,15 @@ export type Database = {
           pagamento_pos_entrega_confirmado_por: string | null
           peso_bruto: number | null
           pessoa_alocada_id: string | null
+          piso_minimo_valor: number | null
           pix_adiantamento_expira_em: string | null
           projeto_id: string | null
           sequencia: number
           status: Database["public"]["Enums"]["status_operacao"]
+          tipo_documento_aviso: string | null
+          tipo_documento_cliente: string | null
+          tipo_documento_detectado_em: string | null
+          tipo_documento_mudou_em: string | null
           updated_at: string
           valor_declarado_nfe: number | null
           veiculo_id: string | null
@@ -4666,6 +5519,8 @@ export type Database = {
           comprimento_cm?: number | null
           confirmado_em?: string | null
           confirmado_por?: string | null
+          congelada_em?: string | null
+          congelada_motivo?: string | null
           cotacao_destino_id?: string | null
           cotacao_id?: string | null
           created_at?: string
@@ -4688,10 +5543,15 @@ export type Database = {
           pagamento_pos_entrega_confirmado_por?: string | null
           peso_bruto?: number | null
           pessoa_alocada_id?: string | null
+          piso_minimo_valor?: number | null
           pix_adiantamento_expira_em?: string | null
           projeto_id?: string | null
           sequencia?: number
           status?: Database["public"]["Enums"]["status_operacao"]
+          tipo_documento_aviso?: string | null
+          tipo_documento_cliente?: string | null
+          tipo_documento_detectado_em?: string | null
+          tipo_documento_mudou_em?: string | null
           updated_at?: string
           valor_declarado_nfe?: number | null
           veiculo_id?: string | null
@@ -4715,6 +5575,8 @@ export type Database = {
           comprimento_cm?: number | null
           confirmado_em?: string | null
           confirmado_por?: string | null
+          congelada_em?: string | null
+          congelada_motivo?: string | null
           cotacao_destino_id?: string | null
           cotacao_id?: string | null
           created_at?: string
@@ -4737,10 +5599,15 @@ export type Database = {
           pagamento_pos_entrega_confirmado_por?: string | null
           peso_bruto?: number | null
           pessoa_alocada_id?: string | null
+          piso_minimo_valor?: number | null
           pix_adiantamento_expira_em?: string | null
           projeto_id?: string | null
           sequencia?: number
           status?: Database["public"]["Enums"]["status_operacao"]
+          tipo_documento_aviso?: string | null
+          tipo_documento_cliente?: string | null
+          tipo_documento_detectado_em?: string | null
+          tipo_documento_mudou_em?: string | null
           updated_at?: string
           valor_declarado_nfe?: number | null
           veiculo_id?: string | null
@@ -5391,6 +6258,7 @@ export type Database = {
           celular: string | null
           cep: string | null
           cidade: string | null
+          classificacao_ciot: string | null
           cnh_categoria: string | null
           cnh_ear: boolean | null
           cnh_extraido_por_ia: boolean
@@ -5402,31 +6270,46 @@ export type Database = {
           complemento: string | null
           comprovante_residencia_data: string | null
           comprovante_residencia_url: string | null
+          consentimento_antecedentes_em: string | null
+          consentimento_consulta_antecedentes: boolean
           cpf: string | null
           created_at: string
           dados_bancarios_alterados_em: string | null
+          data_comunicacao_inss_direto: string | null
           data_nascimento: string | null
           deleted_at: string | null
           email: string | null
           id: string
           inscricao_estadual: string | null
           logradouro: string | null
+          nivel_confianca: string
           nome: string
           numero_endereco: string | null
+          opcao_inss_direto: boolean
           origem_cadastro: string | null
           papel: Database["public"]["Enums"]["papel_pessoa"]
           pix: string | null
+          qtd_veiculos_rntrc: number | null
+          responsavel_cpf: string | null
+          responsavel_nome: string | null
           retention_until: string | null
           rntrc_numero: string | null
           rntrc_status: string | null
           rntrc_validade: string | null
           status: Database["public"]["Enums"]["status_ciclo_vida"]
+          status_contrato_agenciador: string
+          status_contrato_em: string | null
+          status_contrato_motivo: string | null
           status_online: boolean
           status_online_atualizado_em: string | null
+          suspensao_motivo: string | null
+          suspenso_em: string | null
+          tipo_parceiro: string | null
           tipo_pessoa_doc: Database["public"]["Enums"]["tipo_pessoa_doc"]
           titular_id: string | null
           uf: string | null
           updated_at: string
+          validade_exame_toxicologico: string | null
           verificacao: Json
           verificado_em: string | null
           vinculo: string | null
@@ -5448,6 +6331,7 @@ export type Database = {
           celular?: string | null
           cep?: string | null
           cidade?: string | null
+          classificacao_ciot?: string | null
           cnh_categoria?: string | null
           cnh_ear?: boolean | null
           cnh_extraido_por_ia?: boolean
@@ -5459,31 +6343,46 @@ export type Database = {
           complemento?: string | null
           comprovante_residencia_data?: string | null
           comprovante_residencia_url?: string | null
+          consentimento_antecedentes_em?: string | null
+          consentimento_consulta_antecedentes?: boolean
           cpf?: string | null
           created_at?: string
           dados_bancarios_alterados_em?: string | null
+          data_comunicacao_inss_direto?: string | null
           data_nascimento?: string | null
           deleted_at?: string | null
           email?: string | null
           id?: string
           inscricao_estadual?: string | null
           logradouro?: string | null
+          nivel_confianca?: string
           nome: string
           numero_endereco?: string | null
+          opcao_inss_direto?: boolean
           origem_cadastro?: string | null
           papel: Database["public"]["Enums"]["papel_pessoa"]
           pix?: string | null
+          qtd_veiculos_rntrc?: number | null
+          responsavel_cpf?: string | null
+          responsavel_nome?: string | null
           retention_until?: string | null
           rntrc_numero?: string | null
           rntrc_status?: string | null
           rntrc_validade?: string | null
           status?: Database["public"]["Enums"]["status_ciclo_vida"]
+          status_contrato_agenciador?: string
+          status_contrato_em?: string | null
+          status_contrato_motivo?: string | null
           status_online?: boolean
           status_online_atualizado_em?: string | null
+          suspensao_motivo?: string | null
+          suspenso_em?: string | null
+          tipo_parceiro?: string | null
           tipo_pessoa_doc?: Database["public"]["Enums"]["tipo_pessoa_doc"]
           titular_id?: string | null
           uf?: string | null
           updated_at?: string
+          validade_exame_toxicologico?: string | null
           verificacao?: Json
           verificado_em?: string | null
           vinculo?: string | null
@@ -5505,6 +6404,7 @@ export type Database = {
           celular?: string | null
           cep?: string | null
           cidade?: string | null
+          classificacao_ciot?: string | null
           cnh_categoria?: string | null
           cnh_ear?: boolean | null
           cnh_extraido_por_ia?: boolean
@@ -5516,31 +6416,46 @@ export type Database = {
           complemento?: string | null
           comprovante_residencia_data?: string | null
           comprovante_residencia_url?: string | null
+          consentimento_antecedentes_em?: string | null
+          consentimento_consulta_antecedentes?: boolean
           cpf?: string | null
           created_at?: string
           dados_bancarios_alterados_em?: string | null
+          data_comunicacao_inss_direto?: string | null
           data_nascimento?: string | null
           deleted_at?: string | null
           email?: string | null
           id?: string
           inscricao_estadual?: string | null
           logradouro?: string | null
+          nivel_confianca?: string
           nome?: string
           numero_endereco?: string | null
+          opcao_inss_direto?: boolean
           origem_cadastro?: string | null
           papel?: Database["public"]["Enums"]["papel_pessoa"]
           pix?: string | null
+          qtd_veiculos_rntrc?: number | null
+          responsavel_cpf?: string | null
+          responsavel_nome?: string | null
           retention_until?: string | null
           rntrc_numero?: string | null
           rntrc_status?: string | null
           rntrc_validade?: string | null
           status?: Database["public"]["Enums"]["status_ciclo_vida"]
+          status_contrato_agenciador?: string
+          status_contrato_em?: string | null
+          status_contrato_motivo?: string | null
           status_online?: boolean
           status_online_atualizado_em?: string | null
+          suspensao_motivo?: string | null
+          suspenso_em?: string | null
+          tipo_parceiro?: string | null
           tipo_pessoa_doc?: Database["public"]["Enums"]["tipo_pessoa_doc"]
           titular_id?: string | null
           uf?: string | null
           updated_at?: string
+          validade_exame_toxicologico?: string | null
           verificacao?: Json
           verificado_em?: string | null
           vinculo?: string | null
@@ -6070,6 +6985,8 @@ export type Database = {
           cotacao_id: string | null
           created_at: string
           eixos: number | null
+          ibge_destino: string | null
+          ibge_origem: string | null
           id: string
           ordem: number
           pedagio: number | null
@@ -6090,6 +7007,8 @@ export type Database = {
           cotacao_id?: string | null
           created_at?: string
           eixos?: number | null
+          ibge_destino?: string | null
+          ibge_origem?: string | null
           id?: string
           ordem?: number
           pedagio?: number | null
@@ -6110,6 +7029,8 @@ export type Database = {
           cotacao_id?: string | null
           created_at?: string
           eixos?: number | null
+          ibge_destino?: string | null
+          ibge_origem?: string | null
           id?: string
           ordem?: number
           pedagio?: number | null
@@ -6733,6 +7654,185 @@ export type Database = {
           },
         ]
       }
+      retencoes_apuracao: {
+        Row: {
+          alvo: string
+          comissao_id: string | null
+          criado_em: string
+          criado_por: string | null
+          data_limite: string
+          id: string
+          incidente_id: string | null
+          motivo: string
+          operacao_id: string | null
+          pessoa_id: string
+          status: string
+        }
+        Insert: {
+          alvo: string
+          comissao_id?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          data_limite: string
+          id?: string
+          incidente_id?: string | null
+          motivo: string
+          operacao_id?: string | null
+          pessoa_id: string
+          status?: string
+        }
+        Update: {
+          alvo?: string
+          comissao_id?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          data_limite?: string
+          id?: string
+          incidente_id?: string | null
+          motivo?: string
+          operacao_id?: string | null
+          pessoa_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retencoes_apuracao_comissao_id_fkey"
+            columns: ["comissao_id"]
+            isOneToOne: false
+            referencedRelation: "comissoes_agenciador"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_incidente_fk"
+            columns: ["incidente_id"]
+            isOneToOne: false
+            referencedRelation: "incidentes_carga"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_resultado_operacoes"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "retencoes_apuracao_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
+      retencoes_eventos: {
+        Row: {
+          acao: string
+          data_limite: string | null
+          em: string
+          id: string
+          motivo: string
+          por: string | null
+          retencao_id: string
+        }
+        Insert: {
+          acao: string
+          data_limite?: string | null
+          em?: string
+          id?: string
+          motivo: string
+          por?: string | null
+          retencao_id: string
+        }
+        Update: {
+          acao?: string
+          data_limite?: string | null
+          em?: string
+          id?: string
+          motivo?: string
+          por?: string | null
+          retencao_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retencoes_eventos_por_fkey"
+            columns: ["por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retencoes_eventos_por_fkey"
+            columns: ["por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "retencoes_eventos_por_fkey"
+            columns: ["por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+          {
+            foreignKeyName: "retencoes_eventos_retencao_id_fkey"
+            columns: ["retencao_id"]
+            isOneToOne: false
+            referencedRelation: "retencoes_apuracao"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rntrc_consultas: {
         Row: {
           categoria: string | null
@@ -7107,6 +8207,102 @@ export type Database = {
           id?: number
         }
         Relationships: []
+      }
+      termos_contrato: {
+        Row: {
+          created_at: string
+          id: string
+          minuta: boolean
+          publicado_em: string | null
+          publicado_por: string | null
+          status: string
+          texto: string
+          tipo: string
+          titulo: string
+          updated_at: string
+          versao: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          minuta?: boolean
+          publicado_em?: string | null
+          publicado_por?: string | null
+          status?: string
+          texto: string
+          tipo: string
+          titulo: string
+          updated_at?: string
+          versao: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          minuta?: boolean
+          publicado_em?: string | null
+          publicado_por?: string | null
+          status?: string
+          texto?: string
+          tipo?: string
+          titulo?: string
+          updated_at?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "termos_contrato_publicado_por_fkey"
+            columns: ["publicado_por"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "termos_contrato_publicado_por_fkey"
+            columns: ["publicado_por"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "termos_contrato_publicado_por_fkey"
+            columns: ["publicado_por"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
+      termos_contrato_clausulas: {
+        Row: {
+          codigo: string
+          id: string
+          ordem: number
+          termo_id: string
+          texto: string
+        }
+        Insert: {
+          codigo: string
+          id?: string
+          ordem: number
+          termo_id: string
+          texto: string
+        }
+        Update: {
+          codigo?: string
+          id?: string
+          ordem?: number
+          termo_id?: string
+          texto?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "termos_contrato_clausulas_termo_id_fkey"
+            columns: ["termo_id"]
+            isOneToOne: false
+            referencedRelation: "termos_contrato"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tipos_custo_adicional: {
         Row: {
@@ -7578,6 +8774,16 @@ export type Database = {
           },
         ]
       }
+      v_alertas_ciot: {
+        Row: {
+          codigo: string | null
+          gravidade: string | null
+          limite: string | null
+          mensagem: string | null
+          operacao_id: string | null
+        }
+        Relationships: []
+      }
       v_checklist_prontidao: {
         Row: {
           ambiente_fiscal: string | null
@@ -7809,6 +9015,60 @@ export type Database = {
           },
         ]
       }
+      v_frete_pago_parceiro: {
+        Row: {
+          competencia: string | null
+          frete: number | null
+          operacao_id: string | null
+          pago_em: string | null
+          parceiro_id: string | null
+          tem_nota: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lancamentos_financeiros_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "v_resultado_operacoes"
+            referencedColumns: ["operacao_id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_pessoa_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_pessoa_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_pessoa_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
       v_historico_pagamento_cliente: {
         Row: {
           atraso_confirmacao_obs: string | null
@@ -7903,6 +9163,43 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_resultado_operacoes"
             referencedColumns: ["operacao_id"]
+          },
+        ]
+      }
+      v_inss_retido_mensal: {
+        Row: {
+          base: number | null
+          competencia: string | null
+          frete_bruto: number | null
+          inss_retido: number | null
+          operacao_ids: string[] | null
+          operacoes: number | null
+          parceiro_cpf: string | null
+          parceiro_id: string | null
+          parceiro_nome: string | null
+          vencimento: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "condicoes_pagamento_operacao_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condicoes_pagamento_operacao_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "condicoes_pagamento_operacao_parceiro_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
           },
         ]
       }
@@ -8128,6 +9425,42 @@ export type Database = {
           },
         ]
       }
+      v_notas_parceiro_pendentes: {
+        Row: {
+          competencia: string | null
+          frete_total: number | null
+          operacao_ids: string[] | null
+          operacoes: number | null
+          parceiro_celular: string | null
+          parceiro_cnpj: string | null
+          parceiro_cpf: string | null
+          parceiro_id: string | null
+          parceiro_nome: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lancamentos_financeiros_pessoa_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_pessoa_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "pontuacao_saldo"
+            referencedColumns: ["pessoa_id"]
+          },
+          {
+            foreignKeyName: "lancamentos_financeiros_pessoa_id_fkey"
+            columns: ["parceiro_id"]
+            isOneToOne: false
+            referencedRelation: "v_checklist_prontidao"
+            referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
       v_pendencias_painel: {
         Row: {
           gravidade: string | null
@@ -8289,6 +9622,14 @@ export type Database = {
         }
         Returns: Json
       }
+      aceitar_termo: {
+        Args: { p_clausulas: Json; p_termo: string; p_user_agent: string }
+        Returns: Json
+      }
+      aceite_vigente: {
+        Args: { p_pessoa: string; p_tipo: string }
+        Returns: boolean
+      }
       acessos_app: {
         Args: { p_ids: string[] }
         Returns: {
@@ -8300,9 +9641,52 @@ export type Database = {
           ultimo_login: string
         }[]
       }
+      agenciador_pode_operar: {
+        Args: { p_agenciador: string }
+        Returns: boolean
+      }
+      agenciador_reativar: {
+        Args: { p_agenciador: string; p_motivo: string }
+        Returns: undefined
+      }
+      agenciador_suspender: {
+        Args: { p_agenciador: string; p_motivo: string }
+        Returns: undefined
+      }
+      alertas_conformidade_abertos: {
+        Args: never
+        Returns: {
+          codigo: string
+          detalhe: string
+          operacao_id: string
+          titulo: string
+        }[]
+      }
+      alertas_conformidade_operacao: {
+        Args: { p_operacao: string }
+        Returns: {
+          codigo: string
+          detalhe: string
+          revisado: boolean
+          revisado_obs: string
+          titulo: string
+        }[]
+      }
       alterar_vencimento_fatura: {
         Args: { p_fatura: string; p_vencimento: string }
         Returns: undefined
+      }
+      anexar_nota_parceiro: {
+        Args: {
+          p_arquivo_url: string
+          p_competencia: string
+          p_data_emissao: string
+          p_numero: string
+          p_operacoes: string[]
+          p_parceiro: string
+          p_valor: number
+        }
+        Returns: Json
       }
       auth_user_id_por_email: { Args: { p_email: string }; Returns: string }
       avaliar_cadastro: {
@@ -8319,6 +9703,7 @@ export type Database = {
           veiculo_id: string
         }[]
       }
+      brl_txt: { Args: { p: number }; Returns: string }
       buscar_municipio: {
         Args: { p_cidade: string; p_uf: string }
         Returns: {
@@ -8342,6 +9727,10 @@ export type Database = {
         Args: { p_uf_destino: string; p_uf_origem: string }
         Returns: number
       }
+      calcular_retencao_inss: {
+        Args: { p_frete: number; p_operacao: string }
+        Returns: Json
+      }
       calcular_vencimentos: {
         Args: { p_data_base: string; p_regra: Json; p_total: number }
         Returns: {
@@ -8351,6 +9740,11 @@ export type Database = {
           vencimento: string
         }[]
       }
+      campos_do_cadastro: {
+        Args: { p_pessoa: string; p_tipo: string }
+        Returns: Json
+      }
+      campos_pendentes_termo: { Args: { p_termo: string }; Returns: string[] }
       cancelar_fatura: {
         Args: { p_fatura: string; p_motivo: string }
         Returns: undefined
@@ -8359,12 +9753,17 @@ export type Database = {
         Args: { p_motivo: string; p_operacao: string }
         Returns: Json
       }
+      carga_declarada: { Args: { p_cotacao: string }; Returns: boolean }
       categoria_minima_veiculo: {
         Args: { p_capacidade: number; p_e_reboque: boolean; p_tipo: string }
         Returns: string
       }
+      chave_nfe_valida: { Args: { p: string }; Returns: boolean }
+      chaves_do_cadastro: { Args: { p_tipo: string }; Returns: string[] }
       checar_alocacao: { Args: { p_operacao: string }; Returns: Json }
+      checar_piso_operacao: { Args: { p_operacao: string }; Returns: Json }
       checar_pre_voo: { Args: { p_operacao: string }; Returns: Json }
+      ciot_origem_esperada: { Args: { p_operacao: string }; Returns: string }
       cnh_rank: { Args: { p_cat: string }; Returns: number }
       cnpj_valido: { Args: { p: string }; Returns: boolean }
       cobranca_ativa: { Args: never; Returns: boolean }
@@ -8379,6 +9778,21 @@ export type Database = {
       }
       confirmar_pagamento_assinatura: {
         Args: { p_assinatura: string; p_conta?: string; p_data?: string }
+        Returns: undefined
+      }
+      contrato_agenciador_em_vigor: { Args: never; Returns: boolean }
+      contrato_agenciador_enviar: {
+        Args: { p_hash: string; p_path: string }
+        Returns: undefined
+      }
+      contrato_agenciador_gerar: { Args: never; Returns: Json }
+      contrato_agenciador_validar: {
+        Args: {
+          p_aprovar: boolean
+          p_conferencia: Json
+          p_envio: string
+          p_motivo: string
+        }
         Returns: undefined
       }
       converter_pre_cotacao: { Args: { p_pre: string }; Returns: Json }
@@ -8409,6 +9823,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["papel_pessoa"]
       }
       current_pessoa_id: { Args: never; Returns: string }
+      dados_pdf_aceite: { Args: { p_aceite: string }; Returns: Json }
       decidir_cadastro: {
         Args: {
           p_alvo: string
@@ -8419,6 +9834,18 @@ export type Database = {
         }
         Returns: string
       }
+      declarar_carga: {
+        Args: { p_cotacao: string; p_dados: Json; p_user_agent: string }
+        Returns: Json
+      }
+      detectar_documento_cliente: {
+        Args: { p_ibge_destinos: string[]; p_ibge_origem: string }
+        Returns: Json
+      }
+      detectar_documento_por_cidades: {
+        Args: { p_cidade_origem: string; p_destinos: Json; p_uf_origem: string }
+        Returns: Json
+      }
       dia_util_anterior: {
         Args: { p: string; p_municipio_ibge?: string; p_uf?: string }
         Returns: string
@@ -8428,6 +9855,18 @@ export type Database = {
         Returns: number
       }
       doc_norm: { Args: { p: string }; Returns: string }
+      documento_da_operacao: { Args: { p_operacao: string }; Returns: Json }
+      documentos_operacao_agenciador: {
+        Args: { p_operacao: string }
+        Returns: {
+          chave_acesso: string
+          emitido_em: string
+          numero_documento: string
+          tipo: string
+          url_pdf: string
+          url_xml: string
+        }[]
+      }
       dre: {
         Args: { p_ate: string; p_de: string; p_regime?: string }
         Returns: {
@@ -8444,6 +9883,10 @@ export type Database = {
       eh_dia_util: {
         Args: { p: string; p_municipio_ibge?: string; p_uf?: string }
         Returns: boolean
+      }
+      encerrar_incidente_carga: {
+        Args: { p_incidente: string; p_motivo: string }
+        Returns: undefined
       }
       fin_buscar_contraparte: { Args: { p_doc: string }; Returns: Json }
       fin_candidatos_baixa: {
@@ -8502,6 +9945,10 @@ export type Database = {
       get_nstech_averba_senha: { Args: never; Returns: string }
       get_repom_portal: { Args: never; Returns: Json }
       get_segredo_eventos_fiscais: { Args: never; Returns: string }
+      ibge_municipio: {
+        Args: { p_cidade: string; p_uf: string }
+        Returns: string
+      }
       importar_extrato: {
         Args: {
           p_arquivo: string
@@ -8532,10 +9979,27 @@ export type Database = {
         Args: { p_executor: string; p_solicitacao: string }
         Returns: Json
       }
+      liberar_retencao: {
+        Args: { p_motivo: string; p_retencao: string }
+        Returns: undefined
+      }
       mapa_operacional: { Args: never; Returns: Json }
       marcar_contato_nao_enviar: {
         Args: { p_contato: string; p_motivo?: string }
         Returns: undefined
+      }
+      meu_contrato_agenciador: { Args: never; Returns: Json }
+      meu_termo_pendente: { Args: { p_tipo?: string }; Returns: Json }
+      meus_contratos: {
+        Args: never
+        Returns: {
+          aceite_id: string
+          aceito_em: string
+          pdf_path: string
+          titulo: string
+          versao: number
+          vigente: boolean
+        }[]
       }
       meus_recebimentos: {
         Args: never
@@ -8564,6 +10028,10 @@ export type Database = {
         Args: { p: string; p_municipio_ibge?: string; p_uf?: string }
         Returns: string
       }
+      mudar_status_contrato: {
+        Args: { p_agenciador: string; p_motivo: string; p_status: string }
+        Returns: undefined
+      }
       municipio_ibge_cliente: { Args: { p_cliente: string }; Returns: string }
       nomes_pessoas_relacionadas: {
         Args: { p_ids: string[] }
@@ -8587,6 +10055,7 @@ export type Database = {
           peso_kg: number
         }[]
       }
+      painel_conformidade: { Args: never; Returns: Json }
       painel_inicio: { Args: never; Returns: Json }
       pendencias_agenciador: {
         Args: never
@@ -8631,6 +10100,10 @@ export type Database = {
           valor: number
         }[]
       }
+      prorrogar_retencao: {
+        Args: { p_dias: number; p_motivo: string; p_retencao: string }
+        Returns: undefined
+      }
       proxima_mensagem_disparo: {
         Args: { p_contato: string }
         Returns: {
@@ -8644,14 +10117,23 @@ export type Database = {
             Args: { p: string; p_municipio_ibge: string; p_uf?: string }
             Returns: string
           }
+      publicar_termo: { Args: { p_termo: string }; Returns: undefined }
       reabrir_cotacao: { Args: { p_cotacao: string }; Returns: undefined }
       reativar_contato: { Args: { p_contato: string }; Returns: undefined }
+      reativar_prestador: {
+        Args: { p_motivo: string; p_pessoa: string }
+        Returns: undefined
+      }
       reavaliar_cadastro: {
         Args: { p_aplicar?: boolean; p_pessoa: string }
         Returns: Json
       }
       reavaliar_meu_cadastro: { Args: never; Returns: Json }
       reavaliar_vencimentos: { Args: never; Returns: number }
+      recalcular_documento_operacao: {
+        Args: { p_operacao: string }
+        Returns: undefined
+      }
       recalcular_fatura: { Args: { p_id: string }; Returns: undefined }
       recalcular_lancamento: { Args: { p_id: string }; Returns: undefined }
       registrar_aviso_carga: {
@@ -8665,17 +10147,51 @@ export type Database = {
         Returns: undefined
       }
       registrar_baixa: { Args: { p: Json }; Returns: string }
+      registrar_consentimento_antecedentes: {
+        Args: { p_aceito: boolean }
+        Returns: undefined
+      }
+      registrar_dossie_incidente: {
+        Args: { p_hash: string; p_incidente: string; p_path: string }
+        Returns: undefined
+      }
       registrar_envio_whatsapp: {
         Args: { p_contato: string; p_mensagem: string; p_texto_final: string }
         Returns: undefined
       }
+      registrar_incidente_carga: {
+        Args: { p_descricao: string; p_operacao: string }
+        Returns: string
+      }
       registrar_meu_cadastro: { Args: { p: Json }; Returns: string }
+      registrar_pdf_aceite: {
+        Args: { p_aceite: string; p_hash: string; p_path: string }
+        Returns: undefined
+      }
+      renderizar_termo: {
+        Args: { p_pessoa: string; p_termo: string }
+        Returns: string
+      }
       resetar_conferencia_por_alocacao: {
         Args: { p_motivo: string; p_operacao_id: string }
         Returns: undefined
       }
       resolver_indicacao_motorista: {
         Args: { p_aceitar: boolean; p_indicacao: string; p_motivo?: string }
+        Returns: undefined
+      }
+      reter_para_apuracao: {
+        Args: {
+          p_alvo: string
+          p_comissao: string
+          p_incidente?: string
+          p_motivo: string
+          p_operacao: string
+        }
+        Returns: string
+      }
+      revisar_alerta_conformidade: {
+        Args: { p_codigo: string; p_observacao: string; p_operacao: string }
         Returns: undefined
       }
       revogar_sessoes_usuario: { Args: { p_uid: string }; Returns: undefined }
@@ -8693,6 +10209,10 @@ export type Database = {
         Returns: string
       }
       so_digitos: { Args: { p: string }; Returns: string }
+      somar_dias_uteis: {
+        Args: { p_data: string; p_dias: number }
+        Returns: string
+      }
       sugerir_conciliacao: { Args: { p_extrato?: string }; Returns: number }
       sugerir_pedagio: {
         Args: {
@@ -8744,6 +10264,13 @@ export type Database = {
         Args: { p_pessoa: string }
         Returns: undefined
       }
+      termo_publicado: { Args: { p_tipo: string }; Returns: string }
+      texto_para_hash: {
+        Args: { p_pessoa: string; p_termo: string }
+        Returns: string
+      }
+      textos_declaracao_carga: { Args: never; Returns: Json }
+      titular_da_operacao: { Args: { p_operacao: string }; Returns: string }
       transferencia_extrato_item: {
         Args: { p_item: string; p_outra_conta: string }
         Returns: string

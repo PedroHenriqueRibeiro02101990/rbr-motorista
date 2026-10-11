@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { formatMoney } from '@rbr/shared/format'
 
 // As funções do aviso de carga ainda não estão em shared/database.types.ts:
@@ -86,7 +85,7 @@ export default function MotoristasSugeridos({
   // Tarefa 5: frete do parceiro abaixo do piso mínimo da operação (aviso antes de mandar a proposta).
   const [piso, setPiso] = useState<{ piso: number | null; frete: number | null; abaixo: boolean } | null>(null)
   useEffect(() => {
-    void dbNovo.rpc('checar_piso_operacao', { p_operacao: operacaoId }).then(({ data }) => setPiso((data as typeof piso) ?? null))
+    void supabase.rpc('checar_piso_operacao', { p_operacao: operacaoId }).then(({ data }) => setPiso((data as typeof piso) ?? null))
   }, [operacaoId])
 
   const carregar = useCallback(async () => {

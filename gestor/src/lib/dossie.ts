@@ -1,6 +1,5 @@
 import { strToU8, zipSync, type Zippable } from 'fflate'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { sha256Hex } from '@rbr/shared/contratoPdf'
 
 // Tarefa 10.5: dossiê do incidente (ZIP no bucket privado "dossies") para entregar ao advogado e às autoridades
@@ -33,7 +32,7 @@ async function baixarUrl(url: string): Promise<Uint8Array | null> {
 export async function gerarDossie(incidenteId: string): Promise<{ path: string; hash: string; faltas: string[] }> {
   const faltas: string[] = []
   const arq: Arquivos = {}
-  const { data: inc, error } = await dbNovo.from('incidentes_carga').select('*').eq('id', incidenteId).single()
+  const { data: inc, error } = await supabase.from('incidentes_carga').select('*').eq('id', incidenteId).single()
   if (error || !inc) throw new Error('Incidente não encontrado.')
   const i = inc as { id: string; operacao_id: string; prestador_id: string | null; agenciador_id: string | null }
   const op = i.operacao_id
@@ -45,10 +44,10 @@ export async function gerarDossie(incidenteId: string): Promise<{ path: string; 
     supabase.from('posicoes_gps').select('capturado_em, latitude, longitude, fonte, pessoa_id, veiculo_id').eq('operacao_id', op).order('capturado_em'),
     supabase.from('operacao_checklist_fotos').select('*').eq('operacao_id', op),
     supabase.from('auditoria_log').select('*').eq('entidade_id', op).order('created_at'),
-    dbNovo.from('declaracoes_carga').select('*').eq('operacao_id', op),
-    dbNovo.from('retencoes_apuracao').select('*, retencoes_eventos(*)').eq('incidente_id', incidenteId),
-    dbNovo.from('aceites_termo').select('*, aceites_termo_pdf(pdf_path, hash_pdf)').in('pessoa_id', [i.prestador_id, i.agenciador_id].filter(Boolean) as string[]),
-    i.agenciador_id ? dbNovo.from('contratos_agenciador').select('*').eq('agenciador_id', i.agenciador_id) : Promise.resolve({ data: [] }),
+    supabase.from('declaracoes_carga').select('*').eq('operacao_id', op),
+    supabase.from('retencoes_apuracao').select('*, retencoes_eventos(*)').eq('incidente_id', incidenteId),
+    supabase.from('aceites_termo').select('*, aceites_termo_pdf(pdf_path, hash_pdf)').in('pessoa_id', [i.prestador_id, i.agenciador_id].filter(Boolean) as string[]),
+    i.agenciador_id ? supabase.from('contratos_agenciador').select('*').eq('agenciador_id', i.agenciador_id) : Promise.resolve({ data: [] }),
   ])
 
   arq['00-incidente.json'] = json(inc)
@@ -124,7 +123,7 @@ export async function gerarDossie(incidenteId: string): Promise<{ path: string; 
   const path = `incidentes/${incidenteId}/dossie-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`
   const { error: eu } = await supabase.storage.from('dossies').upload(path, blob, { contentType: 'application/zip' })
   if (eu) throw eu
-  const { error: er } = await dbNovo.rpc('registrar_dossie_incidente', { p_incidente: incidenteId, p_path: path, p_hash: hash })
+  const { error: er } = await supabase.rpc('registrar_dossie_incidente', { p_incidente: incidenteId, p_path: path, p_hash: hash })
   if (er) throw new Error(er.message)
   return { path, hash, faltas }
 }

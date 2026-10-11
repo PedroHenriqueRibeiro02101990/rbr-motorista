@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
-import { dbNovo } from '@rbr/shared/dbNovo'
 
 // Tarefa 3: prévia da retenção de INSS no pagamento ao parceiro (RPC calcular_retencao_inss, mesma regra do trigger
 // que grava o valor retido na condição de pagamento). Não depende da nota fiscal.
@@ -29,7 +29,7 @@ export default function RetencaoInss({ operacaoId, frete, vpo }: { operacaoId: s
     }
     let vivo = true
     const t = setTimeout(async () => {
-      const { data, error } = await dbNovo.rpc('calcular_retencao_inss', { p_operacao: operacaoId, p_frete: frete })
+      const { data, error } = await supabase.rpc('calcular_retencao_inss', { p_operacao: operacaoId, p_frete: frete })
       if (!vivo) return
       setErro(error ? error.message : null)
       setR((data as Retencao | null) ?? null)

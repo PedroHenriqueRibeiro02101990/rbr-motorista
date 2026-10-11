@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { jsPDF } from 'jspdf'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { baixarBlob, gerarPdfContrato, sha256Hex } from '@rbr/shared/contratoPdf'
 
 // Tarefa 8: contrato do agenciador assinado no gov.br. Sem contrato VALIDADO pela RBR, o agenciador não fecha carga,
@@ -27,7 +26,7 @@ export const STATUS_CONTRATO: Record<StatusContrato, { texto: string; bg: string
 export function useContratoAgenciador() {
   const [s, setS] = useState<Situacao | null | undefined>(undefined)
   const carregar = useCallback(async () => {
-    const { data, error } = await dbNovo.rpc('meu_contrato_agenciador')
+    const { data, error } = await supabase.rpc('meu_contrato_agenciador')
     // Função ainda não aplicada no banco: não mostra nada (e não trava a tela).
     setS(error ? null : ((data as Situacao | null) ?? null))
   }, [])
@@ -51,7 +50,7 @@ export default function ContratoAgenciador({ pessoaId }: { pessoaId: string }) {
     setOcupado(true)
     setMsg(null)
     try {
-      const { data, error } = await dbNovo.rpc('contrato_agenciador_gerar')
+      const { data, error } = await supabase.rpc('contrato_agenciador_gerar')
       if (error) throw new Error(error.message)
       const c = data as { versao: number; titulo: string; minuta: boolean; texto: string }
       const blob = gerarPdfContrato(jsPDF, { titulo: c.titulo, versao: c.versao, minuta: c.minuta, texto: c.texto })
@@ -74,7 +73,7 @@ export default function ContratoAgenciador({ pessoaId }: { pessoaId: string }) {
       const path = `agenciador/${pessoaId}/contrato-assinado-${Date.now()}.pdf`
       const { error: eu } = await supabase.storage.from('contratos').upload(path, f, { contentType: 'application/pdf' })
       if (eu) throw eu
-      const { error } = await dbNovo.rpc('contrato_agenciador_enviar', { p_path: path, p_hash: hash })
+      const { error } = await supabase.rpc('contrato_agenciador_enviar', { p_path: path, p_hash: hash })
       if (error) throw new Error(error.message)
       setMsg({ ok: true, t: '✓ PDF assinado enviado. A RBR confere a assinatura e avisa aqui.' })
       await recarregar()

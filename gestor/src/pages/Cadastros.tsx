@@ -20,7 +20,6 @@ import PainelPendencias from '../components/PainelPendencias'
 import { CamposParceiro, SeloClassificacao } from '../components/cadastros/ParceiroFiscal'
 import { SeloTermo, useAceitesPrestador } from '../components/cadastros/SeloTermo'
 import { SeloContrato } from '../components/conformidade/ContratosAgenciador'
-import { dbNovo, novos } from '@rbr/shared/dbNovo'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -246,7 +245,7 @@ function cnhExigeToxicologico(categoria: string | null | undefined): boolean {
 }
 
 function AvisoToxicologico({ categoria, validade }: { categoria: string | null | undefined; validade: string | null | undefined }) {
-  if (!cnhExigeToxicologico(categoria) || validade === undefined) return null
+  if (!cnhExigeToxicologico(categoria)) return null
   if (!validade) return <span style={{ color: '#8A5A00', fontWeight: 600 }}>Toxicológico: não informado</span>
   const dias = Math.round((new Date(validade + 'T12:00:00').getTime() - Date.now()) / 86400000)
   const cor = dias < 0 ? 'var(--rbr-danger)' : dias <= 30 ? '#8A5A00' : undefined
@@ -987,10 +986,10 @@ export default function Cadastros() {
     setSalvandoMotorista(true)
     try {
       const payload = montarPayloadMotorista()
-      // dbNovo: o payload leva as colunas do parceiro (20261011_01), que ainda não estão nos tipos.
+      // supabase: o payload leva as colunas do parceiro (20261011_01), que ainda não estão nos tipos.
       const { error } = editingMotoristaId
-        ? await dbNovo.from('pessoas').update(payload).eq('id', editingMotoristaId)
-        : await dbNovo.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
+        ? await supabase.from('pessoas').update(payload).eq('id', editingMotoristaId)
+        : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
       if (error) throw error
       fecharFormMotorista()
       await loadMotoristas()
@@ -1032,12 +1031,12 @@ export default function Cadastros() {
       vinculo: m.vinculo ?? '',
       comprovante_residencia_url: m.comprovante_residencia_url ?? '',
       comprovante_residencia_data: m.comprovante_residencia_data ?? '',
-      tipo_parceiro: novos(m).tipo_parceiro ?? '',
+      tipo_parceiro: m.tipo_parceiro ?? '',
       cnpj: m.cnpj ?? '',
-      qtd_veiculos_rntrc: novos(m).qtd_veiculos_rntrc != null ? String(novos(m).qtd_veiculos_rntrc) : '',
-      opcao_inss_direto: !!novos(m).opcao_inss_direto,
-      data_comunicacao_inss_direto: novos(m).data_comunicacao_inss_direto ?? '',
-      validade_exame_toxicologico: novos(m).validade_exame_toxicologico ?? '',
+      qtd_veiculos_rntrc: m.qtd_veiculos_rntrc != null ? String(m.qtd_veiculos_rntrc) : '',
+      opcao_inss_direto: !!m.opcao_inss_direto,
+      data_comunicacao_inss_direto: m.data_comunicacao_inss_direto ?? '',
+      validade_exame_toxicologico: m.validade_exame_toxicologico ?? '',
     })
     setShowNovoMotorista(true)
   }
@@ -2082,7 +2081,7 @@ export default function Cadastros() {
                   Consulta de antecedentes:{' '}
                   {(() => {
                     const m = (motoristas ?? []).find((x) => x.id === editingMotoristaId)
-                    const n = m ? novos(m) : null
+                    const n = m ? m : null
                     return n?.consentimento_consulta_antecedentes
                       ? `autorizada pelo motorista em ${n.consentimento_antecedentes_em ? formatDate(n.consentimento_antecedentes_em) : '—'}`
                       : 'o motorista ainda não autorizou (ele autoriza no app, em Perfil)'
@@ -2209,7 +2208,7 @@ export default function Cadastros() {
                           <div className="text-sm font-bold">{m.nome}</div>
                           <StatusBadge status={m.status} />
                           <BadgeAprovacao status={m.aprovacao_status} />
-                          <SeloClassificacao c={novos(m).classificacao_ciot} />
+                          <SeloClassificacao c={m.classificacao_ciot} />
                           <SeloTermo pessoaId={m.id} a={aceitesPrestador} />
                         </div>
                         <IconChevronRight
@@ -2233,7 +2232,7 @@ export default function Cadastros() {
                           CNH válida até: {m.cnh_validade ? formatDate(m.cnh_validade) : 'não informado'}
                           {vencida ? ' ⚠' : ''}
                         </span>
-                        <AvisoToxicologico categoria={m.cnh_categoria} validade={novos(m).validade_exame_toxicologico} />
+                        <AvisoToxicologico categoria={m.cnh_categoria} validade={m.validade_exame_toxicologico} />
                         <span>RNTRC: {m.rntrc_status ?? '—'}</span>
                       </div>
                     </button>
@@ -3065,7 +3064,7 @@ export default function Cadastros() {
                       <div className="text-sm font-bold">{a.nome}</div>
                       <StatusBadge status={a.status} />
                       <BadgeAprovacao status={a.aprovacao_status} />
-                      {novos(a).status_contrato_agenciador !== undefined && <SeloContrato status={novos(a).status_contrato_agenciador} />}
+                      <SeloContrato status={a.status_contrato_agenciador} />
                     </div>
                     <div className="flex items-center gap-2">
                       <button

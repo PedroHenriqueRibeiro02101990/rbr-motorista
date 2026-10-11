@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { Aviso, Botao, Campo, Card, Carregando, Kpi, Vazio, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 import { ModalMotivo } from '../operacao/ConformidadeOperacao'
@@ -23,7 +22,7 @@ export type Painel = {
 export function usePainelConformidade(versao = 0) {
   const [p, setP] = useState<Painel | null>(null)
   useEffect(() => {
-    void dbNovo.rpc('painel_conformidade').then(({ data, error }) => setP(error ? null : ((data as Painel | null) ?? null)))
+    void supabase.rpc('painel_conformidade').then(({ data, error }) => setP(error ? null : ((data as Painel | null) ?? null)))
   }, [versao])
   return p
 }
@@ -61,7 +60,7 @@ type AlertaAberto = { operacao_id: string; codigo: string; titulo: string; detal
 export function AlertasAbertos() {
   const [l, setL] = useState<AlertaAberto[] | null>(null)
   useEffect(() => {
-    void dbNovo.rpc('alertas_conformidade_abertos').then(({ data }) => setL((data ?? []) as AlertaAberto[]))
+    void supabase.rpc('alertas_conformidade_abertos').then(({ data }) => setL((data ?? []) as AlertaAberto[]))
   }, [])
   if (l === null) return <Carregando />
   return (
@@ -105,7 +104,7 @@ export function Retencoes() {
   const [dias, setDias] = useState('15')
   const { confirmacao, mostrar } = useConfirmacao()
   const carregar = useCallback(async () => {
-    const { data } = await dbNovo.from('retencoes_apuracao').select('*, retencoes_eventos(acao, motivo, em)').order('data_limite')
+    const { data } = await supabase.from('retencoes_apuracao').select('*, retencoes_eventos(acao, motivo, em)').order('data_limite')
     const lista = (data ?? []) as Retencao[]
     setL(lista)
     const ids = [...new Set(lista.map((r) => r.pessoa_id))]
@@ -172,8 +171,8 @@ export function Retencoes() {
           onConfirmar={async (motivo) => {
             const r =
               acao.tipo === 'liberar'
-                ? await dbNovo.rpc('liberar_retencao', { p_retencao: acao.r.id, p_motivo: motivo })
-                : await dbNovo.rpc('prorrogar_retencao', { p_retencao: acao.r.id, p_dias: Number(dias), p_motivo: motivo })
+                ? await supabase.rpc('liberar_retencao', { p_retencao: acao.r.id, p_motivo: motivo })
+                : await supabase.rpc('prorrogar_retencao', { p_retencao: acao.r.id, p_dias: Number(dias), p_motivo: motivo })
             if (r.error) throw new Error(r.error.message)
             setAcao(null)
             mostrar('ok', acao.tipo === 'liberar' ? 'Retenção liberada: o pagamento pode ser feito.' : `Retenção prorrogada por ${dias} dia(s).`)
@@ -190,7 +189,7 @@ export function Incidentes() {
   const [l, setL] = useState<IncidenteLinha[] | null>(null)
   const { confirmacao, rodar } = useConfirmacao()
   useEffect(() => {
-    void dbNovo
+    void supabase
       .from('incidentes_carga')
       .select('id, operacao_id, status, descricao, registrado_em, dossie_path, encerramento_motivo')
       .order('registrado_em', { ascending: false })
@@ -343,7 +342,7 @@ export function PrestadoresSuspensos() {
   const [reativando, setReativando] = useState<string | null>(null)
   const { confirmacao, mostrar } = useConfirmacao()
   const carregar = useCallback(async () => {
-    const { data } = await dbNovo.from('pessoas').select('id, nome, suspenso_em, suspensao_motivo').not('suspenso_em', 'is', null).order('suspenso_em', { ascending: false })
+    const { data } = await supabase.from('pessoas').select('id, nome, suspenso_em, suspensao_motivo').not('suspenso_em', 'is', null).order('suspenso_em', { ascending: false })
     setL((data ?? []) as { id: string; nome: string; suspenso_em: string; suspensao_motivo: string | null }[])
   }, [])
   useEffect(() => {
@@ -371,7 +370,7 @@ export function PrestadoresSuspensos() {
           rotulo="Motivo (obrigatório)"
           onFechar={() => setReativando(null)}
           onConfirmar={async (motivo) => {
-            const { error } = await dbNovo.rpc('reativar_prestador', { p_pessoa: reativando, p_motivo: motivo })
+            const { error } = await supabase.rpc('reativar_prestador', { p_pessoa: reativando, p_motivo: motivo })
             if (error) throw new Error(error.message)
             setReativando(null)
             mostrar('ok', 'Reativado: volta a poder ser alocado.')

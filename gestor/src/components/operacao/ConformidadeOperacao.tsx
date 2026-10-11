@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
@@ -23,10 +23,10 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
 
   const carregar = useCallback(async () => {
     const [a, r, i, d] = await Promise.all([
-      dbNovo.rpc('alertas_conformidade_operacao', { p_operacao: operacaoId }),
-      dbNovo.from('retencoes_apuracao').select('id, alvo, status, motivo, data_limite').eq('operacao_id', operacaoId).order('criado_em', { ascending: false }),
-      dbNovo.from('incidentes_carga').select('id, status, descricao, registrado_em, dossie_path, dossie_gerado_em').eq('operacao_id', operacaoId).order('registrado_em', { ascending: false }),
-      dbNovo.from('declaracoes_carga').select('embarcador_nome, embarcador_documento, mercadoria, quantidade, valor, nf_numero, created_at, hash_texto').eq('operacao_id', operacaoId).maybeSingle(),
+      supabase.rpc('alertas_conformidade_operacao', { p_operacao: operacaoId }),
+      supabase.from('retencoes_apuracao').select('id, alvo, status, motivo, data_limite').eq('operacao_id', operacaoId).order('criado_em', { ascending: false }),
+      supabase.from('incidentes_carga').select('id, status, descricao, registrado_em, dossie_path, dossie_gerado_em').eq('operacao_id', operacaoId).order('registrado_em', { ascending: false }),
+      supabase.from('declaracoes_carga').select('embarcador_nome, embarcador_documento, mercadoria, quantidade, valor, nf_numero, created_at, hash_texto').eq('operacao_id', operacaoId).maybeSingle(),
     ])
     // Funções/tabelas ainda não aplicadas no banco: o bloco não aparece.
     if (a.error) return setAlertas(null)
@@ -176,12 +176,12 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
           onConfirmar={async (texto) => {
             const r =
               modal.tipo === 'revisar'
-                ? await dbNovo.rpc('revisar_alerta_conformidade', { p_operacao: operacaoId, p_codigo: modal.a.codigo, p_observacao: texto })
+                ? await supabase.rpc('revisar_alerta_conformidade', { p_operacao: operacaoId, p_codigo: modal.a.codigo, p_observacao: texto })
                 : modal.tipo === 'reter'
-                  ? await dbNovo.rpc('reter_para_apuracao', { p_alvo: 'pagamento_prestador', p_operacao: operacaoId, p_comissao: null, p_motivo: texto })
+                  ? await supabase.rpc('reter_para_apuracao', { p_alvo: 'pagamento_prestador', p_operacao: operacaoId, p_comissao: null as unknown as string, p_motivo: texto })
                   : modal.tipo === 'encerrar'
-                    ? await dbNovo.rpc('encerrar_incidente_carga', { p_incidente: modal.i.id, p_motivo: texto })
-                    : await dbNovo.rpc('registrar_incidente_carga', { p_operacao: operacaoId, p_descricao: texto })
+                    ? await supabase.rpc('encerrar_incidente_carga', { p_incidente: modal.i.id, p_motivo: texto })
+                    : await supabase.rpc('registrar_incidente_carga', { p_operacao: operacaoId, p_descricao: texto })
             if (r.error) throw new Error(r.error.message)
             setModal(null)
             mostrar(

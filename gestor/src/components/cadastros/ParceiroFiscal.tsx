@@ -1,5 +1,6 @@
-import type { ClassificacaoCiot, TipoParceiro } from '@rbr/shared/dbNovo'
-
+// Valores das colunas pessoas.tipo_parceiro e pessoas.classificacao_ciot (texto no banco, com check).
+export type TipoParceiro = 'tac_pf' | 'mei_caminhoneiro' | 'etc'
+export type ClassificacaoCiot = 'tac' | 'etc_equiparada_tac' | 'etc_ciot_proprio' | 'etc_frota_nao_informada'
 // Tarefa 1: tipo do parceiro (quem recebe o frete) e a classificação derivada pelo banco (pessoas.classificacao_ciot).
 
 export const TIPO_PARCEIRO_LABEL: Record<TipoParceiro, string> = {
@@ -15,8 +16,10 @@ export const CLASSIFICACAO_LABEL: Record<ClassificacaoCiot, { texto: string; det
   etc_frota_nao_informada: { texto: 'ETC: frota não informada', detalhe: 'Informe quantos veículos a ETC tem no RNTRC.', bg: '#FDF1DC', cor: '#8A5A00' },
 }
 
-export function SeloClassificacao({ c }: { c: ClassificacaoCiot | null | undefined }) {
-  if (!c) return null
+const ehClassificacao = (c: string | null | undefined): c is ClassificacaoCiot => !!c && c in CLASSIFICACAO_LABEL
+
+export function SeloClassificacao({ c }: { c: string | null | undefined }) {
+  if (!ehClassificacao(c)) return null
   const s = CLASSIFICACAO_LABEL[c]
   return (
     <span title={s.detalhe} className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: s.bg, color: s.cor }}>

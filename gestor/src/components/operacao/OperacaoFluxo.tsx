@@ -21,8 +21,7 @@ import { BaixaModal } from '../financeiro/LancamentoModais'
 import CiotOperacao from './CiotOperacao'
 import RetencaoInss from './RetencaoInss'
 import ConformidadeOperacao from './ConformidadeOperacao'
-import { novosOp } from '@rbr/shared/dbNovo'
-import { DOCUMENTO_CLIENTE_LABEL, estiloDeteccao } from '@rbr/shared/DocumentoCliente'
+import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
 
@@ -169,7 +168,7 @@ export default function OperacaoFluxo({
       )}
 
       <DocumentoDaOperacao d={d} />
-      <ConformidadeOperacao operacaoId={o.id} congeladaMotivo={novosOp(o).congelada_motivo} onMudou={() => void recarregar().then(onChanged)} />
+      <ConformidadeOperacao operacaoId={o.id} congeladaMotivo={o.congelada_motivo} onMudou={() => void recarregar().then(onChanged)} />
       <ResumoPreco d={d} />
       <Alocacao d={d} editavel={editavelAlocacao} salvando={salvando} executar={executar} />
       {o.veiculo_id && o.pessoa_alocada_id && <Pagamento d={d} salvando={salvando} executar={executar} />}
@@ -189,12 +188,11 @@ export default function OperacaoFluxo({
 // ---------------------------------------------------------------------------
 // Tarefa 6: documento ao cliente detectado pela origem/destino (IBGE), recalculado pelo banco se a rota mudar.
 function DocumentoDaOperacao({ d }: { d: DetalheOperacao }) {
-  const o = novosOp(d.operacao)
-  if (o.tipo_documento_cliente === undefined) return null
+  const o = d.operacao
   return (
     <div className="rounded-xl px-3.5 py-2.5 text-xs flex flex-col gap-0.5" style={estiloDeteccao(o.tipo_documento_cliente)}>
       <div>
-        <b>Documento ao cliente:</b> {o.tipo_documento_cliente ? DOCUMENTO_CLIENTE_LABEL[o.tipo_documento_cliente] : 'não definido'}
+        <b>Documento ao cliente:</b> {rotuloDocumento(o.tipo_documento_cliente)}
         {o.tipo_documento_aviso ? ` · ${o.tipo_documento_aviso}` : ''}
       </div>
       {o.tipo_documento_mudou_em && (

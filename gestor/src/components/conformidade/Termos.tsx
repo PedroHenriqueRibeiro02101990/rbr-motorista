@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { Aviso, Botao, Campo, Card, Carregando, Modal, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
 
@@ -39,7 +39,7 @@ export default function Termos({
   const { confirmacao, rodar, ocupado } = useConfirmacao()
 
   const carregar = useCallback(async () => {
-    const { data, error } = await dbNovo
+    const { data, error } = await supabase
       .from('termos_contrato')
       .select('*, termos_contrato_clausulas(id, ordem, codigo, texto)')
       .order('tipo')
@@ -53,14 +53,14 @@ export default function Termos({
 
   async function novaVersao(base: Termo) {
     const proxima = Math.max(...(lista ?? []).filter((t) => t.tipo === base.tipo).map((t) => t.versao)) + 1
-    const { data, error } = await dbNovo
+    const { data, error } = await supabase
       .from('termos_contrato')
       .insert({ tipo: base.tipo, versao: proxima, titulo: base.titulo, texto: base.texto, minuta: base.minuta })
       .select('id')
       .single()
     if (error) throw error
     if (base.termos_contrato_clausulas.length) {
-      const { error: e2 } = await dbNovo
+      const { error: e2 } = await supabase
         .from('termos_contrato_clausulas')
         .insert(base.termos_contrato_clausulas.map((c) => ({ termo_id: (data as { id: string }).id, ordem: c.ordem, codigo: c.codigo, texto: c.texto })))
       if (e2) throw e2
@@ -107,7 +107,7 @@ export default function Termos({
                             void rodar(`Versão ${t.versao} publicada: quem ainda não aceitou terá de aceitar no próximo acesso.`, async () => {
                               const motivo = await validarPublicacao?.(t)
                               if (motivo) throw new Error(motivo)
-                              const { error } = await dbNovo.rpc('publicar_termo', { p_termo: t.id })
+                              const { error } = await supabase.rpc('publicar_termo', { p_termo: t.id })
                               if (error) throw error
                               await carregar()
                             })
@@ -153,12 +153,12 @@ export function EditarTermo({ t, onFechar, onSalvo }: { t: Termo; onFechar: () =
     if (!titulo.trim() || !texto.trim()) throw new Error('Título e texto são obrigatórios.')
     const cls = clausulas.filter((c) => c.texto.trim())
     if (new Set(cls.map((c) => c.codigo.trim())).size !== cls.length || cls.some((c) => !c.codigo.trim())) throw new Error('Cada cláusula precisa de um código único.')
-    const { error } = await dbNovo.from('termos_contrato').update({ titulo: titulo.trim(), texto, minuta }).eq('id', t.id)
+    const { error } = await supabase.from('termos_contrato').update({ titulo: titulo.trim(), texto, minuta }).eq('id', t.id)
     if (error) throw error
-    const { error: e1 } = await dbNovo.from('termos_contrato_clausulas').delete().eq('termo_id', t.id)
+    const { error: e1 } = await supabase.from('termos_contrato_clausulas').delete().eq('termo_id', t.id)
     if (e1) throw e1
     if (cls.length) {
-      const { error: e2 } = await dbNovo
+      const { error: e2 } = await supabase
         .from('termos_contrato_clausulas')
         .insert(cls.map((c, i) => ({ termo_id: t.id, ordem: i + 1, codigo: c.codigo.trim(), texto: c.texto.trim() })))
       if (e2) throw e2

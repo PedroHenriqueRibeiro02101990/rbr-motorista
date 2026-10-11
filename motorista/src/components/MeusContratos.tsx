@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { jsPDF } from 'jspdf'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { abrirPdfContrato, gerarESalvarPdfAceite } from '@rbr/shared/pdfAceite'
 
 // Tarefa 9: o motorista baixa o PDF do contrato que aceitou (bucket privado, link temporário).
@@ -12,7 +12,7 @@ export default function MeusContratos() {
   const [ocupado, setOcupado] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
-    const { data, error } = await dbNovo.rpc('meus_contratos')
+    const { data, error } = await supabase.rpc('meus_contratos')
     setLista(error ? [] : ((data ?? []) as Linha[]))
   }, [])
   useEffect(() => {

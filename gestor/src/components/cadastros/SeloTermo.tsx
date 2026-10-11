@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { jsPDF } from 'jspdf'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { abrirPdfContrato, gerarESalvarPdfAceite } from '@rbr/shared/pdfAceite'
 
 // Tarefas 7/9: o parceiro aceitou a versão publicada do termo/contrato? (aceites_termo; só o gestor lê)
@@ -11,10 +11,10 @@ export function useAceitesPrestador(): AceitesPrestador {
   const [r, setR] = useState<AceitesPrestador>({ versao: null, termoId: null, aceites: new Map() })
   useEffect(() => {
     void (async () => {
-      const { data: t } = await dbNovo.from('termos_contrato').select('id, versao').eq('tipo', 'prestador').eq('status', 'publicado').maybeSingle()
+      const { data: t } = await supabase.from('termos_contrato').select('id, versao').eq('tipo', 'prestador').eq('status', 'publicado').maybeSingle()
       const termo = t as { id: string; versao: number } | null
       if (!termo) return
-      const { data } = await dbNovo.from('aceites_termo').select('id, pessoa_id, aceito_em').eq('termo_id', termo.id)
+      const { data } = await supabase.from('aceites_termo').select('id, pessoa_id, aceito_em').eq('termo_id', termo.id)
       setR({
         versao: termo.versao,
         termoId: termo.id,

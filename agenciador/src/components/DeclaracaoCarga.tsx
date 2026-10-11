@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { dbNovo } from '@rbr/shared/dbNovo'
+import { supabase } from '@rbr/shared/supabaseClient'
 
 // Tarefa 10.1: ao fechar a carga, o agenciador declara (cláusula 6 do contrato) quem embarca, o que, quanto, a NF,
 // os endereços e o contato de quem entrega, e marca as 4 declarações. O registro é imutável (hash, IP, aparelho).
@@ -72,7 +72,7 @@ export default function DeclaracaoCarga({
   const [enviando, setEnviando] = useState(false)
 
   useEffect(() => {
-    void dbNovo.rpc('textos_declaracao_carga').then(({ data }) => setTextos((data as Textos | null) ?? null))
+    void supabase.rpc('textos_declaracao_carga').then(({ data }) => setTextos((data as Textos | null) ?? null))
   }, [])
 
   const completo = CAMPOS.every(([k]) => c[k].trim()) && marcadas.a && marcadas.b && marcadas.c && marcadas.d
@@ -83,7 +83,7 @@ export default function DeclaracaoCarga({
     try {
       const valor = Number(c.valor.replace(/\./g, '').replace(',', '.'))
       if (!Number.isFinite(valor) || valor <= 0) throw new Error('Valor da mercadoria inválido.')
-      const { error } = await dbNovo.rpc('declarar_carga', {
+      const { error } = await supabase.rpc('declarar_carga', {
         p_cotacao: cotacaoId,
         p_dados: { ...c, valor, declaracoes: marcadas },
         p_user_agent: navigator.userAgent,

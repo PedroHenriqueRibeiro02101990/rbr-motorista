@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo, novos } from '@rbr/shared/dbNovo'
 import { formatarDoc } from '@rbr/shared/documento'
 import { Aviso, Botao, Campo, Card, Carregando, Modal, Vazio, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
@@ -16,7 +15,7 @@ type Agenciador = {
   status_contrato_motivo: string | null
   responsavel_nome: string | null
   responsavel_cpf: string | null
-  nivel_confianca: 'novo' | 'verificado' | 'restrito'
+  nivel_confianca: string
 }
 type Envio = {
   id: string
@@ -60,14 +59,14 @@ export default function ContratosAgenciador() {
   const carregar = useCallback(async () => {
     const [p, e, t] = await Promise.all([
       supabase.from('pessoas').select('*').eq('papel', 'agenciador').is('deleted_at', null).order('nome'),
-      dbNovo.from('contratos_agenciador').select('*').order('enviado_em', { ascending: false }),
-      dbNovo.from('termos_contrato').select('versao').eq('tipo', 'agenciador').eq('status', 'publicado').maybeSingle(),
+      supabase.from('contratos_agenciador').select('*').order('enviado_em', { ascending: false }),
+      supabase.from('termos_contrato').select('versao').eq('tipo', 'agenciador').eq('status', 'publicado').maybeSingle(),
     ])
     const err = p.error ?? e.error
     setErro(err ? err.message : null)
     setAgs(
       (p.data ?? []).map((x) => {
-        const n = novos(x)
+        const n = x
         return {
           id: x.id,
           nome: x.nome,
@@ -138,7 +137,7 @@ export default function ContratosAgenciador() {
                     title="Nível de confiança"
                     onChange={async (ev) => {
                       const nivel = ev.target.value
-                      const { error } = await dbNovo.from('pessoas').update({ nivel_confianca: nivel }).eq('id', a.id)
+                      const { error } = await supabase.from('pessoas').update({ nivel_confianca: nivel }).eq('id', a.id)
                       if (error) mostrar('erro', error.message)
                       else {
                         mostrar('ok', `${a.nome}: nível "${nivel}".`)
@@ -212,7 +211,7 @@ function Conferir({ e, a, vigente, onFechar, onFeito }: { e: Envio; a: Agenciado
   }
 
   async function decidir(aprovar: boolean) {
-    const { error } = await dbNovo.rpc('contrato_agenciador_validar', { p_envio: e.id, p_aprovar: aprovar, p_motivo: motivo.trim() || null, p_conferencia: conf })
+    const { error } = await supabase.rpc('contrato_agenciador_validar', { p_envio: e.id, p_aprovar: aprovar, p_motivo: motivo.trim(), p_conferencia: conf })
     if (error) throw new Error(error.message)
     onFeito(aprovar ? `Contrato de ${a.nome} validado: ele já pode fechar cargas.` : `Contrato de ${a.nome} recusado; ele foi avisado do motivo.`)
   }
@@ -289,14 +288,14 @@ function AcaoAgenciador({
 
   async function confirmar() {
     if (tipo === 'responsavel') {
-      const { error } = await dbNovo
+      const { error } = await supabase
         .from('pessoas')
         .update({ responsavel_nome: nome.trim() || null, responsavel_cpf: cpf.replace(/\D/g, '') || null })
         .eq('id', a.id)
       if (error) throw error
       return onFeito('Responsável pelo contrato atualizado.')
     }
-    const { error } = await dbNovo.rpc(tipo === 'suspender' ? 'agenciador_suspender' : 'agenciador_reativar', { p_agenciador: a.id, p_motivo: motivo.trim() })
+    const { error } = await supabase.rpc(tipo === 'suspender' ? 'agenciador_suspender' : 'agenciador_reativar', { p_agenciador: a.id, p_motivo: motivo.trim() })
     if (error) throw new Error(error.message)
     onFeito(tipo === 'suspender' ? `${a.nome} suspenso: novas cargas travadas na hora; o histórico foi mantido.` : `${a.nome} reativado.`)
   }

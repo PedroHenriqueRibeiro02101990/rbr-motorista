@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { dbNovo } from '@rbr/shared/dbNovo'
 import { formatMoney } from '@rbr/shared/format'
 import { Aviso, Botao, Campo, Card, Carregando, Vazio, inputClass, inputStyle } from './ui'
 import { useConfirmacao } from '../Confirmacao'
@@ -39,7 +38,7 @@ export default function InssRetido() {
   const [erro, setErro] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
-    const { data, error } = await dbNovo.from('v_inss_retido_mensal').select('*').order('competencia', { ascending: false })
+    const { data, error } = await supabase.from('v_inss_retido_mensal').select('*').order('competencia', { ascending: false })
     setErro(error ? error.message : null)
     setLinhas((data as Linha[] | null) ?? [])
   }, [])
