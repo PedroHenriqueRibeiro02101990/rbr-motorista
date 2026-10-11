@@ -19,6 +19,7 @@ import FichaCliente from '../components/cadastros/FichaCliente'
 import PainelPendencias from '../components/PainelPendencias'
 import { CamposParceiro, SeloClassificacao } from '../components/cadastros/ParceiroFiscal'
 import { SeloTermo, useAceitesPrestador } from '../components/cadastros/SeloTermo'
+import { SeloContrato } from '../components/conformidade/ContratosAgenciador'
 import { dbNovo, novos } from '@rbr/shared/dbNovo'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
@@ -3015,6 +3016,7 @@ export default function Cadastros() {
                       <div className="text-sm font-bold">{a.nome}</div>
                       <StatusBadge status={a.status} />
                       <BadgeAprovacao status={a.aprovacao_status} />
+                      {novos(a).status_contrato_agenciador !== undefined && <SeloContrato status={novos(a).status_contrato_agenciador} />}
                     </div>
                     <div className="flex items-center gap-2">
                       <button

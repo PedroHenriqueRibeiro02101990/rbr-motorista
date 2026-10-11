@@ -8,6 +8,7 @@ import FrotaMap, { type FrotaMapPonto } from '@rbr/shared/FrotaMap'
 import { StatusCadastro } from '@rbr/shared/cadastro'
 import PainelPendencias from '../components/PainelPendencias'
 import BaixarDocumentacao from '../components/BaixarDocumentacao'
+import ContratoAgenciador from '../components/ContratoAgenciador'
 import { novosOp } from '@rbr/shared/dbNovo'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -152,6 +153,7 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
         </div>
       )}
 
+      <ContratoAgenciador pessoaId={pessoa.id} />
       <PainelPendencias />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">

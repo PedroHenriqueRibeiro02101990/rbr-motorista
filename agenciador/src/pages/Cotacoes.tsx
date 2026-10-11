@@ -6,6 +6,7 @@ import { formatMoney, formatDate } from '@rbr/shared/format'
 import { parseNFeXml, type DadosNFe } from '@rbr/shared/nfeParser'
 import { IconPlus, IconX, IconAlertTriangle } from '../icons-local'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
+import { useContratoAgenciador } from '../components/ContratoAgenciador'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -134,6 +135,9 @@ function toNumberOrNull(v: string): number | null {
 }
 
 export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
+  // Tarefa 8: sem contrato validado (ou suspenso) não fecha carga. undefined/null = função ainda não aplicada no banco.
+  const { situacao: contrato } = useContratoAgenciador()
+  const contratoPendente = !!contrato && contrato.status !== 'validado'
   const [cotacoes, setCotacoes] = useState<CotacaoComCliente[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
@@ -876,9 +880,17 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
             >
               <option value="rascunho">Rascunho</option>
               <option value="enviada">Enviada</option>
-              <option value="convertida">Convertida</option>
+              <option value="convertida" disabled={contratoPendente}>
+                Convertida{contratoPendente ? ' (contrato pendente)' : ''}
+              </option>
             </select>
           </label>
+
+          {contratoPendente && (
+            <div className="text-xs rounded-xl p-2.5 font-semibold" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+              Contrato pendente: sem o contrato validado pela RBR a cotação não vira carga fechada. Veja o passo a passo no Início.
+            </div>
+          )}
 
           {form.status === 'convertida' && (
             <div className="text-xs rounded-xl p-2.5" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy)' }}>

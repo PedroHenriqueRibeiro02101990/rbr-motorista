@@ -1,8 +1,13 @@
 import { useSearchParams } from 'react-router-dom'
 import Termos from '../components/conformidade/Termos'
+import { CamposContrato, ExtraTermo } from '../components/conformidade/ConfigContrato'
+import ContratosAgenciador from '../components/conformidade/ContratosAgenciador'
 
 // Conformidade: termos e contratos (Tarefas 7 a 9) e o escudo contra carga ilícita (Tarefa 10).
-const ABAS = [{ id: 'termos', label: 'Termos e contratos' }] as const
+const ABAS = [
+  { id: 'agenciadores', label: 'Contratos de agenciador' },
+  { id: 'termos', label: 'Termos e contratos' },
+] as const
 type Aba = (typeof ABAS)[number]['id']
 
 export default function Conformidade() {
@@ -26,7 +31,13 @@ export default function Conformidade() {
           ))}
         </div>
       </nav>
-      {aba === 'termos' && <Termos />}
+      {aba === 'agenciadores' && <ContratosAgenciador />}
+      {aba === 'termos' && (
+        <>
+          <Termos extraPorTermo={(t, recarregar) => <ExtraTermo t={t} recarregar={recarregar} />} />
+          <CamposContrato />
+        </>
+      )}
     </div>
   )
 }

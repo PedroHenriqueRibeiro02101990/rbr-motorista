@@ -18,6 +18,12 @@ export type PessoaNova = {
   opcao_inss_direto?: boolean | null
   data_comunicacao_inss_direto?: string | null
   classificacao_ciot?: ClassificacaoCiot | null
+  // 20261011_08 (contrato do agenciador)
+  status_contrato_agenciador?: string | null
+  status_contrato_motivo?: string | null
+  status_contrato_em?: string | null
+  responsavel_nome?: string | null
+  responsavel_cpf?: string | null
 }
 export const novos = <T extends object>(linha: T) => linha as T & PessoaNova
 
