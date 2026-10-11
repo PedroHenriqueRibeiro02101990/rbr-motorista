@@ -160,7 +160,7 @@ begin
     update operacoes set tipo_documento_cliente = r->>'tipo', tipo_documento_aviso = r->>'aviso', tipo_documento_detectado_em = now(), tipo_documento_mudou_em = now()
      where id = p_operacao;
     insert into auditoria_log (acao, entidade, entidade_id, dado_antes, dado_depois, papel, pessoa_id_ator)
-    values ('documento_cliente_mudou', 'operacoes', p_operacao::text, jsonb_build_object('tipo', o.tipo_documento_cliente), r,
+    values ('documento_cliente_mudou', 'operacoes', p_operacao, jsonb_build_object('tipo', o.tipo_documento_cliente), r,
             current_papel()::text, current_pessoa_id());
   else
     update operacoes set tipo_documento_cliente = r->>'tipo', tipo_documento_aviso = r->>'aviso', tipo_documento_detectado_em = coalesce(tipo_documento_detectado_em, now())

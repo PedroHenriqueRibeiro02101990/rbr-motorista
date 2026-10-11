@@ -126,7 +126,7 @@ begin
      where operacao_id = new.id and ciot is not null and btrim(ciot) <> '' and ciot_status in ('emitido', 'pendente');
     if found then
       insert into auditoria_log (acao, entidade, entidade_id, dado_antes, dado_depois, papel, pessoa_id_ator)
-      values ('ciot_troca_veiculo', 'operacoes', new.id::text, jsonb_build_object('veiculo_id', old.veiculo_id),
+      values ('ciot_troca_veiculo', 'operacoes', new.id, jsonb_build_object('veiculo_id', old.veiculo_id),
               jsonb_build_object('veiculo_id', new.veiculo_id, 'aviso', 'Troca de veículo = nova operação de CIOT'),
               current_papel()::text, current_pessoa_id());
     end if;

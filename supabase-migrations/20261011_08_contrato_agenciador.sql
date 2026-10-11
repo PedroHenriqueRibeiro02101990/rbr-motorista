@@ -52,7 +52,7 @@ begin
   update pessoas set status_contrato_agenciador = p_status, status_contrato_motivo = p_motivo, status_contrato_em = now() where id = p_agenciador;
   perform set_config('rbr.contrato_rpc', '', true);
   insert into auditoria_log (acao, entidade, entidade_id, dado_antes, dado_depois, papel, pessoa_id_ator)
-  values ('contrato_agenciador_status', 'pessoas', p_agenciador::text, jsonb_build_object('status', v_antes),
+  values ('contrato_agenciador_status', 'pessoas', p_agenciador, jsonb_build_object('status', v_antes),
           jsonb_build_object('status', p_status, 'motivo', p_motivo), current_papel()::text, current_pessoa_id());
 end;
 $$;

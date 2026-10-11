@@ -247,7 +247,7 @@ begin
   update pessoas set consentimento_consulta_antecedentes = p_aceito, consentimento_antecedentes_em = case when p_aceito then now() end where id = v_pessoa;
   perform set_config('rbr.consentimento_rpc', '', true);
   insert into auditoria_log (acao, entidade, entidade_id, dado_depois, papel, pessoa_id_ator)
-  values ('consentimento_antecedentes', 'pessoas', v_pessoa::text, jsonb_build_object('aceito', p_aceito), current_papel()::text, v_pessoa);
+  values ('consentimento_antecedentes', 'pessoas', v_pessoa, jsonb_build_object('aceito', p_aceito), current_papel()::text, v_pessoa);
 end;
 $$;
 revoke all on function public.registrar_consentimento_antecedentes(boolean) from public, anon;
@@ -260,7 +260,6 @@ declare
   d text := regexp_replace(coalesce(p, ''), '\D', '', 'g');
   soma int := 0;
   peso int := 2;
-  i int;
   dv int;
 begin
   if length(d) <> 44 then
@@ -683,7 +682,7 @@ begin
     perform reter_para_apuracao('comissao_agenciador', null, v_com, format('Incidente de carga %s', left(v_id::text, 8)), v_id);
   end loop;
   insert into auditoria_log (acao, entidade, entidade_id, dado_depois, papel, pessoa_id_ator)
-  values ('incidente_carga_registrado', 'operacoes', p_operacao::text,
+  values ('incidente_carga_registrado', 'operacoes', p_operacao,
           jsonb_build_object('incidente_id', v_id, 'descricao', btrim(p_descricao), 'prestador', v_prestador, 'agenciador', o.agenciador_id, 'embarcador', v_emb),
           current_papel()::text, current_pessoa_id());
   return v_id;
@@ -698,7 +697,7 @@ begin
   if (select current_papel()) is distinct from 'gestor_rbr'::papel_pessoa then raise exception 'Só o gestor gera o dossiê.'; end if;
   update incidentes_carga set dossie_path = p_path, dossie_hash = lower(p_hash), dossie_gerado_em = now(), dossie_gerado_por = current_pessoa_id() where id = p_incidente;
   insert into auditoria_log (acao, entidade, entidade_id, dado_depois, papel, pessoa_id_ator)
-  values ('dossie_incidente_gerado', 'incidentes_carga', p_incidente::text, jsonb_build_object('path', p_path, 'hash', lower(p_hash)), current_papel()::text, current_pessoa_id());
+  values ('dossie_incidente_gerado', 'incidentes_carga', p_incidente, jsonb_build_object('path', p_path, 'hash', lower(p_hash)), current_papel()::text, current_pessoa_id());
 end;
 $$;
 revoke all on function public.registrar_dossie_incidente(uuid, text, text) from public, anon;
@@ -719,7 +718,7 @@ begin
   update operacoes set congelada_em = null, congelada_motivo = null where id = v_op;
   perform set_config('rbr.incidente_rpc', '', true);
   insert into auditoria_log (acao, entidade, entidade_id, dado_depois, papel, pessoa_id_ator)
-  values ('incidente_carga_encerrado', 'incidentes_carga', p_incidente::text, jsonb_build_object('motivo', btrim(p_motivo)), current_papel()::text, current_pessoa_id());
+  values ('incidente_carga_encerrado', 'incidentes_carga', p_incidente, jsonb_build_object('motivo', btrim(p_motivo)), current_papel()::text, current_pessoa_id());
 end;
 $$;
 revoke all on function public.encerrar_incidente_carga(uuid, text) from public, anon;
@@ -732,7 +731,7 @@ begin
   if nullif(btrim(p_motivo), '') is null then raise exception 'Informe o motivo da reativação.'; end if;
   update pessoas set suspenso_em = null, suspensao_motivo = null where id = p_pessoa;
   insert into auditoria_log (acao, entidade, entidade_id, dado_depois, papel, pessoa_id_ator)
-  values ('prestador_reativado', 'pessoas', p_pessoa::text, jsonb_build_object('motivo', btrim(p_motivo)), current_papel()::text, current_pessoa_id());
+  values ('prestador_reativado', 'pessoas', p_pessoa, jsonb_build_object('motivo', btrim(p_motivo)), current_papel()::text, current_pessoa_id());
 end;
 $$;
 revoke all on function public.reativar_prestador(uuid, text) from public, anon;
