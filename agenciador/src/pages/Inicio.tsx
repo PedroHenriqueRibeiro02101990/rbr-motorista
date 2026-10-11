@@ -6,6 +6,9 @@ import { formatMoney, initials, STATUS_OPERACAO_LABEL } from '@rbr/shared/format
 import { IconQuote } from '@rbr/shared/icons'
 import FrotaMap, { type FrotaMapPonto } from '@rbr/shared/FrotaMap'
 import { StatusCadastro } from '@rbr/shared/cadastro'
+import PainelPendencias from '../components/PainelPendencias'
+import BaixarDocumentacao from '../components/BaixarDocumentacao'
+import ContratoAgenciador from '../components/ContratoAgenciador'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -149,6 +152,9 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
         </div>
       )}
 
+      <ContratoAgenciador pessoaId={pessoa.id} />
+      <PainelPendencias />
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div
           className="bg-white border rounded-[16px] p-3.5"
@@ -237,6 +243,7 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
                 {op.valorContrato != null && <span className="text-[13px] font-bold">{formatMoney(op.valorContrato)}</span>}
               </div>
               <div className="text-sm font-semibold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+              <BaixarDocumentacao operacaoId={op.id} tipo={op.tipo_documento_cliente} />
             </div>
           )
         })}

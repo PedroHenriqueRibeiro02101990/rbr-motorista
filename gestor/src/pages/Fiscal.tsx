@@ -3,6 +3,8 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime } from '@rbr/shared/format'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
+import PainelPendencias from '../components/PainelPendencias'
+import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
@@ -608,6 +610,8 @@ export default function Fiscal() {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Fiscal</h1>
       </div>
 
+      <PainelPendencias modulo="fiscal" />
+
       <ParametrosFiscaisPanel />
       {evento && (
         <EventoFiscalModal
@@ -709,6 +713,10 @@ export default function Fiscal() {
             const infoCard = infoPorOperacao[op.id]
             const xmlCancelamento = xmlCancelamentoPorOperacao[op.id]
             const nfeCancelada = nfeCanceladaPorOperacao[op.id] === true
+            // Tarefa 6: só o botão do documento detectado pela origem/destino (IBGE).
+            const tipoDoc = op.tipo_documento_cliente
+            const ofereceCteMdfe = tipoDoc === 'cte_mdfe'
+            const ofereceNfse = tipoDoc === 'nfse'
 
             const chaveCte = `${op.id}:cte`
             const chaveMdfe = `${op.id}:mdfe`
@@ -731,6 +739,10 @@ export default function Fiscal() {
                 </div>
                 <div className="text-xs text-[color:var(--rbr-muted)]">
                   {op.cidadeOrigem ?? '?'}/{op.ufOrigem ?? '?'} → {op.cidadeDestino ?? '?'}/{op.ufDestino ?? '?'}
+                </div>
+                <div className="text-xs rounded-lg px-3 py-2 font-semibold" style={estiloDeteccao(tipoDoc)}>
+                  Documento ao cliente: {rotuloDocumento(tipoDoc)}
+                  {op.tipo_documento_aviso ? ` · ${op.tipo_documento_aviso}` : ''}
                 </div>
 
                 {docsExibidos.length > 0 && (
@@ -1218,6 +1230,7 @@ export default function Fiscal() {
                 )}
 
                 <div className="flex gap-2 flex-wrap">
+                  {ofereceCteMdfe && (
                   <button
                     onClick={() => setConferencia({ op, tipo: 'cte' })}
                     disabled={emAndamento.has(chaveCte)}
@@ -1226,6 +1239,8 @@ export default function Fiscal() {
                   >
                     {emAndamento.has(chaveCte) ? 'Enviando…' : 'Emitir CT-e'}
                   </button>
+                  )}
+                  {ofereceCteMdfe && (
                   <button
                     onClick={() => setConferencia({ op, tipo: 'mdfe' })}
                     disabled={emAndamento.has(chaveMdfe)}
@@ -1234,6 +1249,7 @@ export default function Fiscal() {
                   >
                     {emAndamento.has(chaveMdfe) ? 'Enviando…' : 'Emitir MDF-e'}
                   </button>
+                  )}
                   {docMdfe?.status === 'pendente' && docMdfe.referencia && (
                     <button
                       onClick={() => consultarStatus(op, 'mdfe')}
@@ -1244,6 +1260,7 @@ export default function Fiscal() {
                       {emAndamento.has(chaveConsultarMdfe) ? 'Consultando…' : 'Atualizar status MDF-e'}
                     </button>
                   )}
+                  {ofereceNfse && (
                   <button
                     onClick={() => setConferencia({ op, tipo: 'nfse' })}
                     disabled={emAndamento.has(chaveNfse)}
@@ -1252,6 +1269,7 @@ export default function Fiscal() {
                   >
                     {emAndamento.has(chaveNfse) ? 'Enviando…' : 'Emitir NFS-e (intramunicipal)'}
                   </button>
+                  )}
                   {ambienteFiscal === 'homologacao' && (
                     <>
                       <button

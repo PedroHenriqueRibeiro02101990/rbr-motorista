@@ -2,6 +2,7 @@ import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
+import PreVoo from './PreVoo'
 
 // Card de conferência que abre ANTES de emitir CT-e ou MDF-e. Pede às próprias funções de emissão o
 // "payload de prévia" (o que seria enviado à Focus + o que está faltando, sem gravar nada) e mostra,
@@ -304,6 +305,7 @@ export default function ConferenciaEmissaoModal({
         </div>
 
         <div className="px-5 py-3 overflow-y-auto flex flex-col gap-3">
+          <PreVoo operacaoId={operacaoId} tipo={tipo} />
           {carregando && <div className="text-xs text-[color:var(--rbr-muted)]">Montando a conferência…</div>}
           {erroCarga && (
             <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>

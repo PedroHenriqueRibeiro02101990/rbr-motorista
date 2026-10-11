@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatDate, formatMoney } from '@rbr/shared/format'
+import { useCobrancaAtiva } from '@rbr/shared/useCobranca'
 import { IconAlertTriangle } from '../icons-local'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -85,6 +86,7 @@ const cardStyle = {
 }
 
 export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
+  const cobrancaAtiva = useCobrancaAtiva()
   const [loading, setLoading] = useState(true)
   const [recebimentos, setRecebimentos] = useState<Recebimento[]>([])
   const [assinaturas, setAssinaturas] = useState<AssinaturaMotorista[]>([])
@@ -169,7 +171,7 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
 
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 
-      {!loading && bloqueios.length > 0 && (
+      {!loading && cobrancaAtiva && bloqueios.length > 0 && (
         <div className="flex items-start gap-2 rounded-xl px-3.5 py-3" style={{ background: '#FBE9E9' }}>
           <IconAlertTriangle width={16} height={16} style={{ color: 'var(--rbr-danger)', flexShrink: 0, marginTop: 1 }} />
           <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
@@ -228,6 +230,8 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
             )
           })}
 
+          {cobrancaAtiva && (
+            <>
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-2">
             Assinatura
           </div>
@@ -278,6 +282,8 @@ export default function Caixa({ pessoa }: { pessoa: Pessoa }) {
               </div>
             </div>
           ))}
+            </>
+          )}
         </>
       )}
     </div>

@@ -18,6 +18,10 @@ import {
 } from '../../lib/operacaoDetalhe'
 import { type Apoio, type Lancamento, type ResultadoOperacao, carregarApoio } from '../../lib/financeiro'
 import { BaixaModal } from '../financeiro/LancamentoModais'
+import CiotOperacao from './CiotOperacao'
+import RetencaoInss from './RetencaoInss'
+import ConformidadeOperacao from './ConformidadeOperacao'
+import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
 
@@ -163,9 +167,12 @@ export default function OperacaoFluxo({
         </div>
       )}
 
+      <DocumentoDaOperacao d={d} />
+      <ConformidadeOperacao operacaoId={o.id} congeladaMotivo={o.congelada_motivo} onMudou={() => void recarregar().then(onChanged)} />
       <ResumoPreco d={d} />
       <Alocacao d={d} editavel={editavelAlocacao} salvando={salvando} executar={executar} />
       {o.veiculo_id && o.pessoa_alocada_id && <Pagamento d={d} salvando={salvando} executar={executar} />}
+      {o.veiculo_id && o.pessoa_alocada_id && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {o.status !== 'alocando_motorista' && (
         <Documentos d={d} gestor={gestor} salvando={salvando} executar={executar} recarregar={recarregar} />
       )}
@@ -174,6 +181,25 @@ export default function OperacaoFluxo({
         <FinanceiroOperacao operacaoId={o.id} versao={`${o.status}|${o.updated_at}|${d.condicao?.updated_at ?? ''}|${d.cotacao.updated_at ?? ''}`} />
       )}
       <StatusELiberacao d={d} salvando={salvando} executar={executar} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Tarefa 6: documento ao cliente detectado pela origem/destino (IBGE), recalculado pelo banco se a rota mudar.
+function DocumentoDaOperacao({ d }: { d: DetalheOperacao }) {
+  const o = d.operacao
+  return (
+    <div className="rounded-xl px-3.5 py-2.5 text-xs flex flex-col gap-0.5" style={estiloDeteccao(o.tipo_documento_cliente)}>
+      <div>
+        <b>Documento ao cliente:</b> {rotuloDocumento(o.tipo_documento_cliente)}
+        {o.tipo_documento_aviso ? ` · ${o.tipo_documento_aviso}` : ''}
+      </div>
+      {o.tipo_documento_mudou_em && (
+        <div className="font-semibold">
+          A origem ou o destino mudou em {formatDateTime(o.tipo_documento_mudou_em)} e o documento foi recalculado. Confira antes de emitir.
+        </div>
+      )}
     </div>
   )
 }
@@ -295,6 +321,12 @@ function Alocacao({ d, editavel, salvando, executar }: { d: DetalheOperacao; edi
         add('RNTRC do veículo', (v.rntrc_status ?? '').toLowerCase() === 'ativo')
         add('RNTRC do transportador', (titular?.rntrc_status ?? '').toLowerCase() === 'ativo')
         add('CNH válida', !!p.cnh_validade && p.cnh_validade >= hoje())
+        // Cadastro completo para CIOT/VPO, MDF-e e gerenciamento de risco (campos de 10/10/2026).
+        add('CPF do motorista', !!p.cpf)
+        add('Data de nascimento', !!p.data_nascimento)
+        add('PIX do motorista', !!p.pix)
+        add('Tara e capacidade do veículo', v.tara_kg != null && v.capacidade_carga != null)
+        add('CRLV do exercício vigente', !!v.crlv_exercicio && v.crlv_exercicio >= new Date().getFullYear() - 1)
         if (v.seguro_veiculo_vencimento) add('Seguro do veículo', v.seguro_veiculo_vencimento >= hoje(), false)
         if (precisaSatelite) add('Rastreador por satélite', v.rastreador_tipo === 'wialon' && v.rastreador_ativo)
         add('Livre (sem outra carga)', !ocupados.has(v.id) && !ocupados.has(p.id))
@@ -591,6 +623,7 @@ function Pagamento({ d, salvando, executar }: { d: DetalheOperacao; salvando: bo
       <div className="text-xs">
         <b>Recebe:</b> {t?.nome ?? '—'} · {meio === 'pix' ? `PIX: ${t?.pix ?? '—'}` : `Banco ${t?.banco_codigo ?? '—'} ag. ${t?.banco_agencia ?? '—'} conta ${t?.banco_conta ?? '—'}`}
       </div>
+      <RetencaoInss operacaoId={d.operacao.id} frete={totalNum} />
       {semDadosBancarios && (
         <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
           Faltam os dados de pagamento do transportador — complete em{' '}

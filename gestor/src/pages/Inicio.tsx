@@ -4,6 +4,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney, MOTIVO_PERDA_LABEL, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { linkWhatsApp } from '@rbr/shared/documento'
 import FrotaMap, { type FrotaMapPonto } from '@rbr/shared/FrotaMap'
+import { PainelConformidade } from '../components/conformidade/Escudo'
 import { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
 
 type Alerta = {
@@ -240,6 +241,9 @@ export default function Inicio() {
           Atualizar agora
         </button>
       </div>
+
+      {/* Tarefa 10.7: só aparece quando há pendência de conformidade. */}
+      <PainelConformidade compacto />
 
       {erro && (
         <div className="text-xs text-[color:var(--rbr-danger)] bg-white border rounded-[14px] p-3" style={{ borderColor: 'var(--rbr-border)' }}>

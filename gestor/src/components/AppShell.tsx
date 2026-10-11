@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import type { Database } from '@rbr/shared/database.types'
 import { IconHome, IconBox, IconWallet, IconMapPin, IconLogOut, IconQuote } from '@rbr/shared/icons'
 import { initials } from '@rbr/shared/format'
-import { IconMenu, IconX, IconFileText, IconAlertTriangle, IconClipboard } from '../icons-local'
+import { IconMenu, IconX, IconFileText, IconAlertTriangle, IconClipboard, IconCopy } from '../icons-local'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 
@@ -12,11 +12,14 @@ type Pessoa = Database['public']['Tables']['pessoas']['Row']
 const NAV = [
   { to: '/', label: 'Início', Icon: IconHome, end: true },
   { to: '/cotacao', label: 'Cotação', Icon: IconQuote, end: false },
+  { to: '/pre-cotacao', label: 'Pré-cotação', Icon: IconCopy, end: false },
   { to: '/operacoes', label: 'Operações', Icon: IconBox, end: false },
   { to: '/financeiro', label: 'Financeiro', Icon: IconWallet, end: false },
   { to: '/mapa', label: 'Mapa', Icon: IconMapPin, end: false },
   { to: '/fiscal', label: 'Fiscal', Icon: IconFileText, end: false },
+  { to: '/notas-parceiros', label: 'Notas parceiros', Icon: IconFileText, end: false },
   { to: '/risco', label: 'Risco', Icon: IconAlertTriangle, end: false },
+  { to: '/conformidade', label: 'Conformidade', Icon: IconClipboard, end: false },
   { to: '/cadastros', label: 'Cadastros', Icon: IconClipboard, end: false },
 ]
 

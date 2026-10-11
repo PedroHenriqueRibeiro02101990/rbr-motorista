@@ -1,3 +1,4 @@
+import PainelPendencias from '../components/PainelPendencias'
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -108,6 +109,8 @@ export default function Risco() {
           Mostrar todas as operações
         </label>
       </div>
+
+      <PainelPendencias modulo="risco" />
 
       <div className="text-xs text-[color:var(--rbr-muted)] flex flex-col gap-0.5">
         <div>Pontuação de motorista por histórico ainda não está implementada — o eixo 4 reflete um sinal binário simples.</div>

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { carregarApoio, erroMsg, type Apoio } from '../lib/financeiro'
+import PainelPendencias from '../components/PainelPendencias'
 import { Aviso, Carregando } from '../components/financeiro/ui'
 
 const VisaoGeral = lazy(() => import('../components/financeiro/VisaoGeral'))
@@ -11,6 +12,7 @@ const Documentos = lazy(() => import('../components/financeiro/Documentos'))
 const Conciliacao = lazy(() => import('../components/financeiro/Conciliacao'))
 const Resultado = lazy(() => import('../components/financeiro/Resultado'))
 const Configuracoes = lazy(() => import('../components/financeiro/Configuracoes'))
+const InssRetido = lazy(() => import('../components/financeiro/InssRetido'))
 
 const ABAS = [
   { id: 'geral', label: 'Visão geral' },
@@ -20,6 +22,7 @@ const ABAS = [
   { id: 'documentos', label: 'Notas e boletos' },
   { id: 'conciliacao', label: 'Conciliação' },
   { id: 'resultado', label: 'Resultado' },
+  { id: 'inss', label: 'INSS retido' },
   { id: 'config', label: 'Configurações' },
 ] as const
 type Aba = (typeof ABAS)[number]['id']
@@ -69,6 +72,8 @@ export default function Financeiro() {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Financeiro</h1>
       </div>
 
+      <PainelPendencias modulo="financeiro" recarregarKey={versao} />
+
       <nav className="-mx-1 overflow-x-auto" aria-label="Seções do financeiro">
         <div className="flex gap-1 px-1 border-b min-w-max" style={{ borderColor: 'var(--rbr-border)' }}>
           {ABAS.map((a) => {
@@ -109,6 +114,7 @@ export default function Financeiro() {
           {aba === 'documentos' && <Documentos versao={versao} apoio={apoio} onMudou={mudou} filtroInicial={filtro} />}
           {aba === 'conciliacao' && <Conciliacao versao={versao} apoio={apoio} onMudou={mudou} />}
           {aba === 'resultado' && <Resultado versao={versao} />}
+          {aba === 'inss' && <InssRetido />}
           {aba === 'config' && <Configuracoes versao={versao} apoio={apoio} onMudou={mudou} />}
         </Suspense>
       )}

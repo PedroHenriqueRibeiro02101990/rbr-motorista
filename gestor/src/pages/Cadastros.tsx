@@ -14,6 +14,12 @@ import GestaoContatos from '../components/cadastros/GestaoContatos'
 import RiscoComercial, { SeloProtestoLista } from '../components/cadastros/RiscoComercial'
 import { estadoDaConsulta, lerRegraProtesto, lerUltimasConsultas, type EstadoConsulta } from '../lib/protesto'
 import PainelCadastro from '../components/cadastros/PainelCadastro'
+import ComprovanteResidencia from '../components/cadastros/ComprovanteResidencia'
+import FichaCliente from '../components/cadastros/FichaCliente'
+import PainelPendencias from '../components/PainelPendencias'
+import { CamposParceiro, SeloClassificacao } from '../components/cadastros/ParceiroFiscal'
+import { SeloTermo, useAceitesPrestador } from '../components/cadastros/SeloTermo'
+import { SeloContrato } from '../components/conformidade/ContratosAgenciador'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -126,6 +132,18 @@ const MOTORISTA_INICIAL = {
   banco_agencia: '',
   banco_conta: '',
   banco_tipo_conta: '',
+  data_nascimento: '',
+  vinculo: '',
+  comprovante_residencia_url: '',
+  comprovante_residencia_data: '',
+  // Tarefa 1 (colunas de 20261011_01)
+  tipo_parceiro: '',
+  cnpj: '',
+  qtd_veiculos_rntrc: '',
+  opcao_inss_direto: false,
+  data_comunicacao_inss_direto: '',
+  // Tarefa 10.6 (20261011_10)
+  validade_exame_toxicologico: '',
 }
 
 const AGENCIADOR_INICIAL = {
@@ -218,6 +236,24 @@ const VEICULO_INICIAL = {
   seguro_veiculo_seguradora: '',
   seguro_veiculo_apolice_numero: '',
   seguro_veiculo_vencimento: '',
+  crlv_exercicio: '',
+}
+
+// Tarefa 10.6: exame toxicológico exigido para CNH C, D ou E.
+function cnhExigeToxicologico(categoria: string | null | undefined): boolean {
+  return /[CDE]/i.test(categoria ?? '')
+}
+
+function AvisoToxicologico({ categoria, validade }: { categoria: string | null | undefined; validade: string | null | undefined }) {
+  if (!cnhExigeToxicologico(categoria)) return null
+  if (!validade) return <span style={{ color: '#8A5A00', fontWeight: 600 }}>Toxicológico: não informado</span>
+  const dias = Math.round((new Date(validade + 'T12:00:00').getTime() - Date.now()) / 86400000)
+  const cor = dias < 0 ? 'var(--rbr-danger)' : dias <= 30 ? '#8A5A00' : undefined
+  return (
+    <span style={cor ? { color: cor, fontWeight: 600 } : undefined}>
+      Toxicológico: {dias < 0 ? `vencido em ${formatDate(validade)} ⚠` : `até ${formatDate(validade)}${dias <= 30 ? ` (vence em ${dias} dia(s))` : ''}`}
+    </span>
+  )
 }
 
 function cnhVencidaOuAusente(validade: string | null | undefined): boolean {
@@ -329,6 +365,8 @@ export default function Cadastros() {
   const [veiculosPorMotorista, setVeiculosPorMotorista] = useState<Record<string, Veiculo[]>>({})
   const [showNovoVeiculoId, setShowNovoVeiculoId] = useState<string | null>(null)
   const [novoVeiculo, setNovoVeiculo] = useState(VEICULO_INICIAL)
+  const [fichaCliente, setFichaCliente] = useState<Cliente | null>(null)
+  const aceitesPrestador = useAceitesPrestador()
   const [salvandoVeiculo, setSalvandoVeiculo] = useState(false)
   const [erroVeiculo, setErroVeiculo] = useState<string | null>(null)
   const [editingVeiculoId, setEditingVeiculoId] = useState<string | null>(null)
@@ -921,6 +959,17 @@ export default function Cadastros() {
       banco_agencia: novoMotorista.banco_agencia.trim() || null,
       banco_conta: novoMotorista.banco_conta.trim() || null,
       banco_tipo_conta: novoMotorista.banco_tipo_conta || null,
+      data_nascimento: novoMotorista.data_nascimento || null,
+      vinculo: novoMotorista.vinculo || null,
+      comprovante_residencia_url: novoMotorista.comprovante_residencia_url || null,
+      comprovante_residencia_data: novoMotorista.comprovante_residencia_data || null,
+      tipo_parceiro: novoMotorista.tipo_parceiro || null,
+      cnpj: novoMotorista.cnpj || null,
+      qtd_veiculos_rntrc: novoMotorista.tipo_parceiro === 'etc' && novoMotorista.qtd_veiculos_rntrc ? Number(novoMotorista.qtd_veiculos_rntrc) : null,
+      opcao_inss_direto: novoMotorista.tipo_parceiro === 'tac_pf' && novoMotorista.opcao_inss_direto,
+      data_comunicacao_inss_direto:
+        novoMotorista.tipo_parceiro === 'tac_pf' && novoMotorista.opcao_inss_direto ? novoMotorista.data_comunicacao_inss_direto || null : null,
+      validade_exame_toxicologico: cnhExigeToxicologico(novoMotorista.cnh_categoria) ? novoMotorista.validade_exame_toxicologico || null : null,
     }
   }
 
@@ -937,6 +986,7 @@ export default function Cadastros() {
     setSalvandoMotorista(true)
     try {
       const payload = montarPayloadMotorista()
+      // supabase: o payload leva as colunas do parceiro (20261011_01), que ainda não estão nos tipos.
       const { error } = editingMotoristaId
         ? await supabase.from('pessoas').update(payload).eq('id', editingMotoristaId)
         : await supabase.from('pessoas').insert({ ...payload, papel: 'titular_motorista', tipo_pessoa_doc: 'PF' })
@@ -977,6 +1027,16 @@ export default function Cadastros() {
       banco_agencia: m.banco_agencia ?? '',
       banco_conta: m.banco_conta ?? '',
       banco_tipo_conta: m.banco_tipo_conta ?? '',
+      data_nascimento: m.data_nascimento ?? '',
+      vinculo: m.vinculo ?? '',
+      comprovante_residencia_url: m.comprovante_residencia_url ?? '',
+      comprovante_residencia_data: m.comprovante_residencia_data ?? '',
+      tipo_parceiro: m.tipo_parceiro ?? '',
+      cnpj: m.cnpj ?? '',
+      qtd_veiculos_rntrc: m.qtd_veiculos_rntrc != null ? String(m.qtd_veiculos_rntrc) : '',
+      opcao_inss_direto: !!m.opcao_inss_direto,
+      data_comunicacao_inss_direto: m.data_comunicacao_inss_direto ?? '',
+      validade_exame_toxicologico: m.validade_exame_toxicologico ?? '',
     })
     setShowNovoMotorista(true)
   }
@@ -1025,6 +1085,7 @@ export default function Cadastros() {
       seguro_veiculo_seguradora: novoVeiculo.seguro_veiculo_seguradora.trim() || null,
       seguro_veiculo_apolice_numero: novoVeiculo.seguro_veiculo_apolice_numero.trim() || null,
       seguro_veiculo_vencimento: novoVeiculo.seguro_veiculo_vencimento || null,
+      crlv_exercicio: novoVeiculo.crlv_exercicio ? Number(novoVeiculo.crlv_exercicio) : null,
     }
   }
 
@@ -1085,6 +1146,7 @@ export default function Cadastros() {
       seguro_veiculo_seguradora: v.seguro_veiculo_seguradora ?? '',
       seguro_veiculo_apolice_numero: v.seguro_veiculo_apolice_numero ?? '',
       seguro_veiculo_vencimento: v.seguro_veiculo_vencimento ?? '',
+      crlv_exercicio: String(v.crlv_exercicio ?? ''),
     })
     setShowNovoVeiculoId(motoristaId)
   }
@@ -1505,6 +1567,8 @@ export default function Cadastros() {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Cadastros</h1>
       </div>
 
+      <PainelPendencias modulo="cadastros" />
+
       <div className="flex items-center gap-2 flex-wrap">
         {TABS.map((t) => (
           <button
@@ -1529,6 +1593,8 @@ export default function Cadastros() {
           </button>
         ))}
       </div>
+
+      {fichaCliente && <FichaCliente cliente={{ ...fichaCliente, cnpj: fichaCliente.cnpj }} onFechar={() => setFichaCliente(null)} />}
 
       {tab === 'pendencias' && <Pendencias onContagem={setQtdPendencias} />}
 
@@ -1766,6 +1832,9 @@ export default function Cadastros() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
+                      <button onClick={() => setFichaCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>
+                        Ficha
+                      </button>
                       <button onClick={() => editarCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
                         Editar
                       </button>
@@ -1922,6 +1991,45 @@ export default function Cadastros() {
                 />
               </div>
 
+              <div className={labelClass}>Dados do motorista</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+                  Data de nascimento
+                  <input
+                    type="date"
+                    value={novoMotorista.data_nascimento}
+                    onChange={(e) => setNovoMotorista((f) => ({ ...f, data_nascimento: e.target.value }))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+                  Vínculo
+                  <select value={novoMotorista.vinculo} onChange={(e) => setNovoMotorista((f) => ({ ...f, vinculo: e.target.value }))} className={inputClass} style={inputStyle}>
+                    <option value="">Escolha…</option>
+                    <option value="proprio">Próprio</option>
+                    <option value="agregado">Agregado</option>
+                    <option value="terceiro">Terceiro</option>
+                    <option value="autonomo">Autônomo</option>
+                    <option value="funcionario">Funcionário</option>
+                  </select>
+                </label>
+              </div>
+              <ComprovanteResidencia
+                pessoaId={editingMotoristaId}
+                url={novoMotorista.comprovante_residencia_url}
+                data={novoMotorista.comprovante_residencia_data}
+                onChange={(url, data) => setNovoMotorista((f) => ({ ...f, comprovante_residencia_url: url, comprovante_residencia_data: data }))}
+              />
+
+              <div className={labelClass}>Parceiro (CIOT e INSS)</div>
+              <CamposParceiro
+                valor={novoMotorista}
+                onChange={(p) => setNovoMotorista((f) => ({ ...f, ...p }))}
+                inputClass={inputClass}
+                inputStyle={inputStyle}
+              />
+
               <div className={labelClass}>CNH</div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <input
@@ -1953,6 +2061,33 @@ export default function Cadastros() {
                   style={inputStyle}
                 />
               </div>
+              {/* Tarefa 10.6: exame toxicológico só para CNH C, D ou E. Consentimento de antecedentes: só o motorista dá, no app. */}
+              {cnhExigeToxicologico(novoMotorista.cnh_categoria) && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
+                    Validade do exame toxicológico
+                    <input
+                      type="date"
+                      value={novoMotorista.validade_exame_toxicologico}
+                      onChange={(e) => setNovoMotorista((f) => ({ ...f, validade_exame_toxicologico: e.target.value }))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                  </label>
+                </div>
+              )}
+              {editingMotoristaId && (
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Consulta de antecedentes:{' '}
+                  {(() => {
+                    const m = (motoristas ?? []).find((x) => x.id === editingMotoristaId)
+                    const n = m ? m : null
+                    return n?.consentimento_consulta_antecedentes
+                      ? `autorizada pelo motorista em ${n.consentimento_antecedentes_em ? formatDate(n.consentimento_antecedentes_em) : '—'}`
+                      : 'o motorista ainda não autorizou (ele autoriza no app, em Perfil)'
+                  })()}
+                </div>
+              )}
 
               <div className={labelClass}>RNTRC</div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -2073,6 +2208,8 @@ export default function Cadastros() {
                           <div className="text-sm font-bold">{m.nome}</div>
                           <StatusBadge status={m.status} />
                           <BadgeAprovacao status={m.aprovacao_status} />
+                          <SeloClassificacao c={m.classificacao_ciot} />
+                          <SeloTermo pessoaId={m.id} a={aceitesPrestador} />
                         </div>
                         <IconChevronRight
                           width={16}
@@ -2095,6 +2232,7 @@ export default function Cadastros() {
                           CNH válida até: {m.cnh_validade ? formatDate(m.cnh_validade) : 'não informado'}
                           {vencida ? ' ⚠' : ''}
                         </span>
+                        <AvisoToxicologico categoria={m.cnh_categoria} validade={m.validade_exame_toxicologico} />
                         <span>RNTRC: {m.rntrc_status ?? '—'}</span>
                       </div>
                     </button>
@@ -2559,6 +2697,15 @@ export default function Cadastros() {
                                 className={miniInputClass}
                                 style={inputStyle}
                               />
+                              <input
+                                placeholder="Exercício do CRLV (ano)"
+                                inputMode="numeric"
+                                maxLength={4}
+                                value={novoVeiculo.crlv_exercicio}
+                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, crlv_exercicio: e.target.value.replace(/\D/g, '') }))}
+                                className={miniInputClass}
+                                style={inputStyle}
+                              />
                             </div>
 
                             <button
@@ -2917,6 +3064,7 @@ export default function Cadastros() {
                       <div className="text-sm font-bold">{a.nome}</div>
                       <StatusBadge status={a.status} />
                       <BadgeAprovacao status={a.aprovacao_status} />
+                      <SeloContrato status={a.status_contrato_agenciador} />
                     </div>
                     <div className="flex items-center gap-2">
                       <button

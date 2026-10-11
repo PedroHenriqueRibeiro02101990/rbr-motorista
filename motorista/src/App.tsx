@@ -8,6 +8,14 @@ import Cargas from './pages/Cargas'
 import Caixa from './pages/Caixa'
 import Pontos from './pages/Pontos'
 import Perfil from './pages/Perfil'
+import AceiteTermo from './components/AceiteTermo'
+import { jsPDF } from 'jspdf'
+import { gerarESalvarPdfAceite } from '@rbr/shared/pdfAceite'
+
+function AceiteGate({ ativo, children }: { ativo: boolean; children: React.ReactNode }) {
+  // Tarefa 9: ao aceitar, gera o PDF do contrato (assinaturas dos dois lados + página de comprovação) e guarda.
+  return ativo ? <AceiteTermo onAceito={async (_t, a) => void (await gerarESalvarPdfAceite(jsPDF, a.aceite_id))}>{children}</AceiteTermo> : <>{children}</>
+}
 
 export default function App() {
   const auth = useAuth()
@@ -43,6 +51,8 @@ export default function App() {
   const pessoa = auth.pessoa
   return (
     <BiometriaGate userId={auth.session.user.id} onUsarSenha={auth.signOut}>
+      {/* Tarefas 7/9: o titular aceita a versão publicada do termo/contrato antes de usar o app. */}
+      <AceiteGate ativo={pessoa.papel === 'titular_motorista'}>
       <BrowserRouter>
         <AppShell pessoa={pessoa} onSignOut={auth.signOut}>
           <Routes>
@@ -55,6 +65,7 @@ export default function App() {
           </Routes>
         </AppShell>
       </BrowserRouter>
+      </AceiteGate>
     </BiometriaGate>
   )
 }

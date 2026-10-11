@@ -7,7 +7,10 @@ import { IconFileText } from '../icons-local'
 import { BadgeAprovacao, enviarDocumentoPessoal, lerDocumento, MeusDados, StatusCadastro } from '@rbr/shared/cadastro'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import { formatarDoc } from '@rbr/shared/documento'
+import { useCobrancaAtiva } from '@rbr/shared/useCobranca'
 import Condutores from '../components/Condutores'
+import MeusContratos from '../components/MeusContratos'
+import ConsentimentoAntecedentes from '../components/ConsentimentoAntecedentes'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Veiculo = Database['public']['Tables']['veiculos']['Row']
@@ -154,6 +157,7 @@ export default function Perfil({
   const [pixInfo, setPixInfo] = useState<PixInfo | null>(null)
   const [pagamentoPendenteInfo, setPagamentoPendenteInfo] = useState<{ placa: string } | null>(null)
 
+  const cobrancaAtiva = useCobrancaAtiva()
   const ehTitular = pessoa.papel === 'titular_motorista'
 
   const loadVeiculos = useCallback(async () => {
@@ -349,7 +353,7 @@ export default function Perfil({
     // Efí/gateway configurado ainda, a confirmação de pagamento é manual —
     // o gestor confere o Pix e libera pelo painel dele. O veículo já fica
     // cadastrado, só não conta como "ativo" até isso acontecer.
-    if (ehVeiculoNovo && !veiculoForm.id) {
+    if (cobrancaAtiva && ehVeiculoNovo && !veiculoForm.id) {
       const novoVeiculoId = veiculoId
       if (novoVeiculoId) {
         await supabase.from('assinaturas_motorista').insert({
@@ -623,7 +627,7 @@ export default function Perfil({
           {!veiculoFormOpen &&
             veiculos.map((v) => {
               const status = assinaturas[v.id]?.status
-              const badge = status ? STATUS_ASSINATURA_LABEL[status] : null
+              const badge = cobrancaAtiva && status ? STATUS_ASSINATURA_LABEL[status] : null
               return (
                 <button
                   key={v.id}
@@ -792,7 +796,7 @@ export default function Perfil({
             </div>
           )}
 
-          {pagamentoPendenteInfo && (
+          {cobrancaAtiva && pagamentoPendenteInfo && (
             <div
               className="flex flex-col gap-2 rounded-xl px-3.5 py-3 text-xs"
               style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}
@@ -826,6 +830,8 @@ export default function Perfil({
       )}
 
       {ehTitular && <Condutores titular={pessoa} />}
+      {ehTitular && <MeusContratos />}
+      <ConsentimentoAntecedentes pessoa={pessoa} onMudou={onRecarregar} />
 
       <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Segurança</div>
