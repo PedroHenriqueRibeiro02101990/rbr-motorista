@@ -19,6 +19,7 @@ import {
 import { type Apoio, type Lancamento, type ResultadoOperacao, carregarApoio } from '../../lib/financeiro'
 import { BaixaModal } from '../financeiro/LancamentoModais'
 import CiotOperacao from './CiotOperacao'
+import RetencaoInss from './RetencaoInss'
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
 
@@ -599,6 +600,7 @@ function Pagamento({ d, salvando, executar }: { d: DetalheOperacao; salvando: bo
       <div className="text-xs">
         <b>Recebe:</b> {t?.nome ?? '—'} · {meio === 'pix' ? `PIX: ${t?.pix ?? '—'}` : `Banco ${t?.banco_codigo ?? '—'} ag. ${t?.banco_agencia ?? '—'} conta ${t?.banco_conta ?? '—'}`}
       </div>
+      <RetencaoInss operacaoId={d.operacao.id} frete={totalNum} />
       {semDadosBancarios && (
         <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
           Faltam os dados de pagamento do transportador — complete em{' '}

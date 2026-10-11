@@ -12,6 +12,7 @@ const Documentos = lazy(() => import('../components/financeiro/Documentos'))
 const Conciliacao = lazy(() => import('../components/financeiro/Conciliacao'))
 const Resultado = lazy(() => import('../components/financeiro/Resultado'))
 const Configuracoes = lazy(() => import('../components/financeiro/Configuracoes'))
+const InssRetido = lazy(() => import('../components/financeiro/InssRetido'))
 
 const ABAS = [
   { id: 'geral', label: 'Visão geral' },
@@ -21,6 +22,7 @@ const ABAS = [
   { id: 'documentos', label: 'Notas e boletos' },
   { id: 'conciliacao', label: 'Conciliação' },
   { id: 'resultado', label: 'Resultado' },
+  { id: 'inss', label: 'INSS retido' },
   { id: 'config', label: 'Configurações' },
 ] as const
 type Aba = (typeof ABAS)[number]['id']
@@ -112,6 +114,7 @@ export default function Financeiro() {
           {aba === 'documentos' && <Documentos versao={versao} apoio={apoio} onMudou={mudou} filtroInicial={filtro} />}
           {aba === 'conciliacao' && <Conciliacao versao={versao} apoio={apoio} onMudou={mudou} />}
           {aba === 'resultado' && <Resultado versao={versao} />}
+          {aba === 'inss' && <InssRetido />}
           {aba === 'config' && <Configuracoes versao={versao} apoio={apoio} onMudou={mudou} />}
         </Suspense>
       )}
