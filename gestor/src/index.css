@@ -2,3 +2,23 @@
 @import "@rbr/shared/theme.css";
 /* shared/ fica fora do src/: sem isto o Tailwind não gera as classes usadas só lá (ex.: AuthTelas) */
 @source "../../shared";
+
+/* Mapa escuro do Início */
+.rbr-mapa-escuro .leaflet-control-attribution {
+  background: rgba(14, 18, 48, 0.55);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+}
+.rbr-mapa-escuro .leaflet-control-attribution a {
+  color: rgba(255, 255, 255, 0.6);
+}
+.rbr-mapa-escuro .leaflet-tooltip {
+  border: 0;
+  border-radius: 10px;
+  padding: 5px 9px;
+  font-size: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.rbr-mapa-escuro .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(195deg) saturate(0.45) brightness(0.82) contrast(0.92);
+}
