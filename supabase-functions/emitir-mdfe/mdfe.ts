@@ -1,12 +1,12 @@
-// Regras e montagem do payload do MDF-e (Focus NFe /v2/mdfe), sem I/O — testado em mdfe.test.ts.
-//
-// Estrutura conferida com a doc de campos da Focus (campos.focusnfe.com.br/mdfe/MDFeXML.html e
-// mdfe/TransporteRodoviarioXML.html, 2026-10-07): os dados do modal rodoviário vão no objeto `modal_rodoviario`
-// (como no CT-e), com o veículo de tração em campos planos *_veiculo (placa_veiculo, tara_veiculo…),
-// `condutores` e `veiculos_reboque` dentro dele. A v4 mandava tudo isso no topo e o veículo em `veiculo_tracao`.
-//
-// v6 (2026-10-08): RNTRC do proprietário normalizado para 8 dígitos; em homologação, CIOT do TAC e destino de
-// pagamento (regras só do nosso sistema) viram aviso, não bloqueio; data_emissao com fuso -03:00.
+// Regras e montagem do payload do MDF-e (Focus NFe /v2/mdfe), sem I/O.
+// v6: RNTRC do proprietario normalizado para 8 digitos; homologacao relaxa regras so do nosso sistema; data_emissao -03:00.
+// v7: o mesmo vale para operacao de TESTE em producao (cotacao.teste_producao).
+// v8: tipo_transporte = 2 (TAC) quando o proprietario da tracao e pessoa fisica (rejeicao da SEFAZ).
+// v9/v10: numero_averbacao (campo Focus) no seguro, vindo de operacao_ciot_vpo.numero_averbacao - rejeicao 699.
+// v11: conhecimentos_transporte dentro de municipios_descarregamento (rejeicao "Municipio sem documento").
+// v12: cep_carregamento / cep_descarregamento (grupo de carga lotacao).
+// v13: valores monetarios do pagamento com 2 casas decimais e nParcela com 3 digitos (schema da SEFAZ).
+// v15: NCM (8 digitos) sempre bloqueia, inclusive em teste (regra da SEFAZ, nao so do nosso sistema).
 
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
@@ -21,7 +21,6 @@ export interface VeiculoMdfe {
   uf_licenciamento: string | null;
   is_veiculo_proprio: boolean | null;
   quantidade_eixos: number | null;
-  // Proprietário (pessoas), só quando o veículo não é da frota da RBR.
   titular: {
     nome: string | null;
     cpf: string | null;
@@ -33,12 +32,12 @@ export interface VeiculoMdfe {
 }
 
 export interface DadosMdfe {
-  op: Linha; // v_checklist_prontidao
-  pf: Linha | null; // parametros_fiscais
+  op: Linha;
+  pf: Linha | null;
   municipioEmitente: string | null;
   cte: { status: string | null; chave_acesso: string | null } | null;
   tracao: VeiculoMdfe | null;
-  reboques: VeiculoMdfe[]; // operacao_reboques, na ordem
+  reboques: VeiculoMdfe[];
   carregamento: { codigo_ibge: string; cidade: string } | null;
   descarregamento: { codigo_ibge: string; cidade: string } | null;
   cotacao: {
@@ -47,7 +46,11 @@ export interface DadosMdfe {
     produto: string | null;
     ncm: string | null;
     pedagio: number;
+    teste_producao?: boolean;
   };
+  // CEPs de carregamento/descarregamento (carga lotação): vêm dos endereços da NF-e (remetente / destinatário).
+  cepCarregamento?: string | null;
+  cepDescarregamento?: string | null;
   apolice: Linha | null;
   motorista: { pix: string | null; banco_codigo: string | null; banco_agencia: string | null } | null;
   cliente: { cnpj: string | null; cpf: string | null; razao_social: string | null } | null;
@@ -60,12 +63,10 @@ export function digitos(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "");
 }
 
-// RNTRC da ANTT aparece com 9 dígitos e zero à esquerda (ex.: 048445388); a tag da SEFAZ exige 8 dígitos.
 export function rntrc8(v: unknown): string {
   return digitos(v).replace(/^0+(?=\d{8}$)/, "");
 }
 
-// Data/hora de emissão no fuso de Brasília (-03:00): mesmo instante do toISOString() em UTC.
 export function dataEmissaoBrasilia(agora: Date): string {
   const local = new Date(agora.getTime() - 3 * 60 * 60 * 1000);
   return `${local.toISOString().slice(0, 19)}-03:00`;
@@ -120,6 +121,11 @@ function mapearResponsavelSeguro(texto: string | null | undefined): string | nul
   return null;
 }
 
+// SEFAZ: valores monetários com sempre 2 casas decimais (ex.: "0.40"); número da parcela com 3 dígitos ("001").
+function dinheiro(v: number): string {
+  return (Math.round(v * 100) / 100).toFixed(2);
+}
+
 function dataMaisDias(base: Date, dias: number): string {
   const d = new Date(base);
   d.setDate(d.getDate() + dias);
@@ -131,8 +137,7 @@ function inteiro(v: unknown): number | null {
   return v != null && v !== "" && Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
-// Proprietário: só quando o veículo NÃO é da frota da RBR (veículo próprio ou arrendado/comodato no RNTRC da RBR
-// não leva o grupo prop). tpProp: 1 = TAC independente (pessoa física), 2 = outros (pessoa jurídica).
+// Proprietario: so quando o veiculo NAO e da frota da RBR. tpProp: 1 = TAC independente (PF), 2 = outros (PJ).
 function proprietario(v: VeiculoMdfe, rotulo: string, bloqueios: string[]) {
   if (v.is_veiculo_proprio) return null;
   const t = v.titular;
@@ -160,6 +165,8 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   const bloqueios: string[] = [];
   const avisos: string[] = [];
   const cnpjEmitente = digitos(op.emitente_cnpj);
+  const relaxar = ambiente === "homologacao" || d.cotacao.teste_producao === true;
+  const rotuloRelaxar = ambiente === "homologacao" ? "Homologação" : "Teste em produção";
 
   if (!d.cte || d.cte.status !== "emitido" || !d.cte.chave_acesso) {
     bloqueios.push(
@@ -174,7 +181,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   if (op.motorista_id && digitos(op.motorista_cpf).length !== 11) bloqueios.push("Motorista sem CPF (11 dígitos) — obrigatório no condutor do MDF-e.");
   if (!op.uf_origem || !op.uf_destino) bloqueios.push("Cotação sem UF de origem/destino preenchidas.");
 
-  // --- Veículo de tração ------------------------------------------------------------------------------
   const v = d.tracao;
   let tipoRodado: string | null = null;
   let carroceriaTracao: string | null = null;
@@ -188,7 +194,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
         `Não consegui identificar o tipo de rodado do veículo a partir do cadastro ("${v.tipo_veiculo ?? "vazio"}") — ajuste o cadastro do veículo (truck, toco, cavalo, van, utilitário).`,
       );
     }
-    // Cavalo mecânico não tem carroceria própria: tpCar 00 (não aplicável); quem tem carroceria é o reboque.
     carroceriaTracao = tipoRodado === "03" ? "00" : mapearTipoCarroceria(v.tipo_carroceria);
     if (!carroceriaTracao) {
       bloqueios.push(
@@ -198,7 +203,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
     propTracao = proprietario(v, "Veículo de tração", bloqueios);
   }
 
-  // --- Reboques (cavalo mecânico exige pelo menos um) ---------------------------------------------------
   if (tipoRodado === "03" && d.reboques.length === 0) {
     bloqueios.push("Cavalo mecânico sem reboque/semirreboque vinculado à operação — o MDF-e exige a carreta (veiculos_reboque).");
   }
@@ -232,7 +236,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
     };
   });
 
-  // --- Percurso e carga ---------------------------------------------------------------------------------
   if (!d.carregamento) {
     bloqueios.push(
       `Município de carregamento "${op.cidade_origem ?? "vazio"}/${op.uf_origem ?? ""}" não foi encontrado na tabela do IBGE (confira a grafia da cidade e a UF na cotação).`,
@@ -252,8 +255,20 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   const descricaoProduto = d.cotacao.produto ? String(d.cotacao.produto).slice(0, 120) : null;
   if (!descricaoProduto) bloqueios.push("Cotação sem produto predominante da NF-e — obrigatório no MDF-e (descrição do produto).");
   const ncm = digitos(d.cotacao.ncm);
+  // Regra da SEFAZ (carga lotação): NCM do produto predominante com 8 dígitos. Sempre bloqueia, inclusive em teste.
+  if (ncm.length !== 8) {
+    bloqueios.push("NCM do produto predominante (8 dígitos) não informado — a SEFAZ exige no MDF-e de carga lotação. Leia da NF-e ou preencha na cotação.");
+  }
 
-  // --- Seguro -------------------------------------------------------------------------------------------
+  // Carga lotação (SEFAZ: "O grupo de informações da carga lotação deve ser informado"): CEP de carregamento e descarregamento.
+  const cepCarreg = digitos(d.cepCarregamento);
+  const cepDescarreg = digitos(d.cepDescarregamento);
+  if (cepCarreg.length !== 8 || cepDescarreg.length !== 8) {
+    const msgCep = "CEP de carregamento e/ou descarregamento não encontrado (8 dígitos) nos endereços da NF-e — obrigatório no MDF-e de carga lotação.";
+    if (relaxar) avisos.push(`${rotuloRelaxar}: ${msgCep}`);
+    else bloqueios.push(msgCep);
+  }
+
   const apolice = d.apolice;
   let respSeguro: string | null = null;
   if (!apolice) {
@@ -268,7 +283,14 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
     }
   }
 
-  // --- Emitente / responsável técnico ---------------------------------------------------------------------
+  // Averbação do seguro: a SEFAZ (rej. 699) exige o número no grupo de seguros do MDF-e rodoviário.
+  const numeroAverbacao = String(d.ciotVpo?.numero_averbacao ?? "").trim();
+  if (!numeroAverbacao) {
+    const msgAverb = "Número da averbação do seguro (RCTR-C) não informado — averbe o CT-e e preencha o número; a SEFAZ exige no MDF-e rodoviário.";
+    if (relaxar) avisos.push(`${rotuloRelaxar}: ${msgAverb}`);
+    else bloqueios.push(msgAverb);
+  }
+
   if (!pf?.responsavel_tecnico_cnpj || !pf?.responsavel_tecnico_email) {
     bloqueios.push("Dados do responsável técnico incompletos em parametros_fiscais (cnpj/email).");
   }
@@ -278,7 +300,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   const rntrcEmitente = digitos(pf?.rntrc).replace(/^0+(?=\d{8}$)/, "");
   if (rntrcEmitente.length !== 8) bloqueios.push("RNTRC da RBR (8 dígitos) não cadastrado em parametros_fiscais.rntrc — obrigatório no modal rodoviário.");
 
-  // --- Contratante, CIOT, vale-pedágio, pagamento -----------------------------------------------------------
   const cliente = d.cliente;
   if (!cliente || (!cliente.cnpj && !cliente.cpf)) bloqueios.push("Cliente contratante sem CNPJ/CPF — obrigatório no grupo de contratantes do MDF-e.");
 
@@ -288,8 +309,8 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   if (ehTac && ciotNum.length !== 12) {
     const msgCiot =
       "CIOT não informado (12 dígitos) — gere no portal da Repom e preencha aqui. Obrigatório quando o veículo é de transportador autônomo (TAC).";
-    if (ambiente === "homologacao") {
-      avisos.push(`Homologação: ${msgCiot} Regra do nosso sistema, não da SEFAZ: o teste segue sem CIOT e a SEFAZ diz se exige.`);
+    if (relaxar) {
+      avisos.push(`${rotuloRelaxar}: ${msgCiot} Regra do nosso sistema, não da SEFAZ: o teste segue sem CIOT e a SEFAZ diz se exige.`);
     } else {
       bloqueios.push(msgCiot);
     }
@@ -301,7 +322,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
     if (idvpo && !vpoValor) bloqueios.push("Valor do Vale-Pedágio não informado.");
     if (idvpo && !ciotVpo?.vpo_cnpj_fornecedora) bloqueios.push("CNPJ da empresa fornecedora do Vale-Pedágio (Repom) não informado.");
   }
-  // Eixos da combinação (tração + reboques) para a categoria do vale-pedágio.
   const eixosCombinacao = (v?.quantidade_eixos ?? 0) + d.reboques.reduce((s, r) => s + (r.quantidade_eixos ?? 0), 0) || null;
 
   const cond = d.condicao;
@@ -311,14 +331,15 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
   const aPrazo = adiant > 0 || prazoDias > 0;
   let pagamentos: Linha[] | undefined;
   if (valorContratoFrete && valorContratoFrete > 0) {
-    const componentes: { tipo: string; valor: number }[] = [{ tipo: "04", valor: valorContratoFrete }];
-    if (vpoValor && vpoValor > 0) componentes.unshift({ tipo: "01", valor: vpoValor });
-    const totalContrato = Math.round(componentes.reduce((a, c) => a + c.valor, 0) * 100) / 100;
+    const componentesNum: { tipo: string; valor: number }[] = [{ tipo: "04", valor: valorContratoFrete }];
+    if (vpoValor && vpoValor > 0) componentesNum.unshift({ tipo: "01", valor: vpoValor });
+    const totalContrato = Math.round(componentesNum.reduce((a, c) => a + c.valor, 0) * 100) / 100;
+    const componentes = componentesNum.map((c) => ({ tipo: c.tipo, valor: dinheiro(c.valor) }));
     const saldo = Math.round((valorContratoFrete - adiant) * 100) / 100;
     const parcelas = Array.isArray(ciotVpo?.pagto_parcelas) && ciotVpo.pagto_parcelas.length
       ? ciotVpo.pagto_parcelas
       : aPrazo && saldo > 0
-      ? [{ numero: 1, data_vencimento: dataMaisDias(d.agora, prazoDias || 1), valor: saldo }]
+      ? [{ numero: "001", data_vencimento: dataMaisDias(d.agora, prazoDias || 1), valor: dinheiro(saldo) }]
       : undefined;
     const pix = ciotVpo?.pagto_pix || d.motorista?.pix || undefined;
     const banco = ciotVpo?.pagto_banco || d.motorista?.banco_codigo || undefined;
@@ -333,24 +354,24 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
       : null;
     if (!destinoPagamento) {
       const msgPag = "Pagamento do frete sem destino (PIX, banco/agência ou IPEF) — cadastre o PIX do motorista.";
-      if (ambiente === "homologacao") {
+      if (relaxar) {
         avisos.push(
-          `Homologação: ${msgPag} Regra do nosso sistema: o MDF-e de teste vai sem o grupo de pagamento, para a SEFAZ dizer se exige.`,
+          `${rotuloRelaxar}: ${msgPag} Regra do nosso sistema: o MDF-e de teste vai sem o grupo de pagamento, para a SEFAZ dizer se exige.`,
         );
       } else {
         bloqueios.push(msgPag);
       }
     }
-    pagamentos = !destinoPagamento && ambiente === "homologacao"
+    pagamentos = !destinoPagamento && relaxar
       ? undefined
       : [
         {
           nome: op.emitente_razao_social,
           cnpj: cnpjEmitente,
           componentes,
-          valor_total_contrato: totalContrato,
+          valor_total_contrato: dinheiro(totalContrato),
           forma_pagamento: aPrazo ? "1" : "0",
-          valor_adiantamento: aPrazo && adiant > 0 ? adiant : undefined,
+          valor_adiantamento: aPrazo && adiant > 0 ? dinheiro(adiant) : undefined,
           indicador_adiantamento: aPrazo ? (adiant > 0 ? "1" : "0") : undefined,
           parcelas: aPrazo ? parcelas : undefined,
           tipo_permissao_antecipacao: aPrazo ? "0" : undefined,
@@ -358,7 +379,12 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
         },
       ];
   } else if (ehTac) {
-    bloqueios.push("Condição de pagamento do motorista (valor do contrato) ainda não definida na operação — obrigatória no MDF-e.");
+    const msgCond = "Condição de pagamento do motorista (valor do contrato) ainda não definida na operação — obrigatória no MDF-e.";
+    if (relaxar) {
+      avisos.push(`${rotuloRelaxar}: ${msgCond} Regra do nosso sistema: o MDF-e de teste vai sem o grupo de pagamento.`);
+    } else {
+      bloqueios.push(msgCond);
+    }
   }
 
   if (ambiente === "homologacao") {
@@ -367,8 +393,9 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
 
   const payload: Linha = {
     data_emissao: dataEmissaoBrasilia(d.agora),
-    emitente: "1", // prestador de serviço de transporte
-    tipo_transporte: "1", // ETC
+    emitente: "1",
+    // SEFAZ (rejeição): com CPF de proprietário do veículo de tração, o tipo de transportador tem de ser TAC (2).
+    tipo_transporte: propTracao?.doc.tipo === "cpf" ? "2" : "1", // 1 = ETC, 2 = TAC
     uf_inicio: op.uf_origem,
     uf_fim: op.uf_destino,
 
@@ -387,19 +414,24 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
     email_emitente: pf?.email_contato || undefined,
 
     municipios_carregamento: d.carregamento ? [{ codigo: d.carregamento.codigo_ibge, nome: d.carregamento.cidade }] : [],
+    // SEFAZ: cada município de descarga precisa ter seus documentos (infCTe) dentro dele ("Município sem documento").
     municipios_descarregamento: d.descarregamento
-      ? [{ codigo: d.descarregamento.codigo_ibge, nome: d.descarregamento.cidade }]
+      ? [{
+        codigo: d.descarregamento.codigo_ibge,
+        nome: d.descarregamento.cidade,
+        conhecimentos_transporte: [{ chave_cte: digitos(d.cte?.chave_acesso) || null }],
+      }]
       : [],
-
-    conhecimentos_transporte: [{ chave_cte: digitos(d.cte?.chave_acesso) || null }],
     quantidade_total_cte: 1,
 
     tipo_carga: tipoCarga,
     descricao_produto: descricaoProduto,
     codigo_ncm_produto: ncm.length === 8 ? ncm : undefined,
+    cep_carregamento: cepCarreg.length === 8 ? cepCarreg : undefined,
+    cep_descarregamento: cepDescarreg.length === 8 ? cepDescarreg : undefined,
 
     valor_total_carga: valorCarga,
-    codigo_unidade_medida_peso_bruto: "01", // KG
+    codigo_unidade_medida_peso_bruto: "01",
     peso_bruto: pesoBrutoKg,
 
     seguros_carga: [
@@ -409,6 +441,7 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
         nome_seguradora: apolice?.seguradora_nome,
         cnpj_seguradora: digitos(apolice?.seguradora_cnpj),
         numero_apolice: apolice?.numero_apolice,
+        numero_averbacao: numeroAverbacao ? [numeroAverbacao] : undefined,
       },
     ],
 
@@ -423,7 +456,7 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
             cnpj_empresa_fornecedora: digitos(ciotVpo?.vpo_cnpj_fornecedora),
             cnpj_responsavel_pagamento: cnpjEmitente,
             numero_comprovante_compra: idvpo,
-            valor_vale_pedagio: vpoValor,
+            valor_vale_pedagio: vpoValor != null ? dinheiro(vpoValor) : vpoValor,
             tipo_vale_pedagio: ciotVpo?.vpo_tipo || undefined,
             categoria_combinacao_veicular: ciotVpo?.vpo_categoria_combinacao || categoriaCombinacao(eixosCombinacao) ||
               undefined,
@@ -435,7 +468,6 @@ export function montarMdfe(d: DadosMdfe): { ambiente: string; bloqueios: string[
         : [],
       pagamentos,
 
-      // Veículo de tração (campos planos *_veiculo na Focus).
       placa_veiculo: v?.placa,
       renavam_veiculo: digitos(v?.renavam) || undefined,
       tara_veiculo: inteiro(v?.tara_kg),

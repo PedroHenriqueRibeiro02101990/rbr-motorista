@@ -14,6 +14,7 @@ import CancelarDocumentoModal, {
 } from '../components/operacao/CancelarDocumentoModal'
 import BaixarDocumentoFiscal from '../components/operacao/BaixarDocumentoFiscal'
 import EmitirNfeProducaoModal from '../components/operacao/EmitirNfeProducaoModal'
+import FaixaTeste, { PassoAPassoTeste } from '../components/FaixaTeste'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -394,6 +395,50 @@ export default function Fiscal() {
 
   // NF-e de teste (homologação): a RBR emite uma NF-e com os dados da cotação e, autorizada, a chave vai pra
   // cotação — é a nota que o CT-e de homologação cita (a SEFAZ-SP confere se ela existe).
+  // Operação de teste: cancela na ordem exigida (MDF-e -> CT-e -> NF-e) pela cancelar-documento-fiscal.
+  async function cancelarTudoTeste(op: OperacaoEnriquecida) {
+    if (!op.eh_teste) return
+    const docs = docsPorOperacao.get(op.id) ?? []
+    const fila: Array<'mdfe' | 'cte' | 'nfe'> = []
+    if (docs.find((d) => d.tipo === 'mdfe')?.status === 'emitido') fila.push('mdfe')
+    if (docs.find((d) => d.tipo === 'cte')?.status === 'emitido') fila.push('cte')
+    if (op.nfChaveAcesso) fila.push('nfe')
+    if (fila.length === 0) {
+      setInfoPorOperacao((m) => ({ ...m, [op.id]: 'Nada emitido para cancelar nesta operação de teste.' }))
+      return
+    }
+    const nomes = { mdfe: 'MDF-e', cte: 'CT-e', nfe: 'NF-e' }
+    if (!window.confirm(`Cancelar na SEFAZ, nesta ordem: ${fila.map((t) => nomes[t]).join(' → ')}?\n\nA NF-e só cancela até 24 h depois da autorização.`)) return
+    setErroPorOperacao((m) => ({ ...m, [op.id]: null }))
+    const feitos: string[] = []
+    for (const tipo of fila) {
+      const { data, error } = await supabase.functions.invoke<{ sucesso?: boolean; erro?: string }>('cancelar-documento-fiscal', {
+        body: {
+          operacao_id: op.id,
+          tipo,
+          justificativa: 'Cancelamento de operacao de teste do sistema RBR (valor R$ 1,00)',
+          confirmar: true,
+        },
+      })
+      if (error || !data?.sucesso) {
+        let msg = data?.erro ?? error?.message ?? 'erro desconhecido'
+        const ctx = (error as { context?: Response } | null)?.context
+        if (ctx && typeof ctx.json === 'function') {
+          try { msg = (await ctx.json())?.erro ?? msg } catch { /* mantém msg */ }
+        }
+        setErroPorOperacao((m) => ({
+          ...m,
+          [op.id]: { erro: `${feitos.length ? `Cancelados: ${feitos.join(', ')}. ` : ''}Parou no ${nomes[tipo]}: ${msg}` },
+        }))
+        await load()
+        return
+      }
+      feitos.push(nomes[tipo])
+    }
+    setInfoPorOperacao((m) => ({ ...m, [op.id]: `Teste cancelado na SEFAZ: ${feitos.join(' → ')}.` }))
+    await load()
+  }
+
   async function nfeTeste(op: OperacaoEnriquecida, acao: 'emitir' | 'consultar') {
     const chave = `${op.id}:nfe-teste:${acao}`
     marcarEmAndamento(chave, true)
@@ -733,6 +778,26 @@ export default function Fiscal() {
 
             return (
               <div key={op.id} className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+                {op.eh_teste && (
+                  <div className="flex flex-col gap-2 rounded-lg p-2.5 border" style={{ borderColor: 'var(--rbr-danger)' }}>
+                    <FaixaTeste />
+                    <PassoAPassoTeste
+                      nfe={Boolean(op.nfChaveAcesso)}
+                      cte={docCte?.status ?? null}
+                      atm={docs.find((d) => d.tipo === 'atm')?.status ?? null}
+                      mdfe={docMdfe?.status ?? null}
+                    />
+                    <div>
+                      <button
+                        onClick={() => void cancelarTudoTeste(op)}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg text-white"
+                        style={{ background: 'var(--rbr-danger)' }}
+                      >
+                        Cancelar tudo do teste
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-[15px] font-bold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
                   {op.valorTotal != null && <div className="text-sm font-bold">{formatMoney(op.valorTotal)}</div>}
@@ -1012,7 +1077,7 @@ export default function Fiscal() {
                   </div>
                 )}
 
-                {ambienteFiscal === 'producao' && (
+                {ambienteFiscal === 'producao' && op.eh_teste && (
                   <div
                     className="flex flex-col gap-2 rounded-lg p-2.5 border"
                     style={{ borderColor: 'var(--rbr-danger)' }}

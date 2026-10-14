@@ -71,7 +71,7 @@ function base(s: Partial<DadosMdfe> = {}): DadosMdfe {
     reboques: [CARRETA],
     carregamento: { codigo_ibge: "3550308", cidade: "São Paulo" },
     descarregamento: { codigo_ibge: "3509502", cidade: "Campinas" },
-    cotacao: { peso_bruto_kg: 1000, tipo_carga: "Carga geral", produto: "Mercadoria teste", ncm: null, pedagio: 0 },
+    cotacao: { peso_bruto_kg: 1000, tipo_carga: "Carga geral", produto: "Mercadoria teste", ncm: "49111090", pedagio: 0 },
     apolice: { seguradora_nome: "Seguradora X", seguradora_cnpj: "11222333000181", numero_apolice: "123", responsavel_seguro: "emitente" },
     motorista: { pix: "chave-pix", banco_codigo: null, banco_agencia: null },
     cliente: { cnpj: "11444777000161", cpf: null, razao_social: "CLIENTE TESTE" },
@@ -100,7 +100,7 @@ test("cavalo mecânico com carreta: sem bloqueios, tudo dentro de modal_rodoviar
   assert.equal(m.veiculos_reboque[0].tara, 6800);
   assert.equal(m.veiculos_reboque[0].capacidade_kg, 30000);
   assert.equal(m.veiculos_reboque[0].tipo_carroceria, "05");
-  assert.deepEqual(payload.conhecimentos_transporte, [{ chave_cte: CHAVE_CTE }]);
+  assert.deepEqual(payload.municipios_descarregamento[0].conhecimentos_transporte, [{ chave_cte: CHAVE_CTE }]);
   assert.equal(m.pagamentos[0].forma_pagamento, "1");
 });
 

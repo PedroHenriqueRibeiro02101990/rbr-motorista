@@ -7,6 +7,9 @@
 
 export const NOME_HOMOLOGACAO = "CT-E EMITIDO EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL";
 
+// Natureza da operação do CT-e: sempre transporte. Não vem da cotação (lá pode estar a natureza da NF-e, ex.: "Venda").
+export const NATUREZA_OPERACAO_CTE = "Prestação de serviço de transporte";
+
 export type Ambiente = "homologacao" | "producao";
 
 // Endereço como o parser de NF-e grava em cotacoes.nf_remetente_endereco / nf_destinatario_endereco.
@@ -409,7 +412,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
   const cfop = intraestadual ? "5353" : "6353";
 
   const payload: Linha = {
-    natureza_operacao: op.natureza_operacao || "Prestação de serviço de transporte",
+    natureza_operacao: NATUREZA_OPERACAO_CTE,
     data_emissao: dataEmissaoBrasilia(d.agora),
     tipo_documento: "0",
     tipo_servico: "0",

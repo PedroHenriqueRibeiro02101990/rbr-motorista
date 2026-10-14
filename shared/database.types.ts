@@ -2280,6 +2280,7 @@ export type Database = {
       }
       cotacoes: {
         Row: {
+          eh_teste: boolean
           agenciador_id: string | null
           aliquota_imposto_pct: number | null
           cancelada_em: string | null
@@ -2364,6 +2365,7 @@ export type Database = {
           xml_danfe_url: string | null
         }
         Insert: {
+          eh_teste?: boolean
           agenciador_id?: string | null
           aliquota_imposto_pct?: number | null
           cancelada_em?: string | null
@@ -2448,6 +2450,7 @@ export type Database = {
           xml_danfe_url?: string | null
         }
         Update: {
+          eh_teste?: boolean
           agenciador_id?: string | null
           aliquota_imposto_pct?: number | null
           cancelada_em?: string | null
@@ -5445,6 +5448,7 @@ export type Database = {
       }
       operacoes: {
         Row: {
+          eh_teste: boolean
           agenciador_id: string | null
           altura_cm: number | null
           bloqueio_fiscal: boolean
@@ -5501,6 +5505,7 @@ export type Database = {
           veiculo_id: string | null
         }
         Insert: {
+          eh_teste?: boolean
           agenciador_id?: string | null
           altura_cm?: number | null
           bloqueio_fiscal?: boolean
@@ -5557,6 +5562,7 @@ export type Database = {
           veiculo_id?: string | null
         }
         Update: {
+          eh_teste?: boolean
           agenciador_id?: string | null
           altura_cm?: number | null
           bloqueio_fiscal?: boolean
@@ -6242,6 +6248,7 @@ export type Database = {
       }
       pessoas: {
         Row: {
+          eh_teste: boolean
           acesso_bloqueado: boolean
           aprovacao_em: string | null
           aprovacao_hash: string | null
@@ -6315,6 +6322,7 @@ export type Database = {
           vinculo: string | null
         }
         Insert: {
+          eh_teste?: boolean
           acesso_bloqueado?: boolean
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -6388,6 +6396,7 @@ export type Database = {
           vinculo?: string | null
         }
         Update: {
+          eh_teste?: boolean
           acesso_bloqueado?: boolean
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -8484,6 +8493,7 @@ export type Database = {
       }
       veiculos: {
         Row: {
+          eh_teste: boolean
           ano: number | null
           aprovacao_em: string | null
           aprovacao_hash: string | null
@@ -8531,6 +8541,7 @@ export type Database = {
           verificado_em: string | null
         }
         Insert: {
+          eh_teste?: boolean
           ano?: number | null
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -8578,6 +8589,7 @@ export type Database = {
           verificado_em?: string | null
         }
         Update: {
+          eh_teste?: boolean
           ano?: number | null
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
