@@ -2281,6 +2281,7 @@ export type Database = {
       cotacoes: {
         Row: {
           eh_teste: boolean
+          dados_antes_teste: Json | null
           agenciador_id: string | null
           aliquota_imposto_pct: number | null
           cancelada_em: string | null
@@ -2366,6 +2367,7 @@ export type Database = {
         }
         Insert: {
           eh_teste?: boolean
+          dados_antes_teste?: Json | null
           agenciador_id?: string | null
           aliquota_imposto_pct?: number | null
           cancelada_em?: string | null
@@ -2451,6 +2453,7 @@ export type Database = {
         }
         Update: {
           eh_teste?: boolean
+          dados_antes_teste?: Json | null
           agenciador_id?: string | null
           aliquota_imposto_pct?: number | null
           cancelada_em?: string | null
@@ -5449,6 +5452,8 @@ export type Database = {
       operacoes: {
         Row: {
           eh_teste: boolean
+          cliente_antes_teste: string | null
+          condicao_antes_teste: Json | null
           agenciador_id: string | null
           altura_cm: number | null
           bloqueio_fiscal: boolean
@@ -5506,6 +5511,8 @@ export type Database = {
         }
         Insert: {
           eh_teste?: boolean
+          cliente_antes_teste?: string | null
+          condicao_antes_teste?: Json | null
           agenciador_id?: string | null
           altura_cm?: number | null
           bloqueio_fiscal?: boolean
@@ -5563,6 +5570,8 @@ export type Database = {
         }
         Update: {
           eh_teste?: boolean
+          cliente_antes_teste?: string | null
+          condicao_antes_teste?: Json | null
           agenciador_id?: string | null
           altura_cm?: number | null
           bloqueio_fiscal?: boolean

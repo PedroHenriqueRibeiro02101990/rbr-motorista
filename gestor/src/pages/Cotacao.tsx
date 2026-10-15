@@ -1110,10 +1110,17 @@ export default function Cotacao() {
 
   async function alternarModoTeste(ligar: boolean) {
     if (!editingId) return
+    let temRetrato = true
+    if (!ligar) {
+      const { data: atual } = await supabase.from('cotacoes').select('dados_antes_teste').eq('id', editingId).maybeSingle()
+      temRetrato = atual?.dados_antes_teste != null
+    }
     const ok = window.confirm(
       ligar
-        ? 'Ligar OPERAÇÃO DE TESTE?\n\nRemetente, destinatário, tomador e cliente passam a ser a própria RBR; NF de R$ 1,00 e frete de R$ 1,00, sem pedágio. GR, CIOT, VPO e averbação deixam de barrar a liberação. Os documentos serão REAIS na SEFAZ e devem ser cancelados no fim.'
-        : 'Desligar operação de teste?\n\nA cotação volta a ser normal. Revise remetente, destinatário, valores e cliente antes de usar.',
+        ? 'Ligar OPERAÇÃO DE TESTE?\n\nRemetente, destinatário, tomador e cliente passam a ser a própria RBR; NF de R$ 1,00, frete de R$ 1,00 e frete do motorista de R$ 1,00, sem pedágio. GR, CIOT, VPO e averbação deixam de barrar a liberação. Os dados atuais ficam guardados e voltam quando o teste for desligado. Os documentos serão REAIS na SEFAZ e devem ser cancelados no fim.'
+        : temRetrato
+          ? 'Desligar operação de teste?\n\nOs dados originais da cotação serão restaurados (remetente, destinatário, cliente, valores, pedágio e frete do motorista), e a operação volta ao cliente real.'
+          : 'Desligar operação de teste?\n\nATENÇÃO: esta cotação foi marcada como teste antes de existir o retrato dos dados originais, então NADA será restaurado. Revise remetente, destinatário, valores e cliente à mão antes de usar.',
     )
     if (!ok) return
     setTrocandoTeste(true)
@@ -1122,6 +1129,9 @@ export default function Cotacao() {
     if (!error) {
       const { data } = await supabase.from('cotacoes').select('*').eq('id', editingId).maybeSingle()
       if (data) abrirEdicao(data as Cotacao)
+    } else if (error.code === 'PGRST204' || error.code === '42703' || /eh_teste|dados_antes_teste/.test(error.message)) {
+      // Gestor publicado antes da migration 20261014_01 (ordem de deploy: migration primeiro).
+      setFormError('O modo teste ainda não está disponível: a atualização do banco (migration 20261014_01) não foi aplicada. Avise o responsável técnico.')
     } else {
       setFormError(error.message)
     }
