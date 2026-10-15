@@ -13,6 +13,7 @@ import DadosEmissao from '../components/operacao/DadosEmissao'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
+import FaixaTeste from '../components/FaixaTeste'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -656,6 +657,11 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 className="bg-white border rounded-[20px] overflow-hidden"
                 style={extras[op.id]?.grupo ? { ...cardStyle, borderLeft: '4px solid var(--rbr-gold)' } : cardStyle}
               >
+                {op.eh_teste && (
+                  <div className="px-[18px] pt-[14px]">
+                    <FaixaTeste />
+                  </div>
+                )}
                 <button className="w-full text-left p-[18px]" onClick={() => toggleExpand(op)}>
                   <div className="flex items-center justify-between mb-2.5 gap-3 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">

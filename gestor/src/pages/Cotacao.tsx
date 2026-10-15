@@ -11,6 +11,7 @@ import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import PainelPendencias from '../components/PainelPendencias'
+import FaixaTeste from '../components/FaixaTeste'
 import { Aviso, Botao } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
@@ -582,6 +583,9 @@ export default function Cotacao() {
   const [form, setForm] = useState<CotacaoFormState | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState<StatusCotacao>('rascunho')
+  // Operação de teste (cotacoes.eh_teste): liga/desliga direto no banco; o banco preenche RBR nos dois lados.
+  const [editingTeste, setEditingTeste] = useState(false)
+  const [trocandoTeste, setTrocandoTeste] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -1066,6 +1070,7 @@ export default function Cotacao() {
     })
     setEditingId(null)
     setEditingStatus('rascunho')
+    setEditingTeste(false)
     setPisoSalvo(null)
     setPrecoLegado(null)
     // Custos obrigatórios (ex.: pesquisa GR) já entram em toda cotação nova.
@@ -1101,6 +1106,36 @@ export default function Cotacao() {
       return
     }
     setDestinos((data ?? []).map(destinoDeLinha))
+  }
+
+  async function alternarModoTeste(ligar: boolean) {
+    if (!editingId) return
+    let temRetrato = true
+    if (!ligar) {
+      const { data: atual } = await supabase.from('cotacoes').select('dados_antes_teste').eq('id', editingId).maybeSingle()
+      temRetrato = atual?.dados_antes_teste != null
+    }
+    const ok = window.confirm(
+      ligar
+        ? 'Ligar OPERAÇÃO DE TESTE?\n\nRemetente, destinatário, tomador e cliente passam a ser a própria RBR; NF de R$ 1,00, frete de R$ 1,00 e frete do motorista de R$ 1,00, sem pedágio. GR, CIOT, VPO e averbação deixam de barrar a liberação. Os dados atuais ficam guardados e voltam quando o teste for desligado. Os documentos serão REAIS na SEFAZ e devem ser cancelados no fim.'
+        : temRetrato
+          ? 'Desligar operação de teste?\n\nOs dados originais da cotação serão restaurados (remetente, destinatário, cliente, valores, pedágio e frete do motorista), e a operação volta ao cliente real.'
+          : 'Desligar operação de teste?\n\nATENÇÃO: esta cotação foi marcada como teste antes de existir o retrato dos dados originais, então NADA será restaurado. Revise remetente, destinatário, valores e cliente à mão antes de usar.',
+    )
+    if (!ok) return
+    setTrocandoTeste(true)
+    setFormError(null)
+    const { error } = await supabase.from('cotacoes').update({ eh_teste: ligar }).eq('id', editingId)
+    if (!error) {
+      const { data } = await supabase.from('cotacoes').select('*').eq('id', editingId).maybeSingle()
+      if (data) abrirEdicao(data as Cotacao)
+    } else if (error.code === 'PGRST204' || error.code === '42703' || /eh_teste|dados_antes_teste/.test(error.message)) {
+      // Gestor publicado antes da migration 20261014_01 (ordem de deploy: migration primeiro).
+      setFormError('O modo teste ainda não está disponível: a atualização do banco (migration 20261014_01) não foi aplicada. Avise o responsável técnico.')
+    } else {
+      setFormError(error.message)
+    }
+    setTrocandoTeste(false)
   }
 
   function abrirEdicao(c: Cotacao) {
@@ -1165,6 +1200,7 @@ export default function Cotacao() {
     })
     setEditingId(c.id)
     setEditingStatus(c.status)
+    setEditingTeste(c.eh_teste === true)
     setPisoInfo(null)
     setPisoSalvo(c.piso_antt_calculado)
     setPrecoLegado(
@@ -2386,6 +2422,21 @@ export default function Cotacao() {
               <IconX width={14} height={14} />
             </button>
           </div>
+
+          {editingTeste && (
+            <FaixaTeste detalhe="RBR remetente e destinatária · NF e frete até R$ 5,00 · fora do financeiro e dos relatórios" />
+          )}
+          {editingId && (
+            <label className="flex items-center gap-2 text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+              <input
+                type="checkbox"
+                checked={editingTeste}
+                disabled={trocandoTeste}
+                onChange={(e) => void alternarModoTeste(e.target.checked)}
+              />
+              Operação de teste (só gestor RBR; não muda depois de emitir documento fiscal)
+            </label>
+          )}
 
           {formError && (
             <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>

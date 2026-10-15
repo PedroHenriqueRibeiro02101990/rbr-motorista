@@ -7,6 +7,9 @@
 
 export const NOME_HOMOLOGACAO = "CT-E EMITIDO EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL";
 
+// Natureza da operação do CT-e: sempre transporte. Não vem da cotação (lá pode estar a natureza da NF-e, ex.: "Venda").
+export const NATUREZA_OPERACAO_CTE = "Prestação de serviço de transporte";
+
 export type Ambiente = "homologacao" | "producao";
 
 // Endereço como o parser de NF-e grava em cotacoes.nf_remetente_endereco / nf_destinatario_endereco.
@@ -62,11 +65,22 @@ export interface DadosCte {
   agora: Date;
 }
 
+// Origem de cada regra (C1, 2026-10-15): "sefaz" (SEFAZ/Focus) e "antt" (ANTT ou lei) bloqueiam; "rbr" (política
+// interna) só avisa; "info" é aviso informativo. Hoje o CT-e não tem regra só da RBR: tudo que bloqueia é SEFAZ/ANTT.
+export type OrigemRegra = "sefaz" | "antt" | "rbr" | "info";
+export interface ItemRegra {
+  tipo: "bloqueio" | "aviso";
+  origem: OrigemRegra;
+  mensagem: string;
+}
+
 export interface ResultadoCte {
   ambiente: Ambiente;
   bloqueios: string[];
   // O que muda só porque é homologação + checagens que só a SEFAZ responde (para conferir depois).
   avisos: string[];
+  // Os mesmos bloqueios e avisos com a origem de cada um (para a tela mostrar SEFAZ / ANTT / Regra da RBR).
+  regras: ItemRegra[];
   intramunicipal: boolean;
   payload: Linha;
 }
@@ -146,6 +160,15 @@ export function montarCte(d: DadosCte): ResultadoCte {
   const ambiente: Ambiente = op.ambiente_fiscal === "producao" ? "producao" : "homologacao";
   const bloqueios: string[] = [];
   const avisos: string[] = [];
+  const regras: ItemRegra[] = [];
+  const bloqueio = (origem: "sefaz" | "antt", mensagem: string) => {
+    bloqueios.push(mensagem);
+    regras.push({ tipo: "bloqueio", origem, mensagem });
+  };
+  const aviso = (origem: OrigemRegra, mensagem: string) => {
+    avisos.push(mensagem);
+    regras.push({ tipo: "aviso", origem, mensagem });
+  };
 
   const intramunicipal = Boolean(
     op.uf_origem &&
@@ -156,92 +179,72 @@ export function montarCte(d: DadosCte): ResultadoCte {
       normalizarCidade(op.cidade_origem) === normalizarCidade(op.cidade_destino),
   );
   if (intramunicipal) {
-    bloqueios.push(
-      `Frete intramunicipal (${op.cidade_origem}/${op.uf_origem} -> ${op.cidade_destino}/${op.uf_destino}) — transporte que começa e termina na mesma cidade não é tributado por ICMS/CT-e, e sim por ISS/NFS-e (LC 116/2003, item 16). Esta função não emite CT-e pra esse caso — use a função emitir-nfse-intramunicipal.`,
-    );
+    bloqueio("sefaz", `Frete intramunicipal (${op.cidade_origem}/${op.uf_origem} -> ${op.cidade_destino}/${op.uf_destino}) — transporte que começa e termina na mesma cidade não é tributado por ICMS/CT-e, e sim por ISS/NFS-e (LC 116/2003, item 16). Esta função não emite CT-e pra esse caso — use a função emitir-nfse-intramunicipal.`,);
   }
 
   // --- Emitente, veículo, motorista, cotação -----------------------------------------------------------
   if (!op.ie_configurada) {
-    bloqueios.push(
-      "Inscrição Estadual da RBR ainda não cadastrada em parametros_fiscais.inscricao_estadual — bloqueia o emitente do CT-e.",
-    );
+    bloqueio("sefaz", "Inscrição Estadual da RBR ainda não cadastrada em parametros_fiscais.inscricao_estadual — bloqueia o emitente do CT-e.",);
   }
-  if (!op.veiculo_id) bloqueios.push("Nenhum veículo alocado nesta operação.");
-  if (op.veiculo_id && !op.veiculo_rntrc_ativo) bloqueios.push("RNTRC do veículo não está ativo.");
-  if (!op.motorista_id) bloqueios.push("Nenhum motorista alocado nesta operação.");
-  if (op.motorista_id && !op.motorista_rntrc_ativo) bloqueios.push("RNTRC do motorista não está ativo.");
-  if (!op.cotacao_id) bloqueios.push("Operação sem cotação vinculada — não há dados de NF-e/rota pra montar o CT-e.");
+  if (!op.veiculo_id) bloqueio("antt", "Nenhum veículo alocado nesta operação.");
+  if (op.veiculo_id && !op.veiculo_rntrc_ativo) bloqueio("antt", "RNTRC do veículo não está ativo.");
+  if (!op.motorista_id) bloqueio("antt", "Nenhum motorista alocado nesta operação.");
+  if (op.motorista_id && !op.motorista_rntrc_ativo) bloqueio("antt", "RNTRC do motorista não está ativo.");
+  if (!op.cotacao_id) bloqueio("sefaz", "Operação sem cotação vinculada — não há dados de NF-e/rota pra montar o CT-e.");
   if (!op.cidade_origem || !op.uf_origem || !op.cidade_destino || !op.uf_destino) {
-    bloqueios.push("Cotação sem origem/destino completos.");
+    bloqueio("sefaz", "Cotação sem origem/destino completos.");
   }
   if (!op.valor_total_cotacao) {
-    bloqueios.push("Cotação sem valor_total (valor do serviço de transporte) preenchido.");
+    bloqueio("sefaz", "Cotação sem valor_total (valor do serviço de transporte) preenchido.");
   }
 
   if (!pf?.endereco_logradouro || !pf?.endereco_numero || !pf?.endereco_bairro || !pf?.endereco_cep) {
-    bloqueios.push("Endereço do emitente incompleto em parametros_fiscais (logradouro/número/bairro/CEP) — obrigatório no CT-e.");
+    bloqueio("sefaz", "Endereço do emitente incompleto em parametros_fiscais (logradouro/número/bairro/CEP) — obrigatório no CT-e.");
   }
   if (!pf?.endereco_codigo_municipio || !d.municipioEmitente) {
-    bloqueios.push(
-      "Município da RBR não resolvido: parametros_fiscais.endereco_codigo_municipio vazio ou não encontrado em municipios_ibge.",
-    );
+    bloqueio("sefaz", "Município da RBR não resolvido: parametros_fiscais.endereco_codigo_municipio vazio ou não encontrado em municipios_ibge.",);
   }
   if (!pf?.responsavel_tecnico_cnpj || !pf?.responsavel_tecnico_email) {
-    bloqueios.push("Dados do responsável técnico incompletos em parametros_fiscais (cnpj/email) — exigência da SEFAZ.");
+    bloqueio("sefaz", "Dados do responsável técnico incompletos em parametros_fiscais (cnpj/email) — exigência da SEFAZ.");
   }
   if (!pf?.rntrc) {
-    bloqueios.push(
-      "RNTRC da RBR não configurado em parametros_fiscais.rntrc — obrigatório no grupo modal rodoviário (modal_rodoviario) do CT-e.",
-    );
+    bloqueio("antt", "RNTRC da RBR não configurado em parametros_fiscais.rntrc — obrigatório no grupo modal rodoviário (modal_rodoviario) do CT-e.",);
   }
 
   // --- Percurso: códigos IBGE de início e fim (cMunIni/cMunFim) ----------------------------------------
   if (op.cidade_origem && op.uf_origem && !ibge.inicio) {
-    bloqueios.push(
-      `Município de origem "${op.cidade_origem}/${op.uf_origem}" não encontrado em municipios_ibge — sem o código IBGE de início da prestação (cMunIni) a SEFAZ recusa o CT-e. Confira a grafia da cidade na cotação.`,
-    );
+    bloqueio("sefaz", `Município de origem "${op.cidade_origem}/${op.uf_origem}" não encontrado em municipios_ibge — sem o código IBGE de início da prestação (cMunIni) a SEFAZ recusa o CT-e. Confira a grafia da cidade na cotação.`,);
   }
   if (op.cidade_destino && op.uf_destino && !ibge.fim) {
-    bloqueios.push(
-      `Município de destino "${op.cidade_destino}/${op.uf_destino}" não encontrado em municipios_ibge — sem o código IBGE de fim da prestação (cMunFim) a SEFAZ recusa o CT-e. Confira a grafia da cidade na cotação.`,
-    );
+    bloqueio("sefaz", `Município de destino "${op.cidade_destino}/${op.uf_destino}" não encontrado em municipios_ibge — sem o código IBGE de fim da prestação (cMunFim) a SEFAZ recusa o CT-e. Confira a grafia da cidade na cotação.`,);
   }
 
   // --- Documento transportado: NF-e --------------------------------------------------------------------
   if (!op.nf_chave_acesso) {
-    bloqueios.push(
-      "Cotação sem chave de acesso da NF-e (44 dígitos) — o CT-e exige o grupo Documentos Transportados (SEFAZ rejeita sem ele).",
-    );
+    bloqueio("sefaz", "Cotação sem chave de acesso da NF-e (44 dígitos) — o CT-e exige o grupo Documentos Transportados (SEFAZ rejeita sem ele).",);
   } else if (!chaveNfeValida(op.nf_chave_acesso)) {
-    bloqueios.push(
-      "Chave de acesso da NF-e inválida (precisa de 44 dígitos, modelo 55 e dígito verificador correto) — confira na aba NF-e da cotação.",
-    );
+    bloqueio("sefaz", "Chave de acesso da NF-e inválida (precisa de 44 dígitos, modelo 55 e dígito verificador correto) — confira na aba NF-e da cotação.",);
   } else {
     const cnpjEmitenteNf = digitos(op.nf_chave_acesso).slice(6, 20);
     if (op.nf_remetente_cnpj && cnpjEmitenteNf !== digitos(op.nf_remetente_cnpj)) {
-      avisos.push(
-        "O CNPJ dentro da chave da NF-e (emitente da nota) é diferente do CNPJ do remetente informado na cotação — confira se a chave é da nota certa.",
-      );
+      aviso("info", "O CNPJ dentro da chave da NF-e (emitente da nota) é diferente do CNPJ do remetente informado na cotação — confira se a chave é da nota certa.",);
     }
     if (op.uf_origem === "SP") {
-      avisos.push(
-        ambiente === "homologacao"
+      aviso("info", ambiente === "homologacao"
           ? "SEFAZ-SP confere se a NF-e existe (rejeição 661): em homologação a chave precisa ser de uma NF-e AUTORIZADA EM HOMOLOGAÇÃO — chave de produção ou inventada é recusada."
-          : "SEFAZ-SP confere se a NF-e existe (rejeição 661): a chave precisa ser de uma NF-e autorizada em produção.",
-      );
+          : "SEFAZ-SP confere se a NF-e existe (rejeição 661): a chave precisa ser de uma NF-e autorizada em produção.",);
     }
   }
 
   // --- Remetente: a própria RBR (parametros_fiscais) ou terceiro (endereço da NF-e na cotação) -----------
   if (!op.nf_remetente_cnpj || !op.nf_destinatario_cnpj) {
-    bloqueios.push("Cotação sem remetente/destinatário da NF-e preenchidos.");
+    bloqueio("sefaz", "Cotação sem remetente/destinatário da NF-e preenchidos.");
   }
   if (op.nf_remetente_cnpj && !cnpjValido(op.nf_remetente_cnpj)) {
-    bloqueios.push("CNPJ do remetente inválido (dígito verificador) — confira na aba NF-e da cotação.");
+    bloqueio("sefaz", "CNPJ do remetente inválido (dígito verificador) — confira na aba NF-e da cotação.");
   }
   if (op.nf_destinatario_cnpj && !cnpjValido(op.nf_destinatario_cnpj)) {
-    bloqueios.push("CNPJ do destinatário inválido (dígito verificador) — confira na aba NF-e da cotação.");
+    bloqueio("sefaz", "CNPJ do destinatário inválido (dígito verificador) — confira na aba NF-e da cotação.");
   }
 
   const remetenteEhRBR = Boolean(op.nf_remetente_cnpj) && digitos(op.nf_remetente_cnpj) === digitos(op.emitente_cnpj);
@@ -249,9 +252,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
   let remetente: Linha;
   if (remetenteEhRBR) {
     if (!pf?.telefone_contato) {
-      bloqueios.push(
-        "Telefone não configurado em parametros_fiscais.telefone_contato — obrigatório como telefone do remetente quando o remetente é a própria RBR.",
-      );
+      bloqueio("sefaz", "Telefone não configurado em parametros_fiscais.telefone_contato — obrigatório como telefone do remetente quando o remetente é a própria RBR.",);
     }
     remetente = {
       inscricao_estadual_remetente: op.emitente_ie,
@@ -267,15 +268,11 @@ export function montarCte(d: DadosCte): ResultadoCte {
     };
   } else {
     if (op.nf_remetente_cnpj && !enderecoCompleto(endRemNf)) {
-      bloqueios.push(
-        "Endereço do remetente incompleto na aba NF-e da cotação (logradouro/número/bairro/CEP/cidade/UF) — obrigatório no CT-e. Importe o XML da NF-e ou complete à mão.",
-      );
+      bloqueio("sefaz", "Endereço do remetente incompleto na aba NF-e da cotação (logradouro/número/bairro/CEP/cidade/UF) — obrigatório no CT-e. Importe o XML da NF-e ou complete à mão.",);
     }
     const foneRem = telefone(endRemNf?.telefone) ?? foneSeCliente(op.nf_remetente_cnpj);
     if (op.nf_remetente_cnpj && !foneRem) {
-      bloqueios.push(
-        "Telefone do remetente não encontrado — obrigatório no CT-e (Focus). Informe no endereço do remetente, na aba NF-e da cotação (o XML da NF-e costuma trazer).",
-      );
+      bloqueio("sefaz", "Telefone do remetente não encontrado — obrigatório no CT-e (Focus). Informe no endereço do remetente, na aba NF-e da cotação (o XML da NF-e costuma trazer).",);
     }
     remetente = {
       inscricao_estadual_remetente: cotacao?.nf_remetente_ie || undefined,
@@ -300,9 +297,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
   // autorizado em SP (DACTE de referência, 2026-07) saiu sem ele. Por isso só avisa; se a Focus recusar, o erro dela
   // aparece na tela Fiscal.
   if (op.nf_destinatario_cnpj && !foneDest) {
-    avisos.push(
-      "Destinatário sem telefone — vai sem (a SEFAZ aceita). Se a Focus recusar por isso, informe o telefone no endereço do destinatário, na aba NF-e da cotação.",
-    );
+    aviso("info", "Destinatário sem telefone — vai sem (a SEFAZ aceita). Se a Focus recusar por isso, informe o telefone no endereço do destinatário, na aba NF-e da cotação.",);
   }
   let destinatario: Linha;
   if (enderecoCompleto(endDestNf)) {
@@ -327,9 +322,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
       !op.destinatario_cidade ||
       !op.destinatario_uf
     ) {
-      bloqueios.push(
-        "Endereço do destinatário incompleto: a aba NF-e da cotação não tem o endereço e o cadastro do cliente também está incompleto (logradouro/número/bairro/CEP/cidade/UF) — obrigatório no CT-e.",
-      );
+      bloqueio("sefaz", "Endereço do destinatário incompleto: a aba NF-e da cotação não tem o endereço e o cadastro do cliente também está incompleto (logradouro/número/bairro/CEP/cidade/UF) — obrigatório no CT-e.",);
     }
     destinatario = {
       inscricao_estadual_destinatario: cotacao?.nf_destinatario_ie || undefined,
@@ -350,7 +343,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
   let tomadorOutros: Linha = {};
   let ieTomador: unknown;
   if (!codigoTomador) {
-    bloqueios.push(`Tomador do serviço "${papel}" não reconhecido — ajuste "Quem paga o frete" na cotação.`);
+    bloqueio("sefaz", `Tomador do serviço "${papel}" não reconhecido — ajuste "Quem paga o frete" na cotação.`);
   } else if (papel === "terceiro") {
     // Tomador = o cliente da cotação, com os dados do cadastro dele (grupo toma4).
     const docCliente = digitos(cliente?.cnpj) || digitos(cliente?.cpf);
@@ -359,9 +352,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
       !cliente || !docCliente || !cliente.razao_social || !foneTomador || !cliente.logradouro ||
       !cliente.numero_endereco || !cliente.bairro || !cliente.cidade || !cliente.uf || !cliente.cep
     ) {
-      bloqueios.push(
-        "Tomador é o cliente da cotação (terceiro), mas o cadastro dele está incompleto — o CT-e exige CNPJ/CPF, razão social, telefone e endereço completo (logradouro/número/bairro/CEP/cidade/UF). Complete o cadastro do cliente.",
-      );
+      bloqueio("sefaz", "Tomador é o cliente da cotação (terceiro), mas o cadastro dele está incompleto — o CT-e exige CNPJ/CPF, razão social, telefone e endereço completo (logradouro/número/bairro/CEP/cidade/UF). Complete o cadastro do cliente.",);
     }
     ieTomador = cliente?.inscricao_estadual || undefined;
     tomadorOutros = {
@@ -390,7 +381,7 @@ export function montarCte(d: DadosCte): ResultadoCte {
   // --- Peso ------------------------------------------------------------------------------------------
   const pesoBrutoKg = cotacao?.peso_bruto_kg ?? null;
   if (!pesoBrutoKg || pesoBrutoKg <= 0) {
-    bloqueios.push("Cotação sem peso bruto da carga (kg) — obrigatório no CT-e (quantidades).");
+    bloqueio("sefaz", "Cotação sem peso bruto da carga (kg) — obrigatório no CT-e (quantidades).");
   }
 
   // --- Nomes: em homologação a SEFAZ exige o texto literal (646/649) ------------------------------------
@@ -400,16 +391,14 @@ export function montarCte(d: DadosCte): ResultadoCte {
     nomeRemetente = NOME_HOMOLOGACAO;
     nomeDestinatario = NOME_HOMOLOGACAO;
     if (tomadorOutros.nome_tomador) tomadorOutros.nome_tomador = NOME_HOMOLOGACAO;
-    avisos.push(
-      `Homologação: nome do remetente e do destinatário${tomadorOutros.nome_tomador ? " (e do tomador)" : ""} enviados como "${NOME_HOMOLOGACAO}" (exigência da SEFAZ, rejeições 646/649). Em produção vão os nomes reais: ${op.nf_remetente_razao_social ?? "—"} / ${op.nf_destinatario_razao_social ?? "—"}.`,
-    );
+    aviso("info", `Homologação: nome do remetente e do destinatário${tomadorOutros.nome_tomador ? " (e do tomador)" : ""} enviados como "${NOME_HOMOLOGACAO}" (exigência da SEFAZ, rejeições 646/649). Em produção vão os nomes reais: ${op.nf_remetente_razao_social ?? "—"} / ${op.nf_destinatario_razao_social ?? "—"}.`,);
   }
 
   const intraestadual = op.uf_origem && op.uf_destino && op.uf_origem === op.uf_destino;
   const cfop = intraestadual ? "5353" : "6353";
 
   const payload: Linha = {
-    natureza_operacao: op.natureza_operacao || "Prestação de serviço de transporte",
+    natureza_operacao: NATUREZA_OPERACAO_CTE,
     data_emissao: dataEmissaoBrasilia(d.agora),
     tipo_documento: "0",
     tipo_servico: "0",
@@ -493,5 +482,5 @@ export function montarCte(d: DadosCte): ResultadoCte {
     telefone_responsavel_tecnico: telefone(pf?.responsavel_tecnico_telefone) ?? undefined,
   };
 
-  return { ambiente, bloqueios, avisos, intramunicipal, payload };
+  return { ambiente, bloqueios, avisos, regras, intramunicipal, payload };
 }

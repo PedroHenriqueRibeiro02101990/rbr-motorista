@@ -1,20 +1,17 @@
-// Edge Function: emitir-mdfe (v6)
-// Emite o MDF-e de uma operação via Focus NFe (POST /v2/mdfe, resposta assíncrona 202).
-// Pré-requisito: CT-e já AUTORIZADO (status 'emitido' + chave). Lê os dados -> monta payload e bloqueios em
-// mdfe.ts (testado em mdfe.test.ts) -> chama Focus -> grava em documentacao_operacao.
-// v6 (2026-10-08): (1) RNTRC do proprietário com 9 dígitos e zero à esquerda (ex.: 048445388) vira 8 dígitos, como no
-// CT-e; (2) em HOMOLOGAÇÃO, regras só do nosso sistema (CIOT do TAC, destino de pagamento PIX/banco/IPEF) viram aviso
-// em vez de bloqueio — o teste segue só as regras da SEFAZ; em produção continuam bloqueando; (3) data_emissao com
-// fuso de Brasília (-03:00). O pré-requisito do CT-e autorizado continua bloqueando.
-// v5 (2026-10-07): estrutura conferida com a doc de campos da Focus: dados do modal em `modal_rodoviario`, veículo de
-// tração em campos *_veiculo, condutores e veiculos_reboque dentro do modal; reboques vêm de operacao_reboques
-// (cavalo mecânico deixa de ser bloqueado quando há carreta vinculada); proprietário com IE e tipo PF/PJ.
-// v4: busca de município tolerante a acento/caixa (RPC buscar_municipio) sobre a tabela IBGE completa.
+// Edge Function: emitir-mdfe (v16)
+// v16 (2026-10-15): o relaxamento do teste em producao vem da resposta de trava_teste_fiscal (chamada antes de montar), nao do flag da cotacao.
+// v16: CEP de carregamento = CEP da RBR (parametros_fiscais) quando o remetente da NF-e e a propria RBR.
+// v15 (2026-10-09): NCM do produto predominante (8 digitos) sempre bloqueia, inclusive em teste - ver mdfe.ts. (v14 revertida: alterava telefone do responsavel tecnico sem querer.)
+// v13: valores monetarios do pagamento com 2 casas e nParcela com 3 digitos (schema da SEFAZ).
+// v12: CEPs de carregamento/descarregamento (carga lotacao). v11: CT-e dentro de municipios_descarregamento. v10: numero_averbacao. v8: tipo_transporte TAC.
+// v7: operacao de TESTE em producao (observacoes da cotacao comeca com "[TESTE PRODUCAO") trata regras so do nosso sistema como aviso.
+// Emite o MDF-e de uma operacao via Focus NFe (POST /v2/mdfe, resposta assincrona 202).
+// Pre-requisito: CT-e ja AUTORIZADO (status 'emitido' + chave). Le os dados -> monta payload e bloqueios em mdfe.ts -> chama Focus -> grava em documentacao_operacao.
 // Modo `previa: true` devolve payload + bloqueios sem gravar nem chamar a Focus.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { montarMdfe, type VeiculoMdfe } from "./mdfe.ts";
+import { cepCarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -67,7 +64,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: pessoaAtor } = await supabaseAdmin
       .from("pessoas")
-      .select("papel")
+      .select("id, papel")
       .eq("auth_user_id", userData.user.id)
       .maybeSingle();
     if (!pessoaAtor || pessoaAtor.papel !== "gestor_rbr") {
@@ -131,7 +128,7 @@ Deno.serve(async (req: Request) => {
     if (op.cotacao_id) {
       const { data } = await supabaseAdmin
         .from("cotacoes")
-        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio")
+        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_cnpj, nf_remetente_endereco")
         .eq("id", op.cotacao_id)
         .maybeSingle();
       cot = data;
@@ -186,7 +183,15 @@ Deno.serve(async (req: Request) => {
       .eq("operacao_id", operacao_id)
       .maybeSingle();
 
-    const { ambiente, bloqueios, avisos, payload } = montarMdfe({
+    // Modo teste (cotacoes.eh_teste): trava invertida no banco — RBR remetente E destinatária, cliente = RBR,
+    // valores até R$ 5. Roda ANTES de montar: só a resposta da trava (teste=true) relaxa as regras de teste;
+    // o flag da cotação sozinho não basta. Fora do modo teste devolve teste=false e nada muda.
+    const { data: trava, error: travaErr } = await supabaseAdmin.rpc("trava_teste_fiscal", { p_operacao_id: operacao_id, p_tipo: "mdfe" });
+    if (travaErr) {
+      return jsonResponse({ sucesso: false, erro: `Não consegui verificar o modo teste: ${travaErr.message}` }, 500);
+    }
+
+    const { ambiente, bloqueios, avisos, regras, payload } = montarMdfe({
       op,
       pf,
       municipioEmitente,
@@ -201,7 +206,10 @@ Deno.serve(async (req: Request) => {
         produto: cot?.nf_produto_predominante ?? null,
         ncm: Array.isArray(cot?.ncms_produtos) && cot.ncms_produtos.length ? String(cot.ncms_produtos[0]) : (op.ncm ?? null),
         pedagio: Number(cot?.pedagio ?? 0),
+        teste_producao: testeDaTrava(trava),
       },
+      cepCarregamento: cepCarregamentoDe(cot?.nf_remetente_cnpj, op.emitente_cnpj, cot?.nf_remetente_endereco, pf?.endereco_cep),
+      cepDescarregamento: op.destinatario_cep ?? null,
       apolice,
       motorista,
       cliente,
@@ -216,17 +224,13 @@ Deno.serve(async (req: Request) => {
       agora: new Date(),
     });
 
+    if (testeDaTrava(trava) && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
+    if (testeDaTrava(trava) && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
+
     const ref = `rbr-mdfe-${operacao_id}`;
 
     if (previa === true) {
-      return jsonResponse({
-        sucesso: true,
-        previa: true,
-        ambiente,
-        bloqueios,
-        avisos,
-        payload,
-      });
+      return jsonResponse({ sucesso: true, previa: true, ambiente, bloqueios, avisos, regras, payload });
     }
 
     if (bloqueios.length > 0) {
@@ -242,7 +246,7 @@ Deno.serve(async (req: Request) => {
         },
         { onConflict: "operacao_id,tipo" },
       );
-      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, erro: mensagem }, 422);
+      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, regras, erro: mensagem }, 422);
     }
 
     const { data: token, error: tokenError } = await supabaseAdmin.rpc("get_focus_nfe_token", {
@@ -305,9 +309,26 @@ Deno.serve(async (req: Request) => {
       { onConflict: "operacao_id,tipo" },
     );
 
+    // Regra da RBR que não barrou (ex.: destino de pagamento do motorista): fica registrada nos eventos fiscais
+    // da operação, para aparecer depois da emissão e não só na tela do momento.
+    const avisosRbr = regras.filter((r) => r.tipo === "aviso" && r.origem === "rbr").map((r) => r.mensagem);
+    if (avisosRbr.length > 0) {
+      await supabaseAdmin.from("eventos_fiscais_operacao").insert({
+        operacao_id,
+        tipo_documento: "mdfe",
+        evento: "aviso_regra_rbr",
+        origem: "automatico",
+        ator_id: pessoaAtor.id,
+        sucesso: true,
+        mensagem: avisosRbr.join(" "),
+        requisicao: { referencia: ref, ambiente },
+      });
+    }
+
     return jsonResponse({
       sucesso: true,
       status: "processando_autorizacao",
+      regras,
       referencia: ref,
       avisos,
       aviso:

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime } from '@rbr/shared/format'
@@ -14,6 +15,7 @@ import CancelarDocumentoModal, {
 } from '../components/operacao/CancelarDocumentoModal'
 import BaixarDocumentoFiscal from '../components/operacao/BaixarDocumentoFiscal'
 import EmitirNfeProducaoModal from '../components/operacao/EmitirNfeProducaoModal'
+import FaixaTeste, { PassoAPassoTeste } from '../components/FaixaTeste'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -134,6 +136,8 @@ type RespostaEmissao = {
   sucesso: boolean
   bloqueado?: boolean
   motivos?: string[]
+  avisos?: string[]
+  regras?: RegraFiscal[]
   erro?: string
   referencia?: string
   status?: string
@@ -147,7 +151,7 @@ type RespostaConsulta = {
   erro?: string
 }
 
-type DetalheErro = { erro?: string; motivos?: string[] }
+type DetalheErro = { erro?: string; motivos?: string[]; avisos?: string[]; regras?: RegraFiscal[] }
 
 // supabase-js, quando a Edge Function responde 4xx/5xx, devolve
 // { data: null, error: FunctionsHttpError }. O corpo JSON que a função
@@ -163,15 +167,15 @@ async function extrairDetalheErroInvoke(error: unknown): Promise<DetalheErro> {
     if (context && typeof (context as Response).json === 'function') {
       const body = await (context as Response).json()
       if (body && typeof body === 'object') {
-        const b = body as { erro?: string; motivos?: string[] }
+        const b = body as DetalheErro
         if (b.erro || (b.motivos && b.motivos.length > 0)) {
-          return { erro: b.erro, motivos: b.motivos }
+          return { erro: b.erro, motivos: b.motivos, avisos: b.avisos, regras: b.regras }
         }
       }
     } else if (context && typeof context === 'object') {
-      const b = context as { erro?: string; motivos?: string[] }
+      const b = context as DetalheErro
       if (b.erro || (b.motivos && b.motivos.length > 0)) {
-        return { erro: b.erro, motivos: b.motivos }
+        return { erro: b.erro, motivos: b.motivos, avisos: b.avisos, regras: b.regras }
       }
     }
   } catch {
@@ -189,6 +193,8 @@ export default function Fiscal() {
   const [docsPorOperacao, setDocsPorOperacao] = useState<Map<string, DocumentacaoOperacao[]>>(new Map())
   const [emAndamento, setEmAndamento] = useState<Set<string>>(new Set())
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
+  // Avisos "Regra da RBR" da última emissão que deu certo, por operação.
+  const [avisosRbrPorOperacao, setAvisosRbrPorOperacao] = useState<Record<string, RegraFiscal[] | null>>({})
   // Resultado da NF-e de teste (só homologação), por operação.
   const [infoPorOperacao, setInfoPorOperacao] = useState<Record<string, string | null>>({})
   const [ambienteFiscal, setAmbienteFiscal] = useState<string | null>(null)
@@ -305,7 +311,11 @@ export default function Fiscal() {
         const detalhe = await extrairDetalheErroInvoke(error)
         setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
       } else if (data && data.sucesso === false) {
-        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos } }))
+        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos, avisos: data.avisos, regras: data.regras } }))
+      } else if (data) {
+        // Emitiu, mas com regra da RBR em aberto (ex.: destino de pagamento do motorista): mostra em amarelo.
+        const avisosRbr = (data.regras ?? []).filter((r) => r.tipo === 'aviso' && r.origem === 'rbr')
+        setAvisosRbrPorOperacao((prev) => ({ ...prev, [op.id]: avisosRbr.length > 0 ? avisosRbr : null }))
       }
     } catch (e) {
       setErroPorOperacao((prev) => ({
@@ -394,6 +404,50 @@ export default function Fiscal() {
 
   // NF-e de teste (homologação): a RBR emite uma NF-e com os dados da cotação e, autorizada, a chave vai pra
   // cotação — é a nota que o CT-e de homologação cita (a SEFAZ-SP confere se ela existe).
+  // Operação de teste: cancela na ordem exigida (MDF-e -> CT-e -> NF-e) pela cancelar-documento-fiscal.
+  async function cancelarTudoTeste(op: OperacaoEnriquecida) {
+    if (!op.eh_teste) return
+    const docs = docsPorOperacao.get(op.id) ?? []
+    const fila: Array<'mdfe' | 'cte' | 'nfe'> = []
+    if (docs.find((d) => d.tipo === 'mdfe')?.status === 'emitido') fila.push('mdfe')
+    if (docs.find((d) => d.tipo === 'cte')?.status === 'emitido') fila.push('cte')
+    if (op.nfChaveAcesso) fila.push('nfe')
+    if (fila.length === 0) {
+      setInfoPorOperacao((m) => ({ ...m, [op.id]: 'Nada emitido para cancelar nesta operação de teste.' }))
+      return
+    }
+    const nomes = { mdfe: 'MDF-e', cte: 'CT-e', nfe: 'NF-e' }
+    if (!window.confirm(`Cancelar na SEFAZ, nesta ordem: ${fila.map((t) => nomes[t]).join(' → ')}?\n\nA NF-e só cancela até 24 h depois da autorização.`)) return
+    setErroPorOperacao((m) => ({ ...m, [op.id]: null }))
+    const feitos: string[] = []
+    for (const tipo of fila) {
+      const { data, error } = await supabase.functions.invoke<{ sucesso?: boolean; erro?: string }>('cancelar-documento-fiscal', {
+        body: {
+          operacao_id: op.id,
+          tipo,
+          justificativa: 'Cancelamento de operacao de teste do sistema RBR (valor R$ 1,00)',
+          confirmar: true,
+        },
+      })
+      if (error || !data?.sucesso) {
+        let msg = data?.erro ?? error?.message ?? 'erro desconhecido'
+        const ctx = (error as { context?: Response } | null)?.context
+        if (ctx && typeof ctx.json === 'function') {
+          try { msg = (await ctx.json())?.erro ?? msg } catch { /* mantém msg */ }
+        }
+        setErroPorOperacao((m) => ({
+          ...m,
+          [op.id]: { erro: `${feitos.length ? `Cancelados: ${feitos.join(', ')}. ` : ''}Parou no ${nomes[tipo]}: ${msg}` },
+        }))
+        await load()
+        return
+      }
+      feitos.push(nomes[tipo])
+    }
+    setInfoPorOperacao((m) => ({ ...m, [op.id]: `Teste cancelado na SEFAZ: ${feitos.join(' → ')}.` }))
+    await load()
+  }
+
   async function nfeTeste(op: OperacaoEnriquecida, acao: 'emitir' | 'consultar') {
     const chave = `${op.id}:nfe-teste:${acao}`
     marcarEmAndamento(chave, true)
@@ -733,6 +787,26 @@ export default function Fiscal() {
 
             return (
               <div key={op.id} className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+                {op.eh_teste && (
+                  <div className="flex flex-col gap-2 rounded-lg p-2.5 border" style={{ borderColor: 'var(--rbr-danger)' }}>
+                    <FaixaTeste />
+                    <PassoAPassoTeste
+                      nfe={Boolean(op.nfChaveAcesso)}
+                      cte={docCte?.status ?? null}
+                      atm={docs.find((d) => d.tipo === 'atm')?.status ?? null}
+                      mdfe={docMdfe?.status ?? null}
+                    />
+                    <div>
+                      <button
+                        onClick={() => void cancelarTudoTeste(op)}
+                        className="text-xs font-bold px-3.5 py-2 rounded-lg text-white"
+                        style={{ background: 'var(--rbr-danger)' }}
+                      >
+                        Cancelar tudo do teste
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-[15px] font-bold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
                   {op.valorTotal != null && <div className="text-sm font-bold">{formatMoney(op.valorTotal)}</div>}
@@ -1012,7 +1086,7 @@ export default function Fiscal() {
                   </div>
                 )}
 
-                {ambienteFiscal === 'producao' && (
+                {ambienteFiscal === 'producao' && op.eh_teste && (
                   <div
                     className="flex flex-col gap-2 rounded-lg p-2.5 border"
                     style={{ borderColor: 'var(--rbr-danger)' }}
@@ -1185,20 +1259,25 @@ export default function Fiscal() {
                 </div>
 
                 {erroCard && (
-                  <div
-                    className="text-xs rounded-lg px-3 py-2.5 flex flex-col gap-1"
-                    style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}
-                  >
-                    {erroCard.motivos && erroCard.motivos.length > 0 ? (
-                      <ul className="list-disc pl-4 flex flex-col gap-0.5">
-                        {erroCard.motivos.map((motivo, i) => (
-                          <li key={i}>{motivo}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span>{erroCard.erro ?? 'Erro ao processar solicitação.'}</span>
-                    )}
-                  </div>
+                  erroCard.motivos && erroCard.motivos.length > 0 ? (
+                    <RegrasFiscais
+                      bloqueios={erroCard.motivos}
+                      avisos={erroCard.avisos}
+                      regras={erroCard.regras}
+                      tituloBloqueios="Emissão bloqueada"
+                    />
+                  ) : (
+                    <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                      {erroCard.erro ?? 'Erro ao processar solicitação.'}
+                    </div>
+                  )
+                )}
+
+                {avisosRbrPorOperacao[op.id] && (
+                  <RegrasFiscais
+                    avisos={avisosRbrPorOperacao[op.id]!.map((r) => r.mensagem)}
+                    regras={avisosRbrPorOperacao[op.id]!}
+                  />
                 )}
 
                 {infoCard && (

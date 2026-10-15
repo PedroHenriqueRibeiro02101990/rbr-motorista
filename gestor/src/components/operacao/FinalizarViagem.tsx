@@ -26,6 +26,7 @@ const NOME_EVENTO: Record<string, string> = {
   cancelamento: 'Cancelamento',
   carta_correcao: 'Carta de correção',
   inclusao_condutor: 'Inclusão de condutor',
+  aviso_regra_rbr: 'Aviso — regra da RBR',
 }
 
 function dataBrasilia(d: Date | string) {
