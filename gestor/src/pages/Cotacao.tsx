@@ -732,7 +732,9 @@ export default function Cotacao() {
         'giro_dias_carga',
         'giro_dias_mes',
       ])
-    setGiroParams(giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))))
+    // 2026-10-15: capital de giro virou custo FIXO mensal (mútuo do Marcelo, migration 20261015_12) e não entra
+    // mais no preço por operação — o giro fica desligado aqui mesmo que o parâmetro giro_ativo volte a true.
+    setGiroParams({ ...giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))), ativo: false })
     for (const row of data ?? []) {
       if (row.chave.startsWith('giro_')) continue
       if (row.chave === 'tag_seguro_faixas') {
@@ -1488,12 +1490,17 @@ export default function Cotacao() {
                 ? lucroPctDigitado / 100
                 : lucroPadrao,
             preco_modo: modoValorFinal ? 'valor_final' : 'lucro_pct',
-            custo_financeiro: comp.custoFinanceiro,
-            giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
-            giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
-            giro_dias_transito: numOrNull(f.giro_dias_transito),
-            giro_aporte: comp.giro?.aporte ?? null,
-            giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
+            // Giro desligado (custo fixo mensal): não regrava custo_financeiro/giro_* — o que já estava salvo fica como histórico.
+            ...(giroParams.ativo
+              ? {
+                  custo_financeiro: comp.custoFinanceiro,
+                  giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
+                  giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
+                  giro_dias_transito: numOrNull(f.giro_dias_transito),
+                  giro_aporte: comp.giro?.aporte ?? null,
+                  giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
+                }
+              : {}),
           }
 
     // Cotação com múltiplos destinos: o valor final ao cliente é a soma das linhas de destino,

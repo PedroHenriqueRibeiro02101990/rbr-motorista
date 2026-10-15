@@ -1195,7 +1195,7 @@ export function DetalheLancamento({ id, apoio, onFechar, onMudou }: { id: string
             ['Competência', fmtData(l.competencia).slice(3)],
             ['Forma', FORMA_LABEL[l.forma_pagamento ?? ''] ?? '—'],
             ['Nº documento', l.numero_documento ?? '—'],
-            ['Origem', l.origem === 'operacao' ? 'Operação (automático)' : l.origem === 'recorrencia' ? 'Recorrência' : l.origem === 'imposto' ? 'Imposto (automático)' : l.origem ?? '—'],
+            ['Origem', l.origem === 'operacao' ? 'Operação (automático)' : l.origem === 'recorrencia' ? 'Recorrência' : l.origem === 'imposto' ? 'Imposto (automático)' : l.origem === 'mutuo_marcelo' ? 'Mútuo (Marcelo)' : l.origem ?? '—'],
           ].map(([k, v]) => (
             <div key={k}>
               <div className="text-[10.5px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">{k}</div>
