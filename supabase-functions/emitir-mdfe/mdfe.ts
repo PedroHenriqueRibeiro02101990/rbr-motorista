@@ -65,6 +65,20 @@ export function testeDaTrava(trava: unknown): boolean {
   return typeof trava === "object" && trava !== null && (trava as { teste?: unknown }).teste === true;
 }
 
+// CEP de carregamento: o do endereço do remetente na NF-e; quando o remetente é a própria RBR, o CEP do
+// endereço da RBR em parametros_fiscais (a cotação costuma não trazer o endereço da RBR com CEP).
+export function cepCarregamentoDe(
+  remetenteCnpj: unknown,
+  emitenteCnpj: unknown,
+  enderecoRemetente: { cep?: unknown } | null | undefined,
+  cepRbr: unknown,
+): string | null {
+  const daNota = digitos(enderecoRemetente?.cep);
+  if (daNota.length === 8) return daNota;
+  const remetenteEhRbr = digitos(remetenteCnpj).length === 14 && digitos(remetenteCnpj) === digitos(emitenteCnpj);
+  return remetenteEhRbr && digitos(cepRbr).length === 8 ? digitos(cepRbr) : daNota || null;
+}
+
 export function digitos(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "");
 }

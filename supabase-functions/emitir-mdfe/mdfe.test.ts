@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { cepCarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const RBR = "69115969000104";
 const CHAVE_CTE = "35261069115969000104570010000000011211536013";
@@ -190,6 +190,13 @@ test("testeDaTrava só aceita teste === true (erro, nulo ou texto não relaxam)"
   assert.equal(testeDaTrava({ teste: "true" }), false);
   assert.equal(testeDaTrava({ teste: false }), false);
   assert.equal(testeDaTrava({ teste: true, bloqueios: [] }), true);
+});
+
+test("CEP de carregamento: endereço da NF-e; remetente RBR sem CEP usa o CEP da RBR; terceiro sem CEP fica vazio", () => {
+  assert.equal(cepCarregamentoDe("11444777000161", RBR, { cep: "13000-000" }, "01000-000"), "13000000");
+  assert.equal(cepCarregamentoDe("69.115.969/0001-04", RBR, null, "01000-000"), "01000000");
+  assert.equal(cepCarregamentoDe("11444777000161", RBR, null, "01000-000"), null);
+  assert.equal(cepCarregamentoDe(null, RBR, {}, "01000-000"), null);
 });
 
 test("data_emissao sai no fuso de Brasília (-03:00)", () => {

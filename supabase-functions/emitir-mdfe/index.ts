@@ -1,5 +1,6 @@
 // Edge Function: emitir-mdfe (v16)
 // v16 (2026-10-15): o relaxamento do teste em producao vem da resposta de trava_teste_fiscal (chamada antes de montar), nao do flag da cotacao.
+// v16: CEP de carregamento = CEP da RBR (parametros_fiscais) quando o remetente da NF-e e a propria RBR.
 // v15 (2026-10-09): NCM do produto predominante (8 digitos) sempre bloqueia, inclusive em teste - ver mdfe.ts. (v14 revertida: alterava telefone do responsavel tecnico sem querer.)
 // v13: valores monetarios do pagamento com 2 casas e nParcela com 3 digitos (schema da SEFAZ).
 // v12: CEPs de carregamento/descarregamento (carga lotacao). v11: CT-e dentro de municipios_descarregamento. v10: numero_averbacao. v8: tipo_transporte TAC.
@@ -10,7 +11,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { cepCarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -127,7 +128,7 @@ Deno.serve(async (req: Request) => {
     if (op.cotacao_id) {
       const { data } = await supabaseAdmin
         .from("cotacoes")
-        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_endereco")
+        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_cnpj, nf_remetente_endereco")
         .eq("id", op.cotacao_id)
         .maybeSingle();
       cot = data;
@@ -207,7 +208,7 @@ Deno.serve(async (req: Request) => {
         pedagio: Number(cot?.pedagio ?? 0),
         teste_producao: testeDaTrava(trava),
       },
-      cepCarregamento: cot?.nf_remetente_endereco?.cep ?? null,
+      cepCarregamento: cepCarregamentoDe(cot?.nf_remetente_cnpj, op.emitente_cnpj, cot?.nf_remetente_endereco, pf?.endereco_cep),
       cepDescarregamento: op.destinatario_cep ?? null,
       apolice,
       motorista,
