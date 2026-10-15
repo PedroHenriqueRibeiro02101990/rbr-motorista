@@ -10000,6 +10000,10 @@ export type Database = {
         Args: { p_executor: string; p_solicitacao: string }
         Returns: Json
       }
+      liberar_operacao_com_ressalva: {
+        Args: { p_operacao: string; p_motivo: string }
+        Returns: undefined
+      }
       liberar_retencao: {
         Args: { p_motivo: string; p_retencao: string }
         Returns: undefined

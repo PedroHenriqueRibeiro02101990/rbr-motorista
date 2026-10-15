@@ -1086,12 +1086,29 @@ function StatusELiberacao({ d, salvando, executar }: { d: DetalheOperacao; salva
 
   useEffect(() => setNovoStatus(o.status), [o.status])
 
+  // Pendências que bloqueiam sempre (lei/SEFAZ/ANTT ou decisão do gestor) e as que são regra da RBR: estas
+  // podem seguir mesmo assim com motivo (liberar_operacao_com_ressalva, gravado em auditoria).
   const pendentes: string[] = []
+  const ressalvaveis: string[] = []
   if (!o.veiculo_id || !o.pessoa_alocada_id) pendentes.push('alocar motorista e veículo')
   if (o.bloqueio_fiscal) pendentes.push('bloqueio fiscal ativo')
-  if (!d.condicao) pendentes.push('condição de pagamento do motorista')
+  if (!d.condicao) ressalvaveis.push('condição de pagamento do motorista')
   for (const doc of d.documentos.filter((x) => x.exigido && x.conferencia_status !== 'ok' && x.conferencia_status !== 'aceito_manual')) {
-    pendentes.push(TIPO_DOC_LABEL[doc.tipo] ?? doc.tipo)
+    const existe = doc.status === 'emitido' || !!doc.arquivo_path || !!doc.numero_documento || !!doc.chave_acesso
+    const rotulo = TIPO_DOC_LABEL[doc.tipo] ?? doc.tipo
+    if (existe) ressalvaveis.push(`conferir ${rotulo}`)
+    else pendentes.push(rotulo)
+  }
+  const [seguindo, setSeguindo] = useState(false)
+  const [motivoRessalva, setMotivoRessalva] = useState('')
+
+  async function liberarComRessalva() {
+    await executar(async () => {
+      const { error } = await supabase.rpc('liberar_operacao_com_ressalva', { p_operacao: o.id, p_motivo: motivoRessalva.trim() })
+      if (error) throw error
+      setSeguindo(false)
+      setMotivoRessalva('')
+    }, 'Carga liberada para coleta com ressalva (motivo registrado).')
   }
 
   async function mudarStatus(status: StatusOperacao, extra: Record<string, unknown> = {}, msg?: string) {
@@ -1109,24 +1126,79 @@ function StatusELiberacao({ d, salvando, executar }: { d: DetalheOperacao; salva
       {o.status === 'aguardando_liberacao_fiscal' && (
         <div className="flex flex-col gap-2">
           <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Liberar para coleta</div>
-          {pendentes.length > 0 ? (
+          {pendentes.length > 0 && (
             <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
               Falta: {pendentes.join(', ')}.
             </div>
-          ) : (
+          )}
+          {ressalvaveis.length > 0 && (
+            <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FFF6E0', color: 'var(--rbr-navy-dark)' }}>
+              <span
+                className="inline-block mr-1.5 px-1.5 py-px rounded text-[10px] font-extrabold uppercase tracking-wide align-middle"
+                style={{ border: '1px solid #9A6700', color: '#9A6700' }}
+              >
+                Regra da RBR
+              </span>
+              Pendente: {ressalvaveis.join(', ')}.{' '}
+              {pendentes.length === 0 && 'Você pode seguir mesmo assim, informando o motivo (fica registrado).'}
+            </div>
+          )}
+          {pendentes.length === 0 && ressalvaveis.length === 0 && (
             <div className="text-xs" style={{ color: 'var(--rbr-positive)' }}>
               Tudo conferido. O motorista só vê a carga como liberada depois deste clique.
             </div>
           )}
-          <button
-            type="button"
-            disabled={salvando || pendentes.length > 0}
-            onClick={() => mudarStatus('liberada_coleta', {}, 'Carga liberada para coleta.')}
-            className="self-start text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50"
-            style={{ background: 'var(--rbr-positive)', color: '#fff' }}
-          >
-            Liberar para coleta
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              disabled={salvando || pendentes.length > 0 || ressalvaveis.length > 0}
+              onClick={() => mudarStatus('liberada_coleta', {}, 'Carga liberada para coleta.')}
+              className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50"
+              style={{ background: 'var(--rbr-positive)', color: '#fff' }}
+            >
+              Liberar para coleta
+            </button>
+            {pendentes.length === 0 && ressalvaveis.length > 0 && !seguindo && (
+              <button
+                type="button"
+                disabled={salvando}
+                onClick={() => setSeguindo(true)}
+                className="text-sm font-bold px-4 py-2 rounded-xl border disabled:opacity-50"
+                style={{ borderColor: '#9A6700', color: '#9A6700', background: '#fff' }}
+              >
+                Seguir mesmo assim…
+              </button>
+            )}
+          </div>
+          {seguindo && (
+            <div className="flex flex-col gap-2 rounded-lg border px-3 py-2" style={{ borderColor: '#E7C66B' }}>
+              <label className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
+                Motivo para liberar com pendência da RBR (obrigatório, fica na auditoria)
+              </label>
+              <textarea
+                value={motivoRessalva}
+                onChange={(e) => setMotivoRessalva(e.target.value)}
+                rows={2}
+                className={inputClass}
+                style={inputStyle}
+                placeholder="Ex.: conferência do CT-e amanhã cedo; condição combinada por telefone"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={salvando || motivoRessalva.trim().length < 10}
+                  onClick={liberarComRessalva}
+                  className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-50"
+                  style={{ background: '#9A6700', color: '#fff' }}
+                >
+                  Liberar com ressalva
+                </button>
+                <button type="button" onClick={() => setSeguindo(false)} className="text-sm font-bold px-3 py-2 text-[color:var(--rbr-muted)]">
+                  Voltar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
