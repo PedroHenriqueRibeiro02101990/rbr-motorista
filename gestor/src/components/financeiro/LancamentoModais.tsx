@@ -1111,7 +1111,7 @@ export function DetalheLancamento({ id, apoio, onFechar, onMudou }: { id: string
   const [baixas, setBaixas] = useState<{ id: string; data: string; valor: number; juros_multa: number; desconto: number; estornada: boolean; estorno_motivo: string | null; conta_bancaria_id: string | null; forma_pagamento: string | null; comprovante_documento_id: string | null; observacao: string | null; confirmacao_antifraude: string | null }[]>([])
   const [docs, setDocs] = useState<DocLink[]>([])
   const [historico, setHistorico] = useState<{ operacao_log: string; executado_em: string; payload_antes: unknown; payload_depois: unknown }[]>([])
-  const [modal, setModal] = useState<'baixa' | 'editar' | 'cobrar' | null>(null)
+  const [modal, setModal] = useState<'baixa' | 'editar' | 'cobrar' | 'apagar' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [anexando, setAnexando] = useState(false)
 
@@ -1256,9 +1256,14 @@ export function DetalheLancamento({ id, apoio, onFechar, onMudou }: { id: string
               Cancelar lançamento
             </Botao>
           )}
-          {l.status === 'cancelado' && l.origem !== 'operacao' && (
+          {l.status === 'cancelado' && l.origem !== 'operacao' && !(l.cancelado_motivo ?? '').startsWith('Apagado manualmente:') && (
             <Botao variante="secundario" onClick={reabrir}>
               Reabrir
+            </Botao>
+          )}
+          {!(l.status === 'cancelado' && (l.cancelado_motivo ?? '').startsWith('Apagado manualmente:')) && (
+            <Botao variante="perigo" onClick={() => setModal('apagar')}>
+              Apagar
             </Botao>
           )}
         </div>
@@ -1363,7 +1368,120 @@ export function DetalheLancamento({ id, apoio, onFechar, onMudou }: { id: string
         />
       )}
       {modal === 'cobrar' && <CobrancaModal lancamentos={[l]} onFechar={() => setModal(null)} />}
+      {modal === 'apagar' && (
+        <ApagarLancamentoModal
+          lancamento={l}
+          baixasAtivas={baixas.filter((b) => !b.estornada).length}
+          onFechar={() => setModal(null)}
+          onApagado={(resultado) => {
+            onMudou()
+            if (resultado === 'apagado') onFechar()
+            else carregar()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+// Apagar lançamento (fin_apagar_lancamento): apaga de verdade o que nada recria; o que viria de volta (operação,
+// imposto, recorrência, assinatura) ou já teve pagamento vira "Cancelado manualmente" e some das listas e totais.
+function ApagarLancamentoModal({
+  lancamento,
+  baixasAtivas,
+  onFechar,
+  onApagado,
+}: {
+  lancamento: Lancamento
+  baixasAtivas: number
+  onFechar: () => void
+  onApagado: (resultado: 'apagado' | 'cancelado') => void
+}) {
+  const [motivo, setMotivo] = useState('')
+  const [estornar, setEstornar] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [feito, setFeito] = useState<{ resultado: 'apagado' | 'cancelado'; mensagem: string } | null>(null)
+  const precisaEstornar = baixasAtivas > 0
+
+  async function confirmar() {
+    if (precisaEstornar && !estornar) return
+    const aviso = precisaEstornar
+      ? `Estornar ${baixasAtivas} pagamento(s) registrado(s) e apagar "${lancamento.descricao}"?\n\nO estorno não devolve dinheiro no banco: só desfaz o registro aqui.`
+      : `Apagar "${lancamento.descricao}" (${brl(Number(lancamento.valor))})?`
+    if (!window.confirm(aviso)) return
+    setEnviando(true)
+    setErro(null)
+    const { data, error } = await supabase.rpc('fin_apagar_lancamento', {
+      p_id: lancamento.id!,
+      p_motivo: motivo.trim(),
+      p_estornar_baixas: precisaEstornar && estornar,
+    })
+    setEnviando(false)
+    if (error) return setErro(error.message)
+    const r = data as { resultado: 'apagado' | 'cancelado'; fatura_retirada: number | null } | null
+    const resultado = r?.resultado === 'apagado' ? 'apagado' : 'cancelado'
+    const mensagem =
+      (resultado === 'apagado' ? 'Lançamento apagado.' : 'Cancelado manualmente para não ser recriado.') +
+      (r?.fatura_retirada ? ` Saiu da fatura nº ${r.fatura_retirada}.` : '')
+    setFeito({ resultado, mensagem })
+  }
+
+  return (
+    <Modal titulo="Apagar lançamento" onFechar={feito ? () => onApagado(feito.resultado) : onFechar} largura="max-w-lg">
+      {feito ? (
+        <>
+          <Aviso tipo="ok">{feito.mensagem}</Aviso>
+          <div className="flex justify-end">
+            <Botao onClick={() => onApagado(feito.resultado)}>Fechar</Botao>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="text-sm">
+            <b>{lancamento.descricao}</b> · {brl(Number(lancamento.valor))}
+          </div>
+          {lancamento.origem && lancamento.origem !== 'manual' && (
+            <Aviso tipo="info">
+              Lançamento gerado automaticamente ({lancamento.origem}). Ele fica cancelado com o motivo "Apagado manualmente" para a
+              sincronização não criar de novo, e some das listas e dos totais.
+            </Aviso>
+          )}
+          {lancamento.fatura_numero && (
+            <Aviso tipo="atencao">Está na fatura nº {lancamento.fatura_numero}: ao apagar, ele sai da fatura e o total dela é recalculado.</Aviso>
+          )}
+          {precisaEstornar && (
+            <Aviso tipo="atencao">
+              Este lançamento tem {baixasAtivas} pagamento(s) registrado(s). Para apagar, os pagamentos são estornados aqui junto (o estorno não
+              mexe no banco).
+              <label className="flex items-center gap-2 mt-2 font-bold">
+                <input type="checkbox" checked={estornar} onChange={(e) => setEstornar(e.target.checked)} />
+                Estornar baixa(s) e apagar
+              </label>
+            </Aviso>
+          )}
+          <Campo label="Motivo (obrigatório, fica no histórico)">
+            <textarea
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              rows={2}
+              className={inputClass}
+              style={inputStyle}
+              placeholder="Ex.: lançado em duplicidade"
+            />
+          </Campo>
+          {erro && <Aviso>{erro}</Aviso>}
+          <div className="flex justify-end gap-2">
+            <Botao variante="secundario" onClick={onFechar}>
+              Voltar
+            </Botao>
+            <Botao variante="perigo" onClick={confirmar} disabled={enviando || motivo.trim().length < 5 || (precisaEstornar && !estornar)}>
+              {enviando ? 'Apagando…' : precisaEstornar ? 'Estornar baixa(s) e apagar' : 'Apagar'}
+            </Botao>
+          </div>
+        </>
+      )}
+    </Modal>
   )
 }
 
