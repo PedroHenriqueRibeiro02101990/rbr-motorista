@@ -59,6 +59,12 @@ export interface DadosMdfe {
   agora: Date;
 }
 
+// Resposta de trava_teste_fiscal(operacao, 'mdfe'). Só ela decide se é teste em produção: o flag da cotação pode
+// ter sido mexido, a trava confere RBR nos dois lados, cliente RBR e valores até R$ 5.
+export function testeDaTrava(trava: unknown): boolean {
+  return typeof trava === "object" && trava !== null && (trava as { teste?: unknown }).teste === true;
+}
+
 export function digitos(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "");
 }

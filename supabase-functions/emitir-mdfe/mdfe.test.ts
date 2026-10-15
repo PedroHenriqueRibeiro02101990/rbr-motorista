@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { type DadosMdfe, montarMdfe, type VeiculoMdfe } from "./mdfe.ts";
+import { type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const RBR = "69115969000104";
 const CHAVE_CTE = "35261069115969000104570010000000011211536013";
@@ -156,6 +156,40 @@ test("produção: CIOT ausente e pagamento sem destino continuam bloqueando", ()
   assert.ok(r.bloqueios.some((x) => x.startsWith("CIOT não informado")));
   assert.ok(r.bloqueios.some((x) => x.startsWith("Pagamento do frete sem destino")));
   assert.equal(r.payload.modal_rodoviario.pagamentos.length, 1);
+});
+
+test("produção sem teste (trava devolve teste=false): CIOT e pagamento sem destino bloqueiam", () => {
+  const b = base();
+  const r = montarMdfe({
+    ...b,
+    op: { ...b.op, ambiente_fiscal: "producao" },
+    tracao: TAC,
+    reboques: [],
+    motorista: { pix: null, banco_codigo: null, banco_agencia: null },
+    cotacao: { ...b.cotacao, teste_producao: testeDaTrava({ teste: false, bloqueios: [] }) },
+  });
+  assert.ok(r.bloqueios.some((x) => x.startsWith("CIOT não informado")));
+});
+
+test("produção com teste vindo da trava (teste=true): CIOT vira aviso de teste", () => {
+  const b = base();
+  const r = montarMdfe({
+    ...b,
+    op: { ...b.op, ambiente_fiscal: "producao" },
+    tracao: TAC,
+    reboques: [],
+    cotacao: { ...b.cotacao, teste_producao: testeDaTrava({ teste: true, bloqueios: [] }) },
+  });
+  assert.ok(!r.bloqueios.some((x) => x.startsWith("CIOT não informado")));
+  assert.ok(r.avisos.some((a) => a.startsWith("Teste em produção: CIOT não informado")));
+});
+
+test("testeDaTrava só aceita teste === true (erro, nulo ou texto não relaxam)", () => {
+  assert.equal(testeDaTrava(null), false);
+  assert.equal(testeDaTrava(undefined), false);
+  assert.equal(testeDaTrava({ teste: "true" }), false);
+  assert.equal(testeDaTrava({ teste: false }), false);
+  assert.equal(testeDaTrava({ teste: true, bloqueios: [] }), true);
 });
 
 test("data_emissao sai no fuso de Brasília (-03:00)", () => {
