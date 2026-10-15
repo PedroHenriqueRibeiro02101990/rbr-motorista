@@ -336,7 +336,7 @@ create trigger trg_veiculo_protege_eh_teste before update of eh_teste on public.
   for each row execute function public.trg_fn_protege_eh_teste();
 
 -- ---------------------------------------------------------------------------------------------------------
--- 3) Trava invertida para as funções fiscais (só service_role chama)
+-- 3) Trava invertida para as funções fiscais (só service_role chama). Devolve {teste, bloqueios, avisos}.
 -- ---------------------------------------------------------------------------------------------------------
 create or replace function public.trava_teste_fiscal(p_operacao_id uuid, p_tipo text)
 returns jsonb
@@ -353,11 +353,11 @@ begin
   select ct.*, o.cliente_id as op_cliente_id into c
     from operacoes o join cotacoes ct on ct.id = o.cotacao_id where o.id = p_operacao_id;
   if not found then
-    return jsonb_build_object('teste', false, 'bloqueios', '[]'::jsonb);
+    return jsonb_build_object('teste', false, 'bloqueios', '[]'::jsonb, 'avisos', '[]'::jsonb);
   end if;
   v_teste := c.eh_teste or coalesce(c.observacoes, '') like '[TESTE PRODUCAO%';
   if not v_teste then
-    return jsonb_build_object('teste', false, 'bloqueios', '[]'::jsonb);
+    return jsonb_build_object('teste', false, 'bloqueios', '[]'::jsonb, 'avisos', '[]'::jsonb);
   end if;
 
   select regexp_replace(cnpj, '\D', '', 'g') into v_rbr from parametros_fiscais where ativo order by updated_at desc limit 1;
@@ -380,7 +380,9 @@ begin
   if p_tipo in ('cte', 'mdfe', 'atm') and (c.valor_total is null or c.valor_total <= 0 or c.valor_total > 5) then
     b := array_append(b, 'Trava do modo teste: frete do CT-e tem de estar entre R$ 0,01 e R$ 5,00.');
   end if;
-  return jsonb_build_object('teste', true, 'bloqueios', to_jsonb(b));
+  -- avisos (C4, 2026-10-15): acrescentado sem mudar teste/bloqueios, para quem já consome a resposta.
+  return jsonb_build_object('teste', true, 'bloqueios', to_jsonb(b), 'avisos', to_jsonb(array[
+    'Operação de teste: os documentos são REAIS na SEFAZ — cancele MDF-e, CT-e e NF-e no fim do teste.']));
 end $$;
 
 revoke all on function public.trava_teste_fiscal(uuid, text) from public, anon, authenticated;

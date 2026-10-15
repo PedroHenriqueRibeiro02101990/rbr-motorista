@@ -246,10 +246,14 @@ values ('7e573000-0000-0000-0000-0000000000a3', 'gestor', '7e572000-0000-0000-00
 insert into operacoes (id, cotacao_id, cliente_id) values ('7e574000-0000-0000-0000-0000000000b3', '7e573000-0000-0000-0000-0000000000a3', '7e572000-0000-0000-0000-0000000000c1');
 do $$ declare t jsonb; begin
   t := trava_teste_fiscal('7e574000-0000-0000-0000-0000000000b3', 'cte');
-  if t->>'teste' <> 'false' or jsonb_array_length(t->'bloqueios') <> 0 then raise exception 'FALHOU 6a: %', t; end if;
+  if t->>'teste' <> 'false' or jsonb_array_length(t->'bloqueios') <> 0 or jsonb_array_length(t->'avisos') <> 0 then
+    raise exception 'FALHOU 6a: %', t;
+  end if;
   raise notice 'OK 6a: cotação normal -> %', t;
   t := trava_teste_fiscal('7e574000-0000-0000-0000-0000000000b1', 'cte');
-  if t->>'teste' <> 'true' or jsonb_array_length(t->'bloqueios') <> 0 then raise exception 'FALHOU 6b: %', t; end if;
+  if t->>'teste' <> 'true' or jsonb_array_length(t->'bloqueios') <> 0 or jsonb_array_length(t->'avisos') <> 1 then
+    raise exception 'FALHOU 6b: %', t;
+  end if;
   raise notice 'OK 6b: teste em ordem -> %', t;
 end $$;
 -- operação apontando para cliente terceiro (backend, como um ajuste manual) e valor acima de R$ 5 (trigger fora do ar)
