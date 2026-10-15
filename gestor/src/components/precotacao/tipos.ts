@@ -105,52 +105,29 @@ export function textoWhatsApp(p: PreCotacao, itens: Item[], cliente: string): st
   return linhas.join('\n')
 }
 
+// PDF no visual da cotação padrão (lib/preCotacaoPdf). Gerar o PDF marca a pré-cotação como enviada, então sem
+// data de envio a emissão é agora e a validade conta a partir de hoje.
 export async function gerarPdfPre(p: PreCotacao, itens: Item[], cliente: string, empresa: Record<string, string>) {
-  const { jsPDF } = await import('jspdf')
-  const { desenharRodape, RODAPE_TOPO } = await import('../../lib/rodapePdf')
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const t = (s: string) => s.replace(/→/g, '->').replace(/—/g, '-')
-  const M = 16
-  let y = 22
-  doc.setTextColor(18, 23, 61)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.text(`Pré-cotação ${numeroFmt(p.numero)}`, M, y)
-  y += 7
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.text(t(`Cliente: ${cliente}`), M, y)
-  y += 5
-  const f = validadeFim(p)
-  doc.text(f ? `Válida até ${f.toLocaleDateString('pt-BR')} (${p.validade_dias} dias)` : `Validade: ${p.validade_dias} dias a partir do envio`, M, y)
-  y += 9
-  const nova = (h: number) => {
-    if (y + h > RODAPE_TOPO) {
-      doc.addPage()
-      y = 22
-    }
-  }
-  itens.forEach((i, idx) => {
-    nova(26)
-    doc.setFillColor(246, 247, 251)
-    doc.roundedRect(M, y, 210 - 2 * M, 23, 2, 2, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10.5)
-    doc.text(t(`${idx + 1}. ${i.cidade_origem}/${i.uf_origem} → ${i.cidade_destino}/${i.uf_destino}`), M + 3, y + 6)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9.5)
-    doc.text(t(`Veículo: ${[i.tipo_veiculo, i.eixos ? `${i.eixos} eixos` : null].filter(Boolean).join(' - ') || 'a definir'}   |   Viagens: ${i.viagens}`), M + 3, y + 12)
-    doc.text(t(i.pedagio != null && i.pedagio > 0 ? `Pedágio: ${brl(i.pedagio)}` : 'Pedágio não incluído'), M + 3, y + 18)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(11)
-    doc.text(t(`${brl(i.preco_viagem)} por viagem`), 210 - M - 3, y + 12, { align: 'right' })
-    y += 27
-  })
-  nova(20)
-  doc.setFont('helvetica', 'italic')
-  doc.setFontSize(9.5)
-  doc.setTextColor(110, 116, 140)
-  doc.text(doc.splitTextToSize(t(AVISO_PRE_COTACAO), 210 - 2 * M), M, y + 4)
-  desenharRodape(doc, empresa)
-  return doc.output('blob') as Blob
+  const { gerarPreCotacaoPdf } = await import('../../lib/preCotacaoPdf')
+  const veiculo = (i: Item) => [i.tipo_veiculo, i.eixos ? `${i.eixos} eixos` : null].filter(Boolean).join(' · ')
+  return gerarPreCotacaoPdf(
+    {
+      numero: numeroFmt(p.numero),
+      dataEmissao: p.enviada_em ?? new Date().toISOString(),
+      validadeDias: p.validade_dias || 7,
+      clienteNome: cliente,
+      aviso: AVISO_PRE_COTACAO,
+      rotas: [...itens]
+        .sort((a, b) => a.ordem - b.ordem)
+        .map((i) => ({
+          origem: `${i.cidade_origem}/${i.uf_origem}`,
+          destino: `${i.cidade_destino}/${i.uf_destino}`,
+          veiculo: veiculo(i),
+          viagens: i.viagens,
+          pedagio: i.pedagio,
+          precoViagem: i.preco_viagem,
+        })),
+    },
+    empresa as unknown as import('../../lib/pdfVisual').EmpresaCotacao,
+  )
 }
