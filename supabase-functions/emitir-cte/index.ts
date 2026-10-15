@@ -4,6 +4,8 @@
 // consultar-documento-fiscal). Lê os dados -> monta payload e bloqueios (cte.ts, testado em cte.test.ts) ->
 // chama Focus -> grava em documentacao_operacao (upsert por operacao_id+tipo).
 //
+// v21 (2026-10-15): resposta traz `regras` (cada bloqueio/aviso com origem sefaz/antt/rbr/info) e os avisos da
+// trava_teste_fiscal. Classificação em cte.ts; hoje nenhum bloqueio do CT-e é regra só da RBR.
 // v20 (2026-10-09): natureza da operação do CT-e é sempre o texto fixo de transporte (cte.ts). Antes usava
 // cotacoes.natureza_operacao, que em algumas cotações guarda a natureza da NF-e ("Venda") e iria para o CT-e.
 //
@@ -141,7 +143,7 @@ Deno.serve(async (req: Request) => {
       municipioEmitente = m?.cidade ?? null;
     }
 
-    const { ambiente, bloqueios, avisos, intramunicipal, payload } = montarCte({
+    const { ambiente, bloqueios, avisos, regras, intramunicipal, payload } = montarCte({
       op,
       pf,
       cotacao,
@@ -160,7 +162,8 @@ Deno.serve(async (req: Request) => {
     if (travaErr) {
       return jsonResponse({ sucesso: false, erro: `Não consegui verificar o modo teste: ${travaErr.message}` }, 500);
     }
-    if (trava?.teste && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
+    if (trava?.teste === true && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
+    if (trava?.teste === true && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
     const ref = `rbr-cte-${operacao_id}`;
 
@@ -172,6 +175,7 @@ Deno.serve(async (req: Request) => {
         ambiente,
         bloqueios,
         avisos,
+        regras,
         payload,
       });
     }
@@ -195,6 +199,7 @@ Deno.serve(async (req: Request) => {
         intramunicipal,
         motivos: bloqueios,
         avisos,
+        regras,
         erro: mensagem,
       }, 422);
     }
@@ -269,6 +274,7 @@ Deno.serve(async (req: Request) => {
           ? "Ambiente de homologação — este CT-e NÃO tem validade fiscal."
           : undefined,
       avisos,
+      regras,
     });
   } catch (e) {
     return jsonResponse({ sucesso: false, erro: String(e) }, 500);

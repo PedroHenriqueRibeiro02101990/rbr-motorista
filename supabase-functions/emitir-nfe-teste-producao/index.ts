@@ -1,4 +1,5 @@
 // Edge Function: emitir-nfe-teste-producao (v2: exige cotacoes.eh_teste + rpc trava_teste_fiscal)
+// v3 (2026-10-15): resposta traz `regras` com a origem de cada bloqueio (sefaz ou trava do teste).
 //
 // NF-e REAL (produção, Focus NFe POST /v2/nfe, assíncrona) usada SÓ para o teste de ponta a ponta com R$ 1,00:
 // a RBR emite uma remessa para ela mesma e o CT-e de produção cita essa chave (SEFAZ-SP rejeita CT-e com NF-e
@@ -148,34 +149,41 @@ Deno.serve(async (req: Request) => {
       .eq("id", op.cotacao_id)
       .maybeSingle();
 
+    // Origem (C1, 2026-10-15): "sefaz" = campo exigido pela SEFAZ/Focus na NF-e; "teste" = trava de segurança do
+    // modo teste (só RBR, até R$ 5, só em produção), que fica como está e não entra na classificação SEFAZ/ANTT/RBR.
     const bloqueios: string[] = [];
-    if (pf?.ambiente !== "producao") bloqueios.push("Ambiente fiscal da RBR não está em produção.");
+    const regras: { tipo: "bloqueio"; origem: "sefaz" | "teste"; mensagem: string }[] = [];
+    const bloqueio = (origem: "sefaz" | "teste", mensagem: string) => {
+      bloqueios.push(mensagem);
+      regras.push({ tipo: "bloqueio", origem, mensagem });
+    };
+    if (pf?.ambiente !== "producao") bloqueio("teste", "Ambiente fiscal da RBR não está em produção.");
     if (!pf?.cnpj || !pf?.inscricao_estadual || !pf?.razao_social || !pf?.endereco_logradouro || !pf?.endereco_numero ||
       !pf?.endereco_bairro || !municipioEmitente || !pf?.endereco_uf || !pf?.endereco_cep) {
-      bloqueios.push("Dados da RBR incompletos em parametros_fiscais (CNPJ, IE, razão social ou endereço).");
+      bloqueio("sefaz", "Dados da RBR incompletos em parametros_fiscais (CNPJ, IE, razão social ou endereço).");
     }
     const cnpjRbr = digitos(pf?.cnpj);
     if (digitos(cot?.nf_remetente_cnpj) !== cnpjRbr || digitos(cot?.nf_destinatario_cnpj) !== cnpjRbr) {
-      bloqueios.push("Trava de segurança: esta função só emite NF-e em que a RBR é remetente E destinatária (teste). Nunca em nome de terceiro.");
+      bloqueio("teste", "Trava de segurança: esta função só emite NF-e em que a RBR é remetente E destinatária (teste). Nunca em nome de terceiro.");
     }
     const valor = Number(cot?.valor_nf ?? 0);
-    if (!(valor > 0)) bloqueios.push("Cotação sem valor da NF.");
-    if (valor > LIMITE_VALOR) bloqueios.push(`Trava de segurança: valor da NF acima de R$ ${LIMITE_VALOR.toFixed(2)} não é teste.`);
+    if (!(valor > 0)) bloqueio("sefaz", "Cotação sem valor da NF.");
+    if (valor > LIMITE_VALOR) bloqueio("teste", `Trava de segurança: valor da NF acima de R$ ${LIMITE_VALOR.toFixed(2)} não é teste.`);
     const peso = Number(cot?.peso_bruto_kg ?? 0);
-    if (!(peso > 0)) bloqueios.push("Cotação sem peso bruto (kg).");
+    if (!(peso > 0)) bloqueio("sefaz", "Cotação sem peso bruto (kg).");
     if (cot?.nf_chave_acesso) {
-      bloqueios.push("A cotação já tem NF-e gravada. Cancele a anterior (botão Cancelar) antes de emitir outra.");
+      bloqueio("teste", "A cotação já tem NF-e gravada. Cancele a anterior (botão Cancelar) antes de emitir outra.");
     }
     const end = (cot?.nf_destinatario_endereco ?? null) as Record<string, string | null> | null;
     if (!end?.logradouro || !end?.numero || !end?.bairro || !end?.cep || !end?.municipio || !end?.uf) {
-      bloqueios.push("Endereço do destinatário incompleto na aba NF-e da cotação.");
+      bloqueio("sefaz", "Endereço do destinatário incompleto na aba NF-e da cotação.");
     }
     const { data: trava, error: travaErr } = await supabaseAdmin.rpc("trava_teste_fiscal", { p_operacao_id: operacao_id, p_tipo: "nfe" });
     if (travaErr) return jsonResponse({ sucesso: false, erro: `Não consegui verificar o modo teste: ${travaErr.message}` }, 500);
-    if (!trava?.teste) bloqueios.push("Ligue \"Operação de teste\" na cotação antes de emitir a NF-e de teste.");
+    if (!trava?.teste) bloqueio("teste", "Ligue \"Operação de teste\" na cotação antes de emitir a NF-e de teste.");
     else if (Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
     if (bloqueios.length > 0) {
-      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, erro: bloqueios.join(" ") }, 422);
+      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, regras, erro: bloqueios.join(" ") }, 422);
     }
 
     const interna = pf!.endereco_uf === end!.uf;

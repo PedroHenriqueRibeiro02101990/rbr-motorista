@@ -1,4 +1,6 @@
 // Edge Function: enviar-averbacao (v5, 2026-10-09)
+// v6 (2026-10-15): resposta de bloqueio traz `regras` com a origem de cada um (antt = apólice RCTR-C; tecnico = sem isso
+// o envio à AT&M é impossível). Nenhum bloqueio daqui é regra só da RBR.
 //
 // Envia o CT-e ja autorizado de uma operacao para averbacao automatica na plataforma Averba (AT&M/NSTech),
 // que atende a apolice RCTR-C. Sem a averbacao a seguradora pode negar indenizacao em sinistro e o MDF-e e
@@ -112,7 +114,14 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ sucesso: false, erro: "Informe operacao_id." }, 400);
     }
 
+    // Origem de cada bloqueio (C1, 2026-10-15): "antt" = lei (seguro RCTR-C obrigatório); "tecnico" = sem isso o
+    // envio à AT&M é impossível (não é regra nossa). Nada aqui é regra só da RBR.
     const bloqueios: string[] = [];
+    const regras: { tipo: "bloqueio"; origem: "antt" | "tecnico"; mensagem: string }[] = [];
+    const bloqueio = (origem: "antt" | "tecnico", mensagem: string) => {
+      bloqueios.push(mensagem);
+      regras.push({ tipo: "bloqueio", origem, mensagem });
+    };
 
     // 1. CT-e precisa estar emitido, com chave e XML capturados
     const { data: cte } = await supabase
@@ -123,9 +132,9 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (!cte || cte.status !== "emitido" || !cte.chave_acesso) {
-      bloqueios.push("CT-e desta operacao ainda nao foi emitido/autorizado. Emita o CT-e antes de enviar a averbacao.");
+      bloqueio("tecnico", "CT-e desta operacao ainda nao foi emitido/autorizado. Emita o CT-e antes de enviar a averbacao.");
     } else if (!cte.url_xml) {
-      bloqueios.push("XML do CT-e autorizado ainda nao foi capturado. Consulte o status do CT-e novamente antes de enviar a averbacao.");
+      bloqueio("tecnico", "XML do CT-e autorizado ainda nao foi capturado. Consulte o status do CT-e novamente antes de enviar a averbacao.");
     }
 
     // 2. Ja existe averbacao confirmada?
@@ -141,11 +150,11 @@ Deno.serve(async (req: Request) => {
 
     // 3. Integracao AT&M cadastrada e ativa
     if (!integracao) {
-      bloqueios.push("Integracao com a AT&M/NSTech (Averba) nao esta cadastrada no sistema.");
+      bloqueio("tecnico", "Integracao com a AT&M/NSTech (Averba) nao esta cadastrada no sistema.");
     } else if (!integracao.ativo) {
-      bloqueios.push("Integracao com a AT&M/NSTech (Averba) esta cadastrada mas marcada como inativa. Ative-a antes de enviar averbacoes automaticas.");
+      bloqueio("tecnico", "Integracao com a AT&M/NSTech (Averba) esta cadastrada mas marcada como inativa. Ative-a antes de enviar averbacoes automaticas.");
     } else if (!integracao.codigo_atm || !integracao.usuario_integracao) {
-      bloqueios.push("Integracao com a AT&M/NSTech esta incompleta (falta codigo ATM ou usuario).");
+      bloqueio("tecnico", "Integracao com a AT&M/NSTech esta incompleta (falta codigo ATM ou usuario).");
     }
 
     // 4. Apolice RCTR-C vigente com numero
@@ -158,7 +167,7 @@ Deno.serve(async (req: Request) => {
       .or(`vigencia_fim.is.null,vigencia_fim.gte.${hoje}`)
       .maybeSingle();
     if (!apolice || !apolice.numero_apolice) {
-      bloqueios.push("Apolice RCTR-C vigente nao encontrada ou sem numero de apolice cadastrado.");
+      bloqueio("antt", "Apolice RCTR-C vigente nao encontrada ou sem numero de apolice cadastrado.");
     }
 
     // Modo teste (cotacoes.eh_teste): trava invertida no banco — RBR remetente E destinatária, cliente = RBR,
@@ -178,7 +187,7 @@ Deno.serve(async (req: Request) => {
     if (bloqueios.length > 0) {
       const mensagem = bloqueios.join(" ");
       await gravar({ status: "bloqueado", mensagem_erro: mensagem });
-      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, erro: mensagem }, 422);
+      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, regras, erro: mensagem }, 422);
     }
 
     // 5. Baixa o XML autorizado do CT-e

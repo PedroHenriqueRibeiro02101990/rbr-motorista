@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: pessoaAtor } = await supabaseAdmin
       .from("pessoas")
-      .select("papel")
+      .select("id, papel")
       .eq("auth_user_id", userData.user.id)
       .maybeSingle();
     if (!pessoaAtor || pessoaAtor.papel !== "gestor_rbr") {
@@ -191,7 +191,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ sucesso: false, erro: `Não consegui verificar o modo teste: ${travaErr.message}` }, 500);
     }
 
-    const { ambiente, bloqueios, avisos, payload } = montarMdfe({
+    const { ambiente, bloqueios, avisos, regras, payload } = montarMdfe({
       op,
       pf,
       municipioEmitente,
@@ -225,11 +225,12 @@ Deno.serve(async (req: Request) => {
     });
 
     if (testeDaTrava(trava) && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
+    if (testeDaTrava(trava) && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
     const ref = `rbr-mdfe-${operacao_id}`;
 
     if (previa === true) {
-      return jsonResponse({ sucesso: true, previa: true, ambiente, bloqueios, avisos, payload });
+      return jsonResponse({ sucesso: true, previa: true, ambiente, bloqueios, avisos, regras, payload });
     }
 
     if (bloqueios.length > 0) {
@@ -245,7 +246,7 @@ Deno.serve(async (req: Request) => {
         },
         { onConflict: "operacao_id,tipo" },
       );
-      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, erro: mensagem }, 422);
+      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, regras, erro: mensagem }, 422);
     }
 
     const { data: token, error: tokenError } = await supabaseAdmin.rpc("get_focus_nfe_token", {
@@ -308,9 +309,26 @@ Deno.serve(async (req: Request) => {
       { onConflict: "operacao_id,tipo" },
     );
 
+    // Regra da RBR que não barrou (ex.: destino de pagamento do motorista): fica registrada nos eventos fiscais
+    // da operação, para aparecer depois da emissão e não só na tela do momento.
+    const avisosRbr = regras.filter((r) => r.tipo === "aviso" && r.origem === "rbr").map((r) => r.mensagem);
+    if (avisosRbr.length > 0) {
+      await supabaseAdmin.from("eventos_fiscais_operacao").insert({
+        operacao_id,
+        tipo_documento: "mdfe",
+        evento: "aviso_regra_rbr",
+        origem: "automatico",
+        ator_id: pessoaAtor.id,
+        sucesso: true,
+        mensagem: avisosRbr.join(" "),
+        requisicao: { referencia: ref, ambiente },
+      });
+    }
+
     return jsonResponse({
       sucesso: true,
       status: "processando_autorizacao",
+      regras,
       referencia: ref,
       avisos,
       aviso:
