@@ -11,6 +11,18 @@
 --  5) GR vira opcional (todas as operações); valida_margem SECURITY DEFINER (auditoria_log).
 --  7) Financeiro: operação de teste não gera lançamentos (fin_sincronizar_operacao_interno).
 --  8) Auditoria: quem ligou/desligou e cada mudança de status de documento fiscal da operação de teste.
+--
+-- ORDEM DE DEPLOY: aplicar esta migration ANTES de publicar o gestor (a tela de cotação grava cotacoes.eh_teste;
+-- sem a coluna o update falha) e antes de publicar emitir-cte / emitir-mdfe / enviar-averbacao /
+-- emitir-nfe-teste-producao (chamam trava_teste_fiscal).
+--
+-- Revisão 2026-10-15 (A1..A12):
+--  * eh_gestor_ou_backend(): o gate não depende mais de current_user (que vira o dono dentro de SECURITY DEFINER).
+--  * Ligar o teste guarda um retrato dos dados reais (cotacoes.dados_antes_teste, operacoes.cliente_antes_teste
+--    e a condição de pagamento do motorista); desligar restaura.
+--  * Frete do motorista do teste = R$ 1,00. Limpeza do financeiro só apaga o que veio da operação.
+--  * trava_teste_fiscal monta a lista com array_append (antes dava "malformed array literal").
+--  * Backup da GR antes de virar opcional (_bkp_gr_exigido_20261015).
 
 -- ---------------------------------------------------------------------------------------------------------
 -- 1) Colunas
@@ -19,9 +31,35 @@ alter table public.cotacoes  add column if not exists eh_teste boolean not null 
 alter table public.operacoes add column if not exists eh_teste boolean not null default false;
 alter table public.pessoas   add column if not exists eh_teste boolean not null default false;
 alter table public.veiculos  add column if not exists eh_teste boolean not null default false;
+alter table public.cotacoes  add column if not exists dados_antes_teste jsonb;
+alter table public.operacoes add column if not exists cliente_antes_teste uuid;
+alter table public.operacoes add column if not exists condicao_antes_teste jsonb;
 
 comment on column public.cotacoes.eh_teste is
   'Operação de teste (documentos reais na SEFAZ, R$ 1,00). Só gestor_rbr liga/desliga; RBR nos dois lados; fora de financeiro/relatórios.';
+comment on column public.cotacoes.dados_antes_teste is
+  'Retrato dos campos que o modo teste sobrescreve (gravado ao ligar, restaurado e limpo ao desligar). Só o trigger mexe.';
+comment on column public.operacoes.cliente_antes_teste is
+  'Cliente real da operação antes de ligar o modo teste (restaurado ao desligar). Só gestor/trigger mexe.';
+comment on column public.operacoes.condicao_antes_teste is
+  'Valores reais da condição de pagamento do motorista antes do modo teste (restaurados ao desligar).';
+
+-- Gestor RBR ou backend (service_role da Edge Function, migration/cron como postgres sem SET ROLE).
+-- Não usa current_user: dentro de SECURITY DEFINER ele vira o dono da função e eh_backend() dava TRUE para todos.
+-- current_setting('role') é o SET ROLE da sessão (o PostgREST faz "set local role authenticated") e não muda
+-- dentro de SECURITY DEFINER; por isso session_user postgres só conta como backend quando não há SET ROLE.
+create or replace function public.eh_gestor_ou_backend()
+returns boolean
+language sql stable
+set search_path to 'public', 'pg_temp'
+as $$
+  select coalesce(
+    coalesce(auth.role(), '') = 'service_role'
+    or (session_user in ('postgres', 'supabase_admin')
+        and coalesce(nullif(current_setting('role', true), ''), 'none') = 'none')
+    or current_papel() = 'gestor_rbr',
+    false);
+$$;
 
 -- Documento fiscal já emitido (ou enviado e aguardando) para a cotação? Bloqueia a troca do modo teste.
 create or replace function public.cotacao_tem_documento_fiscal(p_cotacao_id uuid)
@@ -45,16 +83,21 @@ language plpgsql security definer
 set search_path to 'public', 'pg_temp'
 as $$
 declare
-  v_gestor boolean := eh_backend() or current_papel() = 'gestor_rbr';
   v_ligou boolean := new.eh_teste and (tg_op = 'INSERT' or not old.eh_teste);
+  v_desligou boolean := tg_op = 'UPDATE' and old.eh_teste and not new.eh_teste;
+  v_snap jsonb;
   pf record;
   v_mun text;
   v_end jsonb;
   v_cnpj text;
   v_cliente uuid;
 begin
+  -- O retrato só é gravado/limpo por este trigger (ninguém edita à mão, nem o agenciador dono da cotação).
+  v_snap := case when tg_op = 'UPDATE' then old.dados_antes_teste end;
+  new.dados_antes_teste := v_snap;
+
   if (tg_op = 'INSERT' and new.eh_teste) or (tg_op = 'UPDATE' and new.eh_teste is distinct from old.eh_teste) then
-    if not v_gestor then
+    if not eh_gestor_ou_backend() then
       raise exception 'Só um gestor RBR liga ou desliga a operação de teste.';
     end if;
     if tg_op = 'UPDATE' and cotacao_tem_documento_fiscal(new.id) then
@@ -64,8 +107,39 @@ begin
     values (current_pessoa_id(), current_papel()::text,
             case when new.eh_teste then 'modo_teste_ligado' else 'modo_teste_desligado' end,
             'cotacoes', new.id,
-            case when tg_op = 'UPDATE' then jsonb_build_object('eh_teste', old.eh_teste) end,
-            jsonb_build_object('eh_teste', new.eh_teste));
+            case when tg_op = 'UPDATE' then jsonb_build_object('eh_teste', old.eh_teste, 'dados_antes_teste', old.dados_antes_teste) end,
+            jsonb_build_object('eh_teste', new.eh_teste,
+                               'aviso', case when v_desligou and v_snap is null then
+                                 'Sem retrato dos dados originais (cotação marcada antes da revisão de 2026-10-15): nada foi restaurado — confira remetente, destinatário, cliente e valores à mão.' end));
+  end if;
+
+  -- Desligou: volta os campos que o teste sobrescreveu (o cálculo de preço roda depois deste trigger).
+  if v_desligou then
+    if v_snap is not null then
+      new.cliente_id := (v_snap->>'cliente_id')::uuid;
+      new.tomador_papel := v_snap->>'tomador_papel';
+      new.nf_remetente_cnpj := v_snap->>'nf_remetente_cnpj';
+      new.nf_remetente_razao_social := v_snap->>'nf_remetente_razao_social';
+      new.nf_remetente_ie := v_snap->>'nf_remetente_ie';
+      new.nf_remetente_endereco := v_snap->'nf_remetente_endereco';
+      new.nf_destinatario_cnpj := v_snap->>'nf_destinatario_cnpj';
+      new.nf_destinatario_razao_social := v_snap->>'nf_destinatario_razao_social';
+      new.nf_destinatario_ie := v_snap->>'nf_destinatario_ie';
+      new.nf_destinatario_endereco := v_snap->'nf_destinatario_endereco';
+      new.valor_nf := (v_snap->>'valor_nf')::numeric;
+      new.peso_bruto_kg := (v_snap->>'peso_bruto_kg')::numeric;
+      new.pedagio := (v_snap->>'pedagio')::numeric;
+      new.pedagio_pracas := v_snap->'pedagio_pracas';
+      new.preco_modo := coalesce(v_snap->>'preco_modo', 'lucro_pct');
+      new.valor_total := (v_snap->>'valor_total')::numeric;
+      new.lucro_pct := (v_snap->>'lucro_pct')::numeric;
+      new.valor_frete_motorista := (v_snap->>'valor_frete_motorista')::numeric;
+      new.valor_total_motorista := (v_snap->>'valor_total_motorista')::numeric;
+      new.dados_antes_teste := null;
+    else
+      raise notice 'Modo teste desligado sem retrato dos dados originais: nada foi restaurado.';
+    end if;
+    return new;
   end if;
 
   if not new.eh_teste then
@@ -79,6 +153,19 @@ begin
   v_cnpj := regexp_replace(pf.cnpj, '\D', '', 'g');
 
   if v_ligou then
+    -- Retrato do que vai ser sobrescrito (A3), inclusive o frete do motorista (A9).
+    new.dados_antes_teste := jsonb_build_object(
+      'gravado_em', now(),
+      'cliente_id', new.cliente_id, 'tomador_papel', new.tomador_papel,
+      'nf_remetente_cnpj', new.nf_remetente_cnpj, 'nf_remetente_razao_social', new.nf_remetente_razao_social,
+      'nf_remetente_ie', new.nf_remetente_ie, 'nf_remetente_endereco', new.nf_remetente_endereco,
+      'nf_destinatario_cnpj', new.nf_destinatario_cnpj, 'nf_destinatario_razao_social', new.nf_destinatario_razao_social,
+      'nf_destinatario_ie', new.nf_destinatario_ie, 'nf_destinatario_endereco', new.nf_destinatario_endereco,
+      'valor_nf', new.valor_nf, 'peso_bruto_kg', new.peso_bruto_kg, 'pedagio', new.pedagio,
+      'pedagio_pracas', new.pedagio_pracas, 'preco_modo', new.preco_modo, 'valor_total', new.valor_total,
+      'lucro_pct', new.lucro_pct, 'valor_frete_motorista', new.valor_frete_motorista,
+      'valor_total_motorista', new.valor_total_motorista);
+
     select cidade into v_mun from municipios_ibge where codigo_ibge = pf.endereco_codigo_municipio limit 1;
     v_end := jsonb_build_object(
       'logradouro', pf.endereco_logradouro, 'numero', pf.endereco_numero, 'bairro', pf.endereco_bairro,
@@ -112,6 +199,9 @@ begin
     new.pedagio_pracas := null;
     new.preco_modo := 'valor_final';
     new.valor_total := 1.00;
+    -- Frete do motorista também simbólico: a condição de pagamento nasce de valor_total_motorista
+    -- (criar_condicao_pagamento_padrao), que o cálculo de preço refaz a partir daqui.
+    new.valor_frete_motorista := 1.00;
   end if;
 
   -- Trava invertida no próprio dado: enquanto for teste, nada de terceiro e nada acima de R$ 5.
@@ -131,6 +221,9 @@ begin
   if coalesce(new.pedagio, 0) > 0 then
     raise exception 'Operação de teste: rota sem pedágio (pedágio = 0).';
   end if;
+  if coalesce(new.valor_frete_motorista, 0) > 5 then
+    raise exception 'Operação de teste: frete do motorista até R$ 5,00.';
+  end if;
   return new;
 end $$;
 
@@ -145,14 +238,43 @@ returns trigger
 language plpgsql security definer
 set search_path to 'public', 'pg_temp'
 as $$
-declare r record;
+declare r record; cond record; v_total numeric;
 begin
   if new.eh_teste is distinct from old.eh_teste then
-    for r in select id from operacoes where cotacao_id = new.id loop
-      update operacoes
-         set eh_teste = new.eh_teste,
-             cliente_id = case when new.eh_teste then new.cliente_id else cliente_id end
-       where id = r.id;
+    for r in select id, eh_teste, cliente_id, condicao_antes_teste from operacoes where cotacao_id = new.id loop
+      if new.eh_teste then
+        -- Ligou: guarda o cliente real e a condição de pagamento do motorista e põe a RBR / R$ 1,00.
+        select * into cond from condicoes_pagamento_operacao where operacao_id = r.id;
+        update operacoes
+           set eh_teste = true,
+               cliente_antes_teste = case when r.eh_teste then cliente_antes_teste else r.cliente_id end,
+               condicao_antes_teste = case when cond.id is null or condicao_antes_teste is not null then condicao_antes_teste
+                                           else jsonb_build_object('valor_total_contrato', cond.valor_total_contrato,
+                                                                   'valor_adiantamento', cond.valor_adiantamento) end,
+               cliente_id = new.cliente_id
+         where id = r.id;
+        if cond.id is not null then
+          v_total := coalesce(new.valor_total_motorista, new.valor_frete_motorista, 1.00);
+          update condicoes_pagamento_operacao
+             set valor_total_contrato = v_total,
+                 valor_adiantamento = least(v_total, round(v_total * coalesce(percentual_adiantamento, 0), 2))
+           where id = cond.id;
+        end if;
+      else
+        -- Desligou: volta o cliente e a condição de pagamento reais (se houver retrato).
+        update operacoes
+           set eh_teste = false,
+               cliente_id = coalesce(cliente_antes_teste, cliente_id),
+               cliente_antes_teste = null,
+               condicao_antes_teste = null
+         where id = r.id;
+        if r.condicao_antes_teste is not null then
+          update condicoes_pagamento_operacao
+             set valor_total_contrato = (r.condicao_antes_teste->>'valor_total_contrato')::numeric,
+                 valor_adiantamento = (r.condicao_antes_teste->>'valor_adiantamento')::numeric
+           where operacao_id = r.id;
+        end if;
+      end if;
       if not new.eh_teste then
         update documentacao_operacao set dispensa_motivo = null
          where operacao_id = r.id and dispensa_motivo = 'Operação de teste (eh_teste)';
@@ -178,8 +300,12 @@ as $$
 begin
   if tg_op = 'INSERT' or new.cotacao_id is distinct from old.cotacao_id then
     new.eh_teste := coalesce((select eh_teste from cotacoes where id = new.cotacao_id), false);
-  elsif new.eh_teste is distinct from old.eh_teste and not eh_backend() then
-    new.eh_teste := old.eh_teste;  -- só muda pela cotação
+  elsif not eh_gestor_ou_backend() then
+    -- Só muda pela cotação (pós-trigger roda na sessão do gestor). Quem não é gestor — motorista pela policy
+    -- motorista_avanca_propria_operacao, por exemplo — tem a alteração desfeita em silêncio.
+    if new.eh_teste is distinct from old.eh_teste then new.eh_teste := old.eh_teste; end if;
+    new.cliente_antes_teste := old.cliente_antes_teste;
+    new.condicao_antes_teste := old.condicao_antes_teste;
   end if;
   return new;
 end $$;
@@ -196,7 +322,7 @@ language plpgsql
 set search_path to 'public', 'pg_temp'
 as $$
 begin
-  if new.eh_teste is distinct from old.eh_teste and not (eh_backend() or current_papel() = 'gestor_rbr') then
+  if new.eh_teste is distinct from old.eh_teste and not eh_gestor_ou_backend() then
     raise exception 'Só um gestor RBR marca cadastro de teste.';
   end if;
   return new;
@@ -237,22 +363,22 @@ begin
   select regexp_replace(cnpj, '\D', '', 'g') into v_rbr from parametros_fiscais where ativo order by updated_at desc limit 1;
   select regexp_replace(coalesce(cnpj, cpf, ''), '\D', '', 'g') into v_cli from clientes where id = c.op_cliente_id;
 
-  if v_rbr is null then b := b || 'Modo teste: CNPJ da RBR não encontrado em parametros_fiscais.'; end if;
+  if v_rbr is null then b := array_append(b, 'Modo teste: CNPJ da RBR não encontrado em parametros_fiscais.'); end if;
   if regexp_replace(coalesce(c.nf_remetente_cnpj, ''), '\D', '', 'g') is distinct from v_rbr
      or regexp_replace(coalesce(c.nf_destinatario_cnpj, ''), '\D', '', 'g') is distinct from v_rbr then
-    b := b || 'Trava do modo teste: remetente E destinatário têm de ser a RBR. Nunca em nome de terceiro.';
+    b := array_append(b, 'Trava do modo teste: remetente E destinatário têm de ser a RBR. Nunca em nome de terceiro.');
   end if;
   if coalesce(v_cli, '') is distinct from v_rbr then
-    b := b || 'Trava do modo teste: o cliente/contratante da operação tem de ser a RBR.';
+    b := array_append(b, 'Trava do modo teste: o cliente/contratante da operação tem de ser a RBR.');
   end if;
   if coalesce(c.tomador_papel, 'remetente') not in ('remetente', 'destinatario') then
-    b := b || 'Trava do modo teste: tomador tem de ser a RBR.';
+    b := array_append(b, 'Trava do modo teste: tomador tem de ser a RBR.');
   end if;
   if c.valor_nf is null or c.valor_nf <= 0 or c.valor_nf > 5 then
-    b := b || 'Trava do modo teste: valor da NF tem de estar entre R$ 0,01 e R$ 5,00.';
+    b := array_append(b, 'Trava do modo teste: valor da NF tem de estar entre R$ 0,01 e R$ 5,00.');
   end if;
   if p_tipo in ('cte', 'mdfe', 'atm') and (c.valor_total is null or c.valor_total <= 0 or c.valor_total > 5) then
-    b := b || 'Trava do modo teste: frete do CT-e tem de estar entre R$ 0,01 e R$ 5,00.';
+    b := array_append(b, 'Trava do modo teste: frete do CT-e tem de estar entre R$ 0,01 e R$ 5,00.');
   end if;
   return jsonb_build_object('teste', true, 'bloqueios', to_jsonb(b));
 end $$;
@@ -324,7 +450,15 @@ begin
     and arquivo_path is null and numero_documento is null and status = 'pendente';
 end; $function$;
 
--- GR das operações em aberto deixa de bloquear já.
+-- GR das operações em aberto deixa de bloquear já. Antes, backup de como estava (decisão pendente com a
+-- seguradora e o contador; para voltar: update documentacao_operacao d set exigido = b.exigido,
+-- motivo_exigencia = b.motivo_exigencia from _bkp_gr_exigido_20261015 b where b.id = d.id).
+create table if not exists public._bkp_gr_exigido_20261015 as
+  select d.id, d.operacao_id, d.tipo, d.exigido, d.motivo_exigencia, now() as copiado_em
+    from public.documentacao_operacao d where d.tipo = 'gr';
+alter table public._bkp_gr_exigido_20261015 enable row level security;
+revoke all on public._bkp_gr_exigido_20261015 from anon, authenticated;
+
 update public.documentacao_operacao d
    set exigido = false, motivo_exigencia = 'Opcional: registre a pesquisa de gerenciamento de risco se já foi feita'
   from public.operacoes o
@@ -410,9 +544,11 @@ set search_path to 'public', 'pg_temp'
 as $$
 begin
   if coalesce((select eh_teste from operacoes where id = p_op), false) then
-    -- Nada de contas a pagar/receber, comissão ou giro para teste: limpa o que ainda não foi pago.
+    -- Nada de contas a pagar/receber, comissão ou giro para teste: limpa o que a operação gerou e ainda não foi
+    -- pago. Lançamento feito à mão (outra origem) fica.
     delete from lancamentos_financeiros
-     where operacao_id = p_op and status in ('previsto','aberto') and coalesce(valor_pago, 0) = 0;
+     where operacao_id = p_op and origem = 'operacao' and status in ('previsto','aberto') and coalesce(valor_pago, 0) = 0
+       and not exists (select 1 from baixas_financeiras b where b.lancamento_id = lancamentos_financeiros.id);
     return;
   end if;
   perform fin_sincronizar_operacao_interno_base(p_op);
@@ -451,8 +587,8 @@ create trigger trg_doc_teste_auditoria
 
 -- ---------------------------------------------------------------------------------------------------------
 -- Migração da marca de texto "[TESTE PRODUCAO" para o flag (a emitir-mdfe aceita os dois até a troca).
--- Roda como backend (eh_backend() = true), então passa pela checagem de gestor; o preenchimento automático
--- coloca RBR nos dois lados, NF R$ 1,00 e frete R$ 1,00.
+-- Roda como postgres sem SET ROLE (eh_gestor_ou_backend() = true), então passa pela checagem de gestor; o
+-- preenchimento automático guarda o retrato e coloca RBR nos dois lados, NF R$ 1,00 e frete R$ 1,00.
 -- ---------------------------------------------------------------------------------------------------------
 update public.cotacoes set eh_teste = true
  where not eh_teste and coalesce(observacoes, '') like '[TESTE PRODUCAO%'
