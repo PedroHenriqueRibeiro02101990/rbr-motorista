@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime } from '@rbr/shared/format'
@@ -135,6 +136,8 @@ type RespostaEmissao = {
   sucesso: boolean
   bloqueado?: boolean
   motivos?: string[]
+  avisos?: string[]
+  regras?: RegraFiscal[]
   erro?: string
   referencia?: string
   status?: string
@@ -148,7 +151,7 @@ type RespostaConsulta = {
   erro?: string
 }
 
-type DetalheErro = { erro?: string; motivos?: string[] }
+type DetalheErro = { erro?: string; motivos?: string[]; avisos?: string[]; regras?: RegraFiscal[] }
 
 // supabase-js, quando a Edge Function responde 4xx/5xx, devolve
 // { data: null, error: FunctionsHttpError }. O corpo JSON que a função
@@ -164,15 +167,15 @@ async function extrairDetalheErroInvoke(error: unknown): Promise<DetalheErro> {
     if (context && typeof (context as Response).json === 'function') {
       const body = await (context as Response).json()
       if (body && typeof body === 'object') {
-        const b = body as { erro?: string; motivos?: string[] }
+        const b = body as DetalheErro
         if (b.erro || (b.motivos && b.motivos.length > 0)) {
-          return { erro: b.erro, motivos: b.motivos }
+          return { erro: b.erro, motivos: b.motivos, avisos: b.avisos, regras: b.regras }
         }
       }
     } else if (context && typeof context === 'object') {
-      const b = context as { erro?: string; motivos?: string[] }
+      const b = context as DetalheErro
       if (b.erro || (b.motivos && b.motivos.length > 0)) {
-        return { erro: b.erro, motivos: b.motivos }
+        return { erro: b.erro, motivos: b.motivos, avisos: b.avisos, regras: b.regras }
       }
     }
   } catch {
@@ -190,6 +193,8 @@ export default function Fiscal() {
   const [docsPorOperacao, setDocsPorOperacao] = useState<Map<string, DocumentacaoOperacao[]>>(new Map())
   const [emAndamento, setEmAndamento] = useState<Set<string>>(new Set())
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
+  // Avisos "Regra da RBR" da última emissão que deu certo, por operação.
+  const [avisosRbrPorOperacao, setAvisosRbrPorOperacao] = useState<Record<string, RegraFiscal[] | null>>({})
   // Resultado da NF-e de teste (só homologação), por operação.
   const [infoPorOperacao, setInfoPorOperacao] = useState<Record<string, string | null>>({})
   const [ambienteFiscal, setAmbienteFiscal] = useState<string | null>(null)
@@ -306,7 +311,11 @@ export default function Fiscal() {
         const detalhe = await extrairDetalheErroInvoke(error)
         setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
       } else if (data && data.sucesso === false) {
-        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos } }))
+        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos, avisos: data.avisos, regras: data.regras } }))
+      } else if (data) {
+        // Emitiu, mas com regra da RBR em aberto (ex.: destino de pagamento do motorista): mostra em amarelo.
+        const avisosRbr = (data.regras ?? []).filter((r) => r.tipo === 'aviso' && r.origem === 'rbr')
+        setAvisosRbrPorOperacao((prev) => ({ ...prev, [op.id]: avisosRbr.length > 0 ? avisosRbr : null }))
       }
     } catch (e) {
       setErroPorOperacao((prev) => ({
@@ -1250,20 +1259,25 @@ export default function Fiscal() {
                 </div>
 
                 {erroCard && (
-                  <div
-                    className="text-xs rounded-lg px-3 py-2.5 flex flex-col gap-1"
-                    style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}
-                  >
-                    {erroCard.motivos && erroCard.motivos.length > 0 ? (
-                      <ul className="list-disc pl-4 flex flex-col gap-0.5">
-                        {erroCard.motivos.map((motivo, i) => (
-                          <li key={i}>{motivo}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span>{erroCard.erro ?? 'Erro ao processar solicitação.'}</span>
-                    )}
-                  </div>
+                  erroCard.motivos && erroCard.motivos.length > 0 ? (
+                    <RegrasFiscais
+                      bloqueios={erroCard.motivos}
+                      avisos={erroCard.avisos}
+                      regras={erroCard.regras}
+                      tituloBloqueios="Emissão bloqueada"
+                    />
+                  ) : (
+                    <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                      {erroCard.erro ?? 'Erro ao processar solicitação.'}
+                    </div>
+                  )
+                )}
+
+                {avisosRbrPorOperacao[op.id] && (
+                  <RegrasFiscais
+                    avisos={avisosRbrPorOperacao[op.id]!.map((r) => r.mensagem)}
+                    regras={avisosRbrPorOperacao[op.id]!}
+                  />
                 )}
 
                 {infoCard && (

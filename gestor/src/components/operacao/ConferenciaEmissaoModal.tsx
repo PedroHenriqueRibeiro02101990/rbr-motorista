@@ -1,4 +1,5 @@
 import { Obrig } from '@rbr/shared/camposObrigatorios'
+import RegrasFiscais, { type RegraFiscal } from './RegrasFiscais'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
@@ -224,8 +225,10 @@ interface Previa {
   previa?: boolean
   ambiente?: string
   bloqueios?: string[]
-  // O que muda por ser homologação e o que só a SEFAZ confere (ex.: se a NF-e existe).
+  // O que muda por ser homologação, o que só a SEFAZ confere (ex.: se a NF-e existe) e regras da RBR (não barram).
   avisos?: string[]
+  // Origem de cada bloqueio/aviso (SEFAZ, ANTT, Regra da RBR...).
+  regras?: RegraFiscal[]
   payload?: Payload
   erro?: string
 }
@@ -313,27 +316,7 @@ export default function ConferenciaEmissaoModal({
             </div>
           )}
 
-          {!carregando && !erroCarga && bloqueios.length > 0 && (
-            <div className="text-xs rounded-lg px-3 py-2.5 flex flex-col gap-1" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-              <strong>Falta resolver antes de emitir ({bloqueios.length}):</strong>
-              <ul className="list-disc pl-4 flex flex-col gap-0.5">
-                {bloqueios.map((b, i) => (
-                  <li key={i}>{b}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!carregando && !erroCarga && avisos.length > 0 && (
-            <div className="text-xs rounded-lg px-3 py-2.5 flex flex-col gap-1" style={{ background: '#FFF6E0', color: 'var(--rbr-navy-dark)' }}>
-              <strong>Atenção:</strong>
-              <ul className="list-disc pl-4 flex flex-col gap-0.5">
-                {avisos.map((a, i) => (
-                  <li key={i}>{a}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {!carregando && !erroCarga && <RegrasFiscais bloqueios={bloqueios} avisos={avisos} regras={previa?.regras} />}
 
           {!carregando && !erroCarga && bloqueios.length === 0 && faltando.length === 0 && (
             <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>
