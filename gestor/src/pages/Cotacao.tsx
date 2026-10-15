@@ -22,6 +22,7 @@ import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, 
 import { type GiroParams, type ResultadoGiro, GIRO_PARAMS_PADRAO, calcularGiro, diasTransito, giroParamsDeLinhas } from '../lib/giro'
 import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/cotacaoPdf'
 import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
+import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -513,6 +514,8 @@ function margemBadge(margem: number | null, min: number, max: number): { bg: str
   return { bg: '#E7F5EC', color: 'var(--rbr-positive)', label }
 }
 
+const CHAVE_RASCUNHO_NOVA = 'cotacao:nova'
+
 export default function Cotacao() {
   const [cotacoes, setCotacoes] = useState<CotacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -620,6 +623,23 @@ export default function Cotacao() {
   const { confirmacao, rodar: rodarAcao, ocupado: ocupadoAcao } = useConfirmacao()
   const [tipoCotacao, setTipoCotacao] = useState<TipoCotacaoValor>('carga_unica')
   const [qtdVeiculos, setQtdVeiculos] = useState(2)
+
+  // Rascunho automático do painel (nova cotação ou cotação em edição): sobrevive a fechar sem querer, recarregar a
+  // página ou cair a conexão. Some ao salvar com sucesso ou ao descartar de propósito.
+  const chaveRascunho = form ? (editingId ? `cotacao:${editingId}` : CHAVE_RASCUNHO_NOVA) : null
+  const dadosRascunho = useMemo(
+    () => ({ form, itens, destinos, tipoCotacao, qtdVeiculos, pracasPedagio }),
+    [form, itens, destinos, tipoCotacao, qtdVeiculos, pracasPedagio],
+  )
+  const aplicarRascunho = useCallback((d: typeof dadosRascunho) => {
+    if (d.form) setForm(d.form)
+    setItens(d.itens ?? [])
+    setDestinos(d.destinos ?? [])
+    setTipoCotacao(d.tipoCotacao ?? 'carga_unica')
+    setQtdVeiculos(d.qtdVeiculos ?? 2)
+    setPracasPedagio(d.pracasPedagio ?? [])
+  }, [])
+  const rascunho = useRascunho(chaveRascunho, dadosRascunho, aplicarRascunho)
   const [confirmarConv, setConfirmarConv] = useState(false)
   const [programarAberto, setProgramarAberto] = useState(false)
   const [modalCancel, setModalCancel] = useState<'cancelar' | 'apagar' | null>(null)
@@ -736,7 +756,9 @@ export default function Cotacao() {
         'giro_dias_carga',
         'giro_dias_mes',
       ])
-    setGiroParams(giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))))
+    // 2026-10-15: capital de giro virou custo FIXO mensal (mútuo do Marcelo, migration 20261015_12) e não entra
+    // mais no preço por operação — o giro fica desligado aqui mesmo que o parâmetro giro_ativo volte a true.
+    setGiroParams({ ...giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))), ativo: false })
     for (const row of data ?? []) {
       if (row.chave.startsWith('giro_')) continue
       if (row.chave === 'tag_seguro_faixas') {
@@ -1247,6 +1269,26 @@ export default function Cotacao() {
     setEditingId(null)
   }
 
+  // Fechar pelo X, pelo botão do topo ou pelo Esc: com alteração não salva, pede confirmação e, se o gestor
+  // descartar, apaga o rascunho. (Clicar no fundo não fecha mais o painel.)
+  function pedirParaFechar() {
+    if (rascunho.sujo && !window.confirm('Descartar o que você preencheu?')) return
+    if (rascunho.sujo) rascunho.limpar()
+    fecharForm()
+  }
+
+  // Esc fecha o painel — menos quando há outro modal (role="dialog") aberto por cima, que trata o próprio Esc.
+  useEffect(() => {
+    if (!form) return
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      pedirParaFechar()
+    }
+    window.addEventListener('keydown', aoTeclar)
+    return () => window.removeEventListener('keydown', aoTeclar)
+  })
+
   async function processXmlFile(file: File) {
     if (!form) return
     setXmlError(null)
@@ -1524,12 +1566,17 @@ export default function Cotacao() {
                 ? lucroPctDigitado / 100
                 : lucroPadrao,
             preco_modo: modoValorFinal ? 'valor_final' : 'lucro_pct',
-            custo_financeiro: comp.custoFinanceiro,
-            giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
-            giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
-            giro_dias_transito: numOrNull(f.giro_dias_transito),
-            giro_aporte: comp.giro?.aporte ?? null,
-            giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
+            // Giro desligado (custo fixo mensal): não regrava custo_financeiro/giro_* — o que já estava salvo fica como histórico.
+            ...(giroParams.ativo
+              ? {
+                  custo_financeiro: comp.custoFinanceiro,
+                  giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
+                  giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
+                  giro_dias_transito: numOrNull(f.giro_dias_transito),
+                  giro_aporte: comp.giro?.aporte ?? null,
+                  giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
+                }
+              : {}),
           }
 
     // Cotação com múltiplos destinos: o valor final ao cliente é a soma das linhas de destino,
@@ -1737,6 +1784,8 @@ export default function Cotacao() {
     try {
       const eraNova = !editingId
       const final = await gravarTudo()
+      rascunho.limpar()
+      if (eraNova) removerRascunho(CHAVE_RASCUNHO_NOVA)
       setEditingStatus(final.status)
       sincronizarComBanco(final)
       setSuccessMsg(eraNova ? 'Cotação criada com sucesso.' : 'Cotação atualizada com sucesso.')
@@ -1782,6 +1831,7 @@ export default function Cotacao() {
     setSaving(true)
     try {
       const final = await gravarTudo({ status: 'enviada' })
+      rascunho.limpar()
       sincronizarComBanco(final)
       setEditingStatus('enviada')
       setSuccessMsg('Cotação salva e marcada como enviada.')
@@ -2352,7 +2402,7 @@ export default function Cotacao() {
             {showCatalogo ? 'Fechar tabela de custos' : 'Tabela de custos'}
           </button>
           <button
-            onClick={() => (form ? fecharForm() : abrirNovaCotacao())}
+            onClick={() => (form ? pedirParaFechar() : abrirNovaCotacao())}
             className="text-sm font-bold px-4 py-2 rounded-xl"
             style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
           >
@@ -2384,19 +2434,14 @@ export default function Cotacao() {
         <div
           className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-3 py-6 md:py-10"
           style={{ background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          onClick={(e) => {
-            // Fecha só num clique de verdade no fundo (não um arrastar de seleção de texto
-            // que termina fora do card). Importante usar onClick, não onMouseDown: no Chrome,
-            // interagir com a própria barra de rolagem deste elemento (que também é o
-            // container com scroll) dispara mousedown nele mesmo — com onMouseDown isso
-            // fechava o formulário sempre que o usuário clicava na barra de rolagem do
-            // navegador. onClick não sofre desse problema.
-            if (e.target === e.currentTarget) fecharForm()
-          }}
+          // Clique no fundo NÃO fecha (fechava sem querer e perdia o que estava preenchido). Esc fecha, com
+          // confirmação se houver alteração (efeito "Esc fecha o painel" mais acima).
         >
         <div
           className="w-full bg-white border rounded-[20px] p-[18px] flex flex-col gap-4 my-auto"
           style={{ ...cardStyle, maxWidth: 760 }}
+          onPointerDownCapture={rascunho.marcarInteracao}
+          onKeyDownCapture={rascunho.marcarInteracao}
         >
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2.5">
@@ -2414,7 +2459,7 @@ export default function Cotacao() {
             </div>
             <button
               type="button"
-              onClick={fecharForm}
+              onClick={pedirParaFechar}
               aria-label="Fechar"
               className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
               style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
@@ -2436,6 +2481,21 @@ export default function Cotacao() {
               />
               Operação de teste (só gestor RBR; não muda depois de emitir documento fiscal)
             </label>
+          )}
+          {rascunho.pendente && (
+            <div className="text-xs rounded-xl px-3 py-2.5 flex items-center justify-between gap-2 flex-wrap" style={{ background: '#FFF6E0', color: 'var(--rbr-navy-dark)' }}>
+              <span>
+                Retomar rascunho? Há um rascunho não salvo{quandoFoiSalvo(rascunho.pendente.salvoEm) ? ` de ${quandoFoiSalvo(rascunho.pendente.salvoEm)}` : ''}.
+              </span>
+              <span className="flex gap-2">
+                <button type="button" onClick={rascunho.retomar} className="font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+                  Retomar
+                </button>
+                <button type="button" onClick={rascunho.descartarPendente} className="font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
+                  Descartar
+                </button>
+              </span>
+            </div>
           )}
 
           {formError && (

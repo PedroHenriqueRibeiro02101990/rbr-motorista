@@ -49,7 +49,12 @@ export default function Lancamentos({
   const carregar = useCallback(async () => {
     setErro(null)
     const hoje = hojeISO()
-    let q = supabase.from('v_lancamentos').select('*').eq('tipo', tipo)
+    // "Apagado manualmente" (fin_apagar_lancamento) fica cancelado só para a sincronização não recriar: não aparece em lista nenhuma.
+    let q = supabase
+      .from('v_lancamentos')
+      .select('*')
+      .eq('tipo', tipo)
+      .or('cancelado_motivo.is.null,cancelado_motivo.not.like.Apagado manualmente:*')
     if (filtro === 'abertos') q = q.in('status', ['aberto', 'previsto'])
     else if (filtro === 'vencidos') q = q.eq('status', 'aberto').lt('data_vencimento', hoje)
     else if (filtro === 'semana') q = q.in('status', ['aberto', 'previsto']).lte('data_vencimento', addDias(hoje, 7))

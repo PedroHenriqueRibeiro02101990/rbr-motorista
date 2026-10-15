@@ -9909,6 +9909,10 @@ export type Database = {
         Args: { p_incidente: string; p_motivo: string }
         Returns: undefined
       }
+      fin_apagar_lancamento: {
+        Args: { p_estornar_baixas?: boolean; p_id: string; p_motivo: string }
+        Returns: Json
+      }
       fin_buscar_contraparte: { Args: { p_doc: string }; Returns: Json }
       fin_candidatos_baixa: {
         Args: {

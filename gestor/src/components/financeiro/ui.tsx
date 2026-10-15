@@ -94,7 +94,20 @@ export function Aviso({ tipo = 'erro', children, onFechar }: { tipo?: 'erro' | '
 const pilhaModais: number[] = []
 let proximoModal = 1
 
-export function Modal({ titulo, children, onFechar, largura = 'max-w-2xl' }: { titulo: ReactNode; children: ReactNode; onFechar: () => void; largura?: string }) {
+export function Modal({
+  titulo,
+  children,
+  onFechar,
+  largura = 'max-w-2xl',
+  fecharNoFundo = true,
+}: {
+  titulo: ReactNode
+  children: ReactNode
+  onFechar: () => void
+  largura?: string
+  // false: clicar fora do quadro não fecha (formulário longo que perderia o que foi preenchido).
+  fecharNoFundo?: boolean
+}) {
   useEffect(() => {
     const meu = proximoModal++
     pilhaModais.push(meu)
@@ -112,7 +125,7 @@ export function Modal({ titulo, children, onFechar, largura = 'max-w-2xl' }: { t
     }
   }, [onFechar])
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6" style={{ background: 'rgba(18,23,61,0.45)' }} onMouseDown={onFechar}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6" style={{ background: 'rgba(18,23,61,0.45)' }} onMouseDown={fecharNoFundo ? onFechar : undefined}>
       <div
         role="dialog"
         aria-modal="true"
