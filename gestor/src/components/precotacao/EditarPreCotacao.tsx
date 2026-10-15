@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { quandoFoiSalvo, useRascunho } from '../../lib/useRascunho'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { brl, msgErro } from '../../lib/novoDb'
 import { Modal, Botao, Aviso, Campo, inputClass, inputStyle } from '../financeiro/ui'
@@ -69,6 +70,28 @@ export default function EditarPreCotacao({
   const [linhas, setLinhas] = useState<Linha[]>(itens.length ? itens.map(doItem) : [nova()])
   const { confirmacao, rodar, ocupado } = useConfirmacao()
   const [erroForm, setErroForm] = useState<string | null>(null)
+
+  // Rascunho automático (mesmo comportamento da cotação): clicar fora não fecha; X, Cancelar e Esc pedem
+  // confirmação se houver alteração; o rascunho fica em localStorage até salvar ou descartar.
+  // Sugestões e referência de rota (calculadas) ficam fora do rascunho.
+  const dadosRascunho = useMemo(
+    () => ({ clienteId, nomeLivre, validade, obs, linhas: linhas.map(({ sugPedagio: _p, sugValor: _v, ref: _r, ...l }) => l) }),
+    [clienteId, nomeLivre, validade, obs, linhas],
+  )
+  const aplicarRascunho = useCallback((d: typeof dadosRascunho) => {
+    setClienteId(d.clienteId ?? '')
+    setNomeLivre(d.nomeLivre ?? '')
+    setValidade(d.validade ?? '7')
+    setObs(d.obs ?? '')
+    if (Array.isArray(d.linhas) && d.linhas.length) setLinhas(d.linhas as Linha[])
+  }, [])
+  const rascunho = useRascunho(pre ? `precotacao:${pre.id}` : 'precotacao:nova', dadosRascunho, aplicarRascunho)
+
+  function pedirParaFechar() {
+    if (rascunho.sujo && !window.confirm('Descartar o que você preencheu?')) return
+    if (rascunho.sujo) rascunho.limpar()
+    onFechar()
+  }
 
   const opcoes = useMemo(() => {
     const t = filtro.trim().toLowerCase()
@@ -150,6 +173,7 @@ export default function EditarPreCotacao({
         }))
         const { error: e3 } = await supabase.from('pre_cotacao_itens').insert(rows)
         if (e3) throw e3
+        rascunho.limpar()
         onSalvo(`Pré-cotação ${pre ? 'atualizada' : 'criada'} com ${rows.length} rota(s).`)
         return rows.length
       },
@@ -157,8 +181,21 @@ export default function EditarPreCotacao({
   }
 
   return (
-    <Modal titulo={pre ? `Editar pré-cotação #${pre.numero}` : 'Nova pré-cotação'} onFechar={onFechar} largura="max-w-5xl">
-      <div className="flex flex-col gap-4">
+    <Modal titulo={pre ? `Editar pré-cotação #${pre.numero}` : 'Nova pré-cotação'} onFechar={pedirParaFechar} largura="max-w-5xl" fecharNoFundo={false}>
+      <div className="flex flex-col gap-4" onPointerDownCapture={rascunho.marcarInteracao} onKeyDownCapture={rascunho.marcarInteracao}>
+        {rascunho.pendente && (
+          <Aviso tipo="atencao">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span>
+                Retomar rascunho? Há um rascunho não salvo{quandoFoiSalvo(rascunho.pendente.salvoEm) ? ` de ${quandoFoiSalvo(rascunho.pendente.salvoEm)}` : ''}.
+              </span>
+              <span className="flex gap-2">
+                <Botao onClick={rascunho.retomar}>Retomar</Botao>
+                <Botao variante="secundario" onClick={rascunho.descartarPendente}>Descartar</Botao>
+              </span>
+            </div>
+          </Aviso>
+        )}
         <Aviso tipo="info">{AVISO_PRE_COTACAO}</Aviso>
         <div className="grid md:grid-cols-[2fr_1fr] gap-3">
           <Campo label="Cliente">
@@ -264,7 +301,7 @@ export default function EditarPreCotacao({
         {erroForm && <Aviso tipo="erro">✗ {erroForm}</Aviso>}
         {confirmacao}
         <div className="flex justify-end gap-2">
-          <Botao variante="secundario" onClick={onFechar}>Cancelar</Botao>
+          <Botao variante="secundario" onClick={pedirParaFechar}>Cancelar</Botao>
           <Botao onClick={salvar} disabled={ocupado}>{ocupado ? 'enviando…' : 'Salvar'}</Botao>
         </div>
       </div>
