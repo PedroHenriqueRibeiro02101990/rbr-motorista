@@ -19,6 +19,8 @@
   font-size: 12px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
+/* 2026-10-15: mais claro (antes brightness(0.82) contrast(0.92)). Contraste menor clareia o fundo sem estourar os
+   rótulos; estradas ficam quentes e não se confundem com a linha da rota (#C9D3FF); pinos com borda branca. */
 .rbr-mapa-escuro .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(195deg) saturate(0.45) brightness(0.82) contrast(0.92);
+  filter: invert(1) hue-rotate(195deg) saturate(0.5) brightness(1.4) contrast(0.68);
 }
