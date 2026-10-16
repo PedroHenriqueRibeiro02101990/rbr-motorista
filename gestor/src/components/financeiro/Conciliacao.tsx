@@ -18,6 +18,7 @@ import {
 } from '../../lib/financeiro'
 import { Aviso, Botao, Campo, Card, Carregando, Chips, Modal, Vazio, inputClass, inputStyle } from './ui'
 import { OpcoesCategoria } from './CategoriaOpcoes'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 interface Candidato {
   lancamento_id: string
@@ -48,7 +49,7 @@ export default function Conciliacao({ apoio, versao, onMudou }: { apoio: Apoio; 
   const [status, setStatus] = useState<'pendente' | 'conciliado' | 'ignorado'>('pendente')
   const [itens, setItens] = useState<ExtratoItem[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [importando, setImportando] = useState(false)
   const [previa, setPrevia] = useState<{ itens: ItemExtrato[]; saldo: number | null; arquivo: string; formato: 'ofx' | 'csv' | 'pdf' } | null>(null)
   const [tratar, setTratar] = useState<ExtratoItem | null>(null)

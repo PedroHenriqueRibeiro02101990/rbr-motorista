@@ -4,6 +4,7 @@ import type { Json } from '@rbr/shared/database.types'
 import { IconCheck } from '@rbr/shared/icons'
 import type { AssessoriaContato, Apolice } from '../../lib/operacaoDetalhe'
 import { parseBRL } from './OperacaoFluxo'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 const inputClass = 'border rounded-lg px-3 py-2 text-sm outline-none w-full bg-white'
 const inputStyle = { borderColor: 'var(--rbr-border)' }
@@ -52,7 +53,7 @@ export default function DadosEmissao({ onSalvo }: { onSalvo: (a: AssessoriaConta
     RCV: apoliceVazia('RCV'),
   })
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [salvando, setSalvando] = useState(false)
 
   useEffect(() => {

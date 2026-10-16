@@ -3,6 +3,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import { formatDateTime } from '@rbr/shared/format'
 import SeloProcessando from '../SeloProcessando'
 import { estadoSompo, precisaAvisoSompo, type AverbacaoRcv, type DocMin, type EstadoSompo } from '../../lib/averbacaoSompo'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 // Averbação do MDF-e na apólice RC-V (Sompo). A apólice exige averbar TODA viagem antes da saída do veículo, com base
 // no MDF-e. É automática: quando o MDF-e vira 'emitido' em produção, o gatilho trg_averbar_automatico_ao_emitir chama a
@@ -26,7 +27,7 @@ export function LinhaAverbacaoSompo({
 }) {
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [verResposta, setVerResposta] = useState(false)
   const [agora, setAgora] = useState(() => Date.now())
   const estado = estadoSompo(mdfe, rcv)

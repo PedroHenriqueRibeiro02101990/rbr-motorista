@@ -20,6 +20,7 @@ import type { BancoFatura, EmpresaFatura } from '../../lib/faturaPdf'
 import VencimentoBoleto, { type EscolhaVencimento } from './VencimentoBoleto'
 import { Aviso, Botao, Campo, Card, Carregando, Chips, Modal, Pill, Vazio, inputClass, inputStyle } from './ui'
 import { BaixaModal, Copiar } from './LancamentoModais'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 type Filtro = 'abertas' | 'vencidas' | 'pagas' | 'canceladas' | 'todas'
 
@@ -284,7 +285,7 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
   const [linha, setLinha] = useState('')
   const [pix, setPix] = useState('')
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [alterando, setAlterando] = useState(false)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [baixa, setBaixa] = useState(false)

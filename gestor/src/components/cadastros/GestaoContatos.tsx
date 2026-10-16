@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatDateTime } from '@rbr/shared/format'
 import { Aviso, Botao, Card, Carregando, inputClass, inputStyle, Kpi, Vazio } from '../financeiro/ui'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 // As tabelas do disparo (contatos_motoristas, envios_whatsapp, parametros 'disparo_whatsapp')
 // ainda não estão em shared/database.types.ts: usamos o cliente sem tipos e tipos locais mínimos.
@@ -168,7 +169,7 @@ export default function GestaoContatos() {
   const [ocupadoId, setOcupadoId] = useState<string | null>(null)
   const [enviandoProximo, setEnviandoProximo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [telefoneEditado, setTelefoneEditado] = useState<Record<string, string>>({})
 
   const limite = cfg?.limite_diario ?? 0
