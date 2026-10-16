@@ -18,6 +18,8 @@ import EmitirNfeProducaoModal from '../components/operacao/EmitirNfeProducaoModa
 import FaixaTeste, { PassoAPassoTeste } from '../components/FaixaTeste'
 import SeloProcessando from '../components/SeloProcessando'
 import { estaProcessando, useDocumentosAoVivo } from '../lib/useDocumentosAoVivo'
+import { AvisoSompo, LinhaAverbacaoSompo, OrdemDocumentos } from '../components/operacao/AverbacaoSompo'
+import { COLUNAS_AVERBACAO_RCV, sompoProcessando, type AverbacaoRcv } from '../lib/averbacaoSompo'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -186,6 +188,8 @@ export default function Fiscal() {
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [docsPorOperacao, setDocsPorOperacao] = useState<Map<string, DocumentacaoOperacao[]>>(new Map())
+  // Averbação RC-V (Sompo) do MDF-e, por operação (operacao_ciot_vpo.averbacao_rcv_*).
+  const [rcvPorOperacao, setRcvPorOperacao] = useState<Map<string, AverbacaoRcv>>(new Map())
   const [emAndamento, setEmAndamento] = useState<Set<string>>(new Set())
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
   // Avisos "Regra da RBR" da última emissão que deu certo, por operação.
@@ -233,7 +237,14 @@ export default function Fiscal() {
         'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente, encerrado_em, encerramento_origem, encerramento_erro',
       )
       .in('operacao_id', operacaoIds)
+    const { data: rcvs } = await supabase.from('operacao_ciot_vpo').select(COLUNAS_AVERBACAO_RCV).in('operacao_id', operacaoIds)
 
+    setRcvPorOperacao((prev) => {
+      const proximo = new Map(prev)
+      for (const id of operacaoIds) proximo.delete(id)
+      for (const r of rcvs ?? []) proximo.set(r.operacao_id, r)
+      return proximo
+    })
     setDocsPorOperacao((prev) => {
       const proximo = new Map(prev)
       for (const id of operacaoIds) proximo.set(id, [])
@@ -280,7 +291,14 @@ export default function Fiscal() {
 
   // Status ao vivo: o robô do banco consulta a SEFAZ a cada minuto; a tela relê sozinha (Realtime, e a cada 10 s
   // enquanto houver documento processando). Sem botão "Atualizar status".
-  const algumProcessando = Array.from(docsPorOperacao.values()).some((lista) => lista.some(estaProcessando))
+  const algumProcessando = Array.from(docsPorOperacao.entries()).some(
+    ([opId, lista]) =>
+      lista.some(estaProcessando) ||
+      sompoProcessando(
+        lista.find((d) => d.tipo === 'mdfe'),
+        rcvPorOperacao.get(opId),
+      ),
+  )
   const recarregarDocsListados = useCallback(() => {
     if (operacoes) void carregarDocumentos(operacoes.map((op) => op.id))
   }, [operacoes, carregarDocumentos])
@@ -793,6 +811,18 @@ export default function Fiscal() {
                   {op.tipo_documento_aviso ? ` · ${op.tipo_documento_aviso}` : ''}
                 </div>
 
+                {ofereceCteMdfe && (
+                  <div className="flex flex-col gap-1.5">
+                    <OrdemDocumentos
+                      cte={docCte}
+                      atm={docs.find((d) => d.tipo === 'atm')}
+                      mdfe={docMdfe}
+                      rcv={rcvPorOperacao.get(op.id)}
+                    />
+                    <AvisoSompo mdfe={docMdfe} rcv={rcvPorOperacao.get(op.id)} />
+                  </div>
+                )}
+
                 {docsExibidos.length > 0 && (
                   <div className="flex flex-col gap-2">
                     {docsExibidos.map((doc) => {
@@ -1046,6 +1076,16 @@ export default function Fiscal() {
                     </div>
                   )
                 })()}
+
+                {/* Averbação RC-V (Sompo) do MDF-e: automática quando o MDF-e é autorizado; aqui só resultado e reenvio. */}
+                {docCte && (
+                  <LinhaAverbacaoSompo
+                    operacaoId={op.id}
+                    mdfe={docMdfe}
+                    rcv={rcvPorOperacao.get(op.id)}
+                    onMudou={() => void carregarDocumentos([op.id])}
+                  />
+                )}
 
                 {/* NF-e de teste: vive na cotação (nf_chave_acesso), não em documentacao_operacao. */}
                 {(op.nfChaveAcesso || nfeCancelada) && (
