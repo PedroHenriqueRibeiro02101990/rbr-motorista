@@ -8,19 +8,23 @@
 //   Ajuste x sobre V (prazo ou desconto): V' = V × (1 + x); o imposto acompanha (a × V').
 // O preço da cotação (V) é o preço a 7 DDL. Nada aqui altera V quando nenhum prazo nem desconto é escolhido.
 
-export type PrazoPagamento = 'antecipado' | 'a_vista' | '7ddl' | '14ddl' | '21ddl' | '28ddl'
+export type PrazoPagamento = 'antecipado' | 'a_vista' | '7ddl' | '14ddl' | '15ddl' | '21ddl' | '28ddl' | '30ddl' | '2x'
 
 // Do mais curto ao mais longo. "antecipado" = Pix confirmado antes de liberar o motorista;
 // "a_vista" = Pix no fim da viagem (entrega); DDL = dias contados da emissão do boleto, na liberação do motorista.
-export const PRAZOS: PrazoPagamento[] = ['antecipado', 'a_vista', '7ddl', '14ddl', '21ddl', '28ddl']
+// "2x" = parcelado, com as datas das faturas definidas à mão (sem regra automática).
+export const PRAZOS: PrazoPagamento[] = ['antecipado', 'a_vista', '7ddl', '14ddl', '15ddl', '21ddl', '28ddl', '30ddl', '2x']
 
 export const ROTULO_PRAZO: Record<PrazoPagamento, string> = {
   antecipado: 'Antecipado',
   a_vista: 'À vista',
   '7ddl': '7 DDL',
   '14ddl': '14 DDL',
+  '15ddl': '15 DDL',
   '21ddl': '21 DDL',
   '28ddl': '28 DDL',
+  '30ddl': '30 DDL',
+  '2x': '2X (parcelado)',
 }
 
 // Dias da emissão do boleto até o vencimento (null = não é boleto: Pix antes da liberação ou na entrega).
@@ -29,8 +33,11 @@ export const DIAS_PRAZO: Record<PrazoPagamento, number | null> = {
   a_vista: null,
   '7ddl': 7,
   '14ddl': 14,
+  '15ddl': 15,
   '21ddl': 21,
   '28ddl': 28,
+  '30ddl': 30,
+  '2x': null,
 }
 
 export interface Concessao {
@@ -58,7 +65,18 @@ export interface PoliticaPrazo {
 
 // Valores iniciais; o cotador sobrescreve com parametros_sistema (tudo editável na configuração).
 export const POLITICA_PADRAO: PoliticaPrazo = {
-  ajustePorPrazo: { antecipado: -0.02, a_vista: -0.01, '7ddl': 0, '14ddl': 0.015, '21ddl': 0.03, '28ddl': 0.04 },
+  // ~0,2% por dia de prazo acima de 7 DDL; 15 e 30 DDL seguem a mesma lógica; 2x sem sugestão.
+  ajustePorPrazo: {
+    antecipado: -0.02,
+    a_vista: -0.01,
+    '7ddl': 0,
+    '14ddl': 0.015,
+    '15ddl': 0.015,
+    '21ddl': 0.03,
+    '28ddl': 0.04,
+    '30ddl': 0.045,
+    '2x': 0,
+  },
   concessoes: [
     { de: ['28ddl'], para: '14ddl', min: 0.03, max: 0.03 },
     { de: ['28ddl'], para: '7ddl', min: 0.04, max: 0.04 },
@@ -163,11 +181,14 @@ export interface Degrau {
   dentroDaFaixaDeValor: boolean // false = valor do frete abaixo da faixa: aparece, mas não é sugerido
   passaDoPiso: boolean // o desconto sugerido leva a margem abaixo do piso
   raro: boolean
+  // Preço de tabela do prazo de destino (preço a 7 DDL com o ajuste daquele prazo). Só referência: a concessão é
+  // negociação sobre o preço cotado e pode ficar um pouco abaixo da tabela de propósito.
+  valorTabelaDestino: number | null
 }
 
 export interface Negociacao {
   margemAtual: number | null
-  descontoMaximo: number // até onde dá para descer sem passar do piso
+  descontoMaximo: number // até onde dá para descer sem passar do piso (o teto real; informa, não bloqueia)
   semEspaco: boolean // d_max abaixo do desconto mínimo útil
   mensagem: string | null
   degraus: Degrau[] // do menor desconto para o maior; a tela mostra o primeiro e libera o seguinte
@@ -176,12 +197,14 @@ export interface Negociacao {
 // Degraus de desconto a partir do prazo em que o frete foi cotado.
 //   valorCotado = preço já com o ajuste do prazo cotado (o que o cliente viu).
 //   custo = custo sem imposto (base do valor do frete para as faixas e da margem).
+//   valorBase = preço a 7 DDL (o da cotação), para o preço de tabela do prazo de destino; null = sem referência.
 export function negociacao(
   prazoCotado: PrazoPagamento,
   valorCotado: number,
   custo: number,
   aliquota: number,
   politica: PoliticaPrazo = POLITICA_PADRAO,
+  valorBase: number | null = null,
 ): Negociacao {
   const m0 = margem(valorCotado, custo, aliquota)
   const dMax = m0 == null ? 0 : descontoMaximo(m0, aliquota, politica.margemPiso)
@@ -207,6 +230,7 @@ export function negociacao(
         dentroDaFaixaDeValor: !faixa || custo >= faixa.custoMinimo,
         passaDoPiso: mSug != null && mSug < politica.margemPiso - TOLERANCIA,
         raro: c.raro === true,
+        valorTabelaDestino: valorBase != null ? aplicarAjuste(valorBase, ajusteDoPrazo(c.para, politica)) : null,
       }
     })
     .sort((x, y) => Number(x.raro) - Number(y.raro) || x.sugerido - y.sugerido)
@@ -267,4 +291,114 @@ export function descontosCondicionaisBoleto(
     .sort((a, b) => a.dias - b.dias)
     .slice(0, 3)
   return { vencimento: somarDias(emissao, diasContrato), condicoes }
+}
+
+export interface AvaliacaoDesconto {
+  permitido: boolean // false só acima do teto da política (5%); abaixo do piso continua permitido
+  valor: number
+  margem: number | null
+  cor: CorMargem | null
+  acimaDoMaximo: boolean // passou do desconto máximo até o piso (fica abaixo de 26%: vale o registro no log)
+}
+
+// Desconto digitado pelo gestor (pode ser mais que o sugerido). O teto da política é limite; o d_max só informa.
+export function avaliarDesconto(
+  desconto: number,
+  valorCotado: number,
+  custo: number,
+  aliquota: number,
+  politica: PoliticaPrazo = POLITICA_PADRAO,
+): AvaliacaoDesconto {
+  const valor = aplicarAjuste(valorCotado, -desconto)
+  const m = margem(valor, custo, aliquota)
+  const m0 = margem(valorCotado, custo, aliquota)
+  const dMax = m0 == null ? 0 : descontoMaximo(m0, aliquota, politica.margemPiso)
+  return {
+    permitido: descontoValido(desconto, politica),
+    valor,
+    margem: m,
+    cor: corMargem(m, politica),
+    acimaDoMaximo: desconto > dMax + 1e-9,
+  }
+}
+
+// Regra de recebimento que o prazo escolhido grava na cotação (prazo_personalizado), no formato de
+// condicoes_prazo / fin_regra_json. DDL conta da liberação do motorista (emissão do boleto); à vista = na entrega;
+// antecipado = já na criação da operação (Pix antes de liberar). 2x = null: datas definidas à mão.
+export interface RegraRecebimento {
+  base: 'aprovacao' | 'liberacao' | 'entrega'
+  modo: 'dias'
+  parcelas: Array<{ dias: number; percentual: number }>
+  ajustar_dia_util: boolean
+}
+
+export function regraRecebimentoDoPrazo(prazo: PrazoPagamento): RegraRecebimento | null {
+  if (prazo === '2x') return null
+  if (prazo === 'antecipado') return { base: 'aprovacao', modo: 'dias', parcelas: [{ dias: 0, percentual: 100 }], ajustar_dia_util: false }
+  if (prazo === 'a_vista') return { base: 'entrega', modo: 'dias', parcelas: [{ dias: 0, percentual: 100 }], ajustar_dia_util: false }
+  const dias = DIAS_PRAZO[prazo] as number
+  return { base: 'liberacao', modo: 'dias', parcelas: [{ dias, percentual: 100 }], ajustar_dia_util: true }
+}
+
+export function ehPrazo(v: unknown): v is PrazoPagamento {
+  return typeof v === 'string' && (PRAZOS as string[]).includes(v)
+}
+
+const fracaoOu = (v: unknown, padrao: number, min = -1, max = 1) => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
+  return Number.isFinite(n) && n >= min && n <= max ? n : padrao
+}
+
+// Lê a política gravada em parametros_sistema (chave politica_prazo_desconto). O que faltar ou vier inválido
+// fica com o valor padrão; nunca devolve teto acima de 5%.
+export function lerPolitica(json: unknown): PoliticaPrazo {
+  const o = (json && typeof json === 'object' ? json : {}) as Record<string, unknown>
+  const p = POLITICA_PADRAO
+  const aj = (o.ajustePorPrazo && typeof o.ajustePorPrazo === 'object' ? o.ajustePorPrazo : {}) as Record<string, unknown>
+  const ajustePorPrazo = Object.fromEntries(PRAZOS.map((k) => [k, fracaoOu(aj[k], p.ajustePorPrazo[k], -0.5, 0.5)])) as Record<
+    PrazoPagamento,
+    number
+  >
+  const tetoDesconto = Math.min(fracaoOu(o.tetoDesconto, p.tetoDesconto, 0, 1), 0.05)
+  const concessoes = Array.isArray(o.concessoes)
+    ? (o.concessoes as unknown[]).flatMap((c): Concessao[] => {
+        const x = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>
+        const de = Array.isArray(x.de) ? (x.de as unknown[]).filter(ehPrazo) : []
+        if (!de.length || !ehPrazo(x.para)) return []
+        const max = Math.min(fracaoOu(x.max, NaN, 0, 1), tetoDesconto)
+        const min = Math.min(fracaoOu(x.min, max, 0, 1), max)
+        if (!Number.isFinite(max)) return []
+        const faixa = x.faixa === 'antecipado' || x.faixa === 'a_vista' ? x.faixa : undefined
+        return [{ de, para: x.para, min, max, ...(faixa ? { faixa } : {}), ...(x.raro === true ? { raro: true } : {}) }]
+      })
+    : p.concessoes
+  const fx = (o.faixas && typeof o.faixas === 'object' ? o.faixas : {}) as Record<string, { custoMinimo?: unknown } | undefined>
+  const custoMin = (k: 'antecipado' | 'a_vista') => {
+    const n = Number(fx[k]?.custoMinimo)
+    return Number.isFinite(n) && n >= 0 ? n : p.faixas[k].custoMinimo
+  }
+  return {
+    ajustePorPrazo,
+    concessoes,
+    faixas: { antecipado: { custoMinimo: custoMin('antecipado') }, a_vista: { custoMinimo: custoMin('a_vista') } },
+    tetoDesconto,
+    margemPiso: fracaoOu(o.margemPiso, p.margemPiso, 0, 1),
+    margemConfortavel: fracaoOu(o.margemConfortavel, p.margemConfortavel, 0, 1),
+    descontoMinimoUtil: fracaoOu(o.descontoMinimoUtil, p.descontoMinimoUtil, 0, 1),
+  }
+}
+
+// Descontos condicionais sugeridos para o boleto de um prazo contratado: as concessões desse prazo para prazos de
+// boleto mais curtos, no desconto sugerido (o gestor edita ou tira antes de gravar a fatura).
+export function sugestaoDescontosBoleto(
+  prazoContratado: PrazoPagamento,
+  politica: PoliticaPrazo = POLITICA_PADRAO,
+): Array<{ para: PrazoPagamento; desconto: number }> {
+  const dias = DIAS_PRAZO[prazoContratado]
+  if (dias == null) return []
+  return politica.concessoes
+    .filter((c) => c.de.includes(prazoContratado) && DIAS_PRAZO[c.para] != null && (DIAS_PRAZO[c.para] as number) < dias)
+    .map((c) => ({ para: c.para, desconto: Math.min(c.min, c.max, politica.tetoDesconto) }))
+    .sort((a, b) => (DIAS_PRAZO[a.para] as number) - (DIAS_PRAZO[b.para] as number))
+    .slice(0, 3)
 }

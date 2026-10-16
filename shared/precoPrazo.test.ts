@@ -7,6 +7,10 @@ import assert from 'node:assert/strict'
 import {
   POLITICA_PADRAO,
   aplicarAjuste,
+  avaliarDesconto,
+  lerPolitica,
+  regraRecebimentoDoPrazo,
+  sugestaoDescontosBoleto,
   ajusteDoPrazo,
   corMargem,
   degrauSugerido,
@@ -67,11 +71,21 @@ test('sem prazo escolhido o preço não muda (ajuste 0) e 7 DDL é o preço da c
   assert.equal(aplicarAjuste(1528.38, 0), 1528.38)
 })
 
-test('escada: antecipado −2%, à vista −1%, 14 +1,5%, 21 +3%, 28 +4%; imposto acompanha o novo valor', () => {
+test('escada: antecipado −2%, à vista −1%, 14/15 +1,5%, 21 +3%, 28 +4%, 30 +4,5%, 2x 0; imposto acompanha', () => {
   const v = 1000
   const linhas = escadaDePrazos(v, 600, A)
   const valor = Object.fromEntries(linhas.map((l) => [l.prazo, l.valor]))
-  assert.deepEqual(valor, { antecipado: 980, a_vista: 990, '7ddl': 1000, '14ddl': 1015, '21ddl': 1030, '28ddl': 1040 })
+  assert.deepEqual(valor, {
+    antecipado: 980,
+    a_vista: 990,
+    '7ddl': 1000,
+    '14ddl': 1015,
+    '15ddl': 1015,
+    '21ddl': 1030,
+    '28ddl': 1040,
+    '30ddl': 1045,
+    '2x': 1000,
+  })
   // margem a 28 DDL = (1040 × 0,94 − 600) / 1040
   perto(linhas.find((l) => l.prazo === '28ddl')!.margem, (1040 * 0.94 - 600) / 1040, 6)
 })
@@ -168,4 +182,67 @@ test('boleto: no máximo 3 datas e só prazos mais curtos que o contratado', () 
   ])
   assert.deepEqual(r.condicoes.map((c) => c.dias), [7])
   assert.equal(descontosCondicionaisBoleto(1000, '2026-11-02', 'a_vista', []).vencimento, null)
+})
+
+test('15 DDL +1,5%, 30 DDL +4,5% e 2x sem ajuste', () => {
+  assert.equal(ajusteDoPrazo('15ddl'), 0.015)
+  assert.equal(ajusteDoPrazo('30ddl'), 0.045)
+  assert.equal(ajusteDoPrazo('2x'), 0)
+})
+
+test('degrau mostra o preço de tabela do prazo de destino só como referência', () => {
+  const custo = 12000
+  const v = valorFinal(custo, 0.4, A)!
+  const n = negociacao('28ddl', aplicarAjuste(v, 0.04), custo, A, POLITICA_PADRAO, v)
+  const d14 = n.degraus.find((d) => d.para === '14ddl')!
+  assert.equal(d14.valorSugerido, 18502)
+  assert.equal(d14.valorTabelaDestino, 18615.72)
+})
+
+test('desconto digitado acima do sugerido: permitido até 5%, acima do d_max só marca', () => {
+  const custo = 12000
+  const v = valorFinal(custo, 0.4, A)!
+  const a = avaliarDesconto(0.045, v, custo, A) // d_max a 7 DDL = 3,8%
+  assert.equal(a.permitido, true)
+  assert.equal(a.acimaDoMaximo, true)
+  assert.equal(a.cor, 'vermelho')
+  assert.equal(avaliarDesconto(0.06, v, custo, A).permitido, false)
+  assert.equal(avaliarDesconto(0.02, v, custo, A).acimaDoMaximo, false)
+})
+
+test('regra de recebimento: DDL da liberação, à vista na entrega, antecipado antes, 2x à mão', () => {
+  assert.deepEqual(regraRecebimentoDoPrazo('14ddl'), {
+    base: 'liberacao',
+    modo: 'dias',
+    parcelas: [{ dias: 14, percentual: 100 }],
+    ajustar_dia_util: true,
+  })
+  assert.equal(regraRecebimentoDoPrazo('a_vista')?.base, 'entrega')
+  assert.equal(regraRecebimentoDoPrazo('antecipado')?.base, 'aprovacao')
+  assert.equal(regraRecebimentoDoPrazo('2x'), null)
+})
+
+test('lerPolitica: completa com o padrão, ignora lixo e nunca passa de 5%', () => {
+  assert.deepEqual(lerPolitica(null), POLITICA_PADRAO)
+  const p = lerPolitica({
+    ajustePorPrazo: { '28ddl': 0.05, '14ddl': 'x' },
+    tetoDesconto: 0.2,
+    faixas: { antecipado: { custoMinimo: 8000 } },
+    concessoes: [{ de: ['28ddl'], para: '14ddl', min: 0.02, max: 0.09 }, { de: ['xx'], para: '7ddl', max: 0.01 }],
+  })
+  assert.equal(p.ajustePorPrazo['28ddl'], 0.05)
+  assert.equal(p.ajustePorPrazo['14ddl'], 0.015)
+  assert.equal(p.tetoDesconto, 0.05)
+  assert.equal(p.faixas.antecipado.custoMinimo, 8000)
+  assert.equal(p.faixas.a_vista.custoMinimo, 5000)
+  assert.deepEqual(p.concessoes, [{ de: ['28ddl'], para: '14ddl', min: 0.02, max: 0.05 }])
+})
+
+test('sugestão de descontos do boleto a 28 DDL: 7 DDL 4% e 14 DDL 3%', () => {
+  assert.deepEqual(sugestaoDescontosBoleto('28ddl'), [
+    { para: '7ddl', desconto: 0.04 },
+    { para: '14ddl', desconto: 0.03 },
+  ])
+  assert.deepEqual(sugestaoDescontosBoleto('7ddl'), [])
+  assert.deepEqual(sugestaoDescontosBoleto('a_vista'), [])
 })
