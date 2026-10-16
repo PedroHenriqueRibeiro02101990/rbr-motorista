@@ -16,6 +16,10 @@ import CancelarDocumentoModal, {
 import BaixarDocumentoFiscal from '../components/operacao/BaixarDocumentoFiscal'
 import EmitirNfeProducaoModal from '../components/operacao/EmitirNfeProducaoModal'
 import FaixaTeste, { PassoAPassoTeste } from '../components/FaixaTeste'
+import SeloProcessando from '../components/SeloProcessando'
+import { estaProcessando, useDocumentosAoVivo } from '../lib/useDocumentosAoVivo'
+import { AvisoSompo, LinhaAverbacaoSompo, OrdemDocumentos } from '../components/operacao/AverbacaoSompo'
+import { COLUNAS_AVERBACAO_RCV, sompoProcessando, type AverbacaoRcv } from '../lib/averbacaoSompo'
 
 type Operacao = Database['public']['Tables']['operacoes']['Row']
 type DocumentacaoOperacao = Pick<
@@ -144,13 +148,6 @@ type RespostaEmissao = {
   aviso?: string
 }
 
-// Resposta da consultar-documento-fiscal.
-type RespostaConsulta = {
-  sucesso: boolean
-  status?: string
-  erro?: string
-}
-
 type DetalheErro = { erro?: string; motivos?: string[]; avisos?: string[]; regras?: RegraFiscal[] }
 
 // supabase-js, quando a Edge Function responde 4xx/5xx, devolve
@@ -191,6 +188,8 @@ export default function Fiscal() {
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [docsPorOperacao, setDocsPorOperacao] = useState<Map<string, DocumentacaoOperacao[]>>(new Map())
+  // Averbação RC-V (Sompo) do MDF-e, por operação (operacao_ciot_vpo.averbacao_rcv_*).
+  const [rcvPorOperacao, setRcvPorOperacao] = useState<Map<string, AverbacaoRcv>>(new Map())
   const [emAndamento, setEmAndamento] = useState<Set<string>>(new Set())
   const [erroPorOperacao, setErroPorOperacao] = useState<Record<string, DetalheErro | null>>({})
   // Avisos "Regra da RBR" da última emissão que deu certo, por operação.
@@ -238,7 +237,14 @@ export default function Fiscal() {
         'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente, encerrado_em, encerramento_origem, encerramento_erro',
       )
       .in('operacao_id', operacaoIds)
+    const { data: rcvs } = await supabase.from('operacao_ciot_vpo').select(COLUNAS_AVERBACAO_RCV).in('operacao_id', operacaoIds)
 
+    setRcvPorOperacao((prev) => {
+      const proximo = new Map(prev)
+      for (const id of operacaoIds) proximo.delete(id)
+      for (const r of rcvs ?? []) proximo.set(r.operacao_id, r)
+      return proximo
+    })
     setDocsPorOperacao((prev) => {
       const proximo = new Map(prev)
       for (const id of operacaoIds) proximo.set(id, [])
@@ -282,6 +288,21 @@ export default function Fiscal() {
   useEffect(() => {
     load()
   }, [load])
+
+  // Status ao vivo: o robô do banco consulta a SEFAZ a cada minuto; a tela relê sozinha (Realtime, e a cada 10 s
+  // enquanto houver documento processando). Sem botão "Atualizar status".
+  const algumProcessando = Array.from(docsPorOperacao.entries()).some(
+    ([opId, lista]) =>
+      lista.some(estaProcessando) ||
+      sompoProcessando(
+        lista.find((d) => d.tipo === 'mdfe'),
+        rcvPorOperacao.get(opId),
+      ),
+  )
+  const recarregarDocsListados = useCallback(() => {
+    if (operacoes) void carregarDocumentos(operacoes.map((op) => op.id))
+  }, [operacoes, carregarDocumentos])
+  useDocumentosAoVivo(null, algumProcessando, recarregarDocsListados)
 
   useEffect(() => {
     if (!toast) return
@@ -375,31 +396,6 @@ export default function Fiscal() {
       .eq('tipo', 'atm')
       .maybeSingle()
     setRespostaAverba((prev) => ({ ...prev, [op.id]: JSON.stringify(data?.payload_resposta ?? null, null, 2) }))
-  }
-
-  async function consultarStatus(op: OperacaoEnriquecida, tipo: 'cte' | 'mdfe' | 'nfse') {
-    const chave = `${op.id}:consultar:${tipo}`
-    marcarEmAndamento(chave, true)
-    setErroPorOperacao((prev) => ({ ...prev, [op.id]: null }))
-    try {
-      const { data, error } = await supabase.functions.invoke<RespostaConsulta>('consultar-documento-fiscal', {
-        body: { operacao_id: op.id, tipo },
-      })
-      if (error) {
-        const detalhe = await extrairDetalheErroInvoke(error)
-        setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
-      } else if (data && data.sucesso === false) {
-        setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro } }))
-      }
-    } catch (e) {
-      setErroPorOperacao((prev) => ({
-        ...prev,
-        [op.id]: { erro: e instanceof Error ? e.message : 'Erro inesperado ao consultar status.' },
-      }))
-    } finally {
-      marcarEmAndamento(chave, false)
-      await carregarDocumentos([op.id])
-    }
   }
 
   // NF-e de teste (homologação): a RBR emite uma NF-e com os dados da cotação e, autorizada, a chave vai pra
@@ -761,7 +757,6 @@ export default function Fiscal() {
               (d): d is DocumentacaoOperacao => Boolean(d),
             )
             const docCte = docs.find((d) => d.tipo === 'cte')
-            const docNfse = docs.find((d) => d.tipo === 'nfse')
             const docMdfe = docs.find((d) => d.tipo === 'mdfe')
             const erroCard = erroPorOperacao[op.id]
             const infoCard = infoPorOperacao[op.id]
@@ -774,10 +769,7 @@ export default function Fiscal() {
 
             const chaveCte = `${op.id}:cte`
             const chaveMdfe = `${op.id}:mdfe`
-            const chaveConsultarMdfe = `${op.id}:consultar:mdfe`
             const chaveNfse = `${op.id}:nfse`
-            const chaveConsultarCte = `${op.id}:consultar:cte`
-            const chaveConsultarNfse = `${op.id}:consultar:nfse`
 
             const tiposDisponiveisParaRegistro = TIPOS_DOC_MANUAL.filter(
               (tipo) => !docs.some((d) => d.tipo === tipo),
@@ -818,6 +810,18 @@ export default function Fiscal() {
                   Documento ao cliente: {rotuloDocumento(tipoDoc)}
                   {op.tipo_documento_aviso ? ` · ${op.tipo_documento_aviso}` : ''}
                 </div>
+
+                {ofereceCteMdfe && (
+                  <div className="flex flex-col gap-1.5">
+                    <OrdemDocumentos
+                      cte={docCte}
+                      atm={docs.find((d) => d.tipo === 'atm')}
+                      mdfe={docMdfe}
+                      rcv={rcvPorOperacao.get(op.id)}
+                    />
+                    <AvisoSompo mdfe={docMdfe} rcv={rcvPorOperacao.get(op.id)} />
+                  </div>
+                )}
 
                 {docsExibidos.length > 0 && (
                   <div className="flex flex-col gap-2">
@@ -924,12 +928,16 @@ export default function Fiscal() {
                             <>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-bold w-14 flex-shrink-0">{TIPO_DOC_LABEL[doc.tipo]}</span>
-                                <span
-                                  className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                                  style={{ background: statusDocBackground(doc.status) }}
-                                >
-                                  {STATUS_DOC_LABEL[doc.status]}
-                                </span>
+                                {estaProcessando(doc) ? (
+                                  <SeloProcessando />
+                                ) : (
+                                  <span
+                                    className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                                    style={{ background: statusDocBackground(doc.status) }}
+                                  >
+                                    {STATUS_DOC_LABEL[doc.status]}
+                                  </span>
+                                )}
                                 {doc.numero_documento && (
                                   <span className="text-[11px] text-[color:var(--rbr-muted)]">
                                     Nº {doc.numero_documento}
@@ -1068,6 +1076,16 @@ export default function Fiscal() {
                     </div>
                   )
                 })()}
+
+                {/* Averbação RC-V (Sompo) do MDF-e: automática quando o MDF-e é autorizado; aqui só resultado e reenvio. */}
+                {docCte && (
+                  <LinhaAverbacaoSompo
+                    operacaoId={op.id}
+                    mdfe={docMdfe}
+                    rcv={rcvPorOperacao.get(op.id)}
+                    onMudou={() => void carregarDocumentos([op.id])}
+                  />
+                )}
 
                 {/* NF-e de teste: vive na cotação (nf_chave_acesso), não em documentacao_operacao. */}
                 {(op.nfChaveAcesso || nfeCancelada) && (
@@ -1329,16 +1347,6 @@ export default function Fiscal() {
                     {emAndamento.has(chaveMdfe) ? 'Enviando…' : 'Emitir MDF-e'}
                   </button>
                   )}
-                  {docMdfe?.status === 'pendente' && docMdfe.referencia && (
-                    <button
-                      onClick={() => consultarStatus(op, 'mdfe')}
-                      disabled={emAndamento.has(chaveConsultarMdfe)}
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                    >
-                      {emAndamento.has(chaveConsultarMdfe) ? 'Consultando…' : 'Atualizar status MDF-e'}
-                    </button>
-                  )}
                   {ofereceNfse && (
                   <button
                     onClick={() => setConferencia({ op, tipo: 'nfse' })}
@@ -1369,16 +1377,6 @@ export default function Fiscal() {
                         {emAndamento.has(`${op.id}:nfe-teste:consultar`) ? 'Consultando…' : 'Consultar NF-e de teste'}
                       </button>
                     </>
-                  )}
-                  {docCte?.status === 'pendente' && (
-                    <button
-                      onClick={() => consultarStatus(op, 'cte')}
-                      disabled={emAndamento.has(chaveConsultarCte)}
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                    >
-                      {emAndamento.has(chaveConsultarCte) ? 'Consultando…' : 'Atualizar status CT-e'}
-                    </button>
                   )}
                   {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
                     <>
@@ -1433,16 +1431,6 @@ export default function Fiscal() {
                       style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
                     >
                       Cancelar NF-e de teste
-                    </button>
-                  )}
-                  {docNfse?.status === 'pendente' && (
-                    <button
-                      onClick={() => consultarStatus(op, 'nfse')}
-                      disabled={emAndamento.has(chaveConsultarNfse)}
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                    >
-                      {emAndamento.has(chaveConsultarNfse) ? 'Consultando…' : 'Atualizar status NFS-e'}
                     </button>
                   )}
                 </div>

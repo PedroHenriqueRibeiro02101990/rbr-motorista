@@ -1,4 +1,6 @@
 // Regras e montagem do payload do MDF-e (Focus NFe /v2/mdfe), sem I/O.
+// v18 (2026-10-16): tipo de carga vazio na cotacao assume "Carga geral" (05) e avisa (origem rbr), em vez de bloquear. Tipo preenchido e nao reconhecido continua bloqueando.
+// v17 (2026-10-16): tipo_transporte so vai no payload quando ha proprietario do veiculo de tracao (veiculo que nao e da frota da RBR). SEFAZ rejeita o campo sem proprietario.
 // v6: RNTRC do proprietario normalizado para 8 digitos; homologacao relaxa regras so do nosso sistema; data_emissao -03:00.
 // v7: o mesmo vale para operacao de TESTE em producao (cotacao.teste_producao).
 // v8: tipo_transporte = 2 (TAC) quando o proprietario da tracao e pessoa fisica (rejeicao da SEFAZ).
@@ -290,8 +292,14 @@ export function montarMdfe(
   if (!pesoBrutoKg || pesoBrutoKg <= 0) bloqueio("sefaz", "Cotação sem peso bruto da carga (kg) — totalizador do MDF-e.");
   const valorCarga = op.valor_nf != null ? Number(op.valor_nf) : null;
   if (!valorCarga || valorCarga <= 0) bloqueio("sefaz", "Cotação sem valor da carga (valor da NF) — totalizador do MDF-e.");
-  const tipoCarga = mapearTipoCarga(d.cotacao.tipo_carga);
-  if (!tipoCarga) bloqueio("sefaz", "Cotação sem tipo de carga reconhecido (ex.: carga geral, granel sólido, frigorificada) — obrigatório no MDF-e.");
+  // Tipo de carga: vazio na cotacao assume Carga geral (05) e avisa (regra da RBR); preenchido e nao reconhecido bloqueia (SEFAZ).
+  const tipoCargaVazio = !String(d.cotacao.tipo_carga ?? "").trim();
+  const tipoCarga = tipoCargaVazio ? "05" : mapearTipoCarga(d.cotacao.tipo_carga);
+  if (tipoCargaVazio) {
+    aviso("rbr", "Cotação sem tipo de carga: assumido 'Carga geral' no MDF-e. Confira se a carga não é granel, frigorificada ou perigosa e ajuste o tipo na cotação se for o caso.");
+  } else if (!tipoCarga) {
+    bloqueio("sefaz", `Tipo de carga da cotação ("${d.cotacao.tipo_carga}") não reconhecido (ex.: carga geral, granel sólido, frigorificada) — obrigatório no MDF-e.`);
+  }
   const descricaoProduto = d.cotacao.produto ? String(d.cotacao.produto).slice(0, 120) : null;
   if (!descricaoProduto) bloqueio("sefaz", "Cotação sem produto predominante da NF-e — obrigatório no MDF-e (descrição do produto).");
   const ncm = digitos(d.cotacao.ncm);
@@ -432,8 +440,9 @@ export function montarMdfe(
   const payload: Linha = {
     data_emissao: dataEmissaoBrasilia(d.agora),
     emitente: "1",
-    // SEFAZ (rejeição): com CPF de proprietário do veículo de tração, o tipo de transportador tem de ser TAC (2).
-    tipo_transporte: propTracao?.doc.tipo === "cpf" ? "2" : "1", // 1 = ETC, 2 = TAC
+    // SEFAZ: o tipo de transportador (tpTransp) so pode ser informado quando ha proprietario do veiculo de tracao.
+    // Com CPF de proprietario o tipo tem de ser TAC (2). Veiculo da frota da RBR (sem proprietario): campo omitido.
+    tipo_transporte: propTracao ? (propTracao.doc.tipo === "cpf" ? "2" : "1") : undefined, // 1 = ETC, 2 = TAC
     uf_inicio: op.uf_origem,
     uf_fim: op.uf_destino,
 

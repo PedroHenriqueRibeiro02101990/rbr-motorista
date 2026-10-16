@@ -1,4 +1,6 @@
-// Edge Function: emitir-mdfe (v16)
+// Edge Function: emitir-mdfe (v18)
+// v18 (2026-10-16): cotacao sem tipo de carga assume "Carga geral" (05) e AVISA, em vez de bloquear. Tipo escrito mas nao reconhecido continua bloqueando. Ver mdfe.ts.
+// v17 (2026-10-16): tipo_transporte so e enviado quando ha proprietario do veiculo de tracao (SEFAZ: "O tipo de transportador nao pode ser informado quando nao estiver informado proprietario do veiculo de tracao"). Veiculo da frota da RBR: campo omitido. Ver mdfe.ts.
 // v16 (2026-10-15): o relaxamento do teste em producao vem da resposta de trava_teste_fiscal (chamada antes de montar), nao do flag da cotacao.
 // v16: CEP de carregamento = CEP da RBR (parametros_fiscais) quando o remetente da NF-e e a propria RBR.
 // v15 (2026-10-09): NCM do produto predominante (8 digitos) sempre bloqueia, inclusive em teste - ver mdfe.ts. (v14 revertida: alterava telefone do responsavel tecnico sem querer.)

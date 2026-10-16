@@ -280,7 +280,9 @@ const FORM_INICIAL = {
   natureza_operacao: '',
   ncms_produtos: '',
   tabela: '',
-  tipo_carga: '',
+  // Cotação nova já abre com "Carga Geral" (o MDF-e exige o tipo de carga). Cotação antiga vazia continua vazia: o
+  // emitir-mdfe (v18) assume Carga geral e avisa.
+  tipo_carga: 'Carga Geral',
   eixos: '',
   distancia_km: '',
   checkbox_carga_perigosa_manual: false,
