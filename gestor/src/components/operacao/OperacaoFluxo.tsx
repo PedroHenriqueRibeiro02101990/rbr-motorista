@@ -21,6 +21,8 @@ import { BaixaModal } from '../financeiro/LancamentoModais'
 import CiotOperacao from './CiotOperacao'
 import RetencaoInss from './RetencaoInss'
 import ConformidadeOperacao from './ConformidadeOperacao'
+import SeloProcessando from '../SeloProcessando'
+import { estaProcessando, useDocumentosAoVivo } from '../../lib/useDocumentosAoVivo'
 import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
@@ -129,6 +131,9 @@ export default function OperacaoFluxo({
   useEffect(() => {
     recarregar()
   }, [recarregar])
+
+  // Status fiscal ao vivo (robô do banco + Realtime / releitura a cada 10 s enquanto algo processa na SEFAZ).
+  useDocumentosAoVivo(operacaoId, d?.documentos.some(estaProcessando) ?? false, () => void recarregar())
 
   async function executar(fn: () => Promise<void>, sucesso?: string) {
     setErro(null)
@@ -795,9 +800,15 @@ function Documentos({
                     {conf.txt}
                   </span>
                 )}
+                {estaProcessando(doc) && <SeloProcessando />}
                 {doc.numero_documento && <span className="text-[11px] tabular-nums">nº {doc.numero_documento}</span>}
               </div>
             </div>
+            {(doc.tipo === 'cte' || doc.tipo === 'mdfe' || doc.tipo === 'nfse') && doc.status === 'erro' && doc.mensagem_erro && (
+              <div className="text-[11px] rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                Rejeitado: {doc.mensagem_erro}
+              </div>
+            )}
 
             {doc.exigido && (
               <div className="flex items-center gap-2 flex-wrap text-[11px] font-semibold">
