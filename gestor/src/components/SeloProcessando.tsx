@@ -1,5 +1,5 @@
-// Selo de documento fiscal enviado e ainda sem resposta da SEFAZ. Some sozinho quando o robô grava o resultado.
-export default function SeloProcessando() {
+// Selo de documento fiscal (ou averbação) enviado e ainda sem resposta. Some sozinho quando o resultado é gravado.
+export default function SeloProcessando({ texto = 'Processando na SEFAZ…' }: { texto?: string }) {
   return (
     <span
       role="status"
@@ -10,7 +10,7 @@ export default function SeloProcessando() {
         <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
         <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
       </svg>
-      Processando na SEFAZ…
+      {texto}
     </span>
   )
 }

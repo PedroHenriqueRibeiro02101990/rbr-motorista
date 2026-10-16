@@ -5169,6 +5169,11 @@ export type Database = {
           created_at: string
           id: string
           numero_averbacao: string | null
+          averbacao_rcv_status: string | null
+          averbacao_rcv_numero: string | null
+          averbacao_rcv_erro: string | null
+          averbacao_rcv_resposta: Json | null
+          averbacao_rcv_em: string | null
           operacao_id: string
           origem: string
           pagto_agencia: string | null
@@ -5196,6 +5201,11 @@ export type Database = {
           created_at?: string
           id?: string
           numero_averbacao?: string | null
+          averbacao_rcv_status?: string | null
+          averbacao_rcv_numero?: string | null
+          averbacao_rcv_erro?: string | null
+          averbacao_rcv_resposta?: Json | null
+          averbacao_rcv_em?: string | null
           operacao_id: string
           origem?: string
           pagto_agencia?: string | null
@@ -5223,6 +5233,11 @@ export type Database = {
           created_at?: string
           id?: string
           numero_averbacao?: string | null
+          averbacao_rcv_status?: string | null
+          averbacao_rcv_numero?: string | null
+          averbacao_rcv_erro?: string | null
+          averbacao_rcv_resposta?: Json | null
+          averbacao_rcv_em?: string | null
           operacao_id?: string
           origem?: string
           pagto_agencia?: string | null

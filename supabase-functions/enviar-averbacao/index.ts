@@ -1,4 +1,14 @@
-// Edge Function: enviar-averbacao (v5, 2026-10-09)
+// Edge Function: enviar-averbacao (v9, 2026-10-16)
+// v9 (2026-10-16): numero da averbacao = Averbado.DadosSeguro[].NumeroAverbacao (numero da averbadora/seguradora, o que vai no MDF-e).
+//   Antes (v7/v8) pegava Averbado.Protocolo (protocolo da AT&M). Resposta real vista em producao (CT-e no 3):
+//   { Infos?, Serie, TpDoc, Numero, CNPJCli, Averbado: { Protocolo, DadosSeguro: [{ NumeroAverbacao }], dhAverbacao } }.
+//   Ordem de preferencia: NumeroAverbacao > Averbado.Protocolo > busca generica.
+// v8 (2026-10-16): o CT-e (RCTR-C, Allianz) passa a usar a integracao da caixa postal 11486306 (provedor nstech_atm_allianz, usuario
+// WS_RBR_ALLIANZ, senha no Vault em nstech_averba_senha_integracao_allianz). A caixa 11486292 (provedor nstech_atm) e da Sompo (RC-V) e
+// respondia erro 027 (apolice nao cadastrada para o ramo) por nao ter a RCTR-C. A senha vem de get_nstech_averba_senha_allianz().
+// v7 (2026-10-16): o POST /rest/CTe agora envia o XML autorizado do CT-e como corpo cru com Content-Type application/xml
+// (a Averba respondeu erro 107 "Header Content-Type invalido. Deve ser application/xml." ao receber JSON). Resposta 200 com
+// bloco Erros passa a contar como erro.
 // v6 (2026-10-15): resposta de bloqueio traz `regras` com a origem de cada um (antt = apólice RCTR-C; tecnico = sem isso
 // o envio à AT&M é impossível). Nenhum bloqueio daqui é regra só da RBR.
 //
@@ -9,12 +19,9 @@
 // v3: verify_jwt desligado no gateway; autenticacao aqui (gestor_rbr logado OU cabecalho x-sync-secret do Vault);
 //     modo { teste_login: true } so faz o login e devolve o resultado (nunca devolve o token).
 // v4: a Averba exige o cabecalho Accept: application/json (erro 104 no primeiro teste).
-// v5: TESTE REAL de login (2026-10-09) deu HTTP 200 com o token no campo "Bearer" (a API usa nomes em PascalCase,
-//     ex.: Erros/Erro/Codigo/Descricao). O parser agora le "Bearer" e tira um eventual prefixo "Bearer ".
+// v5: login com token no campo "Bearer" (a API usa nomes em PascalCase).
 //
-// TRANSPARENCIA: o LOGIN esta confirmado em producao. O ENVIO (POST /rest/CTe) ainda NAO foi testado com um CT-e
-// real: o nome exato dos campos do corpo (a API usa PascalCase) pode precisar de ajuste; a resposta crua e
-// gravada integralmente em payload_resposta para o primeiro teste mostrar o formato. Nunca finge sucesso.
+// A resposta crua e gravada integralmente em payload_resposta. Nunca finge sucesso.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -29,6 +36,59 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 const AVERBA_BASE_URL = "https://webserver.averba.com.br";
+// Integracao usada para o CT-e (apolice RCTR-C da Allianz, caixa postal 11486306).
+const PROVEDOR_CTE = "nstech_atm_allianz";
+const RPC_SENHA_CTE = "get_nstech_averba_senha_allianz";
+
+// Busca em profundidade o primeiro valor de uma chave (sem diferenciar maiusculas), dentro de objetos e listas.
+function buscarChave(valor: unknown, chave: string, profundidade = 0): string | null {
+  if (profundidade > 6 || valor === null || typeof valor !== "object") return null;
+  if (Array.isArray(valor)) {
+    for (const item of valor) {
+      const achou = buscarChave(item, chave, profundidade + 1);
+      if (achou) return achou;
+    }
+    return null;
+  }
+  for (const [k, v] of Object.entries(valor as Record<string, unknown>)) {
+    if (k.toLowerCase() === chave && (typeof v === "string" || typeof v === "number") && String(v).trim() !== "") {
+      return String(v).trim();
+    }
+  }
+  for (const v of Object.values(valor as Record<string, unknown>)) {
+    const achou = buscarChave(v, chave, profundidade + 1);
+    if (achou) return achou;
+  }
+  return null;
+}
+
+// Numero da averbacao do CT-e: NumeroAverbacao (DadosSeguro) > Averbado.Protocolo > outras chaves conhecidas.
+// Nao usa "Numero" (na resposta da Averba e o numero do CT-e).
+function acharNumeroAverbacao(json: Record<string, unknown> | null): string | null {
+  if (!json) return null;
+  const doSeguro = buscarChave(json, "numeroaverbacao");
+  if (doSeguro) return doSeguro;
+  const protocolo = (json as { Averbado?: { Protocolo?: unknown } }).Averbado?.Protocolo;
+  if ((typeof protocolo === "string" || typeof protocolo === "number") && String(protocolo).trim() !== "") return String(protocolo).trim();
+  for (const chave of ["averbacao", "protocolo", "protocoloaverbacao", "numeroaverba"]) {
+    const achou = buscarChave(json, chave);
+    if (achou) return achou;
+  }
+  return null;
+}
+
+// A Averba devolve erros no bloco Erros.Erro (lista ou objeto unico), as vezes ate com HTTP 200.
+function errosDaAverba(json: Record<string, unknown> | null): string[] {
+  const erros = (json as { Erros?: { Erro?: unknown } } | null)?.Erros?.Erro;
+  if (!erros) return [];
+  const lista = Array.isArray(erros) ? erros : [erros];
+  return lista
+    .map((e) => {
+      const o = e as { Codigo?: unknown; Descricao?: unknown };
+      return `${o?.Codigo ?? "?"}: ${o?.Descricao ?? "sem descricao"}`;
+    })
+    .filter((s) => s.trim() !== "");
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -63,11 +123,11 @@ Deno.serve(async (req: Request) => {
     const { data: integracao } = await supabase
       .from("integracao_averbacao")
       .select("id, codigo_atm, usuario_integracao, ativo")
-      .eq("provedor", "nstech_atm")
+      .eq("provedor", PROVEDOR_CTE)
       .maybeSingle();
 
     async function loginAverba(): Promise<{ ok: boolean; status: number; token?: string; corpo: string; erro?: string }> {
-      const { data: senha, error: senhaError } = await supabase.rpc("get_nstech_averba_senha");
+      const { data: senha, error: senhaError } = await supabase.rpc(RPC_SENHA_CTE);
       if (senhaError || !senha) return { ok: false, status: 0, corpo: "", erro: "Nao foi possivel obter a senha da integracao AT&M armazenada no Vault." };
       const resp = await fetch(`${AVERBA_BASE_URL}/rest/Auth`, {
         method: "POST",
@@ -150,7 +210,7 @@ Deno.serve(async (req: Request) => {
 
     // 3. Integracao AT&M cadastrada e ativa
     if (!integracao) {
-      bloqueio("tecnico", "Integracao com a AT&M/NSTech (Averba) nao esta cadastrada no sistema.");
+      bloqueio("tecnico", "Integracao com a AT&M/NSTech (Averba, caixa da Allianz) nao esta cadastrada no sistema.");
     } else if (!integracao.ativo) {
       bloqueio("tecnico", "Integracao com a AT&M/NSTech (Averba) esta cadastrada mas marcada como inativa. Ative-a antes de enviar averbacoes automaticas.");
     } else if (!integracao.codigo_atm || !integracao.usuario_integracao) {
@@ -210,11 +270,11 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ sucesso: false, erro: erroMsg }, 502);
     }
 
-    // 8. Envia o CT-e para averbacao
+    // 8. Envia o CT-e para averbacao: corpo = XML autorizado cru, Content-Type application/xml (erro 107 da Averba)
     const averbaResp = await fetch(`${AVERBA_BASE_URL}/rest/CTe`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${login.token}` },
-      body: JSON.stringify({ chave: cte!.chave_acesso, xml: cteXml }),
+      headers: { "Content-Type": "application/xml", Accept: "application/json", Authorization: `Bearer ${login.token}` },
+      body: cteXml,
     });
     const averbaText = await averbaResp.text();
     let averbaJson: Record<string, unknown> | null = null;
@@ -224,15 +284,24 @@ Deno.serve(async (req: Request) => {
       averbaJson = null;
     }
 
-    if (!averbaResp.ok) {
-      const erroMsg = `AT&M/NSTech recusou o envio da averbacao (status ${averbaResp.status}). Resposta bruta gravada para diagnostico.`;
+    const errosAverba = errosDaAverba(averbaJson);
+    if (!averbaResp.ok || errosAverba.length > 0) {
+      const detalheErros = errosAverba.length > 0 ? ` ${errosAverba.join(" | ")}.` : "";
+      const erroMsg = `AT&M/NSTech recusou o envio da averbacao (status ${averbaResp.status}).${detalheErros} Resposta bruta gravada para diagnostico.`;
       await gravar({ status: "erro", mensagem_erro: erroMsg, payload_resposta: { averba_status: averbaResp.status, averba_body: averbaJson ?? averbaText } });
       return jsonResponse({ sucesso: false, erro: erroMsg, detalhe: averbaJson ?? averbaText }, 502);
     }
 
     // 9. Sucesso: grava tudo o que a AT&M devolveu, sem inventar campos
-    const numeroAverbacao = (averbaJson?.averbacao ?? averbaJson?.numeroAverbacao ?? averbaJson?.protocolo ?? null) as string | null;
-    await gravar({ status: "emitido", numero_documento: numeroAverbacao, mensagem_erro: null, payload_resposta: averbaJson ?? { raw: averbaText } });
+    const numeroAverbacao = acharNumeroAverbacao(averbaJson);
+    await gravar({
+      status: "emitido",
+      numero_documento: numeroAverbacao,
+      mensagem_erro: numeroAverbacao
+        ? null
+        : "Averbacao aceita pela AT&M, mas nao identifiquei o numero na resposta. Confira a resposta gravada e informe o numero da averbacao na operacao (o MDF-e exige).",
+      payload_resposta: averbaJson ?? { raw: averbaText },
+    });
 
     // O MDF-e le o numero daqui: se a Averba devolveu numero, ja deixa gravado na operacao.
     if (numeroAverbacao) {
@@ -242,7 +311,12 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    return jsonResponse({ sucesso: true, numero_averbacao: numeroAverbacao, detalhe: averbaJson ?? averbaText });
+    return jsonResponse({
+      sucesso: true,
+      numero_averbacao: numeroAverbacao,
+      aviso: numeroAverbacao ? undefined : "Numero da averbacao nao identificado na resposta; confira a resposta gravada.",
+      detalhe: averbaJson ?? averbaText,
+    });
   } catch (e) {
     console.error(e);
     return jsonResponse({ sucesso: false, erro: e instanceof Error ? e.message : "Erro desconhecido." }, 500);

@@ -1,5 +1,5 @@
 import { supabase } from '@rbr/shared/supabaseClient'
-import type { Database } from '@rbr/shared/database.types'
+import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, TIPO_DOC_LABEL } from '@rbr/shared/format'
 
 type T = Database['public']['Tables']
@@ -56,6 +56,14 @@ export interface DetalheOperacao {
   documentos: Documento[]
   apolice: Apolice | null
   empresa: DadosEmpresa
+  // Averbação RC-V (Sompo) do MDF-e, gravada pela função enviar-averbacao-rcv em operacao_ciot_vpo.
+  averbacaoRcv: {
+    averbacao_rcv_status: string | null
+    averbacao_rcv_numero: string | null
+    averbacao_rcv_erro: string | null
+    averbacao_rcv_resposta: Json | null
+    averbacao_rcv_em: string | null
+  } | null
 }
 
 export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperacao> {
@@ -63,7 +71,7 @@ export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperac
   if (error || !operacao) throw error ?? new Error('Operação não encontrada.')
 
   const hoje = new Date().toLocaleDateString('sv-SE') // data local
-  const [cot, cli, custos, veic, rebs, mot, cond, docs, apos, emp] = await Promise.all([
+  const [cot, cli, custos, veic, rebs, mot, cond, docs, apos, emp, rcv] = await Promise.all([
     operacao.cotacao_id ? supabase.from('cotacoes').select('*').eq('id', operacao.cotacao_id).maybeSingle() : Promise.resolve({ data: null }),
     operacao.cliente_id ? supabase.from('clientes').select('*').eq('id', operacao.cliente_id).maybeSingle() : Promise.resolve({ data: null }),
     operacao.cotacao_id
@@ -84,6 +92,11 @@ export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperac
       .or(`vigencia_inicio.is.null,vigencia_inicio.lte.${hoje}`)
       .order('vigencia_inicio', { ascending: false, nullsFirst: false }),
     supabase.from('parametros_sistema').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
+    supabase
+      .from('operacao_ciot_vpo')
+      .select('averbacao_rcv_status, averbacao_rcv_numero, averbacao_rcv_erro, averbacao_rcv_resposta, averbacao_rcv_em')
+      .eq('operacao_id', operacaoId)
+      .maybeSingle(),
   ])
 
   const veiculo = (veic.data as Veiculo | null) ?? null
@@ -107,6 +120,7 @@ export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperac
     titular,
     condicao: (cond.data as CondicaoPagamento | null) ?? null,
     documentos: (docs.data ?? []) as Documento[],
+    averbacaoRcv: rcv.data ?? null,
     apolice,
     empresa: ((emp.data?.valor ?? {}) as DadosEmpresa) || {},
   }
