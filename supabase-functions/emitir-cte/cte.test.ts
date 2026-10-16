@@ -298,3 +298,12 @@ test("frete na mesma cidade continua indo para NFS-e", () => {
   assert.equal(r.intramunicipal, true);
   assert.ok(r.bloqueios.some((b) => b.startsWith("Frete intramunicipal")));
 });
+
+test("C1: cada bloqueio do CT-e sai em regras com a origem (RNTRC = ANTT, chave da NF-e = SEFAZ)", () => {
+  const b = base();
+  const r = montarCte({ ...b, op: { ...b.op, veiculo_rntrc_ativo: false, nf_chave_acesso: null } });
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem === "RNTRC do veículo não está ativo."));
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Cotação sem chave de acesso da NF-e")));
+  assert.equal(r.regras.filter((x) => x.tipo === "bloqueio").length, r.bloqueios.length);
+  assert.ok(!r.regras.some((x) => x.origem === "rbr"));
+});

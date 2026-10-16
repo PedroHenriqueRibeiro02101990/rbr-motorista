@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -11,6 +11,7 @@ import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import PainelPendencias from '../components/PainelPendencias'
+import FaixaTeste from '../components/FaixaTeste'
 import { Aviso, Botao } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
@@ -21,6 +22,8 @@ import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, 
 import { type GiroParams, type ResultadoGiro, GIRO_PARAMS_PADRAO, calcularGiro, diasTransito, giroParamsDeLinhas } from '../lib/giro'
 import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/cotacaoPdf'
 import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
+import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
+import { erroTipoCarga } from '../lib/cotacaoValidacao'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -278,7 +281,9 @@ const FORM_INICIAL = {
   natureza_operacao: '',
   ncms_produtos: '',
   tabela: '',
-  tipo_carga: '',
+  // Cotação nova já abre com "Carga Geral" (o MDF-e exige o tipo de carga). Cotação antiga vazia continua vazia: o
+  // emitir-mdfe (v18) assume Carga geral e avisa.
+  tipo_carga: 'Carga Geral',
   eixos: '',
   distancia_km: '',
   checkbox_carga_perigosa_manual: false,
@@ -512,6 +517,8 @@ function margemBadge(margem: number | null, min: number, max: number): { bg: str
   return { bg: '#E7F5EC', color: 'var(--rbr-positive)', label }
 }
 
+const CHAVE_RASCUNHO_NOVA = 'cotacao:nova'
+
 export default function Cotacao() {
   const [cotacoes, setCotacoes] = useState<CotacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -582,6 +589,9 @@ export default function Cotacao() {
   const [form, setForm] = useState<CotacaoFormState | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState<StatusCotacao>('rascunho')
+  // Operação de teste (cotacoes.eh_teste): liga/desliga direto no banco; o banco preenche RBR nos dois lados.
+  const [editingTeste, setEditingTeste] = useState(false)
+  const [trocandoTeste, setTrocandoTeste] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -616,6 +626,23 @@ export default function Cotacao() {
   const { confirmacao, rodar: rodarAcao, ocupado: ocupadoAcao } = useConfirmacao()
   const [tipoCotacao, setTipoCotacao] = useState<TipoCotacaoValor>('carga_unica')
   const [qtdVeiculos, setQtdVeiculos] = useState(2)
+
+  // Rascunho automático do painel (nova cotação ou cotação em edição): sobrevive a fechar sem querer, recarregar a
+  // página ou cair a conexão. Some ao salvar com sucesso ou ao descartar de propósito.
+  const chaveRascunho = form ? (editingId ? `cotacao:${editingId}` : CHAVE_RASCUNHO_NOVA) : null
+  const dadosRascunho = useMemo(
+    () => ({ form, itens, destinos, tipoCotacao, qtdVeiculos, pracasPedagio }),
+    [form, itens, destinos, tipoCotacao, qtdVeiculos, pracasPedagio],
+  )
+  const aplicarRascunho = useCallback((d: typeof dadosRascunho) => {
+    if (d.form) setForm(d.form)
+    setItens(d.itens ?? [])
+    setDestinos(d.destinos ?? [])
+    setTipoCotacao(d.tipoCotacao ?? 'carga_unica')
+    setQtdVeiculos(d.qtdVeiculos ?? 2)
+    setPracasPedagio(d.pracasPedagio ?? [])
+  }, [])
+  const rascunho = useRascunho(chaveRascunho, dadosRascunho, aplicarRascunho)
   const [confirmarConv, setConfirmarConv] = useState(false)
   const [programarAberto, setProgramarAberto] = useState(false)
   const [modalCancel, setModalCancel] = useState<'cancelar' | 'apagar' | null>(null)
@@ -625,6 +652,8 @@ export default function Cotacao() {
     saldo: { cargas_total: number; cargas_abertas: number } | null
   } | null>(null)
   const [abaCotacao, setAbaCotacao] = useState<'padrao' | 'avancada'>('padrao')
+  const [tipoCargaFaltando, setTipoCargaFaltando] = useState(false)
+  const tipoCargaRef = useRef<HTMLSelectElement | null>(null)
   const [cargaComplexaAberta, setCargaComplexaAberta] = useState(false)
 
   // Formulário abre como painel flutuante sobre o resto da tela (igual ao preview aprovado) —
@@ -732,7 +761,9 @@ export default function Cotacao() {
         'giro_dias_carga',
         'giro_dias_mes',
       ])
-    setGiroParams(giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))))
+    // 2026-10-15: capital de giro virou custo FIXO mensal (mútuo do Marcelo, migration 20261015_12) e não entra
+    // mais no preço por operação — o giro fica desligado aqui mesmo que o parâmetro giro_ativo volte a true.
+    setGiroParams({ ...giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))), ativo: false })
     for (const row of data ?? []) {
       if (row.chave.startsWith('giro_')) continue
       if (row.chave === 'tag_seguro_faixas') {
@@ -1054,6 +1085,7 @@ export default function Cotacao() {
     setBannerConv(null)
     setInfoConv(null)
     setAbaCotacao('padrao')
+    setTipoCargaFaltando(false)
     setCargaComplexaAberta(false)
   }
 
@@ -1066,6 +1098,7 @@ export default function Cotacao() {
     })
     setEditingId(null)
     setEditingStatus('rascunho')
+    setEditingTeste(false)
     setPisoSalvo(null)
     setPrecoLegado(null)
     // Custos obrigatórios (ex.: pesquisa GR) já entram em toda cotação nova.
@@ -1101,6 +1134,36 @@ export default function Cotacao() {
       return
     }
     setDestinos((data ?? []).map(destinoDeLinha))
+  }
+
+  async function alternarModoTeste(ligar: boolean) {
+    if (!editingId) return
+    let temRetrato = true
+    if (!ligar) {
+      const { data: atual } = await supabase.from('cotacoes').select('dados_antes_teste').eq('id', editingId).maybeSingle()
+      temRetrato = atual?.dados_antes_teste != null
+    }
+    const ok = window.confirm(
+      ligar
+        ? 'Ligar OPERAÇÃO DE TESTE?\n\nRemetente, destinatário, tomador e cliente passam a ser a própria RBR; NF de R$ 1,00, frete de R$ 1,00 e frete do motorista de R$ 1,00, sem pedágio. GR, CIOT, VPO e averbação deixam de barrar a liberação. Os dados atuais ficam guardados e voltam quando o teste for desligado. Os documentos serão REAIS na SEFAZ e devem ser cancelados no fim.'
+        : temRetrato
+          ? 'Desligar operação de teste?\n\nOs dados originais da cotação serão restaurados (remetente, destinatário, cliente, valores, pedágio e frete do motorista), e a operação volta ao cliente real.'
+          : 'Desligar operação de teste?\n\nATENÇÃO: esta cotação foi marcada como teste antes de existir o retrato dos dados originais, então NADA será restaurado. Revise remetente, destinatário, valores e cliente à mão antes de usar.',
+    )
+    if (!ok) return
+    setTrocandoTeste(true)
+    setFormError(null)
+    const { error } = await supabase.from('cotacoes').update({ eh_teste: ligar }).eq('id', editingId)
+    if (!error) {
+      const { data } = await supabase.from('cotacoes').select('*').eq('id', editingId).maybeSingle()
+      if (data) abrirEdicao(data as Cotacao)
+    } else if (error.code === 'PGRST204' || error.code === '42703' || /eh_teste|dados_antes_teste/.test(error.message)) {
+      // Gestor publicado antes da migration 20261014_01 (ordem de deploy: migration primeiro).
+      setFormError('O modo teste ainda não está disponível: a atualização do banco (migration 20261014_01) não foi aplicada. Avise o responsável técnico.')
+    } else {
+      setFormError(error.message)
+    }
+    setTrocandoTeste(false)
   }
 
   function abrirEdicao(c: Cotacao) {
@@ -1165,6 +1228,7 @@ export default function Cotacao() {
     })
     setEditingId(c.id)
     setEditingStatus(c.status)
+    setEditingTeste(c.eh_teste === true)
     setPisoInfo(null)
     setPisoSalvo(c.piso_antt_calculado)
     setPrecoLegado(
@@ -1210,6 +1274,26 @@ export default function Cotacao() {
     setForm(null)
     setEditingId(null)
   }
+
+  // Fechar pelo X, pelo botão do topo ou pelo Esc: com alteração não salva, pede confirmação e, se o gestor
+  // descartar, apaga o rascunho. (Clicar no fundo não fecha mais o painel.)
+  function pedirParaFechar() {
+    if (rascunho.sujo && !window.confirm('Descartar o que você preencheu?')) return
+    if (rascunho.sujo) rascunho.limpar()
+    fecharForm()
+  }
+
+  // Esc fecha o painel — menos quando há outro modal (role="dialog") aberto por cima, que trata o próprio Esc.
+  useEffect(() => {
+    if (!form) return
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      pedirParaFechar()
+    }
+    window.addEventListener('keydown', aoTeclar)
+    return () => window.removeEventListener('keydown', aoTeclar)
+  })
 
   async function processXmlFile(file: File) {
     if (!form) return
@@ -1488,12 +1572,17 @@ export default function Cotacao() {
                 ? lucroPctDigitado / 100
                 : lucroPadrao,
             preco_modo: modoValorFinal ? 'valor_final' : 'lucro_pct',
-            custo_financeiro: comp.custoFinanceiro,
-            giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
-            giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
-            giro_dias_transito: numOrNull(f.giro_dias_transito),
-            giro_aporte: comp.giro?.aporte ?? null,
-            giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
+            // Giro desligado (custo fixo mensal): não regrava custo_financeiro/giro_* — o que já estava salvo fica como histórico.
+            ...(giroParams.ativo
+              ? {
+                  custo_financeiro: comp.custoFinanceiro,
+                  giro_repassar: (numOrNull(f.giro_repasse_pct) ?? 100) > 0,
+                  giro_repasse_pct: Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100),
+                  giro_dias_transito: numOrNull(f.giro_dias_transito),
+                  giro_aporte: comp.giro?.aporte ?? null,
+                  giro_taxa_efetiva: comp.giro?.taxaEfetiva ?? null,
+                }
+              : {}),
           }
 
     // Cotação com múltiplos destinos: o valor final ao cliente é a soma das linhas de destino,
@@ -1701,6 +1790,8 @@ export default function Cotacao() {
     try {
       const eraNova = !editingId
       const final = await gravarTudo()
+      rascunho.limpar()
+      if (eraNova) removerRascunho(CHAVE_RASCUNHO_NOVA)
       setEditingStatus(final.status)
       sincronizarComBanco(final)
       setSuccessMsg(eraNova ? 'Cotação criada com sucesso.' : 'Cotação atualizada com sucesso.')
@@ -1724,11 +1815,27 @@ export default function Cotacao() {
     }
   }
 
+  // Tipo de carga obrigatório para enviar/converter (regra em lib/cotacaoValidacao.ts). Mostra a mensagem, volta para a
+  // aba do campo e põe o foco nele. Salvar rascunho não passa por aqui.
+  function exigirTipoCarga(): boolean {
+    const erro = erroTipoCarga(form?.tipo_carga)
+    setTipoCargaFaltando(!!erro)
+    if (!erro) return true
+    setFormError(erro)
+    setAbaCotacao('padrao')
+    setTimeout(() => {
+      tipoCargaRef.current?.focus()
+      tipoCargaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    return false
+  }
+
   // Enviar grava tudo que está na tela (inclusive custos adicionais) e marca como enviada.
   async function enviar() {
     if (!form || !editingId) return
     setFormError(null)
     setSuccessMsg(null)
+    if (!exigirTipoCarga()) return
     if (composicao?.erro) {
       setFormError(composicao.erro)
       return
@@ -1746,6 +1853,7 @@ export default function Cotacao() {
     setSaving(true)
     try {
       const final = await gravarTudo({ status: 'enviada' })
+      rascunho.limpar()
       sincronizarComBanco(final)
       setEditingStatus('enviada')
       setSuccessMsg('Cotação salva e marcada como enviada.')
@@ -1762,6 +1870,8 @@ export default function Cotacao() {
   function erroParaConverter(): string | null {
     if (!form) return 'Formulário vazio.'
     if (!form.cliente_id) return 'Selecione um cliente antes de converter em operação.'
+    const erroTipo = erroTipoCarga(form.tipo_carga)
+    if (erroTipo) return erroTipo
     const erroDest = validarDestinos()
     if (erroDest) return erroDest
     if (destinos.length === 0) {
@@ -1783,6 +1893,7 @@ export default function Cotacao() {
   function abrirConfirmacaoConversao() {
     setFormError(null)
     setSuccessMsg(null)
+    if (!exigirTipoCarga()) return
     const erro = erroParaConverter()
     if (erro) {
       setFormError(erro)
@@ -2316,7 +2427,7 @@ export default function Cotacao() {
             {showCatalogo ? 'Fechar tabela de custos' : 'Tabela de custos'}
           </button>
           <button
-            onClick={() => (form ? fecharForm() : abrirNovaCotacao())}
+            onClick={() => (form ? pedirParaFechar() : abrirNovaCotacao())}
             className="text-sm font-bold px-4 py-2 rounded-xl"
             style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
           >
@@ -2348,19 +2459,14 @@ export default function Cotacao() {
         <div
           className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-3 py-6 md:py-10"
           style={{ background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          onClick={(e) => {
-            // Fecha só num clique de verdade no fundo (não um arrastar de seleção de texto
-            // que termina fora do card). Importante usar onClick, não onMouseDown: no Chrome,
-            // interagir com a própria barra de rolagem deste elemento (que também é o
-            // container com scroll) dispara mousedown nele mesmo — com onMouseDown isso
-            // fechava o formulário sempre que o usuário clicava na barra de rolagem do
-            // navegador. onClick não sofre desse problema.
-            if (e.target === e.currentTarget) fecharForm()
-          }}
+          // Clique no fundo NÃO fecha (fechava sem querer e perdia o que estava preenchido). Esc fecha, com
+          // confirmação se houver alteração (efeito "Esc fecha o painel" mais acima).
         >
         <div
           className="w-full bg-white border rounded-[20px] p-[18px] flex flex-col gap-4 my-auto"
           style={{ ...cardStyle, maxWidth: 760 }}
+          onPointerDownCapture={rascunho.marcarInteracao}
+          onKeyDownCapture={rascunho.marcarInteracao}
         >
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2.5">
@@ -2378,7 +2484,7 @@ export default function Cotacao() {
             </div>
             <button
               type="button"
-              onClick={fecharForm}
+              onClick={pedirParaFechar}
               aria-label="Fechar"
               className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
               style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
@@ -2386,6 +2492,36 @@ export default function Cotacao() {
               <IconX width={14} height={14} />
             </button>
           </div>
+
+          {editingTeste && (
+            <FaixaTeste detalhe="RBR remetente e destinatária · NF e frete até R$ 5,00 · fora do financeiro e dos relatórios" />
+          )}
+          {editingId && (
+            <label className="flex items-center gap-2 text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+              <input
+                type="checkbox"
+                checked={editingTeste}
+                disabled={trocandoTeste}
+                onChange={(e) => void alternarModoTeste(e.target.checked)}
+              />
+              Operação de teste (só gestor RBR; não muda depois de emitir documento fiscal)
+            </label>
+          )}
+          {rascunho.pendente && (
+            <div className="text-xs rounded-xl px-3 py-2.5 flex items-center justify-between gap-2 flex-wrap" style={{ background: '#FFF6E0', color: 'var(--rbr-navy-dark)' }}>
+              <span>
+                Retomar rascunho? Há um rascunho não salvo{quandoFoiSalvo(rascunho.pendente.salvoEm) ? ` de ${quandoFoiSalvo(rascunho.pendente.salvoEm)}` : ''}.
+              </span>
+              <span className="flex gap-2">
+                <button type="button" onClick={rascunho.retomar} className="font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+                  Retomar
+                </button>
+                <button type="button" onClick={rascunho.descartarPendente} className="font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
+                  Descartar
+                </button>
+              </span>
+            </div>
+          )}
 
           {formError && (
             <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
@@ -3521,12 +3657,19 @@ export default function Cotacao() {
                 ))}
               </select>
               <select
+                ref={tipoCargaRef}
                 value={form.tipo_carga}
-                onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
+                onChange={(e) => {
+                  if (e.target.value) setTipoCargaFaltando(false)
+                  setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))
+                }}
+                aria-label="Tipo de carga (obrigatório para enviar ou converter)"
+                aria-invalid={tipoCargaFaltando}
+                aria-describedby={tipoCargaFaltando ? 'tipo-carga-erro' : undefined}
                 className={inputClass}
-                style={{ ...inputStyle, background: '#fff' }}
+                style={{ ...inputStyle, background: '#fff', ...(tipoCargaFaltando ? { borderColor: 'var(--rbr-danger)', boxShadow: '0 0 0 2px #FBE9E9' } : {}) }}
               >
-                <option value="">Tipo de carga</option>
+                <option value="">Tipo de carga *</option>
                 {TIPOS_CARGA.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -3548,6 +3691,11 @@ export default function Cotacao() {
                 ))}
               </select>
             </div>
+            {tipoCargaFaltando && (
+              <div id="tipo-carga-erro" role="alert" className="text-xs font-semibold" style={{ color: 'var(--rbr-danger)' }}>
+                Escolha o tipo de carga: ele vai no MDF-e e define o piso ANTT.
+              </div>
+            )}
 
             <div className="flex items-center gap-2.5 flex-wrap">
               <button

@@ -1,8 +1,13 @@
-// Edge Function: emitir-cte (v19)
+// Edge Function: emitir-cte (v20)
 //
 // Emite o CT-e de uma operação via Focus NFe (POST /v2/cte, resposta assíncrona 202; status final via
 // consultar-documento-fiscal). Lê os dados -> monta payload e bloqueios (cte.ts, testado em cte.test.ts) ->
 // chama Focus -> grava em documentacao_operacao (upsert por operacao_id+tipo).
+//
+// v21 (2026-10-15): resposta traz `regras` (cada bloqueio/aviso com origem sefaz/antt/rbr/info) e os avisos da
+// trava_teste_fiscal. Classificação em cte.ts; hoje nenhum bloqueio do CT-e é regra só da RBR.
+// v20 (2026-10-09): natureza da operação do CT-e é sempre o texto fixo de transporte (cte.ts). Antes usava
+// cotacoes.natureza_operacao, que em algumas cotações guarda a natureza da NF-e ("Venda") e iria para o CT-e.
 //
 // v19 (2026-10-08): data_emissao do CT-e vai com o fuso de Brasília (-03:00) em vez de UTC (+00:00). Mesmo
 // instante, só muda a forma de escrever — elimina o fuso como dúvida na investigação da rejeição 230.
@@ -138,7 +143,7 @@ Deno.serve(async (req: Request) => {
       municipioEmitente = m?.cidade ?? null;
     }
 
-    const { ambiente, bloqueios, avisos, intramunicipal, payload } = montarCte({
+    const { ambiente, bloqueios, avisos, regras, intramunicipal, payload } = montarCte({
       op,
       pf,
       cotacao,
@@ -151,6 +156,15 @@ Deno.serve(async (req: Request) => {
       agora: new Date(),
     });
 
+    // Modo teste (cotacoes.eh_teste): trava invertida no banco — RBR remetente E destinatária, cliente = RBR,
+    // valores até R$ 5. Fora do modo teste devolve teste=false e nada muda.
+    const { data: trava, error: travaErr } = await supabaseAdmin.rpc("trava_teste_fiscal", { p_operacao_id: operacao_id, p_tipo: "cte" });
+    if (travaErr) {
+      return jsonResponse({ sucesso: false, erro: `Não consegui verificar o modo teste: ${travaErr.message}` }, 500);
+    }
+    if (trava?.teste === true && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
+    if (trava?.teste === true && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
+
     const ref = `rbr-cte-${operacao_id}`;
 
     // Modo prévia (card de conferência): devolve o que SERIA enviado + o que falta, sem gravar nem chamar a Focus.
@@ -161,6 +175,7 @@ Deno.serve(async (req: Request) => {
         ambiente,
         bloqueios,
         avisos,
+        regras,
         payload,
       });
     }
@@ -184,6 +199,7 @@ Deno.serve(async (req: Request) => {
         intramunicipal,
         motivos: bloqueios,
         avisos,
+        regras,
         erro: mensagem,
       }, 422);
     }
@@ -258,6 +274,7 @@ Deno.serve(async (req: Request) => {
           ? "Ambiente de homologação — este CT-e NÃO tem validade fiscal."
           : undefined,
       avisos,
+      regras,
     });
   } catch (e) {
     return jsonResponse({ sucesso: false, erro: String(e) }, 500);

@@ -2280,6 +2280,8 @@ export type Database = {
       }
       cotacoes: {
         Row: {
+          eh_teste: boolean
+          dados_antes_teste: Json | null
           agenciador_id: string | null
           aliquota_imposto_pct: number | null
           cancelada_em: string | null
@@ -2364,6 +2366,8 @@ export type Database = {
           xml_danfe_url: string | null
         }
         Insert: {
+          eh_teste?: boolean
+          dados_antes_teste?: Json | null
           agenciador_id?: string | null
           aliquota_imposto_pct?: number | null
           cancelada_em?: string | null
@@ -2448,6 +2452,8 @@ export type Database = {
           xml_danfe_url?: string | null
         }
         Update: {
+          eh_teste?: boolean
+          dados_antes_teste?: Json | null
           agenciador_id?: string | null
           aliquota_imposto_pct?: number | null
           cancelada_em?: string | null
@@ -5163,6 +5169,11 @@ export type Database = {
           created_at: string
           id: string
           numero_averbacao: string | null
+          averbacao_rcv_status: string | null
+          averbacao_rcv_numero: string | null
+          averbacao_rcv_erro: string | null
+          averbacao_rcv_resposta: Json | null
+          averbacao_rcv_em: string | null
           operacao_id: string
           origem: string
           pagto_agencia: string | null
@@ -5190,6 +5201,11 @@ export type Database = {
           created_at?: string
           id?: string
           numero_averbacao?: string | null
+          averbacao_rcv_status?: string | null
+          averbacao_rcv_numero?: string | null
+          averbacao_rcv_erro?: string | null
+          averbacao_rcv_resposta?: Json | null
+          averbacao_rcv_em?: string | null
           operacao_id: string
           origem?: string
           pagto_agencia?: string | null
@@ -5217,6 +5233,11 @@ export type Database = {
           created_at?: string
           id?: string
           numero_averbacao?: string | null
+          averbacao_rcv_status?: string | null
+          averbacao_rcv_numero?: string | null
+          averbacao_rcv_erro?: string | null
+          averbacao_rcv_resposta?: Json | null
+          averbacao_rcv_em?: string | null
           operacao_id?: string
           origem?: string
           pagto_agencia?: string | null
@@ -5445,6 +5466,9 @@ export type Database = {
       }
       operacoes: {
         Row: {
+          eh_teste: boolean
+          cliente_antes_teste: string | null
+          condicao_antes_teste: Json | null
           agenciador_id: string | null
           altura_cm: number | null
           bloqueio_fiscal: boolean
@@ -5501,6 +5525,9 @@ export type Database = {
           veiculo_id: string | null
         }
         Insert: {
+          eh_teste?: boolean
+          cliente_antes_teste?: string | null
+          condicao_antes_teste?: Json | null
           agenciador_id?: string | null
           altura_cm?: number | null
           bloqueio_fiscal?: boolean
@@ -5557,6 +5584,9 @@ export type Database = {
           veiculo_id?: string | null
         }
         Update: {
+          eh_teste?: boolean
+          cliente_antes_teste?: string | null
+          condicao_antes_teste?: Json | null
           agenciador_id?: string | null
           altura_cm?: number | null
           bloqueio_fiscal?: boolean
@@ -6242,6 +6272,7 @@ export type Database = {
       }
       pessoas: {
         Row: {
+          eh_teste: boolean
           acesso_bloqueado: boolean
           aprovacao_em: string | null
           aprovacao_hash: string | null
@@ -6315,6 +6346,7 @@ export type Database = {
           vinculo: string | null
         }
         Insert: {
+          eh_teste?: boolean
           acesso_bloqueado?: boolean
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -6388,6 +6420,7 @@ export type Database = {
           vinculo?: string | null
         }
         Update: {
+          eh_teste?: boolean
           acesso_bloqueado?: boolean
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -8484,6 +8517,7 @@ export type Database = {
       }
       veiculos: {
         Row: {
+          eh_teste: boolean
           ano: number | null
           aprovacao_em: string | null
           aprovacao_hash: string | null
@@ -8531,6 +8565,7 @@ export type Database = {
           verificado_em: string | null
         }
         Insert: {
+          eh_teste?: boolean
           ano?: number | null
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -8578,6 +8613,7 @@ export type Database = {
           verificado_em?: string | null
         }
         Update: {
+          eh_teste?: boolean
           ano?: number | null
           aprovacao_em?: string | null
           aprovacao_hash?: string | null
@@ -9888,6 +9924,10 @@ export type Database = {
         Args: { p_incidente: string; p_motivo: string }
         Returns: undefined
       }
+      fin_apagar_lancamento: {
+        Args: { p_estornar_baixas?: boolean; p_id: string; p_motivo: string }
+        Returns: Json
+      }
       fin_buscar_contraparte: { Args: { p_doc: string }; Returns: Json }
       fin_candidatos_baixa: {
         Args: {
@@ -9978,6 +10018,10 @@ export type Database = {
       lgpd_executar_exclusao: {
         Args: { p_executor: string; p_solicitacao: string }
         Returns: Json
+      }
+      liberar_operacao_com_ressalva: {
+        Args: { p_operacao: string; p_motivo: string }
+        Returns: undefined
       }
       liberar_retencao: {
         Args: { p_motivo: string; p_retencao: string }

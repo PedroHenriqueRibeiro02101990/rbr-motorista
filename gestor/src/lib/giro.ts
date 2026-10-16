@@ -1,5 +1,11 @@
 // Custo financeiro do capital de giro (aporte do investidor) dentro da cotação.
 //
+// DESLIGADO desde 2026-10-15 (migration 20261015_12): o capital de giro virou custo FIXO mensal — mútuo de
+// R$ 100.000 do Marcelo Guelfi Prado, 12 × R$ 3.000 líquidos todo dia 10 (11/2026 a 10/2027) + IR por conta da
+// RBR (DARF), lançados no Financeiro (origem 'mutuo_marcelo'). Não entra mais no preço nem no lucro por operação;
+// cotacoes.custo_financeiro / giro_* ficam só como histórico. O cálculo abaixo é o modelo antigo, mantido para
+// consulta.
+//
 // Regra (contrato de mútuo com remuneração):
 //  - O investidor adianta o custo da operação (frete + pedágio + seguro + adicionais) × % financiado.
 //  - O relógio corre da saída do veículo até o pagamento do cliente compensar:
