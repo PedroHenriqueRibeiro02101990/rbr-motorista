@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { IconCheck } from '@rbr/shared/icons'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 type TipoCusto = Database['public']['Tables']['tipos_custo_adicional']['Row']
 
@@ -76,7 +77,7 @@ export default function CatalogoCustos({ tipos, onSalvo }: { tipos: TipoCusto[];
   const [linhas, setLinhas] = useState<Linha[]>(() => tipos.map(paraLinha))
   const [salvandoId, setSalvandoId] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
 
   function editar(idx: number, patch: Partial<Linha>) {
     setLinhas((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)))

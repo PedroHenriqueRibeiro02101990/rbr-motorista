@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
+import { incidentesAcionaveis } from '../../lib/avisos'
 import { formatMoney } from '@rbr/shared/format'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../financeiro/ui'
 import { useConfirmacao } from '../Confirmacao'
@@ -68,7 +69,8 @@ export default function ConformidadeOperacao({
   const abertos = alertas.filter((a) => !a.revisado)
   const retido = ret.find((r) => r.status === 'retido_apuracao' && r.alvo === 'pagamento_prestador')
   const incAberto = inc.find((i) => i.status === 'aberto')
-  const temAlgo = abertos.length > 0 || inc.length > 0 || !!retido || !!congeladaMotivo
+  const incAbertos = incidentesAcionaveis(inc)
+  const temAlgo = abertos.length > 0 || incAbertos.length > 0 || !!retido || !!congeladaMotivo
 
   const modalDeclaracao = verDecl && (
     <Modal titulo="Declaração da carga (agenciador)" onFechar={() => setVerDecl(false)} largura="max-w-md">
@@ -139,7 +141,7 @@ export default function ConformidadeOperacao({
         </div>
       )}
 
-      {inc.map((i) => (
+      {incAbertos.map((i) => (
         <div key={i.id} className="rounded-lg px-3 py-2 text-xs flex flex-col gap-1.5" style={{ background: i.status === 'aberto' ? '#FBE9E9' : 'var(--rbr-muted-bg)' }}>
           <div>
             <b>Incidente {i.status === 'aberto' ? 'aberto' : 'encerrado'}</b> em {new Date(i.registrado_em).toLocaleString('pt-BR')}: {i.descricao}

@@ -25,6 +25,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -599,7 +600,7 @@ export default function Cotacao() {
   const [trocandoTeste, setTrocandoTeste] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useMensagemTemporaria<string>()
   const [emitindoPdf, setEmitindoPdf] = useState(false)
   // Clique em "Enviar WhatsApp" direto na lista: abre a cotação (pra reaproveitar o mesmo
   // cálculo de composição/itens do formulário) e, assim que custos adicionais e destinos
@@ -3680,17 +3681,14 @@ export default function Cotacao() {
             </label>
             {pesoLimiarKg != null ? (
               <div className="col-span-2 flex flex-col justify-center">
-                <div className="text-xs font-semibold flex items-center gap-2">
-                  <span
-                    className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                    style={{
-                      background: form.flag_peso_acima_limiar ? '#FBE9E9' : 'var(--rbr-muted-bg)',
-                      color: form.flag_peso_acima_limiar ? 'var(--rbr-danger)' : 'var(--rbr-muted)',
-                    }}
-                  >
-                    {form.flag_peso_acima_limiar ? 'Peso acima do limiar' : 'Peso dentro do limiar'}
-                  </span>
-                </div>
+                {/* Selo só quando acionável (acima do limiar); dentro do limiar fica só a linha de referência. */}
+                {form.flag_peso_acima_limiar && (
+                  <div className="text-xs font-semibold flex items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                      Peso acima do limiar
+                    </span>
+                  </div>
+                )}
                 <div className="text-[11px] text-[color:var(--rbr-muted)] mt-1">
                   Calculado automaticamente (limiar atual: {pesoLimiarKg.toLocaleString('pt-BR')} kg).
                 </div>
@@ -3707,15 +3705,11 @@ export default function Cotacao() {
             )}
             {tetoSeguro != null ? (
               <div className="col-span-2 md:col-span-4 flex items-center gap-2 text-xs font-semibold">
-                <span
-                  className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                  style={{
-                    background: form.flag_valor_acima_teto_seguro ? '#FBE9E9' : 'var(--rbr-muted-bg)',
-                    color: form.flag_valor_acima_teto_seguro ? 'var(--rbr-danger)' : 'var(--rbr-muted)',
-                  }}
-                >
-                  {form.flag_valor_acima_teto_seguro ? 'Valor acima do teto do seguro' : 'Valor dentro do teto do seguro'}
-                </span>
+                {form.flag_valor_acima_teto_seguro && (
+                  <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                    Valor acima do teto do seguro
+                  </span>
+                )}
                 <span className="text-[11px] font-normal text-[color:var(--rbr-muted)]">
                   Automático — teto da apólice vigente: {formatMoney(tetoSeguro)} por embarque.
                 </span>
