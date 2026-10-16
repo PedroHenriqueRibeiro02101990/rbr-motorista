@@ -25,7 +25,8 @@ export interface BancoFatura {
 }
 
 // Fatura de cobrança ao cliente (A4). Lista os fretes, total, vencimento e como pagar.
-export function gerarFaturaPdf(f: Fatura, itens: Lancamento[], empresa: EmpresaFatura, banco: BancoFatura): Blob {
+// linhasDesconto: condições de desconto da fatura (descontoFatura.ts), impressas logo abaixo do total.
+export function gerarFaturaPdf(f: Fatura, itens: Lancamento[], empresa: EmpresaFatura, banco: BancoFatura, linhasDesconto: string[] = []): Blob {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const m = 16
   const larg = 210 - m * 2
@@ -110,6 +111,23 @@ export function gerarFaturaPdf(f: Fatura, itens: Lancamento[], empresa: EmpresaF
   doc.text('TOTAL', 210 - m - 40, y + 3)
   doc.text(brl(Number(f.valor_total)), 210 - m - 2, y + 3, { align: 'right' })
   y += 12
+
+  if (linhasDesconto.length) {
+    doc.setTextColor(...MUTED)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.text('DESCONTO', m, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...NAVY)
+    for (const t of linhasDesconto) {
+      const l = doc.splitTextToSize(txt(t), larg) as string[]
+      doc.text(l, m, y)
+      y += l.length * 4.5 + 1
+    }
+    y += 4
+  }
 
   // Como pagar
   if (y > 235) {

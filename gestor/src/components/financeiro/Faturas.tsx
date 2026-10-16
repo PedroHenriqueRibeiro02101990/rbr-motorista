@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
+import type { Json } from '@rbr/shared/database.types'
 import { lerBoleto } from '@rbr/shared/boleto'
 import {
   type Apoio,
@@ -20,6 +21,8 @@ import type { BancoFatura, EmpresaFatura } from '../../lib/faturaPdf'
 import VencimentoBoleto, { type EscolhaVencimento } from './VencimentoBoleto'
 import { Aviso, Botao, Campo, Card, Carregando, Chips, Modal, Pill, Vazio, inputClass, inputStyle } from './ui'
 import { BaixaModal, Copiar } from './LancamentoModais'
+import DescontoFaturaCampos from './DescontoFaturaCampos'
+import { SEM_DESCONTO, lerDescontosCondicionais, linhasDesconto, type DescontosDaFatura } from '../../lib/descontoFatura'
 
 type Filtro = 'abertas' | 'vencidas' | 'pagas' | 'canceladas' | 'todas'
 
@@ -155,6 +158,7 @@ export function NovaFaturaModal({
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [escolha, setEscolha] = useState<EscolhaVencimento | null>(null)
+  const [descontos, setDescontos] = useState<DescontosDaFatura>(SEM_DESCONTO)
 
   useEffect(() => {
     if (!cliente) {
@@ -178,6 +182,9 @@ export function NovaFaturaModal({
 
   const escolhidos = itens.filter((l) => l.id && sel.has(l.id))
   const total = escolhidos.reduce((s, l) => s + Number(l.saldo_aberto ?? 0), 0)
+  // Desconto por prazo (2026-10-16): só quando todos os itens são de uma mesma cotação.
+  const cotacoesDosItens = [...new Set(escolhidos.map((l) => l.cotacao_id).filter(Boolean))]
+  const cotacaoUnica = cotacoesDosItens.length === 1 && escolhidos.every((l) => l.cotacao_id) ? (cotacoesDosItens[0] as string) : null
   useEffect(() => {
     if (!venc && escolhidos.length) {
       const maior = escolhidos.map((l) => l.data_vencimento!).sort().pop()!
@@ -198,7 +205,18 @@ export function NovaFaturaModal({
     }
     const { error: e2 } = await supabase
       .from('faturas')
-      .update({ vencimento_original: escolha?.original ?? venc, vencimento_ajuste: escolha?.ajuste ?? 'manter', boleto_emitido_em: hojeISO() })
+      .update({
+        vencimento_original: escolha?.original ?? venc,
+        vencimento_ajuste: escolha?.ajuste ?? 'manter',
+        boleto_emitido_em: hojeISO(),
+        ...(descontos.valor_cheio != null
+          ? {
+              valor_cheio: descontos.valor_cheio,
+              desconto_negociado_pct: descontos.desconto_negociado_pct,
+              descontos_condicionais: descontos.descontos_condicionais as unknown as Json,
+            }
+          : {}),
+      })
       .eq('id', data as string)
     setSalvando(false)
     if (e2) setErro('Fatura criada, mas não consegui gravar o ajuste do vencimento: ' + e2.message)
@@ -264,6 +282,7 @@ export function NovaFaturaModal({
         <input value={obs} onChange={(e) => setObs(e.target.value)} className={inputClass} style={inputStyle} />
       </Campo>
       <VencimentoBoleto clienteId={cliente} emissao={hojeISO()} venc={venc} onChange={setEscolha} />
+      <DescontoFaturaCampos cotacaoId={cotacaoUnica} clienteId={cliente} total={Math.round(total * 100) / 100} emissao={hojeISO()} onChange={setDescontos} />
       <div className="text-[11px] text-[color:var(--rbr-muted)]">Ao criar, o vencimento de todos os itens passa a ser o da fatura.</div>
       {erro && <Aviso>{erro}</Aviso>}
       <div className="flex justify-end gap-2">
@@ -288,12 +307,30 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
   const [alterando, setAlterando] = useState(false)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [baixa, setBaixa] = useState(false)
+  const [desc, setDesc] = useState<DescontosDaFatura>(SEM_DESCONTO)
 
   const carregar = useCallback(async () => {
-    const [a, b] = await Promise.all([
+    const [a, b, c] = await Promise.all([
       supabase.from('v_faturas').select('*').eq('id', id).maybeSingle(),
       supabase.from('v_lancamentos').select('*').eq('fatura_id', id).order('data_vencimento'),
+      // Colunas da política de desconto (fora da view v_faturas).
+      supabase
+        .from('faturas')
+        .select('valor_cheio, desconto_negociado_pct, descontos_condicionais, desconto_perdido_em, desconto_perdido_obs')
+        .eq('id', id)
+        .maybeSingle(),
     ])
+    setDesc(
+      c.data && !c.error
+        ? {
+            valor_cheio: c.data.valor_cheio,
+            desconto_negociado_pct: c.data.desconto_negociado_pct,
+            descontos_condicionais: lerDescontosCondicionais(c.data.descontos_condicionais),
+            desconto_perdido_em: c.data.desconto_perdido_em,
+            desconto_perdido_obs: c.data.desconto_perdido_obs,
+          }
+        : SEM_DESCONTO,
+    )
     setF(a.data ?? null)
     setLinha(a.data?.linha_digitavel ?? '')
     setPix(a.data?.pix_copia_cola ?? '')
@@ -356,7 +393,7 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
       lerParametro<EmpresaFatura>('dados_empresa'),
       lerParametro<BancoFatura>('dados_bancarios_rbr'),
     ])
-    return gerarFaturaPdf(f, itens, empresa ?? {}, banco ?? {})
+    return gerarFaturaPdf(f, itens, empresa ?? {}, banco ?? {}, desc.desconto_perdido_em ? [] : linhasDesconto(desc, f.data_vencimento))
   }
 
   async function baixarPdf() {
@@ -383,6 +420,7 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
       `Olá! Segue a fatura nº ${f.numero} da RBR Cargo.`,
       `Valor: ${brl(Number(f.valor_total))} · Vencimento: ${fmtData(f.data_vencimento)}`,
       ...itens.map((l) => `• ${l.descricao} — ${brl(Number(l.valor))}`),
+      ...(desc.desconto_perdido_em ? [] : linhasDesconto(desc, f.data_vencimento)),
       f.linha_digitavel ? `Linha digitável: ${f.linha_digitavel}` : '',
       f.pix_copia_cola ? `Pix copia e cola: ${f.pix_copia_cola}` : '',
       'Qualquer dúvida, estamos à disposição.',
@@ -406,7 +444,7 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
       vivo = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f, itens])
+  }, [f, itens, desc])
 
   function compartilhar() {
     setErro(null)
@@ -427,6 +465,19 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
       setOk('PDF baixado. Anexe-o na conversa do WhatsApp que abriu.')
       marcarEnviada()
     })
+  }
+
+  // Pagou fora do prazo combinado: o desconto negociado deixa de valer (fase 1: registro; a diferença é cobrada à mão).
+  async function registrarDescontoPerdido() {
+    const obs = window.prompt('Pagamento fora do prazo combinado: o desconto deixa de valer. Observação (opcional):')
+    if (obs === null) return
+    const { error } = await supabase
+      .from('faturas')
+      .update({ desconto_perdido_em: new Date().toISOString(), desconto_perdido_obs: obs.trim() || null })
+      .eq('id', id)
+    if (error) return setErro(error.message)
+    setOk('Registrado: o desconto deixou de valer nesta fatura.')
+    carregar()
   }
 
   async function marcarEnviada() {
@@ -462,6 +513,26 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
           {f.enviada_em && <span className="text-[color:var(--rbr-muted)]">· enviada em {new Date(f.enviada_em).toLocaleDateString('pt-BR')}</span>}
         </div>
         {f.cancelada_motivo && <Aviso tipo="info">Cancelada: {f.cancelada_motivo}</Aviso>}
+        {(desc.descontos_condicionais.length > 0 || desc.desconto_negociado_pct) && (
+          <div className="rounded-xl border p-3 flex flex-col gap-1.5 text-xs" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Desconto desta fatura</div>
+            {desc.desconto_perdido_em ? (
+              <div style={{ color: 'var(--rbr-danger)' }}>
+                Desconto perdido em {new Date(desc.desconto_perdido_em).toLocaleDateString('pt-BR')} (pagamento fora do prazo)
+                {desc.valor_cheio ? ` · vale o valor cheio de ${brl(desc.valor_cheio)}` : ''}
+                {desc.desconto_perdido_obs ? ` · ${desc.desconto_perdido_obs}` : ''}
+              </div>
+            ) : (
+              linhasDesconto(desc, f.data_vencimento).map((t) => <div key={t}>{t}</div>)
+            )}
+            <div className="text-[11px] text-[color:var(--rbr-muted)]">Fase 1: só registro. O boleto do banco segue com o valor cheio.</div>
+            {ativa && desc.desconto_negociado_pct && !desc.desconto_perdido_em && (
+              <button type="button" onClick={registrarDescontoPerdido} className="self-start font-bold underline text-[color:var(--rbr-navy)]">
+                Pagou fora do prazo: registrar desconto perdido
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           {itens.map((l) => (
             <div key={l.id} className="flex items-center justify-between gap-2 text-xs border rounded-lg px-3 py-2" style={{ borderColor: 'var(--rbr-border)' }}>
