@@ -86,7 +86,7 @@ export function LinhaAverbacaoSompo({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-bold flex-shrink-0" style={{ minWidth: '3.5rem' }}>{rotulo}</span>
+        {rotulo && <span className="text-xs font-bold flex-shrink-0" style={{ minWidth: '3.5rem' }}>{rotulo}</span>}
         {estado === 'processando' ? (
           <SeloProcessando texto="Processando na Averba…" />
         ) : (

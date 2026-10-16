@@ -13,13 +13,38 @@ type Retencao = { id: string; alvo: string; status: string; motivo: string; data
 type Incidente = { id: string; status: string; descricao: string; registrado_em: string; dossie_path: string | null; dossie_gerado_em: string | null }
 type Declaracao = { embarcador_nome: string; embarcador_documento: string; mercadoria: string; quantidade: string; valor: number; nf_numero: string; created_at: string; hash_texto: string }
 
-export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMudou }: { operacaoId: string; congeladaMotivo: string | null | undefined; onMudou: () => void }) {
+export type PedidoConformidade = 'reter' | 'incidente' | 'declaracao' | null
+
+// Painel enxuto (2026-10-16): o cartão só aparece quando HÁ algo (alerta aberto, incidente, retenção, operação
+// congelada). Reter, registrar incidente e ver a declaração da carga vêm do menu "Mais ações" da operação (pedido).
+export default function ConformidadeOperacao({
+  operacaoId,
+  congeladaMotivo,
+  onMudou,
+  pedido = null,
+  onPedidoAtendido,
+}: {
+  operacaoId: string
+  congeladaMotivo: string | null | undefined
+  onMudou: () => void
+  pedido?: PedidoConformidade
+  onPedidoAtendido?: () => void
+}) {
   const [alertas, setAlertas] = useState<Alerta[] | null>(null)
   const [ret, setRet] = useState<Retencao[]>([])
   const [inc, setInc] = useState<Incidente[]>([])
   const [decl, setDecl] = useState<Declaracao | null>(null)
   const [modal, setModal] = useState<{ tipo: 'revisar'; a: Alerta } | { tipo: 'reter' } | { tipo: 'incidente' } | { tipo: 'encerrar'; i: Incidente } | null>(null)
+  const [verDecl, setVerDecl] = useState(false)
   const { confirmacao, rodar, ocupado, mostrar } = useConfirmacao()
+
+  useEffect(() => {
+    if (!pedido) return
+    if (pedido === 'reter') setModal({ tipo: 'reter' })
+    else if (pedido === 'incidente') setModal({ tipo: 'incidente' })
+    else setVerDecl(true)
+    onPedidoAtendido?.()
+  }, [pedido, onPedidoAtendido])
 
   const carregar = useCallback(async () => {
     const [a, r, i, d] = await Promise.all([
@@ -43,9 +68,43 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
   const abertos = alertas.filter((a) => !a.revisado)
   const retido = ret.find((r) => r.status === 'retido_apuracao' && r.alvo === 'pagamento_prestador')
   const incAberto = inc.find((i) => i.status === 'aberto')
+  const temAlgo = abertos.length > 0 || inc.length > 0 || !!retido || !!congeladaMotivo
+
+  const modalDeclaracao = verDecl && (
+    <Modal titulo="Declaração da carga (agenciador)" onFechar={() => setVerDecl(false)} largura="max-w-md">
+      <div className="text-xs flex flex-col gap-1.5">
+        {decl ? (
+          <>
+            <div>
+              <b>{decl.embarcador_nome}</b> ({decl.embarcador_documento})
+            </div>
+            <div>
+              {decl.mercadoria} · {decl.quantidade} · {formatMoney(decl.valor)} · NF {decl.nf_numero}
+            </div>
+            <div className="text-[color:var(--rbr-muted)]">
+              Declarada em {new Date(decl.created_at).toLocaleString('pt-BR')} · SHA-256 {decl.hash_texto.slice(0, 12)}…
+            </div>
+          </>
+        ) : (
+          <span className="text-[color:var(--rbr-muted)]">Não há declaração (carga direta da RBR ou anterior à regra).</span>
+        )}
+      </div>
+    </Modal>
+  )
+
+  if (!temAlgo) {
+    return (
+      <>
+        {confirmacao}
+        {modalDeclaracao}
+        {modal && renderModal()}
+      </>
+    )
+  }
 
   return (
     <div className="rounded-xl border p-3.5 flex flex-col gap-3" style={{ borderColor: abertos.length || incAberto ? 'var(--rbr-danger)' : 'var(--rbr-border)' }}>
+      {modalDeclaracao}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Alertas de conformidade</div>
         {abertos.length > 0 && (
@@ -56,9 +115,7 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
       </div>
       {congeladaMotivo && <Aviso>Operação congelada: {congeladaMotivo}. Status e alocação não mudam até o incidente ser encerrado.</Aviso>}
       {confirmacao}
-      {alertas.length === 0 ? (
-        <div className="text-xs font-semibold text-[color:var(--rbr-positive)]">✓ Nenhum sinal de alerta nesta operação.</div>
-      ) : (
+      {abertos.length > 0 && (
         <ul className="flex flex-col gap-1.5">
           {alertas.map((a) => (
             <li key={a.codigo} className="flex items-start justify-between gap-2 text-xs">
@@ -76,35 +133,11 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
         </ul>
       )}
 
-      <div className="text-xs border-t pt-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
-        <b>Declaração da carga (agenciador):</b>{' '}
-        {decl ? (
-          <>
-            {decl.embarcador_nome} ({decl.embarcador_documento}) · {decl.mercadoria} · {decl.quantidade} · {formatMoney(decl.valor)} · NF {decl.nf_numero} · declarada em{' '}
-            {new Date(decl.created_at).toLocaleString('pt-BR')} · SHA-256 {decl.hash_texto.slice(0, 12)}…
-          </>
-        ) : (
-          <span className="text-[color:var(--rbr-muted)]">não há (carga direta da RBR ou anterior à regra).</span>
-        )}
-      </div>
-
-      <div className="text-xs flex items-center justify-between gap-2 flex-wrap">
-        <span>
-          <b>Pagamento ao prestador:</b>{' '}
-          {retido ? (
-            <span style={{ color: 'var(--rbr-danger)' }}>
-              retido para apuração até {new Date(retido.data_limite + 'T12:00:00').toLocaleDateString('pt-BR')} ({retido.motivo})
-            </span>
-          ) : (
-            'liberado'
-          )}
-        </span>
-        {!retido && (
-          <Botao variante="secundario" onClick={() => setModal({ tipo: 'reter' })}>
-            Reter para apuração
-          </Botao>
-        )}
-      </div>
+      {retido && (
+        <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
+          <b>Pagamento ao prestador retido para apuração</b> até {new Date(retido.data_limite + 'T12:00:00').toLocaleDateString('pt-BR')} ({retido.motivo})
+        </div>
+      )}
 
       {inc.map((i) => (
         <div key={i.id} className="rounded-lg px-3 py-2 text-xs flex flex-col gap-1.5" style={{ background: i.status === 'aberto' ? '#FBE9E9' : 'var(--rbr-muted-bg)' }}>
@@ -142,15 +175,13 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
           </div>
         </div>
       ))}
-      {!incAberto && (
-        <div>
-          <Botao variante="perigo" onClick={() => setModal({ tipo: 'incidente' })}>
-            Registrar incidente
-          </Botao>
-        </div>
-      )}
+      {modal && renderModal()}
+    </div>
+  )
 
-      {modal && (
+  function renderModal() {
+    if (!modal) return null
+    return (
         <ModalMotivo
           titulo={
             modal.tipo === 'revisar'
@@ -198,9 +229,8 @@ export default function ConformidadeOperacao({ operacaoId, congeladaMotivo, onMu
             onMudou()
           }}
         />
-      )}
-    </div>
-  )
+    )
+  }
 }
 
 export function ModalMotivo({

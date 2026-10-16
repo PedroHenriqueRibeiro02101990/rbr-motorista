@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { DetalheOperacao } from '../../lib/operacaoDetalhe'
 
@@ -136,7 +137,10 @@ export default function CiotOperacao({
       </div>
       {esperada == null && (
         <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
-          O parceiro não tem o tipo definido no cadastro (TAC, MEI ou ETC). Defina em Cadastros para o sistema saber quem gera o CIOT.
+          Tipo do parceiro não definido.{' '}
+          <Link to="/cadastros" className="underline font-semibold">
+            Definir tipo do parceiro
+          </Link>
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-2">

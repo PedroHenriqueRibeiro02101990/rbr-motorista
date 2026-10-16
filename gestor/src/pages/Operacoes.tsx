@@ -9,6 +9,7 @@ import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../component
 import { useConfirmacao } from '../components/Confirmacao'
 import PainelPendencias from '../components/PainelPendencias'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
+import { proximoPassoPorStatus } from '../lib/etapasOperacao'
 import DadosEmissao from '../components/operacao/DadosEmissao'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
@@ -712,6 +713,12 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                     {op.cotacaoDetalhe?.uf_destino ?? '?'} · {op.peso_bruto ? `${op.peso_bruto.toLocaleString('pt-BR')} kg` : 'peso não informado'}
                     {op.valorMotorista != null ? ` · motorista ${formatMoney(op.valorMotorista)}` : ''} · atualizado em {formatDateTime(op.updated_at)}
                   </div>
+                  {proximoPassoPorStatus(op.status, !!op.pessoa_alocada_id) && (
+                    <div className="text-xs mt-1.5 text-[color:var(--rbr-navy-dark)]">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mr-1.5">Próximo passo</span>
+                      <b>{proximoPassoPorStatus(op.status, !!op.pessoa_alocada_id)}</b>
+                    </div>
+                  )}
                 </button>
 
                 {isExpanded && (
@@ -748,6 +755,15 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                       </div>
                     )}
 
+                    <OperacaoFluxo
+                      operacaoId={op.id}
+                      gestor={gestor}
+                      assessoria={assessoria}
+                      onChanged={load}
+                      onCancelar={() => abrirCancelamento(op)}
+                      extras={{
+                        averbacao_allianz: op.carga_complexa_eixo3_seguro_excedido ? (
+                          <>
                     {op.carga_complexa_eixo3_seguro_excedido && (
                       <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2" style={{ background: 'var(--rbr-warning-bg)' }}>
                         <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
@@ -776,6 +792,10 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                       </div>
                     )}
 
+                          </>
+                        ) : undefined,
+                        aet: op.carga_complexa_eixo2_superdimensionada ? (
+                          <>
                     {op.carga_complexa_eixo2_superdimensionada &&
                       (() => {
                         const veiculo = veiculos.find((v) => v.id === op.veiculo_id)
@@ -1063,48 +1083,33 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                         )
                       })()}
 
-                    {op.status === 'alocando_motorista' && !op.pessoa_alocada_id && (
-                      <MotoristasSugeridos
-                        operacaoId={op.id}
-                        carga={cargasAguardando.find((c) => c.operacao_id === op.id)}
-                        onAvisado={() => carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))}
-                      />
-                    )}
-
-                    <OperacaoFluxo operacaoId={op.id} gestor={gestor} assessoria={assessoria} onChanged={load} />
-
-                    {/* Encerrar o MDF-e só faz sentido depois que a carga sai; antes disso o bloco só ocupa espaço. */}
-                    {!['alocando_motorista', 'aguardando_liberacao_fiscal', 'cancelada'].includes(op.status) && (
-                      <FinalizarViagem operacaoId={op.id} statusOperacao={op.status} entregueEm={op.entregue_em} />
-                    )}
-
-                    <div className="flex items-center justify-between rounded-xl px-3.5 py-3" style={{ background: 'var(--rbr-muted-bg)' }}>
-                      <div>
-                        <div className="text-[13px] font-semibold">Pagamento pós-entrega confirmado</div>
-                        <div className="text-[11px] text-[color:var(--rbr-muted)] mt-0.5">
-                          Liberação manual do gestor para condições pós-entrega
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => togglePagamentoPosEntrega(op)}
-                        disabled={saving}
-                        className="w-[52px] h-[30px] rounded-full relative flex-shrink-0 disabled:opacity-60"
-                        style={{ background: op.pagamento_pos_entrega_confirmado ? 'var(--rbr-positive)' : '#E3E5EE' }}
-                      >
-                        <span
-                          className="absolute top-[3px] w-6 h-6 rounded-full bg-white shadow transition-all"
-                          style={{ left: op.pagamento_pos_entrega_confirmado ? '25px' : '3px' }}
-                        />
-                      </button>
-                    </div>
-
-                    {op.status !== 'cancelada' && (
-                      <div>
-                        <Botao variante="perigo" onClick={() => abrirCancelamento(op)}>
-                          Cancelar operação
-                        </Botao>
-                      </div>
-                    )}
+                          </>
+                        ) : undefined,
+                        motorista:
+                          op.status === 'alocando_motorista' && !op.pessoa_alocada_id ? (
+                            <MotoristasSugeridos
+                              operacaoId={op.id}
+                              carga={cargasAguardando.find((c) => c.operacao_id === op.id)}
+                              onAvisado={() => carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))}
+                            />
+                          ) : undefined,
+                        // "Finalizar viagem" (encerrar o MDF-e) continua aqui, dentro da etapa da viagem.
+                        viagem: !['alocando_motorista', 'aguardando_liberacao_fiscal', 'cancelada'].includes(op.status) ? (
+                          <FinalizarViagem operacaoId={op.id} statusOperacao={op.status} entregueEm={op.entregue_em} />
+                        ) : undefined,
+                        rodape: (
+                          <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)] cursor-pointer self-start">
+                            <input
+                              type="checkbox"
+                              checked={!!op.pagamento_pos_entrega_confirmado}
+                              disabled={saving}
+                              onChange={() => togglePagamentoPosEntrega(op)}
+                            />
+                            Pagamento pós-entrega confirmado (liberação manual do gestor)
+                          </label>
+                        ),
+                      }}
+                    />
                   </div>
                 )}
               </div>
