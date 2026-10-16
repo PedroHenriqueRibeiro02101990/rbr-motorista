@@ -1,4 +1,4 @@
--- 20261016_04 — Liberação para coleta: documento EMITIDO conta como cumprido (NÃO APLICADA; mostrar ao Pedro antes)
+-- 20261016_04 — Liberação para coleta: documento EMITIDO conta como cumprido (APLICADA em 2026-10-16 com o OK do Pedro)
 --
 -- Defeito (2026-10-16): na operação de teste de R$ 1,00 o CT-e nº 3 e o MDF-e nº 2 foram emitidos pelo sistema
 -- (documentacao_operacao.status = 'emitido', com chave e referência da Focus), mas conferencia_status ficou
