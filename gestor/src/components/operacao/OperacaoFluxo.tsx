@@ -1111,6 +1111,20 @@ function StatusELiberacao({ d, salvando, executar }: { d: DetalheOperacao; salva
     }, 'Carga liberada para coleta com ressalva (motivo registrado).')
   }
 
+  // Pagamento antecipado (política de prazo, 2026-10-16): o Pix deve ser confirmado antes de liberar o motorista.
+  // Sem confirmação há só aviso; a liberação continua permitida.
+  const antecipado = d.cotacao?.prazo_recebimento === 'antecipado'
+  async function confirmarPixAntecipado() {
+    await executar(async () => {
+      const { data: pessoa } = await supabase.rpc('current_pessoa_id')
+      const { error } = await supabase
+        .from('operacoes')
+        .update({ pix_antecipado_confirmado_em: new Date().toISOString(), pix_antecipado_confirmado_por: (pessoa as string | null) ?? null })
+        .eq('id', o.id)
+      if (error) throw error
+    }, 'Pix antecipado confirmado.')
+  }
+
   async function mudarStatus(status: StatusOperacao, extra: Record<string, unknown> = {}, msg?: string) {
     await executar(async () => {
       const { error } = await supabase
@@ -1123,6 +1137,29 @@ function StatusELiberacao({ d, salvando, executar }: { d: DetalheOperacao; salva
 
   return (
     <div className={secaoClass} style={secaoStyle}>
+      {antecipado && o.status !== 'cancelada' && (
+        o.pix_antecipado_confirmado_em ? (
+          <div className="text-xs" style={{ color: 'var(--rbr-positive)' }}>
+            Pagamento antecipado: Pix confirmado em {formatDateTime(o.pix_antecipado_confirmado_em)}.
+          </div>
+        ) : (
+          <div className="text-xs rounded-lg px-3 py-2 flex items-center justify-between gap-2 flex-wrap" style={{ background: '#FDF8EC', color: '#5C3B00' }}>
+            <span>
+              Pagamento antecipado combinado: Pix ainda não confirmado.{' '}
+              {o.liberada_em ? 'O motorista já foi liberado.' : 'O combinado é confirmar antes de liberar o motorista (a liberação continua permitida).'}
+            </span>
+            <button
+              type="button"
+              disabled={salvando}
+              onClick={() => void confirmarPixAntecipado()}
+              className="text-xs font-bold px-3 rounded-lg"
+              style={{ minHeight: 36, background: 'var(--rbr-navy)', color: '#fff' }}
+            >
+              Marcar Pix confirmado
+            </button>
+          </div>
+        )
+      )}
       {o.status === 'aguardando_liberacao_fiscal' && (
         <div className="flex flex-col gap-2">
           <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Liberar para coleta</div>

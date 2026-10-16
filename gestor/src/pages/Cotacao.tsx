@@ -23,6 +23,16 @@ import { type GiroParams, type ResultadoGiro, GIRO_PARAMS_PADRAO, calcularGiro, 
 import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/cotacaoPdf'
 import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
+import PrazoDesconto from '../components/cotacao/PrazoDesconto'
+import {
+  POLITICA_PADRAO,
+  aplicarAjuste,
+  ehPrazo,
+  lerPolitica,
+  regraRecebimentoDoPrazo,
+  type PoliticaPrazo,
+  type PrazoPagamento,
+} from '@rbr/shared/precoPrazo'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -311,17 +321,25 @@ const FORM_INICIAL = {
   validade_dias: '5',
   // Card "Condições comerciais" (aba padrão) — descritivo, não alimenta o motor de parcelas
   // (condicao_prazo_id/prazo_personalizado) usado em "Recebimento do cliente".
-  prazo_recebimento: '' as '' | 'a_vista' | '7ddl' | '14ddl' | '15ddl' | '21ddl' | '30ddl' | '2x',
+  prazo_recebimento: '' as '' | PrazoPagamento,
+  // Política de prazo e desconto (2026-10-16), em "%" como os outros campos: ajuste do prazo sobre o preço a 7 DDL e
+  // desconto negociado sobre o preço do prazo cotado. Vazio = sem ajuste nem desconto (preço igual ao de antes).
+  ajuste_prazo_pct: '',
+  desconto_pct: '',
+  desconto_prazo: '' as '' | PrazoPagamento,
+  desconto_motivo: '',
   prazo_entrega: '',
   observacoes: '',
 }
 
-const PRAZO_RECEBIMENTO_OPCOES: Array<{ value: Exclude<CotacaoFormState['prazo_recebimento'], ''>; label: string }> = [
+const PRAZO_RECEBIMENTO_OPCOES: Array<{ value: PrazoPagamento; label: string }> = [
+  { value: 'antecipado', label: 'Antecipado (Pix antes da liberação)' },
   { value: 'a_vista', label: 'À vista' },
   { value: '7ddl', label: '7DDL' },
   { value: '14ddl', label: '14DDL' },
   { value: '15ddl', label: '15DDL' },
   { value: '21ddl', label: '21DDL' },
+  { value: '28ddl', label: '28DDL' },
   { value: '30ddl', label: '30DDL' },
   { value: '2x', label: '2X (parcelado, com data das faturas)' },
 ]
@@ -405,6 +423,10 @@ interface Composicao {
   lucroPct: number | null // lucro ÷ (custo + imposto) — o "% de lucro" que o gestor digita
   margem: number | null // lucro ÷ valor final — base da faixa 26–40%
   valorFinal: number | null
+  valorTabela: number | null // preço a 7 DDL (lucro % sobre o custo), antes do prazo e do desconto
+  valorPrazo: number | null // preço do prazo cotado (com o ajuste do prazo), antes do desconto
+  ajustePrazo: number // fração aplicada sobre o preço a 7 DDL
+  desconto: number // fração aplicada sobre o preço do prazo cotado
   erro: string | null
 }
 
@@ -451,6 +473,10 @@ function calcularComposicao(
     lucroPct: null,
     margem: null,
     valorFinal: null,
+    valorTabela: null,
+    valorPrazo: null,
+    ajustePrazo: 0,
+    desconto: 0,
     erro: null,
   }
   if (frete == null) return vazio
@@ -467,10 +493,17 @@ function calcularComposicao(
   const repasse = Math.min(Math.max(numOrNull(f.giro_repasse_pct) ?? 100, 0), 100) / 100
   const custoPreco = round2(custo + custoFinanceiro * repasse)
   let valorFinal: number
+  let valorTabela: number
+  let valorPrazo: number
+  let ajustePrazo = 0
+  let desconto = 0
   const manual = numOrNull(f.valor_final_manual)
   if (f.preco_modo === 'valor_final' && manual != null) {
     if (manual <= 0) return { ...vazio, custo, custoFinanceiro, giro, erro: 'Valor final precisa ser maior que zero.' }
+    // Valor digitado à mão já é o preço final: sem ajuste de prazo nem desconto por cima (decisão de 2026-10-16).
     valorFinal = round2(manual)
+    valorTabela = valorFinal
+    valorPrazo = valorFinal
   } else {
     const lucroFrac = (numOrNull(f.lucro_pct) ?? lucroPadrao * 100) / 100
     const fator = 1 + lucroFrac
@@ -478,7 +511,13 @@ function calcularComposicao(
     if (divisor <= 0) {
       return { ...vazio, custo, custoFinanceiro, giro, erro: 'Com esse lucro % e essa alíquota não dá pra fechar o valor final — revise os percentuais.' }
     }
-    valorFinal = round2((custoPreco * fator) / divisor)
+    // Política de prazo (2026-10-16): preço a 7 DDL × (1 + ajuste do prazo) × (1 − desconto negociado), arredondando
+    // em cada passo como o gatilho do banco. Sem prazo nem desconto, igual ao cálculo de antes.
+    valorTabela = round2((custoPreco * fator) / divisor)
+    ajustePrazo = (numOrNull(f.ajuste_prazo_pct) ?? 0) / 100
+    desconto = (numOrNull(f.desconto_pct) ?? 0) / 100
+    valorPrazo = aplicarAjuste(valorTabela, ajustePrazo)
+    valorFinal = aplicarAjuste(valorPrazo, -desconto)
   }
   const imposto = round2(valorFinal * aliquota)
   const custoComImposto = round2(custo + custoFinanceiro + imposto)
@@ -494,6 +533,24 @@ function calcularComposicao(
     lucroPct: custoComImposto > 0 ? lucro / custoComImposto : null,
     margem: valorFinal > 0 ? lucro / valorFinal : null,
     valorFinal,
+    valorTabela,
+    valorPrazo,
+    ajustePrazo,
+    desconto,
+  }
+}
+
+// Colunas da política de prazo e desconto. Valor final digitado à mão (ou vários destinos): só o prazo fica
+// registrado; ajuste e desconto não se aplicam (o gatilho do banco também os zera no modo "valor final").
+function camposPoliticaPrazo(f: CotacaoFormState, semAjuste: boolean): CotacaoUpdate {
+  const ajuste = numOrNull(f.ajuste_prazo_pct)
+  const desconto = numOrNull(f.desconto_pct)
+  const temDesconto = !semAjuste && desconto != null && desconto > 0
+  return {
+    ajuste_prazo_pct: semAjuste || ajuste == null || ajuste === 0 ? null : ajuste / 100,
+    desconto_pct: temDesconto ? desconto / 100 : null,
+    desconto_prazo: temDesconto ? f.desconto_prazo || null : null,
+    desconto_motivo: f.desconto_motivo.trim() || null,
   }
 }
 
@@ -547,6 +604,7 @@ export default function Cotacao() {
 
   const [margemMin, setMargemMin] = useState(0.26)
   const [margemMax, setMargemMax] = useState(0.4)
+  const [politicaPrazo, setPoliticaPrazo] = useState<PoliticaPrazo>(POLITICA_PADRAO)
   const [pesoLimiarKg, setPesoLimiarKg] = useState<number | null>(null)
   // Teto de cobertura por embarque da apólice vigente (Operações → Dados de emissão).
   const [tetoSeguro, setTetoSeguro] = useState<number | null>(null)
@@ -755,12 +813,17 @@ export default function Cotacao() {
         'giro_km_por_dia',
         'giro_dias_carga',
         'giro_dias_mes',
+        'politica_prazo_desconto',
       ])
     // 2026-10-15: capital de giro virou custo FIXO mensal (mútuo do Marcelo, migration 20261015_12) e não entra
     // mais no preço por operação — o giro fica desligado aqui mesmo que o parâmetro giro_ativo volte a true.
     setGiroParams({ ...giroParamsDeLinhas((data ?? []).filter((r) => r.chave.startsWith('giro_'))), ativo: false })
     for (const row of data ?? []) {
       if (row.chave.startsWith('giro_')) continue
+      if (row.chave === 'politica_prazo_desconto') {
+        setPoliticaPrazo(lerPolitica(row.valor))
+        continue
+      }
       if (row.chave === 'tag_seguro_faixas') {
         if (Array.isArray(row.valor)) {
           const faixas = (row.valor as unknown as FaixaSeguro[]).filter(
@@ -931,6 +994,30 @@ export default function Cotacao() {
   const repassarGiro = Math.min(Math.max(numOrNull(form?.giro_repasse_pct ?? '100') ?? 100, 0), 100) / 100
   const composicao = useMemo(() => (form ? calcularComposicao(form, lucroPadrao, itens, giroCtx) : null), [form, lucroPadrao, itens, giroCtx])
   const margemAjustada = composicao?.margem ?? null
+
+  // Prazo escolhido (política de 2026-10-16): sugere o ajuste do prazo, zera o desconto e grava a regra de
+  // recebimento da cotação (DDL da liberação, à vista na entrega, antecipado antes). 2x mantém a regra que estiver;
+  // sem prazo, nada muda no recebimento (padrão antigo).
+  function escolherPrazo(p: '' | PrazoPagamento) {
+    setForm((f) => {
+      if (!f) return f
+      const base = { ...f, prazo_recebimento: p, desconto_pct: '', desconto_prazo: '' as const }
+      if (!p) return { ...base, ajuste_prazo_pct: '' }
+      const ajuste = politicaPrazo.ajustePorPrazo[p]
+      const regra = regraRecebimentoDoPrazo(p)
+      return {
+        ...base,
+        ajuste_prazo_pct: ajuste ? String(Number((ajuste * 100).toFixed(4))) : '',
+        ...(regra
+          ? {
+              prazo_modo: 'personalizado' as const,
+              prazo_personalizado: regra as RegraPrazo,
+              forma_recebimento: p === 'antecipado' || p === 'a_vista' ? 'pix' : 'boleto',
+            }
+          : {}),
+      }
+    })
+  }
   const margem = margemBadge(margemAjustada, margemMin, margemMax)
   const pisoReferencia = pisoInfo?.calculado ?? pisoSalvo
   const freteAbaixoDoPiso =
@@ -1216,7 +1303,11 @@ export default function Cotacao() {
       prazo_personalizado: (c.prazo_personalizado as unknown as RegraPrazo | null) ?? null,
       forma_recebimento: c.forma_recebimento ?? 'boleto',
       validade_dias: c.validade_dias != null ? String(c.validade_dias) : '5',
-      prazo_recebimento: (c.prazo_recebimento as CotacaoFormState['prazo_recebimento']) ?? '',
+      prazo_recebimento: ehPrazo(c.prazo_recebimento) ? c.prazo_recebimento : '',
+      ajuste_prazo_pct: fracToPctStr(c.ajuste_prazo_pct),
+      desconto_pct: c.desconto_pct ? fracToPctStr(c.desconto_pct) : '',
+      desconto_prazo: ehPrazo(c.desconto_prazo) ? c.desconto_prazo : '',
+      desconto_motivo: c.desconto_motivo ?? '',
       prazo_entrega: c.prazo_entrega ?? '',
       observacoes: c.observacoes ?? '',
     })
@@ -1641,6 +1732,7 @@ export default function Cotacao() {
       forma_recebimento: f.forma_recebimento || 'boleto',
       validade_dias: numOrNull(f.validade_dias) ?? 5,
       prazo_recebimento: f.prazo_recebimento || null,
+      ...camposPoliticaPrazo(f, modoValorFinal || destinos.length > 0),
       prazo_entrega: f.prazo_entrega.trim() || null,
       observacoes: f.observacoes.trim() || null,
     }
@@ -1770,6 +1862,11 @@ export default function Cotacao() {
       setFormError(composicao.erro)
       return
     }
+    // Teto da política (5%) é o único limite do desconto; abaixo do piso de margem a gravação continua permitida.
+    if ((numOrNull(form.desconto_pct) ?? 0) / 100 > politicaPrazo.tetoDesconto + 1e-9) {
+      setFormError(`Desconto acima do teto da política (${(politicaPrazo.tetoDesconto * 100).toFixed(0)}%). Reduza o desconto negociado.`)
+      return
+    }
     const erroItens = validarItens()
     if (erroItens) {
       setFormError(erroItens)
@@ -1816,6 +1913,11 @@ export default function Cotacao() {
     setSuccessMsg(null)
     if (composicao?.erro) {
       setFormError(composicao.erro)
+      return
+    }
+    // Teto da política (5%) é o único limite do desconto; abaixo do piso de margem a gravação continua permitida.
+    if ((numOrNull(form.desconto_pct) ?? 0) / 100 > politicaPrazo.tetoDesconto + 1e-9) {
+      setFormError(`Desconto acima do teto da política (${(politicaPrazo.tetoDesconto * 100).toFixed(0)}%). Reduza o desconto negociado.`)
       return
     }
     const erroItens = validarItens()
@@ -3909,9 +4011,7 @@ export default function Cotacao() {
                   <label className={labelClass} style={{ marginBottom: 0 }}>Prazo de recebimento</label>
                   <select
                     value={form.prazo_recebimento}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, prazo_recebimento: e.target.value as CotacaoFormState['prazo_recebimento'] } : f))
-                    }
+                    onChange={(e) => escolherPrazo(e.target.value as CotacaoFormState['prazo_recebimento'])}
                     className={inputClass}
                     style={inputStyle}
                   >
@@ -4011,6 +4111,28 @@ export default function Cotacao() {
               </div>
             )}
 
+            {/* Política de prazo e desconto (2026-10-16): só rota única; informa e sugere, não bloqueia. */}
+            {destinos.length === 0 && (
+              <PrazoDesconto
+                politica={politicaPrazo}
+                prazo={form.prazo_recebimento}
+                ajustePct={form.ajuste_prazo_pct}
+                descontoPct={form.desconto_pct}
+                descontoPrazo={form.desconto_prazo}
+                motivo={form.desconto_motivo}
+                valorTabela={composicao?.valorTabela ?? null}
+                valorPrazo={composicao?.valorPrazo ?? null}
+                valorFinal={composicao?.valorFinal ?? null}
+                custo={composicao?.custo != null ? round2(composicao.custo + composicao.custoFinanceiro) : null}
+                aliquota={composicao?.aliquota ?? 0}
+                valorFinalManual={form.preco_modo === 'valor_final' && numOrNull(form.valor_final_manual) != null}
+                onEscolherPrazo={escolherPrazo}
+                onAjuste={(v) => setForm((f) => (f ? { ...f, ajuste_prazo_pct: v } : f))}
+                onDesconto={(v, para) => setForm((f) => (f ? { ...f, desconto_pct: v, desconto_prazo: para } : f))}
+                onMotivo={(v) => setForm((f) => (f ? { ...f, desconto_motivo: v } : f))}
+              />
+            )}
+
             {/* Resumo — abre com os 3 números principais (mesmo padrão do card "Destino" em
                 Vários destinos), detalhamento completo logo abaixo. */}
             <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
@@ -4067,6 +4189,28 @@ export default function Cotacao() {
                   {formatMoney(composicao?.lucro ?? null)}
                 </span>
               </div>
+              {composicao?.valorTabela != null && (composicao.ajustePrazo !== 0 || composicao.desconto !== 0) && (
+                <>
+                  <div className="flex justify-between text-xs text-[color:var(--rbr-muted)]">
+                    <span>Preço a 7 DDL (tabela)</span>
+                    <span className="tabular-nums">{formatMoney(composicao.valorTabela)}</span>
+                  </div>
+                  {composicao.ajustePrazo !== 0 && composicao.valorPrazo != null && (
+                    <div className="flex justify-between text-xs text-[color:var(--rbr-muted)]">
+                      <span>
+                        {composicao.ajustePrazo > 0 ? '+ Acréscimo' : '− Desconto'} do prazo ({formatPct(Math.abs(composicao.ajustePrazo))})
+                      </span>
+                      <span className="tabular-nums">{formatMoney(round2(composicao.valorPrazo - composicao.valorTabela))}</span>
+                    </div>
+                  )}
+                  {composicao.desconto !== 0 && composicao.valorPrazo != null && composicao.valorFinal != null && (
+                    <div className="flex justify-between text-xs text-[color:var(--rbr-muted)]">
+                      <span>− Desconto negociado ({formatPct(composicao.desconto)})</span>
+                      <span className="tabular-nums">{formatMoney(round2(composicao.valorFinal - composicao.valorPrazo))}</span>
+                    </div>
+                  )}
+                </>
+              )}
               <div
                 className="flex justify-between items-center text-sm font-bold border-t pt-2 mt-0.5 text-[color:var(--rbr-navy-dark)]"
                 style={{ borderColor: 'var(--rbr-border)' }}

@@ -27,8 +27,9 @@ import {
 import { Aviso, Botao, Campo, Card, Chips, Modal, Vazio, inputClass, inputStyle } from './ui'
 import { EditorParcelas, PreviaRegra } from './PrazoEditor'
 import { NATUREZA_LABEL, OpcoesCategoria } from './CategoriaOpcoes'
+import PoliticaPrazoConfig from './PoliticaPrazoConfig'
 
-type Secao = 'contas' | 'prazos' | 'recorrencias' | 'categorias' | 'parametros' | 'regras'
+type Secao = 'contas' | 'prazos' | 'recorrencias' | 'categorias' | 'parametros' | 'politica_prazo' | 'regras'
 
 export default function Configuracoes({ apoio, versao, onMudou }: { apoio: Apoio; versao: number; onMudou: () => void }) {
   const [secao, setSecao] = useState<Secao>('contas')
@@ -41,6 +42,7 @@ export default function Configuracoes({ apoio, versao, onMudou }: { apoio: Apoio
           { valor: 'recorrencias', label: 'Despesas e receitas fixas' },
           { valor: 'categorias', label: 'Plano de contas' },
           { valor: 'parametros', label: 'Parâmetros' },
+          { valor: 'politica_prazo', label: 'Prazo e desconto' },
           { valor: 'regras', label: 'O que a IA aprendeu' },
         ]}
         valor={secao}
@@ -51,6 +53,7 @@ export default function Configuracoes({ apoio, versao, onMudou }: { apoio: Apoio
       {secao === 'recorrencias' && <Recorrencias apoio={apoio} versao={versao} onMudou={onMudou} />}
       {secao === 'categorias' && <Categorias apoio={apoio} onMudou={onMudou} />}
       {secao === 'parametros' && <Parametros />}
+      {secao === 'politica_prazo' && <PoliticaPrazoConfig />}
       {secao === 'regras' && <Regras apoio={apoio} />}
     </div>
   )
