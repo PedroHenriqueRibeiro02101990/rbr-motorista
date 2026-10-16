@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -23,6 +23,7 @@ import { type GiroParams, type ResultadoGiro, GIRO_PARAMS_PADRAO, calcularGiro, 
 import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/cotacaoPdf'
 import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
+import { erroTipoCarga } from '../lib/cotacaoValidacao'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -651,6 +652,8 @@ export default function Cotacao() {
     saldo: { cargas_total: number; cargas_abertas: number } | null
   } | null>(null)
   const [abaCotacao, setAbaCotacao] = useState<'padrao' | 'avancada'>('padrao')
+  const [tipoCargaFaltando, setTipoCargaFaltando] = useState(false)
+  const tipoCargaRef = useRef<HTMLSelectElement | null>(null)
   const [cargaComplexaAberta, setCargaComplexaAberta] = useState(false)
 
   // Formulário abre como painel flutuante sobre o resto da tela (igual ao preview aprovado) —
@@ -1082,6 +1085,7 @@ export default function Cotacao() {
     setBannerConv(null)
     setInfoConv(null)
     setAbaCotacao('padrao')
+    setTipoCargaFaltando(false)
     setCargaComplexaAberta(false)
   }
 
@@ -1811,11 +1815,27 @@ export default function Cotacao() {
     }
   }
 
+  // Tipo de carga obrigatório para enviar/converter (regra em lib/cotacaoValidacao.ts). Mostra a mensagem, volta para a
+  // aba do campo e põe o foco nele. Salvar rascunho não passa por aqui.
+  function exigirTipoCarga(): boolean {
+    const erro = erroTipoCarga(form?.tipo_carga)
+    setTipoCargaFaltando(!!erro)
+    if (!erro) return true
+    setFormError(erro)
+    setAbaCotacao('padrao')
+    setTimeout(() => {
+      tipoCargaRef.current?.focus()
+      tipoCargaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    return false
+  }
+
   // Enviar grava tudo que está na tela (inclusive custos adicionais) e marca como enviada.
   async function enviar() {
     if (!form || !editingId) return
     setFormError(null)
     setSuccessMsg(null)
+    if (!exigirTipoCarga()) return
     if (composicao?.erro) {
       setFormError(composicao.erro)
       return
@@ -1850,6 +1870,8 @@ export default function Cotacao() {
   function erroParaConverter(): string | null {
     if (!form) return 'Formulário vazio.'
     if (!form.cliente_id) return 'Selecione um cliente antes de converter em operação.'
+    const erroTipo = erroTipoCarga(form.tipo_carga)
+    if (erroTipo) return erroTipo
     const erroDest = validarDestinos()
     if (erroDest) return erroDest
     if (destinos.length === 0) {
@@ -1871,6 +1893,7 @@ export default function Cotacao() {
   function abrirConfirmacaoConversao() {
     setFormError(null)
     setSuccessMsg(null)
+    if (!exigirTipoCarga()) return
     const erro = erroParaConverter()
     if (erro) {
       setFormError(erro)
@@ -3634,12 +3657,19 @@ export default function Cotacao() {
                 ))}
               </select>
               <select
+                ref={tipoCargaRef}
                 value={form.tipo_carga}
-                onChange={(e) => setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))}
+                onChange={(e) => {
+                  if (e.target.value) setTipoCargaFaltando(false)
+                  setForm((f) => (f ? { ...f, tipo_carga: e.target.value, eixos: '' } : f))
+                }}
+                aria-label="Tipo de carga (obrigatório para enviar ou converter)"
+                aria-invalid={tipoCargaFaltando}
+                aria-describedby={tipoCargaFaltando ? 'tipo-carga-erro' : undefined}
                 className={inputClass}
-                style={{ ...inputStyle, background: '#fff' }}
+                style={{ ...inputStyle, background: '#fff', ...(tipoCargaFaltando ? { borderColor: 'var(--rbr-danger)', boxShadow: '0 0 0 2px #FBE9E9' } : {}) }}
               >
-                <option value="">Tipo de carga</option>
+                <option value="">Tipo de carga *</option>
                 {TIPOS_CARGA.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -3661,6 +3691,11 @@ export default function Cotacao() {
                 ))}
               </select>
             </div>
+            {tipoCargaFaltando && (
+              <div id="tipo-carga-erro" role="alert" className="text-xs font-semibold" style={{ color: 'var(--rbr-danger)' }}>
+                Escolha o tipo de carga: ele vai no MDF-e e define o piso ANTT.
+              </div>
+            )}
 
             <div className="flex items-center gap-2.5 flex-wrap">
               <button
