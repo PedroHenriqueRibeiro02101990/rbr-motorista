@@ -2335,6 +2335,8 @@ export type Database = {
           nf_serie: string | null
           observacoes: string | null
           origem: string
+          origem_cep: string | null
+          origem_endereco: string | null
           pedagio: number | null
           pedagio_pracas: Json | null
           perdida_em: string | null
@@ -2421,6 +2423,8 @@ export type Database = {
           nf_serie?: string | null
           observacoes?: string | null
           origem?: string
+          origem_cep?: string | null
+          origem_endereco?: string | null
           pedagio?: number | null
           pedagio_pracas?: Json | null
           perdida_em?: string | null
@@ -2507,6 +2511,8 @@ export type Database = {
           nf_serie?: string | null
           observacoes?: string | null
           origem?: string
+          origem_cep?: string | null
+          origem_endereco?: string | null
           pedagio?: number | null
           pedagio_pracas?: Json | null
           perdida_em?: string | null

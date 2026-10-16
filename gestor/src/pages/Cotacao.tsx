@@ -24,6 +24,7 @@ import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/c
 import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
+import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -269,6 +270,10 @@ const FORM_INICIAL = {
   tomador_papel: '' as '' | 'remetente' | 'destinatario' | 'terceiro',
   cidade_origem: '',
   uf_origem: '',
+  // Coleta em outro local (lib/origemCotacao.ts): quando true, cidade_origem/uf_origem são as digitadas pelo gestor.
+  origem_manual: false,
+  origem_cep: '',
+  origem_endereco: '',
   cidade_destino: '',
   uf_destino: '',
   endereco_destino: '',
@@ -1008,22 +1013,29 @@ export default function Cotacao() {
     return 'terceiro'
   }, [form?.cliente_id, form?.nf_remetente_cnpj, form?.nf_destinatario_cnpj, clientes]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cliente selecionado e seu endereço completo (origem da rota é sempre o endereço
-  // cadastrado do cliente — não tem mais campo manual de cidade/UF de origem).
+  // Cliente selecionado e a origem efetiva da cotação: o endereço cadastrado do cliente ou, se o gestor marcou
+  // "Coleta em outro local", o endereço informado à mão (regra em lib/origemCotacao.ts).
   const clienteSelecionado = useMemo(
     () => clientes.find((c) => c.id === form?.cliente_id) ?? null,
     [clientes, form?.cliente_id],
   )
-  const enderecoOrigemCliente = useMemo(() => {
-    const c = clienteSelecionado
-    if (!c) return ''
-    const partes = [
-      [c.logradouro, c.numero_endereco].filter(Boolean).join(', '),
-      c.bairro,
-      [c.cidade, c.uf].filter(Boolean).join('/'),
-    ].filter((p) => p && p.trim() !== '')
-    return partes.join(' — ')
-  }, [clienteSelecionado])
+  const enderecoOrigemCliente = useMemo(() => enderecoDoCliente(clienteSelecionado), [clienteSelecionado])
+  const origem = useMemo(
+    () =>
+      origemEfetiva(
+        {
+          origem_manual: !!form?.origem_manual,
+          origem_cep: form?.origem_cep ?? '',
+          origem_endereco: form?.origem_endereco ?? '',
+          cidade_origem: form?.cidade_origem ?? '',
+          uf_origem: form?.uf_origem ?? '',
+        },
+        clienteSelecionado,
+      ),
+    [form?.origem_manual, form?.origem_cep, form?.origem_endereco, form?.cidade_origem, form?.uf_origem, clienteSelecionado],
+  )
+  const avisoColetaRemetente = form ? avisoRemetenteDiferente(form, form.nf_remetente_endereco) : null
+  const cepColetaRef = useRef<HTMLInputElement | null>(null)
 
   const agenciadoresAtivos = useMemo(
     () => agenciadores.filter((a) => a.status === 'ativo' || a.id === form?.agenciador_id),
@@ -1189,6 +1201,7 @@ export default function Cotacao() {
       tomador_papel: (c.tomador_papel as CotacaoFormState['tomador_papel']) ?? '',
       cidade_origem: c.cidade_origem ?? '',
       uf_origem: c.uf_origem ?? '',
+      ...origemDaCotacao(c),
       cidade_destino: c.cidade_destino ?? '',
       uf_destino: c.uf_destino ?? '',
       endereco_destino: c.endereco_destino ?? '',
@@ -1305,6 +1318,15 @@ export default function Cotacao() {
         setXmlError('Não foi possível ler este arquivo como XML de NF-e. Verifique se é o arquivo correto.')
         return
       }
+      // Com "Coleta em outro local", o remetente da NF-e só troca a origem se o gestor confirmar.
+      const remetenteMuda =
+        !!dados.remetente.cidade && (dados.remetente.cidade !== form?.cidade_origem || (dados.remetente.uf ?? '') !== form?.uf_origem)
+      const manterColeta =
+        !!form?.origem_manual &&
+        remetenteMuda &&
+        !window.confirm(
+          `A NF-e tem o remetente em ${dados.remetente.cidade}/${dados.remetente.uf ?? '?'}, mas a coleta foi informada em ${form.cidade_origem}/${form.uf_origem}.\n\nOK = usar o endereço do remetente como origem (desfaz a coleta em outro local).\nCancelar = manter a coleta informada.`,
+        )
       setForm((f) =>
         f
           ? {
@@ -1323,8 +1345,13 @@ export default function Cotacao() {
               nf_destinatario_ie: dados.destinatario.ie ?? f.nf_destinatario_ie,
               nf_remetente_endereco: dados.remetente.endereco ?? f.nf_remetente_endereco,
               nf_destinatario_endereco: dados.destinatario.endereco ?? f.nf_destinatario_endereco,
-              cidade_origem: dados.remetente.cidade ?? f.cidade_origem,
-              uf_origem: dados.remetente.uf ?? f.uf_origem,
+              ...(manterColeta
+                ? {}
+                : {
+                    cidade_origem: dados.remetente.cidade ?? f.cidade_origem,
+                    uf_origem: dados.remetente.uf ?? f.uf_origem,
+                    ...(f.origem_manual && remetenteMuda ? { origem_manual: false, origem_cep: '', origem_endereco: '' } : {}),
+                  }),
               cidade_destino: dados.destinatario.cidade ?? f.cidade_destino,
               uf_destino: dados.destinatario.uf ?? f.uf_destino,
               peso_bruto_kg: dados.pesoBrutoKg != null ? String(dados.pesoBrutoKg) : f.peso_bruto_kg,
@@ -1455,7 +1482,7 @@ export default function Cotacao() {
   // fonte principal — a distância dele pode ser digitada direto no campo.
   async function calcularRota() {
     if (!form) return
-    if (!form.cidade_origem.trim() || !form.uf_origem.trim() || !form.cidade_destino.trim() || !form.uf_destino.trim()) {
+    if (!origem.cidade || !origem.uf || !form.cidade_destino.trim() || !form.uf_destino.trim()) {
       setRotaErro('Preencha cidade/UF de origem e destino antes de calcular.')
       return
     }
@@ -1465,8 +1492,8 @@ export default function Cotacao() {
     try {
       const { data, error } = await supabase.functions.invoke('calcular-rota-frete', {
         body: {
-          cidade_origem: form.cidade_origem.trim(),
-          uf_origem: form.uf_origem.trim().toUpperCase(),
+          cidade_origem: origem.cidade,
+          uf_origem: origem.uf,
           cidade_destino: form.cidade_destino.trim(),
           uf_destino: form.uf_destino.trim().toUpperCase(),
           tipo_carga: form.tipo_carga || undefined,
@@ -1621,8 +1648,7 @@ export default function Cotacao() {
       nf_remetente_endereco: f.nf_remetente_endereco as unknown as Json,
       nf_destinatario_endereco: f.nf_destinatario_endereco as unknown as Json,
       tomador_papel: f.tomador_papel || null,
-      cidade_origem: f.cidade_origem.trim() || null,
-      uf_origem: f.uf_origem.trim().toUpperCase() || null,
+      ...patchOrigem(f, clienteSelecionado),
       cidade_destino: f.cidade_destino.trim() || null,
       uf_destino: f.uf_destino.trim().toUpperCase() || null,
       endereco_destino: f.endereco_destino.trim() || null,
@@ -1772,6 +1798,7 @@ export default function Cotacao() {
       setFormError('Selecione ou cadastre um cliente antes de salvar.')
       return
     }
+    if (!exigirOrigemManual()) return
     if (composicao?.erro) {
       setFormError(composicao.erro)
       return
@@ -1817,6 +1844,19 @@ export default function Cotacao() {
 
   // Tipo de carga obrigatório para enviar/converter (regra em lib/cotacaoValidacao.ts). Mostra a mensagem, volta para a
   // aba do campo e põe o foco nele. Salvar rascunho não passa por aqui.
+  // Coleta em outro local exige CEP, cidade e UF (lib/origemCotacao.ts). Fora desse modo não bloqueia nada.
+  function exigirOrigemManual(): boolean {
+    const erro = form ? erroOrigemManual(form) : null
+    if (!erro) return true
+    setFormError(erro)
+    setAbaCotacao('padrao')
+    setTimeout(() => {
+      cepColetaRef.current?.focus()
+      cepColetaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    return false
+  }
+
   function exigirTipoCarga(): boolean {
     const erro = erroTipoCarga(form?.tipo_carga)
     setTipoCargaFaltando(!!erro)
@@ -1836,6 +1876,7 @@ export default function Cotacao() {
     setFormError(null)
     setSuccessMsg(null)
     if (!exigirTipoCarga()) return
+    if (!exigirOrigemManual()) return
     if (composicao?.erro) {
       setFormError(composicao.erro)
       return
@@ -1872,6 +1913,8 @@ export default function Cotacao() {
     if (!form.cliente_id) return 'Selecione um cliente antes de converter em operação.'
     const erroTipo = erroTipoCarga(form.tipo_carga)
     if (erroTipo) return erroTipo
+    const erroOrigem = erroOrigemManual(form)
+    if (erroOrigem) return erroOrigem
     const erroDest = validarDestinos()
     if (erroDest) return erroDest
     if (destinos.length === 0) {
@@ -1894,6 +1937,7 @@ export default function Cotacao() {
     setFormError(null)
     setSuccessMsg(null)
     if (!exigirTipoCarga()) return
+    if (!exigirOrigemManual()) return
     const erro = erroParaConverter()
     if (erro) {
       setFormError(erro)
@@ -2306,8 +2350,8 @@ export default function Cotacao() {
   async function calcularRotaDestino(key: string) {
     const d = destinos.find((x) => x.key === key)
     if (!d) return
-    if (!enderecoOrigemCliente) {
-      setErroDestino({ key, msg: 'Selecione um cliente com endereço cadastrado antes de calcular.' })
+    if (!origem.corpoRota) {
+      setErroDestino({ key, msg: origem.manual ? 'Informe cidade e UF da coleta antes de calcular.' : 'Selecione um cliente com endereço cadastrado antes de calcular.' })
       return
     }
     if (!d.endereco.trim()) {
@@ -2319,7 +2363,7 @@ export default function Cotacao() {
     try {
       const { data, error } = await supabase.functions.invoke('calcular-rota-frete', {
         body: {
-          endereco_origem: enderecoOrigemCliente,
+          ...origem.corpoRota,
           endereco_destino: d.endereco.trim(),
           tipo_carga: d.tipo_carga || undefined,
           eixos: d.eixos ? Number(d.eixos) : undefined,
@@ -2670,11 +2714,9 @@ export default function Cotacao() {
                       ? {
                           ...f,
                           cliente_id: id,
-                          // Origem da rota vem do endereço cadastrado do cliente — mantém
-                          // cidade/UF de origem preenchidas por trás pra não quebrar a
-                          // calculadora de rota única, que ainda usa esses dois campos.
-                          cidade_origem: cli?.cidade ?? f.cidade_origem,
-                          uf_origem: cli?.uf ?? f.uf_origem,
+                          // Origem segue o cadastro do cliente, a não ser que o gestor tenha informado
+                          // "Coleta em outro local" (aí trocar o cliente não apaga a origem manual).
+                          ...origemAoTrocarCliente(f, cli ?? null),
                         }
                       : f,
                   )
@@ -2765,7 +2807,74 @@ export default function Cotacao() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
             <div>
               <label className={labelClass}>Origem<Obrig entidade="cotacoes" campo="cidade_origem" /></label>
-              {clienteSelecionado ? (
+              {form.origem_manual ? (
+                <div className="rounded-lg border px-3 py-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-navy-dark)]">Coleta em outro local</span>
+                    <button
+                      type="button"
+                      className="text-[11px] font-semibold underline"
+                      style={{ color: 'var(--rbr-navy)' }}
+                      onClick={() =>
+                        setForm((f) =>
+                          f
+                            ? {
+                                ...f,
+                                origem_manual: false,
+                                origem_cep: '',
+                                origem_endereco: '',
+                                cidade_origem: clienteSelecionado?.cidade ?? '',
+                                uf_origem: clienteSelecionado?.uf ?? '',
+                              }
+                            : f,
+                        )
+                      }
+                    >
+                      Voltar ao endereço do cliente
+                    </button>
+                  </div>
+                  <input
+                    aria-label="Endereço da coleta (rua, número, bairro)"
+                    placeholder="Endereço (rua, número, bairro)"
+                    value={form.origem_endereco}
+                    onChange={(e) => setForm((f) => (f ? { ...f, origem_endereco: e.target.value } : f))}
+                    className={inputClass}
+                    style={inputStyle}
+                  />
+                  <div className="grid grid-cols-[110px_1fr_64px] gap-2">
+                    <input
+                      ref={cepColetaRef}
+                      aria-label="CEP da coleta (obrigatório)"
+                      placeholder="CEP *"
+                      inputMode="numeric"
+                      value={form.origem_cep}
+                      onChange={(e) => setForm((f) => (f ? { ...f, origem_cep: e.target.value } : f))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                    <input
+                      aria-label="Cidade da coleta"
+                      placeholder="Cidade *"
+                      value={form.cidade_origem}
+                      onChange={(e) => setForm((f) => (f ? { ...f, cidade_origem: e.target.value } : f))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                    <input
+                      aria-label="UF da coleta"
+                      placeholder="UF *"
+                      maxLength={2}
+                      value={form.uf_origem}
+                      onChange={(e) => setForm((f) => (f ? { ...f, uf_origem: e.target.value.toUpperCase() } : f))}
+                      className={inputClass}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                    Rota, piso ANTT, pedágio, CT-e e MDF-e passam a usar este local. O CEP vai como local de carregamento do MDF-e.
+                  </div>
+                </div>
+              ) : clienteSelecionado ? (
                 <div
                   className="text-xs rounded-lg px-3 py-2.5 border"
                   style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}
@@ -2775,6 +2884,24 @@ export default function Cotacao() {
               ) : (
                 <div className="text-[11px] text-[color:var(--rbr-muted)]">
                   Selecione um cliente acima — a origem vem do endereço cadastrado dele.
+                </div>
+              )}
+              {!form.origem_manual && (
+                <button
+                  type="button"
+                  className="text-[11px] font-semibold underline mt-1.5"
+                  style={{ color: 'var(--rbr-navy)' }}
+                  onClick={() => {
+                    setForm((f) => (f ? { ...f, origem_manual: true, origem_cep: '', origem_endereco: '', cidade_origem: '', uf_origem: '' } : f))
+                    setTimeout(() => cepColetaRef.current?.focus(), 50)
+                  }}
+                >
+                  Coleta em outro local
+                </button>
+              )}
+              {avisoColetaRemetente && (
+                <div className="text-xs rounded-lg px-3 py-2 mt-2" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
+                  {avisoColetaRemetente}
                 </div>
               )}
             </div>
