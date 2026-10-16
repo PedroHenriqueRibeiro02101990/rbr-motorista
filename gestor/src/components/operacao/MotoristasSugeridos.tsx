@@ -243,8 +243,8 @@ export function AvisoCargasAguardando({
 }) {
   if (cargas.length === 0) return null
   return (
-    <div className="bg-white border rounded-2xl p-4 flex flex-col gap-2.5" style={{ borderColor: '#F0D9A8', background: '#FFFBF2' }}>
-      <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
+    <div className="bg-white border rounded-2xl px-3.5 py-2.5 flex flex-col gap-1.5" style={{ borderColor: '#F0D9A8', background: '#FFFBF2' }}>
+      <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
         {cargas.length === 1 ? '1 carga aguardando motorista' : `${cargas.length} cargas aguardando motorista`}
       </div>
       <div className="flex flex-col gap-1.5">
@@ -253,17 +253,18 @@ export function AvisoCargasAguardando({
           const aptos = c.candidatos_aptos === 0 ? 'nenhum motorista apto' : c.candidatos_aptos === 1 ? '1 motorista apto' : `${c.candidatos_aptos} motoristas aptos`
           const conteudo = (
             <>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)] truncate">{nome ? `${nome} · ` : ''}{c.origem || '?'} → {c.destino || '?'}</div>
-                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+              <div className="min-w-0 text-xs truncate">
+                <b className="text-[color:var(--rbr-navy-dark)]">{nome ? `${nome} · ` : ''}{c.origem || '?'} → {c.destino || '?'}</b>
+                <span className="text-[color:var(--rbr-muted)]">
+                  {' · '}
                   {aptos}
                   {c.avisados > 0 ? ` · ${c.avisados} já ${c.avisados === 1 ? 'avisado' : 'avisados'}` : ''}
-                </div>
+                </span>
               </div>
-              <span className="text-xs font-bold text-[color:var(--rbr-navy)] shrink-0">Ver →</span>
+              <span className="text-xs font-bold text-[color:var(--rbr-navy)] shrink-0">Alocar →</span>
             </>
           )
-          const cls = 'flex items-center justify-between gap-3 rounded-xl px-3 py-2 bg-white border text-left w-full hover:opacity-85'
+          const cls = 'flex items-center justify-between gap-3 rounded-lg px-3 py-1.5 bg-white border text-left w-full hover:opacity-85'
           const estilo = { borderColor: c.candidatos_aptos === 0 ? '#F4C9C9' : 'var(--rbr-border)' }
           return linkPara ? (
             <Link key={c.operacao_id} to={linkPara(c.operacao_id)} className={cls} style={estilo}>
