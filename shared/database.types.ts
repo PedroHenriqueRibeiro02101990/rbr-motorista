@@ -2344,6 +2344,11 @@ export type Database = {
           prazo_entrega: string | null
           prazo_personalizado: Json | null
           prazo_recebimento: string | null
+          ajuste_prazo_pct: number | null
+          desconto_pct: number | null
+          desconto_prazo: string | null
+          desconto_motivo: string | null
+          valor_tabela: number | null
           preco_modo: string
           projeto_id: string | null
           qtd_veiculos: number
@@ -2430,6 +2435,11 @@ export type Database = {
           prazo_entrega?: string | null
           prazo_personalizado?: Json | null
           prazo_recebimento?: string | null
+          ajuste_prazo_pct?: number | null
+          desconto_pct?: number | null
+          desconto_prazo?: string | null
+          desconto_motivo?: string | null
+          valor_tabela?: number | null
           preco_modo?: string
           projeto_id?: string | null
           qtd_veiculos?: number
@@ -2516,6 +2526,11 @@ export type Database = {
           prazo_entrega?: string | null
           prazo_personalizado?: Json | null
           prazo_recebimento?: string | null
+          ajuste_prazo_pct?: number | null
+          desconto_pct?: number | null
+          desconto_prazo?: string | null
+          desconto_motivo?: string | null
+          valor_tabela?: number | null
           preco_modo?: string
           projeto_id?: string | null
           qtd_veiculos?: number
@@ -3616,6 +3631,11 @@ export type Database = {
           valor_total: number
           vencimento_ajuste: string | null
           vencimento_original: string | null
+          valor_cheio: number | null
+          desconto_negociado_pct: number | null
+          descontos_condicionais: Json
+          desconto_perdido_em: string | null
+          desconto_perdido_obs: string | null
         }
         Insert: {
           atraso_confirmacao_obs?: string | null
@@ -3644,6 +3664,11 @@ export type Database = {
           valor_total: number
           vencimento_ajuste?: string | null
           vencimento_original?: string | null
+          valor_cheio?: number | null
+          desconto_negociado_pct?: number | null
+          descontos_condicionais?: Json
+          desconto_perdido_em?: string | null
+          desconto_perdido_obs?: string | null
         }
         Update: {
           atraso_confirmacao_obs?: string | null
@@ -3672,6 +3697,11 @@ export type Database = {
           valor_total?: number
           vencimento_ajuste?: string | null
           vencimento_original?: string | null
+          valor_cheio?: number | null
+          desconto_negociado_pct?: number | null
+          descontos_condicionais?: Json
+          desconto_perdido_em?: string | null
+          desconto_perdido_obs?: string | null
         }
         Relationships: [
           {
@@ -5453,6 +5483,8 @@ export type Database = {
         Row: {
           eh_teste: boolean
           cliente_antes_teste: string | null
+          pix_antecipado_confirmado_em: string | null
+          pix_antecipado_confirmado_por: string | null
           condicao_antes_teste: Json | null
           agenciador_id: string | null
           altura_cm: number | null
@@ -5512,6 +5544,8 @@ export type Database = {
         Insert: {
           eh_teste?: boolean
           cliente_antes_teste?: string | null
+          pix_antecipado_confirmado_em?: string | null
+          pix_antecipado_confirmado_por?: string | null
           condicao_antes_teste?: Json | null
           agenciador_id?: string | null
           altura_cm?: number | null
@@ -5571,6 +5605,8 @@ export type Database = {
         Update: {
           eh_teste?: boolean
           cliente_antes_teste?: string | null
+          pix_antecipado_confirmado_em?: string | null
+          pix_antecipado_confirmado_por?: string | null
           condicao_antes_teste?: Json | null
           agenciador_id?: string | null
           altura_cm?: number | null
