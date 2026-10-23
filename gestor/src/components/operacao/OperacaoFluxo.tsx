@@ -18,6 +18,7 @@ import {
 } from '../../lib/operacaoDetalhe'
 import CiotOperacao from './CiotOperacao'
 import RetencaoInss from './RetencaoInss'
+import OrdemColeta from './OrdemColeta'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
 import SeloProcessando from '../SeloProcessando'
@@ -122,6 +123,7 @@ export default function OperacaoFluxo({
   const [salvando, setSalvando] = useState(false)
   const [pedido, setPedido] = useState<PedidoConformidade>(null)
   const [fichaAberta, setFichaAberta] = useState(false)
+  const [ordemAberta, setOrdemAberta] = useState(false)
   const [corrigindo, setCorrigindo] = useState(false)
   const [resumoAberto, setResumoAberto] = useState(false)
 
@@ -257,6 +259,7 @@ export default function OperacaoFluxo({
           podeCancelar={!!onCancelar && o.status !== 'cancelada' && o.status !== 'fechada'}
           onAcao={(a) => {
             if (a === 'ficha') setFichaAberta(true)
+            else if (a === 'ordem') setOrdemAberta(true)
             else if (a === 'corrigir') setCorrigindo((v) => !v)
             else if (a === 'cancelar') onCancelar?.()
             else setPedido(a)
@@ -299,6 +302,11 @@ export default function OperacaoFluxo({
       <Dispensados d={d} executar={executar} />
       {extras?.rodape}
 
+      {ordemAberta && (
+        <Modal titulo="Ordem de coleta" onFechar={() => setOrdemAberta(false)} largura="max-w-2xl">
+          <OrdemColeta d={d} gestor={gestor} />
+        </Modal>
+      )}
       {fichaAberta && (
         <Modal titulo="Ficha para a assessoria" onFechar={() => setFichaAberta(false)} largura="max-w-2xl">
           <FichaAssessoria d={d} assessoria={assessoria} />
@@ -369,7 +377,7 @@ function EtapaLinha({
 }
 
 // ---------------------------------------------------------------------------
-type AcaoMenu = 'reter' | 'incidente' | 'declaracao' | 'ficha' | 'corrigir' | 'cancelar'
+type AcaoMenu = 'reter' | 'incidente' | 'declaracao' | 'ficha' | 'ordem' | 'corrigir' | 'cancelar'
 
 function MaisAcoes({ agenciador, podeCancelar, onAcao }: { agenciador: boolean; podeCancelar: boolean; onAcao: (a: AcaoMenu) => void }) {
   const [aberto, setAberto] = useState(false)
@@ -419,6 +427,9 @@ function MaisAcoes({ agenciador, podeCancelar, onAcao }: { agenciador: boolean; 
               Declaração da carga
             </button>
           )}
+          <button role="menuitem" type="button" className={item} onClick={() => escolher('ordem')}>
+            Gerar ordem de coleta
+          </button>
           <button role="menuitem" type="button" className={item} onClick={() => escolher('ficha')}>
             Ficha para a assessoria
           </button>

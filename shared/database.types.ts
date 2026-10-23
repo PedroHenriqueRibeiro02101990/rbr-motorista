@@ -5470,6 +5470,86 @@ export type Database = {
           },
         ]
       }
+      ordens_coleta: {
+        Row: {
+          id: string
+          operacao_id: string
+          versao: number
+          endereco_carregamento: string
+          cep_carregamento: string | null
+          cidade_carregamento: string
+          uf_carregamento: string
+          contato_nome: string | null
+          contato_telefone: string | null
+          coleta_prevista_em: string | null
+          carga_descricao: string | null
+          peso_kg: number | null
+          volumes: number | null
+          documentos: Json
+          observacoes: string | null
+          pdf_path: string | null
+          gerada_por: string | null
+          gerada_em: string
+          enviada_motorista_em: string | null
+          cancelada_em: string | null
+          cancelada_motivo: string | null
+        }
+        Insert: {
+          id?: string
+          operacao_id: string
+          versao?: number
+          endereco_carregamento: string
+          cep_carregamento?: string | null
+          cidade_carregamento: string
+          uf_carregamento: string
+          contato_nome?: string | null
+          contato_telefone?: string | null
+          coleta_prevista_em?: string | null
+          carga_descricao?: string | null
+          peso_kg?: number | null
+          volumes?: number | null
+          documentos?: Json
+          observacoes?: string | null
+          pdf_path?: string | null
+          gerada_por?: string | null
+          gerada_em?: string
+          enviada_motorista_em?: string | null
+          cancelada_em?: string | null
+          cancelada_motivo?: string | null
+        }
+        Update: {
+          id?: string
+          operacao_id?: string
+          versao?: number
+          endereco_carregamento?: string
+          cep_carregamento?: string | null
+          cidade_carregamento?: string
+          uf_carregamento?: string
+          contato_nome?: string | null
+          contato_telefone?: string | null
+          coleta_prevista_em?: string | null
+          carga_descricao?: string | null
+          peso_kg?: number | null
+          volumes?: number | null
+          documentos?: Json
+          observacoes?: string | null
+          pdf_path?: string | null
+          gerada_por?: string | null
+          gerada_em?: string
+          enviada_motorista_em?: string | null
+          cancelada_em?: string | null
+          cancelada_motivo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ordens_coleta_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operacoes: {
         Row: {
           eh_teste: boolean
