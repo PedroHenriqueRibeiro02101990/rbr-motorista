@@ -61,7 +61,7 @@ export type LeadNovo = {
 // e os nomes em minúsculas. Devolve { robo: true } quando o campo-isca (_honey / website) vem preenchido.
 export function normalizarLead(corpo: Record<string, unknown>): { erro: string } | { robo: true } | { lead: LeadNovo } {
   const c: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(corpo ?? {})) c[k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9_]/g, '_')] = v
+  for (const [k, v] of Object.entries(corpo ?? {})) c[k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_]/g, '_')] = v
   if (txt(c._honey) || txt(c.website)) return { robo: true }
   const nome = txt(c.nome, 120)
   const whatsapp = txt(c.whatsapp ?? c.telefone ?? c.celular, 30)
@@ -73,7 +73,7 @@ export function normalizarLead(corpo: Record<string, unknown>): { erro: string }
   const o = c.origem_uf ? { cidade: txt(c.origem_cidade ?? c.origem, 120), uf: uf(c.origem_uf) } : cidadeUf(c.origem)
   const d = c.destino_uf ? { cidade: txt(c.destino_cidade ?? c.destino, 120), uf: uf(c.destino_uf) } : cidadeUf(c.destino)
   const tipoBruto = String(c.tipo_pessoa ?? c.tipo_de_cliente ?? '').toUpperCase()
-  const tipo_pessoa = /PJ|EMPRESA/.test(tipoBruto) ? 'PJ' : /PF|FISICA/.test(tipoBruto.normalize('NFD').replace(/[̀-ͯ]/g, '')) ? 'PF' : null
+  const tipo_pessoa = /PJ|EMPRESA/.test(tipoBruto) ? 'PJ' : /PF|FISICA/.test(tipoBruto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')) ? 'PF' : null
   const cnpj = txt(c.cnpj, 20)?.replace(/[^0-9A-Za-z]/g, '') || null
   return {
     lead: {
