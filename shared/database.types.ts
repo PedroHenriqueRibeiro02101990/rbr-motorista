@@ -4432,6 +4432,47 @@ export type Database = {
         }
         Relationships: []
       }
+      interacoes: {
+        Row: {
+          id: string
+          lead_id: string
+          tipo: string
+          direcao: string | null
+          ocorreu_em: string
+          conteudo: string | null
+          autor_id: string | null
+          criado_em: string
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          tipo: string
+          direcao?: string | null
+          ocorreu_em?: string
+          conteudo?: string | null
+          autor_id?: string | null
+          criado_em?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          tipo?: string
+          direcao?: string | null
+          ocorreu_em?: string
+          conteudo?: string | null
+          autor_id?: string | null
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interacoes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lancamento_documentos: {
         Row: {
           created_at: string
@@ -4766,6 +4807,120 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_checklist_prontidao"
             referencedColumns: ["motorista_id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          id: string
+          criado_em: string
+          atualizado_em: string
+          nome: string
+          empresa: string | null
+          cnpj: string | null
+          tipo_pessoa: string | null
+          whatsapp: string | null
+          email: string | null
+          origem_cidade: string | null
+          origem_uf: string | null
+          destino_cidade: string | null
+          destino_uf: string | null
+          veiculo: string | null
+          mensagem: string | null
+          origem: string
+          gclid: string | null
+          utm_source: string | null
+          utm_medium: string | null
+          utm_campaign: string | null
+          utm_term: string | null
+          utm_content: string | null
+          pagina: string | null
+          status: string
+          motivo_perda: string | null
+          responsavel_id: string | null
+          proxima_acao: string | null
+          proxima_acao_em: string | null
+          primeiro_contato_em: string | null
+          cliente_id: string | null
+        }
+        Insert: {
+          id?: string
+          criado_em?: string
+          atualizado_em?: string
+          nome: string
+          empresa?: string | null
+          cnpj?: string | null
+          tipo_pessoa?: string | null
+          whatsapp?: string | null
+          email?: string | null
+          origem_cidade?: string | null
+          origem_uf?: string | null
+          destino_cidade?: string | null
+          destino_uf?: string | null
+          veiculo?: string | null
+          mensagem?: string | null
+          origem?: string
+          gclid?: string | null
+          utm_source?: string | null
+          utm_medium?: string | null
+          utm_campaign?: string | null
+          utm_term?: string | null
+          utm_content?: string | null
+          pagina?: string | null
+          status?: string
+          motivo_perda?: string | null
+          responsavel_id?: string | null
+          proxima_acao?: string | null
+          proxima_acao_em?: string | null
+          primeiro_contato_em?: string | null
+          cliente_id?: string | null
+        }
+        Update: {
+          id?: string
+          criado_em?: string
+          atualizado_em?: string
+          nome?: string
+          empresa?: string | null
+          cnpj?: string | null
+          tipo_pessoa?: string | null
+          whatsapp?: string | null
+          email?: string | null
+          origem_cidade?: string | null
+          origem_uf?: string | null
+          destino_cidade?: string | null
+          destino_uf?: string | null
+          veiculo?: string | null
+          mensagem?: string | null
+          origem?: string
+          gclid?: string | null
+          utm_source?: string | null
+          utm_medium?: string | null
+          utm_campaign?: string | null
+          utm_term?: string | null
+          utm_content?: string | null
+          pagina?: string | null
+          status?: string
+          motivo_perda?: string | null
+          responsavel_id?: string | null
+          proxima_acao?: string | null
+          proxima_acao_em?: string | null
+          primeiro_contato_em?: string | null
+          cliente_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -5843,6 +5998,63 @@ export type Database = {
             columns: ["veiculo_id"]
             isOneToOne: false
             referencedRelation: "veiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      oportunidades: {
+        Row: {
+          id: string
+          lead_id: string | null
+          cliente_id: string | null
+          cotacao_id: string | null
+          etapa: string
+          valor_estimado: number | null
+          previsao_fechamento: string | null
+          motivo_perda: string | null
+          responsavel_id: string | null
+          criado_em: string
+          atualizado_em: string
+        }
+        Insert: {
+          id?: string
+          lead_id?: string | null
+          cliente_id?: string | null
+          cotacao_id?: string | null
+          etapa?: string
+          valor_estimado?: number | null
+          previsao_fechamento?: string | null
+          motivo_perda?: string | null
+          responsavel_id?: string | null
+          criado_em?: string
+          atualizado_em?: string
+        }
+        Update: {
+          id?: string
+          lead_id?: string | null
+          cliente_id?: string | null
+          cotacao_id?: string | null
+          etapa?: string
+          valor_estimado?: number | null
+          previsao_fechamento?: string | null
+          motivo_perda?: string | null
+          responsavel_id?: string | null
+          criado_em?: string
+          atualizado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oportunidades_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oportunidades_cotacao_id_fkey"
+            columns: ["cotacao_id"]
+            isOneToOne: false
+            referencedRelation: "cotacoes"
             referencedColumns: ["id"]
           },
         ]
@@ -9056,6 +9268,43 @@ export type Database = {
             referencedColumns: ["operacao_id"]
           },
         ]
+      }
+      v_fila_do_dia: {
+        Row: {
+          id: string | null
+          criado_em: string | null
+          atualizado_em: string | null
+          nome: string | null
+          empresa: string | null
+          cnpj: string | null
+          tipo_pessoa: string | null
+          whatsapp: string | null
+          email: string | null
+          origem_cidade: string | null
+          origem_uf: string | null
+          destino_cidade: string | null
+          destino_uf: string | null
+          veiculo: string | null
+          mensagem: string | null
+          origem: string | null
+          gclid: string | null
+          utm_source: string | null
+          utm_medium: string | null
+          utm_campaign: string | null
+          utm_term: string | null
+          utm_content: string | null
+          pagina: string | null
+          status: string | null
+          motivo_perda: string | null
+          responsavel_id: string | null
+          proxima_acao: string | null
+          proxima_acao_em: string | null
+          primeiro_contato_em: string | null
+          cliente_id: string | null
+          acao_vencida: boolean | null
+          sem_contato: boolean | null
+        }
+        Relationships: []
       }
       v_frete_pago_parceiro: {
         Row: {

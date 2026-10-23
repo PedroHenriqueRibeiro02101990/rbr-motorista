@@ -5,6 +5,7 @@ import { TelaEntrada, TelaNovaSenha } from '@rbr/shared/AuthTelas'
 import { BiometriaGate } from '@rbr/shared/biometria'
 import Inicio from './pages/Inicio'
 import Cotacao from './pages/Cotacao'
+import FilaDoDia from './pages/FilaDoDia'
 import PreCotacao from './pages/PreCotacao'
 import NotasParceiros from './pages/NotasParceiros'
 import Conformidade from './pages/Conformidade'
@@ -55,6 +56,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Inicio />} />
           <Route path="/cotacao" element={<Cotacao />} />
+          <Route path="/fila-do-dia" element={<FilaDoDia />} />
           <Route path="/pre-cotacao" element={<PreCotacao />} />
           <Route path="/notas-parceiros" element={<NotasParceiros />} />
           <Route path="/conformidade" element={<Conformidade />} />
