@@ -79,8 +79,10 @@ export interface ProvedorCiot {
 }
 
 // "Não encontrado" na consulta por referência (texto da efrete varia; sem certeza, NÃO é tratado como inexistente).
-export function ehNaoEncontrado(mensagem: string | null | undefined): boolean {
-  return /n[aã]o\s+(foi\s+)?encontrad|inexistente|n[aã]o\s+existe|nenhuma\s+opera[cç][aã]o/i.test(mensagem ?? '')
+// Servidor real (24/10): Codigo "Operacao.Nao.Localizada", "Operação de transporte não localizada".
+export function ehNaoEncontrado(mensagem: string | null | undefined, codigo?: string | null): boolean {
+  if (/^Operacao\.Nao\.Localizada$/i.test(codigo ?? '')) return true
+  return /n[aã]o\s+(foi\s+)?(encontrad|localizad)|inexistente|n[aã]o\s+existe|nenhuma\s+opera[cç][aã]o/i.test(mensagem ?? '')
 }
 
 export interface DepsEfrete {
@@ -324,7 +326,7 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
       MatrizCNPJ: soDigitos(matrizCnpj),
       IdOperacaoCliente: idOperacaoCliente,
     })
-    if (!r.ok) return ehNaoEncontrado(r.erro.mensagem) ? { ok: true, dados: null } : r
+    if (!r.ok) return ehNaoEncontrado(r.erro.mensagem, r.erro.codigo) ? { ok: true, dados: null } : r
     const ciot = String(r.dados.CodigoIdentificacaoOperacao ?? '')
     if (!ciot) return { ok: true, dados: null }
     return {
