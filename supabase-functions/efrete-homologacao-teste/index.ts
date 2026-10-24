@@ -40,7 +40,7 @@ const http1 = (() => {
     return undefined;
   }
 })();
-const fetchHttp1: typeof fetch = (entrada, init) => fetch(entrada, http1 ? ({ ...init, client: http1 } as RequestInit) : init);
+const fetchHttp1: typeof fetch = (entrada, init) => fetch(entrada, http1 ? ({ ...init, client: http1 } as unknown as RequestInit) : init);
 
 // Um cliente por isolate: o token fica na memória e é reaproveitado entre chamadas do mesmo isolate.
 const clientes = new Map<Verbo, ReturnType<typeof criarClienteEfrete>>();
