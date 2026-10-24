@@ -22,6 +22,8 @@ import {
   gerarCnh,
   gerarCpf,
   gerarRenavam,
+  juntarCiot,
+  separarCiot,
   type EnderecoEfrete,
   type PedidoCiotPadrao,
   type RepositorioPedidos,
@@ -175,9 +177,11 @@ const repo: RepositorioPedidos = {
   },
   async marcarEmitido(ref, e, resumo) {
     const agora = new Date().toISOString();
+    const c = separarCiot(e.ciot);
+    if (!c) throw new Error(`CIOT em formato inesperado: ${e.ciot}`);
     const { data, error } = await admin
       .from("efrete_ciot_pedidos")
-      .update({ status: "emitido", ciot: e.ciot, protocolo: e.protocolo, emitido_em: agora, ultimo_erro: null, resumo_retorno: resumo, atualizado_em: agora })
+      .update({ status: "emitido", ciot: c.numero, ciot_verificador: c.verificador, protocolo: e.protocolo, emitido_em: agora, ultimo_erro: null, resumo_retorno: resumo, atualizado_em: agora })
       .eq("id_operacao_cliente", ref)
       .select("id")
       .single();
@@ -189,9 +193,10 @@ const repo: RepositorioPedidos = {
   },
 };
 
+// Código completo para a efrete: ciot (12 dígitos) + "/" + verificador.
 async function pedidoEmitido(ref: string) {
-  const { data } = await admin.from("efrete_ciot_pedidos").select("id, status, ciot, emitido_em").eq("id_operacao_cliente", ref).maybeSingle();
-  return data;
+  const { data } = await admin.from("efrete_ciot_pedidos").select("id, status, ciot, ciot_verificador").eq("id_operacao_cliente", ref).maybeSingle();
+  return data?.ciot ? { id: data.id as string, codigo: juntarCiot(data.ciot, data.ciot_verificador) } : null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -281,10 +286,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const p = await pedidoEmitido(ref);
-    if (!p?.ciot) return json({ ok: false, motivo: "Pedido sem CIOT registrado." }, 404);
+    if (!p) return json({ ok: false, motivo: "Pedido sem CIOT registrado." }, 404);
 
     if (acao === "pdf") {
-      const r = await efrete.obterPdfOperacao(p.ciot);
+      const r = await efrete.obterPdfOperacao(p.codigo);
       if (!r.ok) return falha(r.erro);
       let bytes = new Uint8Array();
       try {
@@ -302,13 +307,13 @@ Deno.serve(async (req: Request) => {
 
     if (acao === "transacoes") {
       const desde = new Date(Date.now() - 24 * 3600_000);
-      const r = await efrete.obterTransacoes([p.ciot], `${dataEfrete(desde).slice(0, 10)}T00:00:00`);
+      const r = await efrete.obterTransacoes([p.codigo], `${dataEfrete(desde).slice(0, 10)}T00:00:00`);
       return r.ok ? json({ ok: true, transacoes: resumir(r.dados) }) : falha(r.erro);
     }
 
     if (acao === "cancelar") {
       const motivo = String(corpo.motivo ?? "Teste de homologacao RBR - cancelamento do ciclo");
-      const r = await efrete.cancelarOperacaoTransporte(p.ciot, motivo);
+      const r = await efrete.cancelarOperacaoTransporte(p.codigo, motivo);
       if (!r.ok) return falha(r.erro);
       const agora = new Date().toISOString();
       await admin

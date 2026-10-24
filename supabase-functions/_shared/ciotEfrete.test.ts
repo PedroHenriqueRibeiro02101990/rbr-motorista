@@ -8,7 +8,9 @@ import {
   gerarCnh,
   gerarCpf,
   gerarRenavam,
+  juntarCiot,
   montarCorpoOperacaoPadrao,
+  separarCiot,
   traduzirErroEfrete,
   validarPedidoPadrao,
   type PedidoCiotPadrao,
@@ -205,4 +207,13 @@ test('dados fictícios: CPF, CNH e RENAVAM com dígitos verificadores válidos; 
   const ch = gerarChassi(42)
   assert.equal(ch.length, 17)
   assert.ok(!/[IOQ]/.test(ch))
+})
+
+test('CIOT da efrete: 12 dígitos + "/" + verificador de 4 (formato real) separado e remontado', () => {
+  assert.deepEqual(separarCiot('560000596706/4165'), { numero: '560000596706', verificador: '4165' })
+  assert.deepEqual(separarCiot('560000596706'), { numero: '560000596706', verificador: null })
+  assert.equal(separarCiot('56000059670/4165'), null)
+  assert.equal(separarCiot('XXXXXXXXXXXX'), null)
+  assert.equal(juntarCiot('560000596706', '4165'), '560000596706/4165')
+  assert.equal(juntarCiot('560000596706', null), '560000596706')
 })

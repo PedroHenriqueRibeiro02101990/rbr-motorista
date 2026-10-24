@@ -195,6 +195,14 @@ export function traduzirErroEfrete(mensagem: string): string {
   return mensagem
 }
 
+// CodigoIdentificacaoOperacao chega como "NNNNNNNNNNNN/VVVV" (CIOT de 12 dígitos + código verificador de 4); o manual
+// não descreve o formato. Guardamos os dois separados e remontamos para as chamadas seguintes.
+export function separarCiot(codigo: string): { numero: string; verificador: string | null } | null {
+  const m = /^\s*(\d{12})(?:\s*\/\s*(\d{4}))?\s*$/.exec(codigo ?? '')
+  return m ? { numero: m[1], verificador: m[2] ?? null } : null
+}
+export const juntarCiot = (numero: string, verificador: string | null | undefined) => (verificador ? `${numero}/${verificador}` : numero)
+
 // ---- Anti-duplicidade ----
 export interface PedidoRegistrado {
   status: 'pendente' | 'emitido' | 'erro' | 'cancelado'
