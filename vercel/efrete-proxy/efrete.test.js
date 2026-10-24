@@ -1,7 +1,8 @@
 // node --test vercel/efrete-proxy/efrete.test.js   (sem rede: o envio à efrete é simulado)
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { tratar, caminhoPermitido, chaveConfere, montarDestino } = require('./api/efrete.js')
+const { EventEmitter } = require('node:events')
+const { tratar, caminhoPermitido, chaveConfere, montarDestino, cabecalhosEnvio, lerCorpo } = require('./api/efrete.js')
 
 const ENV = { PROXY_CHAVE: 'chave-de-teste-123', EFRETE_BASE_URL: 'https://dev.efrete.com.br' }
 const cab = (k = ENV.PROXY_CHAVE) => ({ 'x-rbr-proxy-key': k })
@@ -94,4 +95,46 @@ test('codificacao inválida é recusada', async () => {
     async () => ({ status: 200, corpo: '{}' }),
   )
   assert.equal(r.status, 400)
+})
+
+// Acentos (passo 4, item 3): "Rua Fictícia" voltou da efrete como "RUA FICT??CIA". O corpo que sai do proxy tem de
+// estar em UTF-8 com o charset declarado (ou só ASCII, com \uXXXX). Nome de pessoa nunca é alterado pelo proxy.
+const COM_ACENTO = { Nome: 'João Conceição', Endereco: { Rua: 'Rua São José', Bairro: 'Centro' } }
+
+test('acentos: o corpo enviado à efrete leva "João Conceição" e "Rua São José" em UTF-8, com charset e tamanho em bytes', async () => {
+  let destino
+  const enc = async (d) => ((destino = d), { status: 200, corpo: '{}' })
+  const r = await tratar({ metodo: 'POST', cabecalhos: cab(), corpoBruto: corpo({ caminho: '/services/motoristas/Gravar', corpo: COM_ACENTO }) }, ENV, enc)
+  assert.equal(r.status, 200)
+  assert.equal(destino.dados, '{"Nome":"João Conceição","Endereco":{"Rua":"Rua São José","Bairro":"Centro"}}')
+  const bytes = Buffer.from(destino.dados, 'utf8')
+  // "ã" = C3 A3 e "é" = C3 A9 em UTF-8 (em Latin-1 seriam E3 e E9, que a efrete leria como "??").
+  assert.ok(bytes.includes(Buffer.from([0xc3, 0xa3])))
+  assert.ok(bytes.includes(Buffer.from([0xc3, 0xa9])))
+  assert.deepEqual(JSON.parse(bytes.toString('utf8')), COM_ACENTO)
+  const h = cabecalhosEnvio(destino.dados)
+  assert.equal(h['Content-Type'], 'application/json; charset=utf-8')
+  assert.equal(h['Content-Length'], bytes.length)
+  assert.equal(h['Content-Length'] - destino.dados.length, 5) // 5 letras acentuadas = 5 bytes a mais
+})
+
+test('acentos com codificacao ascii: só ASCII no fio, o JSON lido volta igual (nome intacto)', async () => {
+  let destino
+  const enc = async (d) => ((destino = d), { status: 200, corpo: '{}' })
+  await tratar({ metodo: 'POST', cabecalhos: cab(), corpoBruto: corpo({ caminho: '/services/motoristas/Gravar', corpo: COM_ACENTO, codificacao: 'ascii' }) }, ENV, enc)
+  assert.equal(destino.dados, '{"Nome":"Jo\\u00e3o Concei\\u00e7\\u00e3o","Endereco":{"Rua":"Rua S\\u00e3o Jos\\u00e9","Bairro":"Centro"}}')
+  assert.ok(/^[\x00-\x7f]*$/.test(destino.dados))
+  assert.equal(cabecalhosEnvio(destino.dados)['Content-Length'], destino.dados.length)
+  assert.deepEqual(JSON.parse(destino.dados), COM_ACENTO)
+})
+
+test('acentos na entrada: "ã" partido entre dois pedaços da requisição não vira "??"', async () => {
+  const bruto = Buffer.from(JSON.stringify({ metodoHttp: 'POST', caminho: '/services/motoristas/Gravar', corpo: COM_ACENTO }), 'utf8')
+  const meio = bruto.indexOf(Buffer.from([0xc3, 0xa3])) + 1 // corta entre C3 e A3
+  const req = new EventEmitter()
+  const lido = lerCorpo(req)
+  req.emit('data', bruto.subarray(0, meio))
+  req.emit('data', bruto.subarray(meio))
+  req.emit('end')
+  assert.deepEqual(JSON.parse(await lido).corpo, COM_ACENTO)
 })
