@@ -147,7 +147,36 @@ Deno.serve(async (req: Request) => {
           return { modo: "tls-direto-http1.1", erro: String((e as Error)?.message ?? e).slice(0, 300), ms: Date.now() - inicio };
         }
       };
-      return json({ ok: true, alvo, http1Disponivel: Boolean(http1), resultados: [await tentar("fetch-padrao", fetch), await tentar("fetch-http1", fetchHttp1), await tls()] });
+      // TLS com HTTP/1.1 em cada IP do domínio (SNI e certificado continuam os de dev.efrete.com.br).
+      const porIp = async (ip: string) => {
+        const inicio = Date.now();
+        try {
+          const host = new URL(alvo).hostname;
+          const tcp = await Deno.connect({ hostname: ip, port: 443 });
+          const conn = await Deno.startTls(tcp, { hostname: host, alpnProtocols: ["http/1.1"] });
+          const req = `POST /services/Logon/Login HTTP/1.1\r\nHost: ${host}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`;
+          await conn.write(new TextEncoder().encode(req));
+          const buf = new Uint8Array(4096);
+          let txt = "";
+          for (;;) {
+            const n = await conn.read(buf);
+            if (n === null) break;
+            txt += new TextDecoder().decode(buf.subarray(0, n));
+            if (txt.length > 3000) break;
+          }
+          try { conn.close(); } catch { /* já fechada */ }
+          return { modo: `tls-ip-${ip}`, ms: Date.now() - inicio, resposta: txt.slice(0, 300) };
+        } catch (e) {
+          return { modo: `tls-ip-${ip}`, erro: String((e as Error)?.message ?? e).slice(0, 200), ms: Date.now() - inicio };
+        }
+      };
+      let ips: string[] = [];
+      try {
+        ips = await Deno.resolveDns(new URL(alvo).hostname, "A");
+      } catch { /* sem DNS */ }
+      const resultados = [await tentar("fetch-padrao", fetch), await tentar("fetch-http1", fetchHttp1), await tls()];
+      for (const ip of ips) resultados.push(await porIp(ip));
+      return json({ ok: true, alvo, ips, http1Disponivel: Boolean(http1), resultados });
     }
 
     if (acao === "logout") {
