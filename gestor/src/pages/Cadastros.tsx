@@ -348,7 +348,7 @@ export default function Cadastros() {
   const [erroCliente, setErroCliente] = useState<string | null>(null)
   const [editingClienteId, setEditingClienteId] = useState<string | null>(null)
   const [buscaCliente, setBuscaCliente] = useState('')
-  const [mostrarInativosCliente, setMostrarInativosCliente] = useState(false)
+  const [filtroCliente, setFiltroCliente] = useState<'ativos' | 'inativos' | 'protesto'>('ativos')
 
   // --- Motoristas ---
   const [motoristas, setMotoristas] = useState<Pessoa[] | null>(null)
@@ -511,12 +511,15 @@ export default function Cadastros() {
   const clientesFiltrados = useMemo(() => {
     const termo = normalizaBusca(buscaCliente)
     return (clientes ?? []).filter((c) => {
-      if (!mostrarInativosCliente && c.status !== 'ativo') return false
+      const comProtesto = selosProtesto[soDigitos(c.cnpj)]?.situacao === 'com'
+      if (filtroCliente === 'ativos' && c.status !== 'ativo') return false
+      if (filtroCliente === 'inativos' && c.status === 'ativo') return false
+      if (filtroCliente === 'protesto' && !comProtesto) return false
       if (!termo) return true
       const alvo = normalizaBusca(`${c.razao_social ?? ''} ${c.nome_fantasia ?? ''} ${c.cnpj ?? ''} ${c.cpf ?? ''}`)
       return alvo.includes(termo)
     })
-  }, [clientes, buscaCliente, mostrarInativosCliente])
+  }, [clientes, buscaCliente, filtroCliente, selosProtesto])
 
   const motoristasFiltrados = useMemo(() => {
     const termo = normalizaBusca(buscaMotorista)
@@ -712,7 +715,7 @@ export default function Cadastros() {
       setAvisoConsulta(
         d.ativa === false
           ? { alvo, tipo: 'atencao', texto: `Esta empresa não está ativa na Receita (situação: ${d.situacao_cadastral || 'não informada'}).` }
-          : { alvo, tipo: 'info', texto: 'Dados preenchidos pela Receita Federal. Confira antes de salvar.' },
+          : { alvo, tipo: 'info', texto: '✓ Dados da Receita carregados. Confira antes de salvar.' },
       )
     } finally {
       consultasEmAndamento.current.delete(chave)
@@ -1613,13 +1616,36 @@ export default function Cadastros() {
             </button>
           </div>
 
-          <SearchAndFilterRow
-            busca={buscaCliente}
-            onBusca={setBuscaCliente}
-            mostrarInativos={mostrarInativosCliente}
-            onMostrarInativos={setMostrarInativosCliente}
-            placeholder="Buscar por razão social, nome fantasia, CNPJ ou CPF…"
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              placeholder="Buscar por razão social, nome fantasia, CNPJ ou CPF…"
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+              className={`${inputClass} flex-1 min-w-[200px]`}
+              style={inputStyle}
+            />
+            {(
+              [
+                ['ativos', 'Ativos'],
+                ['inativos', 'Inativos'],
+                ['protesto', 'Com protesto'],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => setFiltroCliente(valor)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full border"
+                style={
+                  filtroCliente === valor
+                    ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' }
+                    : { borderColor: 'var(--rbr-border)', color: 'var(--rbr-navy)' }
+                }
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
 
           {showNovoCliente && (
             <div className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
@@ -1708,6 +1734,16 @@ export default function Cadastros() {
                   />
                 </CampoFiscal>
               </div>
+              <input
+                placeholder="Nome do contato comercial"
+                value={novoCliente.nome_contato_comercial}
+                onChange={(e) => setNovoCliente((f) => ({ ...f, nome_contato_comercial: e.target.value }))}
+                className={inputClass}
+                style={inputStyle}
+              />
+              <details className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                <summary className="text-xs font-bold cursor-pointer text-[color:var(--rbr-navy)]">Mais opções (endereço e CNAE)</summary>
+                <div className="flex flex-col gap-3 mt-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <CampoFiscal entidade="clientes" campo="cep" rotulo="CEP">
                   <input
@@ -1772,14 +1808,6 @@ export default function Cadastros() {
                   style={inputStyle}
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  placeholder="Nome do contato comercial"
-                  value={novoCliente.nome_contato_comercial}
-                  onChange={(e) => setNovoCliente((f) => ({ ...f, nome_contato_comercial: e.target.value }))}
-                  className={inputClass}
-                  style={inputStyle}
-                />
                 {novoCliente.tipo_pessoa_doc === 'PJ' && (
                   <input
                     placeholder="CNAE (atividade principal) — vem do CNPJ"
@@ -1789,7 +1817,8 @@ export default function Cadastros() {
                     style={inputStyle}
                   />
                 )}
-              </div>
+                </div>
+              </details>
               <div className="text-[11px] text-[color:var(--rbr-muted)]">
                 Condição de pagamento/prazo não fica no cadastro do cliente — é definida por cotação/operação.
               </div>
@@ -1819,45 +1848,57 @@ export default function Cadastros() {
             </div>
           )}
 
-          <div className="flex flex-col gap-2.5">
+          <div className="bg-white border rounded-[16px] overflow-hidden" style={cardStyle}>
+            <div className="hidden md:grid grid-cols-[2fr_1.2fr_1fr_1.2fr_auto] gap-3 px-4 py-2 text-[10.5px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+              <span>Cliente</span>
+              <span>CNPJ / CPF</span>
+              <span>Cidade</span>
+              <span>Contato</span>
+              <span />
+            </div>
             {!loadingClientes &&
-              clientesFiltrados.map((c) => (
-                <div key={c.id} className="bg-white border rounded-[16px] px-4 py-3.5" style={cardStyle}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="text-sm font-bold">{c.razao_social ?? c.nome_fantasia ?? 'Sem razão social'}</div>
+              clientesFiltrados.map((c) => {
+                const selo = selosProtesto[soDigitos(c.cnpj)]
+                return (
+                  <div
+                    key={c.id}
+                    className="grid grid-cols-1 md:grid-cols-[2fr_1.2fr_1fr_1.2fr_auto] gap-x-3 gap-y-1 px-4 py-3 border-b last:border-b-0 md:items-center text-sm"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="font-bold truncate">{c.razao_social ?? c.nome_fantasia ?? 'Sem razão social'}</span>
                       <StatusBadge status={c.status} />
-                      {selosProtesto[soDigitos(c.cnpj)] && (
-                        <SeloProtestoLista situacao={selosProtesto[soDigitos(c.cnpj)].situacao} vencida={selosProtesto[soDigitos(c.cnpj)].vencida} />
-                      )}
+                      {selo && <SeloProtestoLista situacao={selo.situacao} vencida={selo.vencida} />}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <span className="text-xs text-[color:var(--rbr-muted)] truncate">{c.cnpj ?? c.cpf ?? 'Documento não informado'}</span>
+                    <span className="text-xs text-[color:var(--rbr-muted)] truncate">
+                      {c.cidade ?? '—'}
+                      {c.uf ? `/${c.uf}` : ''}
+                    </span>
+                    <span className="text-xs text-[color:var(--rbr-muted)] truncate">{c.celular_whatsapp ?? c.email ?? '—'}</span>
+                    <div className="flex items-center gap-2 md:justify-end">
                       <button onClick={() => setFichaCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>
                         Ficha
                       </button>
                       <button onClick={() => editarCliente(c)} className="text-xs font-bold px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
                         Editar
                       </button>
-                      <button
-                        onClick={() => alternarStatusCliente(c)}
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg border"
-                        style={{ borderColor: 'var(--rbr-border)', color: c.status === 'ativo' ? 'var(--rbr-danger)' : '#1F7A3D' }}
-                      >
-                        {c.status === 'ativo' ? 'Desativar' : 'Reativar'}
-                      </button>
+                      <details className="relative">
+                        <summary className="text-xs font-bold px-2 py-1.5 rounded-lg cursor-pointer list-none text-[color:var(--rbr-muted)]">Mais opções</summary>
+                        <div className="absolute right-0 mt-1 z-10 bg-white border rounded-xl p-1.5 shadow-md" style={{ borderColor: 'var(--rbr-border)' }}>
+                          <button
+                            onClick={() => alternarStatusCliente(c)}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap"
+                            style={{ color: c.status === 'ativo' ? 'var(--rbr-danger)' : '#1F7A3D' }}
+                          >
+                            {c.status === 'ativo' ? 'Desativar' : 'Reativar'}
+                          </button>
+                        </div>
+                      </details>
                     </div>
                   </div>
-                  <div className="text-xs text-[color:var(--rbr-muted)] mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
-                    <span>{c.cnpj ?? c.cpf ?? 'Documento não informado'}</span>
-                    <span>
-                      {c.cidade ?? '—'}
-                      {c.uf ? `/${c.uf}` : ''}
-                    </span>
-                    <span>{c.email ?? '—'}</span>
-                    <span>{c.celular_whatsapp ?? '—'}</span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
           </div>
         </div>
       )}
