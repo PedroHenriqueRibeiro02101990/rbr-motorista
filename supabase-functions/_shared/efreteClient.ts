@@ -164,7 +164,9 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
       return res
     } catch (e) {
       const abortado = (e as { name?: string })?.name === 'AbortError'
-      return { ok: false, erro: { codigo: abortado ? 'TIMEOUT' : 'REDE', mensagem: abortado ? `Sem resposta em ${timeoutMs / 1000}s` : String((e as Error)?.message ?? e) } }
+      // O erro de rede do Deno traz a URL inteira (no GET do login, com a senha): passa pela mesma limpeza.
+      const msg = abortado ? `Sem resposta em ${timeoutMs / 1000}s` : limparSegredos(String((e as Error)?.message ?? e), [c.usuario, c.senha, c.integrador, token, String(corpo.Usuario ?? '')])
+      return { ok: false, erro: { codigo: abortado ? 'TIMEOUT' : 'REDE', mensagem: msg } }
     } finally {
       clearTimeout(t)
     }

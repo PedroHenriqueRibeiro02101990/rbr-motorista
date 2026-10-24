@@ -144,3 +144,14 @@ test('mensagem de erro do servidor nunca devolve credencial (nem codificada na U
   assert.ok(r.erro.mensagem.includes('[oculto]'))
   assert.equal(limparSegredos('abc', ['ab']), 'abc') // valores curtos demais não são trocados
 })
+
+test('erro de rede (que traz a URL) também sai sem credencial', async () => {
+  const quebra = (async (url: string) => {
+    throw new TypeError(`error sending request for url (${url})`)
+  }) as unknown as typeof fetch
+  const c = criarClienteEfrete({ carregarConfig: async () => CFG, fetch: quebra })
+  const r = await c.login()
+  assert.ok(!r.ok && r.erro.codigo === 'REDE')
+  if (r.ok) return
+  for (const v of ['senha-falsa', 'hash-falso', 'usuario+falso']) assert.ok(!r.erro.mensagem.includes(v), `vazou ${v}`)
+})
