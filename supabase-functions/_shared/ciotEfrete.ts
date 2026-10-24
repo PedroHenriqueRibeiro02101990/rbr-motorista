@@ -211,7 +211,7 @@ export interface RepositorioPedidos {
 
 export type ResultadoEmissao =
   | { ok: true; ciot: string; protocolo: string | null; jaExistia: boolean }
-  | { ok: false; etapa: 'validacao' | 'consulta' | 'emissao'; mensagem: string; mensagemOriginal?: string; codigo?: string }
+  | { ok: false; etapa: 'validacao' | 'consulta' | 'emissao'; mensagem: string; mensagemOriginal?: string; codigo?: string; protocolo?: string }
 
 export async function emitirComAntiDuplicidade(
   provedor: Pick<ProvedorCiot, 'emitirOperacaoTransporte' | 'obterCiotPorReferencia'>,
@@ -247,7 +247,7 @@ export async function emitirComAntiDuplicidade(
   if (!r.ok) {
     const mensagem = traduzirErroEfrete(r.erro.mensagem)
     await repo.marcarErro(ref, mensagem)
-    return { ok: false, etapa: 'emissao', mensagem, mensagemOriginal: r.erro.mensagem, codigo: r.erro.codigo }
+    return { ok: false, etapa: 'emissao', mensagem, mensagemOriginal: r.erro.mensagem, codigo: r.erro.codigo, protocolo: r.erro.protocolo }
   }
   await repo.marcarEmitido(ref, r.dados, { origem: 'emissao' })
   return { ok: true, ciot: r.dados.ciot, protocolo: r.dados.protocolo, jaExistia: false }

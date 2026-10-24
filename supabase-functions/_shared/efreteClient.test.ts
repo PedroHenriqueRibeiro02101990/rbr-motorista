@@ -222,3 +222,10 @@ test('proxy: erro de rede/timeout não vaza a chave do proxy nem credenciais', a
   const t = await c2.login()
   assert.equal(!t.ok && t.erro.codigo, 'TIMEOUT')
 })
+
+test('erro da efrete traz o ProtocoloServico quando vier', () => {
+  const r = interpretarResposta(200, JSON.stringify({ Sucesso: false, Excecao: { Codigo: 1, Mensagem: 'Rejeição: X' }, ProtocoloServico: 6126300 }))
+  assert.deepEqual(r, { ok: false, erro: { codigo: '1', mensagem: 'Rejeição: X', http: 200, protocolo: '6126300' } })
+  const sem = interpretarResposta(200, JSON.stringify({ Sucesso: false, Excecao: { Mensagem: 'Y' } }))
+  assert.equal(!sem.ok && sem.erro.protocolo, undefined)
+})

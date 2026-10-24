@@ -28,6 +28,7 @@ export interface ErroEfrete {
   //                PROXY_RECUSOU (chave/endereço), PROXY_PEDIDO (caminho/formato), EFRETE_CONEXAO, EFRETE_TIMEOUT
   mensagem: string
   http?: number
+  protocolo?: string // ProtocoloServico, quando a efrete devolve (ajuda o suporte a achar a chamada)
 }
 
 export type Resultado<T> = { ok: true; dados: T } | { ok: false; erro: ErroEfrete }
@@ -154,6 +155,9 @@ export function montarRequisicao(baseUrl: string, servico: string, metodo: strin
 }
 
 // Interpreta a resposta: HTTP, JSON e o padrão Sucesso/Excecao da efrete.
+const protocoloDe = (obj: Record<string, unknown> | null) =>
+  obj?.ProtocoloServico != null && obj.ProtocoloServico !== '' ? { protocolo: String(obj.ProtocoloServico) } : {}
+
 export function interpretarResposta(http: number, texto: string): Resultado<Record<string, unknown>> {
   let json: unknown = null
   try {
@@ -166,13 +170,13 @@ export function interpretarResposta(http: number, texto: string): Resultado<Reco
   if (http < 200 || http >= 300) {
     return {
       ok: false,
-      erro: { codigo: exc?.Codigo != null ? String(exc.Codigo) : `HTTP_${http}`, mensagem: exc?.Mensagem ?? ((texto || '').slice(0, 300) || `HTTP ${http}`), http },
+      erro: { codigo: exc?.Codigo != null ? String(exc.Codigo) : `HTTP_${http}`, mensagem: exc?.Mensagem ?? ((texto || '').slice(0, 300) || `HTTP ${http}`), http, ...protocoloDe(obj) },
     }
   }
   if (!obj) return { ok: false, erro: { codigo: 'RESPOSTA_INVALIDA', mensagem: `Resposta não é JSON: ${(texto || '').slice(0, 200)}`, http } }
   const sucesso = obj.Sucesso ?? obj.sucesso
   if (sucesso === false || (exc && (exc.Mensagem || exc.Codigo != null))) {
-    return { ok: false, erro: { codigo: exc?.Codigo != null ? String(exc.Codigo) : 'SEM_CODIGO', mensagem: exc?.Mensagem ?? 'A efrete recusou sem mensagem.', http } }
+    return { ok: false, erro: { codigo: exc?.Codigo != null ? String(exc.Codigo) : 'SEM_CODIGO', mensagem: exc?.Mensagem ?? 'A efrete recusou sem mensagem.', http, ...protocoloDe(obj) } }
   }
   return { ok: true, dados: obj }
 }
