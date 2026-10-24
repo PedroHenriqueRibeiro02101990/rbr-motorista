@@ -65,7 +65,7 @@ export interface DetalheOperacao {
     averbacao_rcv_em: string | null
   } | null
   // CIOT e vale-pedágio da operação (mesma linha de operacao_ciot_vpo), para a linha do tempo.
-  ciotVpo: { ciot: string | null; ciot_status: string | null; ciot_origem: string | null; vpo_idvpo: string | null; numero_averbacao: string | null } | null
+  ciotVpo: { ciot: string | null; ciot_status: string | null; ciot_origem: string | null; ciot_ambiente: string | null; vpo_idvpo: string | null; numero_averbacao: string | null } | null
 }
 
 export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperacao> {
@@ -96,7 +96,7 @@ export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperac
     supabase.from('parametros_sistema').select('valor').eq('chave', 'dados_empresa').maybeSingle(),
     supabase
       .from('operacao_ciot_vpo')
-      .select('averbacao_rcv_status, averbacao_rcv_numero, averbacao_rcv_erro, averbacao_rcv_resposta, averbacao_rcv_em, ciot, ciot_status, ciot_origem, vpo_idvpo, numero_averbacao')
+      .select('averbacao_rcv_status, averbacao_rcv_numero, averbacao_rcv_erro, averbacao_rcv_resposta, averbacao_rcv_em, ciot, ciot_status, ciot_origem, ciot_ambiente, vpo_idvpo, numero_averbacao')
       .eq('operacao_id', operacaoId)
       .maybeSingle(),
   ])
@@ -136,6 +136,7 @@ export async function carregarDetalhe(operacaoId: string): Promise<DetalheOperac
           ciot: rcv.data.ciot,
           ciot_status: rcv.data.ciot_status,
           ciot_origem: rcv.data.ciot_origem,
+          ciot_ambiente: rcv.data.ciot_ambiente,
           vpo_idvpo: rcv.data.vpo_idvpo,
           numero_averbacao: rcv.data.numero_averbacao,
         }

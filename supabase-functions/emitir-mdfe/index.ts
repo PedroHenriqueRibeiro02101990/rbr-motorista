@@ -1,4 +1,6 @@
-// Edge Function: emitir-mdfe (v18)
+// Edge Function: emitir-mdfe (v19)
+// v19 (2026-10-24, passo 4): com NF-e do cliente na operacao (operacao_nfes), peso bruto, NCM e valor da carga vem das notas
+// (soma); sem notas, segue a cotacao. CIOT emitido na homologacao da efrete nunca libera MDF-e em producao (mdfe.ts).
 // v18 (2026-10-16): cotacao sem tipo de carga assume "Carga geral" (05) e AVISA, em vez de bloquear. Tipo escrito mas nao reconhecido continua bloqueando. Ver mdfe.ts.
 // v17 (2026-10-16): tipo_transporte so e enviado quando ha proprietario do veiculo de tracao (SEFAZ: "O tipo de transportador nao pode ser informado quando nao estiver informado proprietario do veiculo de tracao"). Veiculo da frota da RBR: campo omitido. Ver mdfe.ts.
 // v16 (2026-10-15): o relaxamento do teste em producao vem da resposta de trava_teste_fiscal (chamada antes de montar), nao do flag da cotacao.
@@ -136,6 +138,11 @@ Deno.serve(async (req: Request) => {
       cot = data;
     }
 
+    const { data: nfesCliente } = await supabaseAdmin.from("operacao_nfes").select("valor, peso_kg, ncm").eq("operacao_id", operacao_id).order("created_at");
+    const notas = nfesCliente ?? [];
+    const somaNotas = (campo: "valor" | "peso_kg") => notas.reduce((s, n) => s + (Number(n[campo]) || 0), 0);
+    const ncmNotas = notas.map((n) => String(n.ncm ?? "")).find((x) => x.replace(/\D/g, "").length === 8) ?? null;
+
     const { data: apolice } = await supabaseAdmin
       .from("apolices_seguro")
       .select("seguradora_nome, seguradora_cnpj, numero_apolice, responsavel_seguro")
@@ -194,7 +201,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const { ambiente, bloqueios, avisos, regras, payload } = montarMdfe({
-      op,
+      op: notas.length && notas.every((n) => n.valor != null) ? { ...op, valor_nf: Math.round(somaNotas("valor") * 100) / 100 } : op,
       pf,
       municipioEmitente,
       cte: cteDoc ?? null,
@@ -203,10 +210,10 @@ Deno.serve(async (req: Request) => {
       carregamento: await buscarMunicipio(supabaseAdmin, op.cidade_origem, op.uf_origem),
       descarregamento: await buscarMunicipio(supabaseAdmin, op.cidade_destino, op.uf_destino),
       cotacao: {
-        peso_bruto_kg: cot?.peso_bruto_kg != null ? Number(cot.peso_bruto_kg) : null,
+        peso_bruto_kg: somaNotas("peso_kg") > 0 ? Math.round(somaNotas("peso_kg") * 1000) / 1000 : cot?.peso_bruto_kg != null ? Number(cot.peso_bruto_kg) : null,
         tipo_carga: cot?.tipo_carga ?? null,
         produto: cot?.nf_produto_predominante ?? null,
-        ncm: Array.isArray(cot?.ncms_produtos) && cot.ncms_produtos.length ? String(cot.ncms_produtos[0]) : (op.ncm ?? null),
+        ncm: ncmNotas ?? (Array.isArray(cot?.ncms_produtos) && cot.ncms_produtos.length ? String(cot.ncms_produtos[0]) : (op.ncm ?? null)),
         pedagio: Number(cot?.pedagio ?? 0),
         teste_producao: testeDaTrava(trava),
       },

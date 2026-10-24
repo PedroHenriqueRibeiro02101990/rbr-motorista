@@ -1,5 +1,9 @@
 // Edge Function: emitir-cte (v20)
 //
+// v22 (2026-10-24, passo 4): NF-e do CLIENTE na operação (operacao_nfes). O CT-e cita todas as notas da operação e usa
+// a soma de valor (vai para a averbação pelo XML) e de peso. Sem nota na operação, em produção fora do modo teste,
+// bloqueia: a chave da cotação só vale em homologação ou em operação de teste (a RBR não emite NF-e em operação real).
+//
 // Emite o CT-e de uma operação via Focus NFe (POST /v2/cte, resposta assíncrona 202; status final via
 // consultar-documento-fiscal). Lê os dados -> monta payload e bloqueios (cte.ts, testado em cte.test.ts) ->
 // chama Focus -> grava em documentacao_operacao (upsert por operacao_id+tipo).
@@ -143,6 +147,11 @@ Deno.serve(async (req: Request) => {
       municipioEmitente = m?.cidade ?? null;
     }
 
+    const [{ data: nfesCliente }, { data: opTeste }] = await Promise.all([
+      supabaseAdmin.from("operacao_nfes").select("chave_acesso, valor, peso_kg").eq("operacao_id", operacao_id).order("created_at"),
+      supabaseAdmin.from("operacoes").select("eh_teste").eq("id", operacao_id).maybeSingle(),
+    ]);
+
     const { ambiente, bloqueios, avisos, regras, intramunicipal, payload } = montarCte({
       op,
       pf,
@@ -154,6 +163,12 @@ Deno.serve(async (req: Request) => {
       },
       municipioEmitente,
       agora: new Date(),
+      nfesCliente: (nfesCliente ?? []).map((n) => ({
+        chave_acesso: n.chave_acesso,
+        valor: n.valor != null ? Number(n.valor) : null,
+        peso_kg: n.peso_kg != null ? Number(n.peso_kg) : null,
+      })),
+      ehTeste: opTeste?.eh_teste === true,
     });
 
     // Modo teste (cotacoes.eh_teste): trava invertida no banco — RBR remetente E destinatária, cliente = RBR,

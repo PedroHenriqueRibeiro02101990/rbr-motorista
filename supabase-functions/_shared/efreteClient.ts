@@ -21,6 +21,8 @@ export interface ConfigEfrete {
 }
 
 export type ModoConexao = 'proxy' | 'direto'
+// Como o proxy escreve o JSON para a efrete: 'utf8' (padrão, com charset) ou 'ascii' (acentos como \uXXXX).
+export type Codificacao = 'utf8' | 'ascii'
 export const modoConexao = (c: Pick<ConfigEfrete, 'proxyUrl' | 'proxyChave'>): ModoConexao => (c.proxyUrl && c.proxyChave ? 'proxy' : 'direto')
 
 export interface ErroEfrete {
@@ -76,6 +78,8 @@ export interface ProvedorCiot {
   obterPdfOperacao(ciot: string): Promise<Resultado<{ pdfBase64: string }>>
   obterTransacoes(ciots: string[], dataInicial: string): Promise<Resultado<Record<string, unknown>[]>>
   cancelarOperacaoTransporte(ciot: string, motivo: string): Promise<Resultado<{ protocolo: string | null; data: string | null }>>
+  // Encerra a viagem (declara que foi executada). Manual: Versao 2 no texto e no exemplo, 3 na tabela.
+  encerrarOperacaoTransporte(ciot: string, pesoKg: number | null, versao?: number): Promise<Resultado<{ protocolo: string | null }>>
 }
 
 // "Não encontrado" na consulta por referência (texto da efrete varia; sem certeza, NÃO é tratado como inexistente).
@@ -110,13 +114,13 @@ export function ehErroDeSessao(mensagem: string | null | undefined): boolean {
 export const caminhoServico = (servico: string, metodo: string) => `/services/${servico}/${metodo}`
 
 // Pedido ao proxy: o proxy monta a URL no host fixo dele (EFRETE_BASE_URL da Vercel) e repassa.
-export function montarPedidoProxy(c: ConfigEfrete, servico: string, metodo: string, verbo: Verbo, corpo: Record<string, unknown>) {
+export function montarPedidoProxy(c: ConfigEfrete, servico: string, metodo: string, verbo: Verbo, corpo: Record<string, unknown>, codificacao: Codificacao = 'utf8') {
   return {
     url: String(c.proxyUrl),
     init: {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-rbr-proxy-key': String(c.proxyChave) },
-      body: JSON.stringify({ metodoHttp: verbo, caminho: caminhoServico(servico, metodo), corpo }),
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'x-rbr-proxy-key': String(c.proxyChave) },
+      body: JSON.stringify({ metodoHttp: verbo, caminho: caminhoServico(servico, metodo), corpo, ...(codificacao === 'ascii' ? { codificacao } : {}) }),
     } as RequestInit,
   }
 }
@@ -152,7 +156,7 @@ export function montarRequisicao(baseUrl: string, servico: string, metodo: strin
   }
   return {
     url: url.toString(),
-    init: { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(corpo) } as RequestInit,
+    init: { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' }, body: JSON.stringify(corpo) } as RequestInit,
   }
 }
 
@@ -204,7 +208,9 @@ export function varianteUsuario(usuario: string, variante: 'original' | 'sem_esp
   return usuario
 }
 
-export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPrefixo(): string; modo(): Promise<ModoConexao> } {
+export function criarClienteEfrete(
+  deps: DepsEfrete,
+): ProvedorCiot & { tokenPrefixo(): string; modo(): Promise<ModoConexao>; definirCodificacao(c: Codificacao): void } {
   const f = deps.fetch ?? fetch
   const agora = deps.agora ?? (() => Date.now())
   const timeoutMs = deps.timeoutMs ?? 25_000
@@ -213,6 +219,7 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
   let config: ConfigEfrete | null = null
   let token: string | null = null
   let tokenAte = 0
+  let codificacao: Codificacao = 'utf8'
 
   async function cfg(): Promise<ConfigEfrete> {
     if (!config) {
@@ -226,7 +233,7 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
   async function http(servico: string, metodo: string, verbo: Verbo, corpo: Record<string, unknown>): Promise<Resultado<Record<string, unknown>>> {
     const c = await cfg()
     const viaProxy = modoConexao(c) === 'proxy'
-    const { url, init } = viaProxy ? montarPedidoProxy(c, servico, metodo, verbo, corpo) : montarRequisicao(c.baseUrl, servico, metodo, verbo, corpo)
+    const { url, init } = viaProxy ? montarPedidoProxy(c, servico, metodo, verbo, corpo, codificacao) : montarRequisicao(c.baseUrl, servico, metodo, verbo, corpo)
     const segredos = [c.usuario, c.senha, c.integrador, c.proxyChave, token, String(corpo.Usuario ?? '')]
     const ctrl = new AbortController()
     const t = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -354,6 +361,17 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
     return { ok: true, dados: { protocolo: r.dados.Protocolo != null ? String(r.dados.Protocolo) : null, data: r.dados.Data != null ? String(r.dados.Data) : null } }
   }
 
+  async function encerrarOperacaoTransporte(ciot: string, pesoKg: number | null, versao = 2): Promise<Resultado<{ protocolo: string | null }>> {
+    const r = await chamar('Pef', 'EncerrarOperacaoTransporte', 'POST', {
+      Versao: versao,
+      CodigoIdentificacaoOperacao: ciot,
+      ...(pesoKg != null && pesoKg > 0 ? { PesoCarga: pesoKg } : {}),
+    })
+    if (!r.ok) return r
+    const prot = r.dados.Protocolo ?? r.dados.ProtocoloServico
+    return { ok: true, dados: { protocolo: prot != null ? String(prot) : null } }
+  }
+
   async function modo(): Promise<ModoConexao> {
     return modoConexao(await cfg())
   }
@@ -370,8 +388,12 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
     obterPdfOperacao,
     obterTransacoes,
     cancelarOperacaoTransporte,
+    encerrarOperacaoTransporte,
     tokenPrefixo: () => prefixoToken(token),
     modo,
+    definirCodificacao: (c: Codificacao) => {
+      codificacao = c
+    },
   }
 }
 

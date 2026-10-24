@@ -7,7 +7,7 @@ import type { DetalheOperacao } from '../../lib/operacaoDetalhe'
 // O número continua em operacao_ciot_vpo.ciot, que é o que o MDF-e usa: sem CIOT, sem MDF-e.
 
 type Executar = (fn: () => Promise<void>, sucesso?: string) => Promise<void>
-type OrigemCiot = 'rbr_repom' | 'parceiro'
+type OrigemCiot = 'rbr_repom' | 'parceiro' | 'efrete'
 type CiotRow = {
   ciot: string | null
   ciot_origem: OrigemCiot | null
@@ -18,7 +18,7 @@ type CiotRow = {
 }
 type AlertaCiot = { codigo: string; gravidade: 'bloqueia' | 'atencao'; limite: string | null; mensagem: string }
 
-export const ORIGEM_LABEL: Record<OrigemCiot, string> = { rbr_repom: 'RBR gera na Repom', parceiro: 'CIOT do parceiro (ETC)' }
+export const ORIGEM_LABEL: Record<OrigemCiot, string> = { rbr_repom: 'RBR gera na Repom', parceiro: 'CIOT do parceiro (ETC)', efrete: 'RBR gera na efrete' }
 export const STATUS_CIOT_LABEL: Record<string, string> = {
   pendente: 'Pendente',
   emitido: 'Emitido',
@@ -150,6 +150,7 @@ export default function CiotOperacao({
             <option value="">Escolha…</option>
             <option value="rbr_repom">{ORIGEM_LABEL.rbr_repom}</option>
             <option value="parceiro">{ORIGEM_LABEL.parceiro}</option>
+            {origem === 'efrete' && <option value="efrete">{ORIGEM_LABEL.efrete}</option>}
           </select>
         </div>
         <div>

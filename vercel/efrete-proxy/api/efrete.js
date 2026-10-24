@@ -26,8 +26,14 @@ function caminhoPermitido(c) {
   return PERMITIDOS.some((p) => minusc.startsWith(p) && minusc.length > p.length)
 }
 
-// Monta a requisição para a efrete. GET: campos na query (listas/objetos em JSON); POST: JSON no corpo.
-function montarDestino(baseUrl, metodoHttp, caminho, corpo) {
+// JSON só com ASCII: acentos viram \uXXXX (a efrete devolveu "??" para "í" mandado em UTF-8 cru, 24/10).
+function jsonAscii(obj) {
+  return JSON.stringify(obj).replace(/[\u007f-\uffff]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
+}
+
+// Monta a requisição para a efrete. GET: campos na query (listas/objetos em JSON); POST: JSON no corpo (UTF-8; com
+// codificacao 'ascii', acentos escapados).
+function montarDestino(baseUrl, metodoHttp, caminho, corpo, codificacao) {
   const base = new URL(baseUrl)
   const url = new URL(caminho, `${base.protocol}//${base.host}`)
   let dados = null
@@ -37,7 +43,7 @@ function montarDestino(baseUrl, metodoHttp, caminho, corpo) {
       url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
     }
   } else {
-    dados = JSON.stringify(corpo || {})
+    dados = codificacao === 'ascii' ? jsonAscii(corpo || {}) : JSON.stringify(corpo || {})
   }
   return { url, dados }
 }
@@ -51,7 +57,9 @@ function encaminharHttps({ url, metodoHttp, dados }) {
         port: url.port || 443,
         path: url.pathname + url.search,
         method: metodoHttp,
-        headers: dados ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(dados), Accept: 'application/json' } : { Accept: 'application/json' },
+        headers: dados
+          ? { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(dados, 'utf8'), Accept: 'application/json' }
+          : { Accept: 'application/json' },
         timeout: TIMEOUT_MS,
       },
       (res) => {
@@ -66,7 +74,7 @@ function encaminharHttps({ url, metodoHttp, dados }) {
     )
     req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })))
     req.on('error', falha)
-    if (dados) req.write(dados)
+    if (dados) req.write(dados, 'utf8')
     req.end()
   })
 }
@@ -92,7 +100,10 @@ async function tratar({ metodo, cabecalhos, corpoBruto }, env, encaminhar = enca
   if (pedido.corpo !== undefined && (typeof pedido.corpo !== 'object' || pedido.corpo === null || Array.isArray(pedido.corpo))) {
     return { status: 400, json: { erro: 'corpo deve ser um objeto JSON.' } }
   }
-  const { url, dados } = montarDestino(env.EFRETE_BASE_URL, metodoHttp, pedido.caminho, pedido.corpo)
+  if (pedido.codificacao !== undefined && pedido.codificacao !== 'utf8' && pedido.codificacao !== 'ascii') {
+    return { status: 400, json: { erro: "codificacao deve ser 'utf8' ou 'ascii'." } }
+  }
+  const { url, dados } = montarDestino(env.EFRETE_BASE_URL, metodoHttp, pedido.caminho, pedido.corpo, pedido.codificacao)
   const inicio = agora()
   try {
     const r = await encaminhar({ url, metodoHttp, dados })
@@ -112,7 +123,8 @@ function lerCorpo(req) {
     if (typeof req.body === 'string') return ok(req.body)
     if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return ok(JSON.stringify(req.body))
     if (Buffer.isBuffer(req.body)) return ok(req.body.toString('utf8'))
-    let t = ''
+    // Junta os pedaços em bytes antes de decodificar: um acento (2 bytes em UTF-8) pode cair entre dois pedaços.
+    const partes = []
     let tam = 0
     req.on('data', (c) => {
       tam += c.length
@@ -120,9 +132,9 @@ function lerCorpo(req) {
         req.destroy()
         return ok('x'.repeat(LIMITE_BYTES + 1))
       }
-      t += c
+      partes.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
     })
-    req.on('end', () => ok(t))
+    req.on('end', () => ok(Buffer.concat(partes).toString('utf8')))
     req.on('error', falha)
   })
 }
@@ -139,7 +151,7 @@ async function handler(req, res) {
   // Só método, caminho, status e duração. Nunca corpo, cabeçalhos ou resposta.
   if (r.log) console.log(`[efrete-proxy] ${r.log.metodoHttp} ${r.log.caminho} -> ${r.log.statusEfrete} ${Date.now() - inicio}ms`)
   res.statusCode = r.status
-  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store')
   res.end(JSON.stringify(r.json))
 }

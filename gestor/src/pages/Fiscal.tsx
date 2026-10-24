@@ -7,6 +7,8 @@ import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPane
 import PainelPendencias from '../components/PainelPendencias'
 import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
+import NfesCliente from '../components/operacao/NfesCliente'
+import CiotEfrete from '../components/operacao/CiotEfrete'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import CancelarDocumentoModal, {
@@ -1325,6 +1327,9 @@ export default function Fiscal() {
                     onAtualizado={() => carregarDocumentos([op.id])}
                   />
                 )}
+
+                {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
+                {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} />}
 
                 <div className="flex gap-2 flex-wrap">
                   {ofereceCteMdfe && (

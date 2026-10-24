@@ -293,3 +293,15 @@ test("todos os campos do payload existem na doc da Focus", () => {
   const excecoes = new Set(["data_emissao", "modal_rodoviario"]);
   assert.deepEqual([...new Set(chaves)].filter((k) => !doc.has(k) && !excecoes.has(k)), []);
 });
+
+test("Passo 4: CIOT da homologação da efrete não libera MDF-e em produção (TAC bloqueia como se não houvesse CIOT)", () => {
+  const b = base();
+  const comum = { ...b, op: { ...b.op, ambiente_fiscal: "producao" }, tracao: TAC, reboques: [] };
+  const homolog = montarMdfe({ ...comum, ciotVpo: { ciot: "560000596706", ciot_ambiente: "homologacao", numero_averbacao: "AVB-123" } });
+  assert.ok(homolog.bloqueios.some((x) => /CIOT não informado/.test(x)));
+  assert.ok(homolog.avisos.some((x) => /HOMOLOGAÇÃO da efrete/.test(x)));
+  assert.equal(homolog.payload.modal_rodoviario.ciot, undefined);
+  const prod = montarMdfe({ ...comum, ciotVpo: { ciot: "560000596706", ciot_ambiente: "producao", numero_averbacao: "AVB-123" } });
+  assert.ok(!prod.bloqueios.some((x) => /CIOT/.test(x)));
+  assert.equal(prod.payload.modal_rodoviario.ciot[0].ciot, "560000596706");
+});
