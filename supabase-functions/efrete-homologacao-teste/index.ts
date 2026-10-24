@@ -31,11 +31,22 @@ const segredo = async (nome: string) => {
 let configCache: Promise<ConfigEfrete> | null = null;
 const carregarConfig = () => (configCache ??= carregarConfigDoVault(segredo));
 
+// A homologação da efrete recusa HTTP/2 ("endpoint requires HTTP/1.1"); o fetch do Deno negocia HTTP/2 por padrão.
+// Força HTTP/1.1 com um cliente HTTP próprio.
+const http1 = (() => {
+  try {
+    return (Deno as unknown as { createHttpClient?: (o: Record<string, unknown>) => unknown }).createHttpClient?.({ http1: true, http2: false });
+  } catch {
+    return undefined;
+  }
+})();
+const fetchHttp1: typeof fetch = (entrada, init) => fetch(entrada, http1 ? ({ ...init, client: http1 } as RequestInit) : init);
+
 // Um cliente por isolate: o token fica na memória e é reaproveitado entre chamadas do mesmo isolate.
 const clientes = new Map<Verbo, ReturnType<typeof criarClienteEfrete>>();
 const cliente = (verboLogin: Verbo = "GET") => {
   if (!clientes.has(verboLogin)) {
-    clientes.set(verboLogin, criarClienteEfrete({ carregarConfig, verboLogin, verboConsulta: verboLogin, log: (m) => console.log(m) }));
+    clientes.set(verboLogin, criarClienteEfrete({ carregarConfig, fetch: fetchHttp1, verboLogin, verboConsulta: verboLogin, log: (m) => console.log(m) }));
   }
   return clientes.get(verboLogin)!;
 };
@@ -84,7 +95,7 @@ Deno.serve(async (req: Request) => {
     if (acao === "login") {
       const variante = (["original", "sem_espaco", "cnpj"].includes(String(corpo.variante)) ? corpo.variante : "original") as "original" | "sem_espaco" | "cnpj";
       const r = await cliente(verbo).login({ usuario: varianteUsuario(cfg.usuario, variante, CNPJ_RBR), forcar: true });
-      console.log(`[efrete-teste] login variante=${variante} verbo=${verbo} quem=${a.quem} ok=${r.ok}${r.ok ? "" : ` codigo=${r.erro.codigo}`}`);
+      console.log(`[efrete-teste] login variante=${variante} verbo=${verbo} quem=${a.quem} http1=${Boolean(http1)} ok=${r.ok}${r.ok ? "" : ` codigo=${r.erro.codigo}`}`);
       return json(r.ok ? { ok: true, motivo: "Login aceito pela efrete (token guardado só na memória da função)." } : { ok: false, motivo: `${r.erro.codigo}: ${r.erro.mensagem}`, http: r.erro.http ?? null });
     }
 
