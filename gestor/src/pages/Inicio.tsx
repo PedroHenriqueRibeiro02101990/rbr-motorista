@@ -256,10 +256,10 @@ export default function Inicio() {
 
       {/* Mapa + Hoje */}
       <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5">
-        <section className="relative rounded-[24px] overflow-hidden h-[400px] lg:h-[620px]" style={{ background: '#0E1230', boxShadow: '0 12px 40px rgba(14,18,48,0.25)' }}>
+        <section className="relative rounded-[24px] overflow-hidden h-[400px] lg:h-[620px] border" style={{ background: '#F7F8FB', borderColor: 'var(--rbr-border)', boxShadow: '0 12px 40px rgba(30,39,97,0.10)' }}>
           <FrotaMap
             pontos={pontos}
-            tema="escuro"
+            tema="claro"
             height="100%"
             mostrarVazio
             rolagem
@@ -270,7 +270,7 @@ export default function Inicio() {
           />
 
           {/* Abas por cima do mapa */}
-          <div className="absolute top-4 left-4 z-[1000] flex gap-1 p-1 rounded-full" style={{ background: 'rgba(14,18,48,0.72)', backdropFilter: 'blur(8px)' }}>
+          <div className="absolute top-4 left-4 z-[1000] flex gap-1 p-1 rounded-full" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 10px rgba(30,39,97,0.12)', backdropFilter: 'blur(8px)' }}>
             {(
               [
                 ['viagens', 'Viagens'],
@@ -282,7 +282,7 @@ export default function Inicio() {
                 key={v}
                 onClick={() => setAba(v)}
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-full transition-colors"
-                style={aba === v ? { background: '#fff', color: 'var(--rbr-navy-dark)' } : { color: 'rgba(255,255,255,0.75)' }}
+                style={aba === v ? { background: 'var(--rbr-navy)', color: '#fff' } : { color: 'var(--rbr-muted)' }}
               >
                 {l}
               </button>
@@ -290,7 +290,7 @@ export default function Inicio() {
           </div>
 
           {/* Legenda discreta */}
-          <div className="absolute bottom-4 left-4 z-[1000] flex gap-3.5 px-3.5 py-2 rounded-full text-[11px]" style={{ background: 'rgba(14,18,48,0.72)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
+          <div className="absolute bottom-4 left-4 z-[1000] flex gap-3.5 px-3.5 py-2 rounded-full text-[11px]" style={{ background: 'rgba(255,255,255,0.92)', color: 'var(--rbr-muted)', boxShadow: '0 2px 10px rgba(30,39,97,0.12)', backdropFilter: 'blur(8px)' }}>
             {(aba === 'viagens'
               ? [
                   [COR_SINAL.ok, 'Sinal em dia'],
@@ -317,9 +317,9 @@ export default function Inicio() {
 
           {semViagens && aba !== 'motoristas' && (
             <div className="absolute inset-0 z-[450] flex items-center justify-center pointer-events-none">
-              <div className="text-center px-6 py-5 rounded-[20px]" style={{ background: 'rgba(14,18,48,0.6)', backdropFilter: 'blur(6px)' }}>
-                <div className="text-white text-base font-semibold">Nenhuma viagem em andamento hoje</div>
-                <div className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              <div className="text-center px-6 py-5 rounded-[20px]" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 10px rgba(30,39,97,0.12)', backdropFilter: 'blur(6px)' }}>
+                <div className="text-base font-semibold" style={{ color: 'var(--rbr-navy-dark)' }}>Nenhuma viagem em andamento hoje</div>
+                <div className="text-xs mt-1" style={{ color: 'var(--rbr-muted)' }}>
                   {motoristas.length ? `${motoristas.length} motorista(s) parado(s) no mapa` : 'A frota aparece aqui assim que houver posição'}
                 </div>
               </div>
