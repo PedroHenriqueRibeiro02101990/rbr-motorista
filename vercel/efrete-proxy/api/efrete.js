@@ -1,3 +1,4 @@
+// versão 2026-10-24: charset UTF-8 e escape de acentos (só comentário, sem mudança de comportamento).
 // Proxy efrete (Vercel, região iad1): única peça que fala com a efrete. A efrete derruba conexões vindas do Supabase,
 // mas aceita as da Vercel (sonda de 24/10). O proxy NÃO guarda credencial da efrete: o Supabase manda o corpo pronto
 // (Usuario/Senha/Integrador/Token) e o proxy só repassa ao host fixo EFRETE_BASE_URL.
