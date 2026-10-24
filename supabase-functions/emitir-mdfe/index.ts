@@ -1,6 +1,7 @@
-// Edge Function: emitir-mdfe (v19)
-// v19 (2026-10-24, passo 4): com NF-e do cliente na operacao (operacao_nfes), peso bruto, NCM e valor da carga vem das notas
+// Edge Function: emitir-mdfe (v21)
+// v21 (2026-10-24, passo 4): com NF-e do cliente na operacao (operacao_nfes), peso bruto, NCM e valor da carga vem das notas
 // (soma); sem notas, segue a cotacao. CIOT emitido na homologacao da efrete nunca libera MDF-e em producao (mdfe.ts).
+// v20 (2026-10-16): CEP de carregamento = cotacoes.origem_cep (coleta em outro local) quando tiver 8 digitos; senao, o da NF-e/RBR como antes.
 // v18 (2026-10-16): cotacao sem tipo de carga assume "Carga geral" (05) e AVISA, em vez de bloquear. Tipo escrito mas nao reconhecido continua bloqueando. Ver mdfe.ts.
 // v17 (2026-10-16): tipo_transporte so e enviado quando ha proprietario do veiculo de tracao (SEFAZ: "O tipo de transportador nao pode ser informado quando nao estiver informado proprietario do veiculo de tracao"). Veiculo da frota da RBR: campo omitido. Ver mdfe.ts.
 // v16 (2026-10-15): o relaxamento do teste em producao vem da resposta de trava_teste_fiscal (chamada antes de montar), nao do flag da cotacao.
@@ -132,7 +133,7 @@ Deno.serve(async (req: Request) => {
     if (op.cotacao_id) {
       const { data } = await supabaseAdmin
         .from("cotacoes")
-        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_cnpj, nf_remetente_endereco")
+        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_cnpj, nf_remetente_endereco, origem_cep")
         .eq("id", op.cotacao_id)
         .maybeSingle();
       cot = data;
@@ -200,6 +201,12 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ sucesso: false, erro: `Não consegui verificar o modo teste: ${travaErr.message}` }, 500);
     }
 
+    // v20: coleta em outro local -> CEP informado na cotacao tem prioridade; senao, o da NF-e (ou da RBR).
+    const cepColetaManual = String(cot?.origem_cep ?? "").replace(/\D/g, "");
+    const cepCarregamento = cepColetaManual.length === 8
+      ? cepColetaManual
+      : cepCarregamentoDe(cot?.nf_remetente_cnpj, op.emitente_cnpj, cot?.nf_remetente_endereco, pf?.endereco_cep);
+
     const { ambiente, bloqueios, avisos, regras, payload } = montarMdfe({
       op: notas.length && notas.every((n) => n.valor != null) ? { ...op, valor_nf: Math.round(somaNotas("valor") * 100) / 100 } : op,
       pf,
@@ -217,7 +224,7 @@ Deno.serve(async (req: Request) => {
         pedagio: Number(cot?.pedagio ?? 0),
         teste_producao: testeDaTrava(trava),
       },
-      cepCarregamento: cepCarregamentoDe(cot?.nf_remetente_cnpj, op.emitente_cnpj, cot?.nf_remetente_endereco, pf?.endereco_cep),
+      cepCarregamento,
       cepDescarregamento: op.destinatario_cep ?? null,
       apolice,
       motorista,

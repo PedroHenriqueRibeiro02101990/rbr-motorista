@@ -1,4 +1,4 @@
-// Edge Function: emitir-cte (v20)
+// Edge Function: emitir-cte (v22)
 //
 // v22 (2026-10-24, passo 4): NF-e do CLIENTE na operação (operacao_nfes). O CT-e cita todas as notas da operação e usa
 // a soma de valor (vai para a averbação pelo XML) e de peso. Sem nota na operação, em produção fora do modo teste,

@@ -93,7 +93,7 @@ export function normalizarCidade(nome: string | null | undefined): string {
   if (!nome) return "";
   return nome
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
 }
