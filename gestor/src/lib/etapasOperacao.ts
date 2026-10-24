@@ -144,7 +144,7 @@ export function etapasDaOperacao(d: DetalheOperacao): Etapa[] {
   add('motorista', 'Motorista e veículo', o.veiculo_id && o.pessoa_alocada_id ? 'concluida' : 'pendente')
 
   const gr = docPor(d, 'gr')
-  if (gr && gr.exigido) add('gr', 'Pesquisa GR', estadoDoc(gr))
+  if (gr && gr.exigido) add('gr', 'Pesquisa GR (Shogun)', estadoDoc(gr))
   const aet = docPor(d, 'aet')
   if (aet && aet.exigido) add('aet', 'AET (DNIT)', estadoDoc(aet))
   const rastreio = docPor(d, 'wialon')
@@ -245,6 +245,43 @@ export function proximoPasso(d: DetalheOperacao, etapas: Etapa[] = etapasDaOpera
   if (processando) return { texto: `Aguardando: ${processando.titulo}`, pronto: false, etapa: processando.id }
   const p = pendenciasLiberacao(d)
   return { texto: 'Liberar para coleta', pronto: p.bloqueiam.length === 0 && p.ressalvaveis.length === 0, etapa: 'liberar' }
+}
+
+// Etapas principais do desenho aprovado (10/10); as demais (AET, rastreamento, pagamento, viagem) ficam recolhidas.
+// As duas averbações ficam aqui: a Allianz depois do CT-e e a Sompo depois do MDF-e.
+export const ETAPAS_PRINCIPAIS: IdEtapa[] = ['motorista', 'gr', 'documento', 'averbacao_allianz', 'ciot', 'mdfe', 'averbacao_sompo', 'liberar']
+
+export function separarEtapas(etapas: Etapa[]): { principais: Etapa[]; recolhidas: Etapa[]; abrirRecolhidas: boolean } {
+  const principais = etapas.filter((e) => ETAPAS_PRINCIPAIS.includes(e.id))
+  const recolhidas = etapas.filter((e) => !ETAPAS_PRINCIPAIS.includes(e.id))
+  // Se a etapa atual ou um problema está entre as recolhidas, a lista abre para ninguém perder o próximo passo.
+  const abrirRecolhidas = recolhidas.some((e) => e.estado === 'atual' || e.estado === 'problema' || e.estado === 'processando')
+  return { principais, recolhidas, abrirRecolhidas }
+}
+
+// Bolinha da linha do tempo: verde com ✓ = concluída; azul com anel = atual; cinza = futura; vermelho = problema.
+export function visualEtapa(estado: EstadoEtapa): { cor: string; marca: string; anel: boolean } {
+  if (estado === 'concluida') return { cor: '#137A45', marca: '✓', anel: false }
+  if (estado === 'problema') return { cor: 'var(--rbr-danger)', marca: '!', anel: false }
+  if (estado === 'futura') return { cor: '#B8BDCC', marca: '', anel: false }
+  return { cor: 'var(--rbr-navy)', marca: '', anel: true }
+}
+
+// Rótulo do botão de upload de cada documento, com o nome dele ("Subir CT-e", "Trocar CT-e").
+const NOME_DOC_UPLOAD: Record<string, string> = {
+  cte: 'CT-e',
+  mdfe: 'MDF-e',
+  ciot: 'CIOT',
+  atm: 'averbação',
+  gr: 'comprovante GR',
+  vpo: 'vale-pedágio',
+  nfse: 'NFS-e',
+  aet: 'AET',
+  wialon: 'comprovante de rastreio',
+}
+
+export function rotuloAcaoDocumento(tipo: string, temArquivo: boolean): string {
+  return `${temArquivo ? 'Trocar' : 'Subir'} ${NOME_DOC_UPLOAD[tipo] ?? 'arquivo'}`
 }
 
 // Linha de "Próximo passo" para o cartão fechado da lista (sem os documentos carregados).

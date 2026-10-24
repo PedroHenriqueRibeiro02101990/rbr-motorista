@@ -22,6 +22,11 @@ import CiotEfrete from './CiotEfrete'
 import RetencaoInss from './RetencaoInss'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
+import PreVoo from './PreVoo'
+import BotaoAcao from './BotaoAcao'
+import CartaoGr from './CartaoGr'
+import SeguroCard from './SeguroCard'
+import { dadosMotoristaVeiculo, textoCopia } from '../../lib/copiaOperacao'
 import SeloProcessando from '../SeloProcessando'
 import { Modal } from '../financeiro/ui'
 import { useDocumentosAoVivo } from '../../lib/useDocumentosAoVivo'
@@ -36,7 +41,10 @@ import {
   etapasDaOperacao,
   pendenciasLiberacao,
   proximoPasso,
+  rotuloAcaoDocumento,
+  separarEtapas,
   vpoAplicavel,
+  visualEtapa,
   type Etapa,
   type IdEtapa,
 } from '../../lib/etapasOperacao'
@@ -171,6 +179,13 @@ export default function OperacaoFluxo({
   const o = d.operacao
   const etapas = etapasDaOperacao(d)
   const passo = proximoPasso(d, etapas)
+  const { principais, recolhidas, abrirRecolhidas } = separarEtapas(etapas)
+  const linha = (e: Etapa, i: number, lista: Etapa[]) => {
+    const c = conteudo(e)
+    return (
+      <EtapaLinha key={e.id} etapa={e} ultima={i === lista.length - 1} compacto={c.compacto} aberto={c.aberto} destaque={passo.etapa === e.id} />
+    )
+  }
   const editavelAlocacao = o.status === 'alocando_motorista' || o.status === 'aguardando_liberacao_fiscal'
   const agenciador = o.origem === 'agenciador' || !!o.agenciador_id
 
@@ -178,9 +193,12 @@ export default function OperacaoFluxo({
     switch (e.id) {
       case 'motorista':
         return { compacto: <MotoristaCompacto d={d} />, aberto: <Alocacao d={d} editavel={editavelAlocacao} salvando={salvando} executar={executar} extra={extras?.motorista} /> }
-      case 'gr':
+      case 'gr': {
+        const doc = docEtapa('gr')
+        return { compacto: doc.compacto, aberto: <div className="flex flex-col gap-3"><CartaoGr d={d} />{doc.aberto}</div> }
+      }
       case 'rastreio':
-        return docEtapa(e.id === 'gr' ? 'gr' : 'wialon')
+        return docEtapa('wialon')
       case 'aet':
         return { ...docEtapa('aet'), aberto: extras?.aet ?? docEtapa('aet').aberto }
       case 'documento':
@@ -198,7 +216,24 @@ export default function OperacaoFluxo({
             ),
         }
       case 'ciot':
-        return { compacto: <CiotCompacto d={d} />, aberto: <EtapaCiot d={d} salvando={salvando} executar={executar} /> }
+        return {
+          compacto: <CiotCompacto d={d} />,
+          aberto: (
+            <div className="flex flex-col gap-3">
+              <EtapaCiot d={d} salvando={salvando} executar={executar} />
+              <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: 'var(--rbr-navy-tint)', color: 'var(--rbr-navy-dark)' }}>
+                    manual
+                  </span>
+                  <span className="text-xs text-[color:var(--rbr-muted)]">Alternativa se a efrete estiver fora do ar</span>
+                </div>
+                <BotaoAcao rotulo="Dados para a Repom" fazer={() => navigator.clipboard.writeText(textoCopia(dadosMotoristaVeiculo(d))).then(() => 'Dados copiados.')} />
+                {docEtapa('ciot').aberto}
+              </div>
+            </div>
+          ),
+        }
       case 'pagamento':
         return { compacto: <PagamentoCompacto d={d} />, aberto: <Pagamento d={d} salvando={salvando} executar={executar} /> }
       case 'liberar':
@@ -233,7 +268,8 @@ export default function OperacaoFluxo({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+    <div className="flex flex-col gap-3 min-w-0">
       {erro && (
         <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {erro}
@@ -262,6 +298,16 @@ export default function OperacaoFluxo({
             </Link>
           )}
         </div>
+        {passo.etapa && (
+          <button
+            type="button"
+            onClick={() => document.getElementById(`etapa-${passo.etapa}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            className="text-xs font-bold px-3.5 py-1.5 rounded-lg"
+            style={passo.pronto ? { background: '#137A45', color: '#fff' } : { background: 'var(--rbr-navy)', color: '#fff' }}
+          >
+            {passo.pronto ? 'Liberar para coleta' : 'Ir para a etapa'}
+          </button>
+        )}
         <MaisAcoes
           agenciador={agenciador}
           podeCancelar={!!onCancelar && o.status !== 'cancelada' && o.status !== 'fechada'}
@@ -288,23 +334,17 @@ export default function OperacaoFluxo({
         onPedidoAtendido={atendido}
       />
 
-      <ResumoLinha d={d} aberto={resumoAberto} onAlternar={() => setResumoAberto((v) => !v)} />
-
       <ol className="flex flex-col list-none m-0 p-0" aria-label="Etapas da operação">
-        {etapas.map((e, i) => {
-          const c = conteudo(e)
-          return (
-            <EtapaLinha
-              key={e.id}
-              etapa={e}
-              ultima={i === etapas.length - 1}
-              compacto={c.compacto}
-              aberto={c.aberto}
-              destaque={passo.etapa === e.id}
-            />
-          )
-        })}
+        {principais.map((e, i) => linha(e, i, principais))}
       </ol>
+      {recolhidas.length > 0 && (
+        <details open={abrirRecolhidas} className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--rbr-border)' }}>
+          <summary className="text-xs font-bold cursor-pointer text-[color:var(--rbr-muted)]">Outras etapas ({recolhidas.length})</summary>
+          <ol className="flex flex-col list-none m-0 p-0 mt-3" aria-label="Outras etapas da operação">
+            {recolhidas.map((e, i) => linha(e, i, recolhidas))}
+          </ol>
+        </details>
+      )}
 
       <Dispensados d={d} executar={executar} />
       {extras?.rodape}
@@ -314,6 +354,18 @@ export default function OperacaoFluxo({
           <FichaAssessoria d={d} assessoria={assessoria} />
         </Modal>
       )}
+    </div>
+
+    {/* Painel lateral: motorista e veículo, resumo da cotação, seguro e pré-voo */}
+    <aside className="flex flex-col gap-3">
+      <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Motorista e veículo</div>
+        <MotoristaCompacto d={d} />
+      </div>
+      <ResumoLinha d={d} aberto={resumoAberto} onAlternar={() => setResumoAberto((v) => !v)} />
+      <SeguroCard operacaoId={o.id} apolice={d.apolice} />
+      <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'cte'} />
+    </aside>
     </div>
   )
 }
@@ -336,16 +388,15 @@ function EtapaLinha({
   const [expandida, setExpandida] = useState(false)
   const { estado } = etapa
   const abrir = estado === 'atual' || estado === 'problema' || expandida
-  const cor =
-    estado === 'concluida' ? '#137A45' : estado === 'problema' ? 'var(--rbr-danger)' : estado === 'futura' ? '#B8BDCC' : 'var(--rbr-navy)'
+  const { cor, marca, anel } = visualEtapa(estado)
   return (
-    <li className="flex gap-3">
+    <li id={`etapa-${etapa.id}`} className="flex gap-3">
       <div className="flex flex-col items-center" aria-hidden="true">
         <span
           className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 mt-0.5"
-          style={{ background: estado === 'futura' ? '#fff' : cor, border: `2px solid ${cor}` }}
+          style={{ background: estado === 'futura' ? '#fff' : cor, border: `2px solid ${cor}`, boxShadow: anel ? '0 0 0 3px rgba(30,39,97,0.2)' : undefined }}
         >
-          {estado === 'concluida' ? '✓' : estado === 'problema' ? '!' : ''}
+          {marca}
         </span>
         {!ultima && <span className="w-0.5 flex-1 min-h-3" style={{ background: 'var(--rbr-border)' }} />}
       </div>
@@ -1020,7 +1071,7 @@ function AcoesDocumento({
         }}
       />
       <button type="button" disabled={salvando || enviando} onClick={() => input.current?.click()} className={`${linkPequeno} disabled:opacity-60`} style={{ color: 'var(--rbr-navy)' }}>
-        {enviando ? 'enviando e conferindo…' : doc.arquivo_path ? 'Trocar arquivo' : 'Subir arquivo'}
+        {enviando ? 'enviando e conferindo…' : rotuloAcaoDocumento(doc.tipo, !!doc.arquivo_path)}
       </button>
     </>
   )
