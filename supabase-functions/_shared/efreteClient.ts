@@ -111,6 +111,20 @@ export function interpretarResposta(http: number, texto: string): Resultado<Reco
   return { ok: true, dados: obj }
 }
 
+// Apaga credenciais e token de qualquer texto que volte do servidor (uma página de erro pode ecoar a URL do login).
+export function limparSegredos(texto: string, valores: (string | null | undefined)[]): string {
+  let t = texto
+  for (const v of valores) {
+    if (!v || v.length < 4) continue
+    t = t.split(v).join('[oculto]')
+    const codificado = encodeURIComponent(v)
+    if (codificado !== v) t = t.split(codificado).join('[oculto]')
+    const comMais = codificado.replace(/%20/g, '+')
+    if (comMais !== codificado) t = t.split(comMais).join('[oculto]')
+  }
+  return t
+}
+
 // Variantes do campo Usuario para o teste de login (o manual pede CPF; a NSTech mandou "usuario@empresa" com espaço).
 export function varianteUsuario(usuario: string, variante: 'original' | 'sem_espaco' | 'cnpj', cnpj?: string): string {
   if (variante === 'sem_espaco') return usuario.replace(/\s+/g, '')
@@ -145,7 +159,9 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
     try {
       const r = await f(url, { ...init, signal: ctrl.signal })
       const texto = await r.text()
-      return interpretarResposta(r.status, texto)
+      const res = interpretarResposta(r.status, texto)
+      if (!res.ok) res.erro.mensagem = limparSegredos(res.erro.mensagem, [c.usuario, c.senha, c.integrador, token, String(corpo.Usuario ?? '')])
+      return res
     } catch (e) {
       const abortado = (e as { name?: string })?.name === 'AbortError'
       return { ok: false, erro: { codigo: abortado ? 'TIMEOUT' : 'REDE', mensagem: abortado ? `Sem resposta em ${timeoutMs / 1000}s` : String((e as Error)?.message ?? e) } }

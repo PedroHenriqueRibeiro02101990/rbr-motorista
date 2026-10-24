@@ -2,7 +2,7 @@
 // Respostas simuladas: sem rede e sem segredos (valores falsos).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { criarClienteEfrete, ehErroDeSessao, interpretarResposta, montarRequisicao, varianteUsuario, type ConfigEfrete } from './efreteClient.ts'
+import { criarClienteEfrete, ehErroDeSessao, limparSegredos, interpretarResposta, montarRequisicao, varianteUsuario, type ConfigEfrete } from './efreteClient.ts'
 
 const CFG: ConfigEfrete = { baseUrl: 'https://dev.efrete.com.br', usuario: 'usuario falso', senha: 'senha-falsa', integrador: 'hash-falso' }
 type Chamada = { url: string; method: string; body: Record<string, unknown> | null }
@@ -132,4 +132,15 @@ test('utilitários: variantes do usuário e detecção de sessão caída', () =>
   assert.ok(ehErroDeSessao('Token não pode ser nulo'))
   assert.ok(ehErroDeSessao('Usuário não logado'))
   assert.ok(!ehErroDeSessao('RNTRC inválido'))
+})
+
+test('mensagem de erro do servidor nunca devolve credencial (nem codificada na URL)', async () => {
+  const s = servidor([(c) => ({ status: 500, texto: `Erro em ${c.url}` })])
+  const c = criarClienteEfrete({ carregarConfig: async () => CFG, fetch: s.f })
+  const r = await c.login()
+  assert.ok(!r.ok)
+  if (r.ok) return
+  for (const v of ['senha-falsa', 'hash-falso', 'usuario falso', 'usuario+falso', 'usuario%20falso']) assert.ok(!r.erro.mensagem.includes(v), `vazou ${v}`)
+  assert.ok(r.erro.mensagem.includes('[oculto]'))
+  assert.equal(limparSegredos('abc', ['ab']), 'abc') // valores curtos demais não são trocados
 })
