@@ -48,6 +48,13 @@ function montarDestino(baseUrl, metodoHttp, caminho, corpo, codificacao) {
   return { url, dados }
 }
 
+// Cabeçalhos do envio: corpo sempre em UTF-8, com o charset declarado e o tamanho em BYTES (acento ocupa 2).
+function cabecalhosEnvio(dados) {
+  return dados
+    ? { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(dados, 'utf8'), Accept: 'application/json' }
+    : { Accept: 'application/json' }
+}
+
 // Envia à efrete por HTTP/1.1 (módulo https do Node) e devolve {status, corpo} ou lança erro com .code.
 function encaminharHttps({ url, metodoHttp, dados }) {
   return new Promise((ok, falha) => {
@@ -57,9 +64,7 @@ function encaminharHttps({ url, metodoHttp, dados }) {
         port: url.port || 443,
         path: url.pathname + url.search,
         method: metodoHttp,
-        headers: dados
-          ? { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(dados, 'utf8'), Accept: 'application/json' }
-          : { Accept: 'application/json' },
+        headers: cabecalhosEnvio(dados),
         timeout: TIMEOUT_MS,
       },
       (res) => {
@@ -161,3 +166,5 @@ module.exports.tratar = tratar
 module.exports.caminhoPermitido = caminhoPermitido
 module.exports.chaveConfere = chaveConfere
 module.exports.montarDestino = montarDestino
+module.exports.cabecalhosEnvio = cabecalhosEnvio
+module.exports.lerCorpo = lerCorpo
