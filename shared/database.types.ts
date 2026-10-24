@@ -5354,35 +5354,83 @@ export type Database = {
       }
       operacao_nfes: {
         Row: {
+          arquivo_xml_path: string | null
           chave_acesso: string
           created_at: string
+          criado_por: string | null
+          data_emissao: string | null
+          destinatario_cnpj: string | null
+          destinatario_nome: string | null
+          emitente_cnpj: string | null
+          emitente_nome: string | null
           id: string
+          municipio_destino: string | null
+          municipio_origem: string | null
+          ncm: string | null
+          ncms: string[] | null
           numero: string | null
           operacao_id: string
+          origem: string
           peso_kg: number | null
+          produto_predominante: string | null
+          quantidade_volumes: number | null
           serie: string | null
+          uf_destino: string | null
+          uf_origem: string | null
           valor: number | null
           xml_url: string | null
         }
         Insert: {
+          arquivo_xml_path?: string | null
           chave_acesso: string
           created_at?: string
+          criado_por?: string | null
+          data_emissao?: string | null
+          destinatario_cnpj?: string | null
+          destinatario_nome?: string | null
+          emitente_cnpj?: string | null
+          emitente_nome?: string | null
           id?: string
+          municipio_destino?: string | null
+          municipio_origem?: string | null
+          ncm?: string | null
+          ncms?: string[] | null
           numero?: string | null
           operacao_id: string
+          origem?: string
           peso_kg?: number | null
+          produto_predominante?: string | null
+          quantidade_volumes?: number | null
           serie?: string | null
+          uf_destino?: string | null
+          uf_origem?: string | null
           valor?: number | null
           xml_url?: string | null
         }
         Update: {
+          arquivo_xml_path?: string | null
           chave_acesso?: string
           created_at?: string
+          criado_por?: string | null
+          data_emissao?: string | null
+          destinatario_cnpj?: string | null
+          destinatario_nome?: string | null
+          emitente_cnpj?: string | null
+          emitente_nome?: string | null
           id?: string
+          municipio_destino?: string | null
+          municipio_origem?: string | null
+          ncm?: string | null
+          ncms?: string[] | null
           numero?: string | null
           operacao_id?: string
+          origem?: string
           peso_kg?: number | null
+          produto_predominante?: string | null
+          quantidade_volumes?: number | null
           serie?: string | null
+          uf_destino?: string | null
+          uf_origem?: string | null
           valor?: number | null
           xml_url?: string | null
         }
@@ -10083,6 +10131,10 @@ export type Database = {
         Returns: undefined
       }
       municipio_ibge_cliente: { Args: { p_cliente: string }; Returns: string }
+      nfes_em_outra_operacao: {
+        Args: { p_chaves: string[]; p_operacao: string }
+        Returns: string[]
+      }
       nomes_pessoas_relacionadas: {
         Args: { p_ids: string[] }
         Returns: {

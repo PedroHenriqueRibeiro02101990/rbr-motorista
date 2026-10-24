@@ -63,6 +63,10 @@ export interface DadosCte {
   // Nome do município da sede da RBR (de parametros_fiscais.endereco_codigo_municipio).
   municipioEmitente: string | null;
   agora: Date;
+  // Passo 4: NF-e do CLIENTE na operação (operacao_nfes). Com notas, o CT-e cita todas e usa a soma de valor/peso.
+  // Sem notas, a chave da cotação só vale em homologação ou em operação de teste (a RBR não emite NF-e em operação real).
+  nfesCliente?: { chave_acesso: string; valor: number | null; peso_kg: number | null }[];
+  ehTeste?: boolean;
 }
 
 // Origem de cada regra (C1, 2026-10-15): "sefaz" (SEFAZ/Focus) e "antt" (ANTT ou lei) bloqueiam; "rbr" (política
@@ -220,7 +224,21 @@ export function montarCte(d: DadosCte): ResultadoCte {
   }
 
   // --- Documento transportado: NF-e --------------------------------------------------------------------
-  if (!op.nf_chave_acesso) {
+  const notasCliente = d.nfesCliente ?? [];
+  const usaNotasCliente = notasCliente.length > 0;
+  if (usaNotasCliente) {
+    for (const n of notasCliente) {
+      if (!chaveNfeValida(n.chave_acesso)) {
+        bloqueio("sefaz", `NF-e do cliente com chave inválida (${digitos(n.chave_acesso)}): precisa de 44 dígitos, modelo 55 e dígito verificador correto.`);
+      }
+    }
+    const emitentes = new Set(notasCliente.map((n) => digitos(n.chave_acesso).slice(6, 20)));
+    if (op.nf_remetente_cnpj && !emitentes.has(digitos(op.nf_remetente_cnpj))) {
+      aviso("info", "Nenhuma NF-e do cliente foi emitida pelo remetente informado na cotação — confira se as notas são da carga certa.");
+    }
+  } else if (ambiente === "producao" && !d.ehTeste) {
+    bloqueio("sefaz", "Operação sem NF-e do cliente: suba o XML (ou digite a chave) no bloco \"NF-e do cliente\" da operação. A chave da cotação só vale em homologação ou em operação de teste.");
+  } else if (!op.nf_chave_acesso) {
     bloqueio("sefaz", "Cotação sem chave de acesso da NF-e (44 dígitos) — o CT-e exige o grupo Documentos Transportados (SEFAZ rejeita sem ele).",);
   } else if (!chaveNfeValida(op.nf_chave_acesso)) {
     bloqueio("sefaz", "Chave de acesso da NF-e inválida (precisa de 44 dígitos, modelo 55 e dígito verificador correto) — confira na aba NF-e da cotação.",);
@@ -379,7 +397,11 @@ export function montarCte(d: DadosCte): ResultadoCte {
   }
 
   // --- Peso ------------------------------------------------------------------------------------------
-  const pesoBrutoKg = cotacao?.peso_bruto_kg ?? null;
+  const valorNotas = usaNotasCliente && notasCliente.every((n) => n.valor != null)
+    ? Math.round(notasCliente.reduce((s, n) => s + Number(n.valor), 0) * 100) / 100
+    : null;
+  const pesoNotas = usaNotasCliente ? notasCliente.reduce((s, n) => s + (Number(n.peso_kg) || 0), 0) : 0;
+  const pesoBrutoKg = pesoNotas > 0 ? Math.round(pesoNotas * 1000) / 1000 : (cotacao?.peso_bruto_kg ?? null);
   if (!pesoBrutoKg || pesoBrutoKg <= 0) {
     bloqueio("sefaz", "Cotação sem peso bruto da carga (kg) — obrigatório no CT-e (quantidades).");
   }
@@ -453,7 +475,8 @@ export function montarCte(d: DadosCte): ResultadoCte {
     valor_receber: op.valor_total_cotacao,
     // Componente do valor da prestação (como nos CT-e reais): o frete inteiro.
     componentes_valor: op.valor_total_cotacao ? [{ nome: "Frete", valor: op.valor_total_cotacao }] : undefined,
-    valor_total_carga: op.valor_nf ?? op.valor_total_cotacao,
+    // Valor da carga = soma das NF-e do cliente (é o que a averbação recebe pelo XML do CT-e).
+    valor_total_carga: valorNotas ?? op.valor_nf ?? op.valor_total_cotacao,
     produto_predominante: op.tipo_carga || "Carga geral",
     quantidades: [
       {
@@ -462,7 +485,9 @@ export function montarCte(d: DadosCte): ResultadoCte {
         quantidade: pesoBrutoKg ?? 0,
       },
     ],
-    nfes: op.nf_chave_acesso ? [{ chave_nfe: digitos(op.nf_chave_acesso) }] : [],
+    nfes: usaNotasCliente
+      ? notasCliente.map((n) => ({ chave_nfe: digitos(n.chave_acesso) }))
+      : op.nf_chave_acesso ? [{ chave_nfe: digitos(op.nf_chave_acesso) }] : [],
 
     // ICMS pra Simples Nacional no CT-e: código fixo "90_simples_nacional" + indicador "1", sem destaque de valor.
     icms_situacao_tributaria: "90_simples_nacional",

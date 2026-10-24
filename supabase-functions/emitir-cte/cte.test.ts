@@ -121,7 +121,8 @@ test("operação de teste em homologação: sem bloqueios e com os nomes exigido
 
 test("produção usa o mesmo caminho, só com os nomes reais", () => {
   const homolog = montarCte(base()).payload;
-  const prod = montarCte(base({ op: { ambiente_fiscal: "producao" } }));
+  // Passo 4: em produção a nota vem da operação (NF-e do cliente); aqui a mesma chave da cotação, já na operação.
+  const prod = montarCte(base({ op: { ambiente_fiscal: "producao" }, nfesCliente: [{ chave_acesso: CHAVE_TESTE, valor: 5000, peso_kg: null }] }));
   assert.deepEqual(prod.bloqueios, []);
   assert.equal(prod.payload.nome_remetente, "RBR CARGO LTDA");
   assert.equal(prod.payload.nome_destinatario, "CLIENTE TESTE HOMOLOGACAO LTDA");
@@ -306,4 +307,41 @@ test("C1: cada bloqueio do CT-e sai em regras com a origem (RNTRC = ANTT, chave 
   assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Cotação sem chave de acesso da NF-e")));
   assert.equal(r.regras.filter((x) => x.tipo === "bloqueio").length, r.bloqueios.length);
   assert.ok(!r.regras.some((x) => x.origem === "rbr"));
+});
+
+// ---- Passo 4: NF-e do CLIENTE na operação (operacao_nfes) ---------------------------------------------
+const NF_CLIENTE_1 = "35261069115969000104550010000000011000000019";
+const NF_CLIENTE_2 = "35261069115969000104550010000000021000000024";
+
+test("NF-e do cliente: várias notas vão todas em nfes[], com a soma de valor (averbação) e de peso", () => {
+  const r = montarCte(
+    base({
+      nfesCliente: [
+        { chave_acesso: NF_CLIENTE_1, valor: 6000, peso_kg: 600 },
+        { chave_acesso: NF_CLIENTE_2, valor: 4000.5, peso_kg: 400 },
+      ],
+    }),
+  );
+  assert.deepEqual(r.payload.nfes, [{ chave_nfe: NF_CLIENTE_1 }, { chave_nfe: NF_CLIENTE_2 }]);
+  assert.equal(r.payload.valor_total_carga, 10000.5);
+  assert.equal(r.payload.quantidades[0].quantidade, 1000);
+  assert.ok(!r.bloqueios.some((b) => /NF-e do cliente/.test(b)));
+});
+
+test("NF-e do cliente: em produção, operação real sem nota na operação NÃO emite (a chave da cotação não basta)", () => {
+  const r = montarCte(base({ op: { ambiente_fiscal: "producao" } }));
+  assert.ok(r.bloqueios.some((b) => /Operação sem NF-e do cliente/.test(b)));
+});
+
+test("NF-e do cliente: em produção com operação de teste, ou em homologação, a chave da cotação continua valendo", () => {
+  const teste = montarCte(base({ op: { ambiente_fiscal: "producao" }, ehTeste: true }));
+  assert.ok(!teste.bloqueios.some((b) => /Operação sem NF-e do cliente/.test(b)));
+  assert.deepEqual(teste.payload.nfes, [{ chave_nfe: CHAVE_TESTE }]);
+  const homolog = montarCte(base());
+  assert.ok(!homolog.bloqueios.some((b) => /Operação sem NF-e do cliente/.test(b)));
+});
+
+test("NF-e do cliente: chave com dígito verificador errado bloqueia", () => {
+  const r = montarCte(base({ nfesCliente: [{ chave_acesso: NF_CLIENTE_1.slice(0, 43) + "8", valor: 1, peso_kg: 1 }] }));
+  assert.ok(r.bloqueios.some((b) => /NF-e do cliente com chave inválida/.test(b)));
 });

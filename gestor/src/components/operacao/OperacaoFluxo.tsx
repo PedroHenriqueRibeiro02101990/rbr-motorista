@@ -17,6 +17,7 @@ import {
   type Veiculo,
 } from '../../lib/operacaoDetalhe'
 import CiotOperacao from './CiotOperacao'
+import NfesCliente from './NfesCliente'
 import RetencaoInss from './RetencaoInss'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
@@ -218,7 +219,15 @@ export default function OperacaoFluxo({
     const doc = docPor(d!, tipo) as Documento | undefined
     return {
       compacto: doc ? <FiscalCompacto operacaoId={o.id} doc={doc} d={d!} gestor={gestor} salvando={salvando} executar={executar} recarregar={recarregar} /> : undefined,
-      aberto: <FiscalAberto doc={doc} tipo={tipo} />,
+      aberto:
+        tipo === 'cte' ? (
+          <div className="flex flex-col gap-3">
+            <NfesCliente operacaoId={o.id} onMudou={() => void recarregar()} />
+            <FiscalAberto doc={doc} tipo={tipo} />
+          </div>
+        ) : (
+          <FiscalAberto doc={doc} tipo={tipo} />
+        ),
     }
   }
 
