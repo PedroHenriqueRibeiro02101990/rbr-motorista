@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
+import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 
 // Passo 4: CIOT pela efrete ligado à operação (Edge Function efrete-ciot-operacao). Prévia com o piso mínimo da ANTT,
 // confirmação humana (o nome do gestor e a hora ficam no pedido), estado, PDF, transações, encerrar e cancelar.
@@ -68,7 +69,13 @@ async function chamar(body: Record<string, unknown>): Promise<Resposta> {
   return data ?? { ok: false, motivo: 'Sem resposta da função.' }
 }
 
-export default function CiotEfrete({ operacaoId, onMudou }: { operacaoId: string; onMudou?: () => void }) {
+// Com a flag desligada não renderiza nada e não chama a efrete (o CIOT manual é o caminho principal).
+export default function CiotEfrete(props: { operacaoId: string; onMudou?: () => void }) {
+  if (!CIOT_EFRETE_HABILITADO) return null
+  return <CiotEfreteAtivo {...props} />
+}
+
+function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?: () => void }) {
   const [pedido, setPedido] = useState<Pedido | null | undefined>(undefined)
   const [previa, setPrevia] = useState<Previa | null>(null)
   const [ocupado, setOcupado] = useState<string | null>(null)
