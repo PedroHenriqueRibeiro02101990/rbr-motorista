@@ -49,12 +49,37 @@ export interface ConsultaSituacao {
   dataPrevistaFimViagem?: string // YYYY-MM-DD
 }
 
+export interface CiotEmitido {
+  ciot: string
+  protocolo: string | null
+}
+
+export interface CiotPorReferencia {
+  ciot: string
+  estado: string | null // EmViagem | Encerrado | Cancelado
+  protocolo: string | null
+}
+
 // Interface única do ERP para o provedor de CIOT/pagamento.
 export interface ProvedorCiot {
   login(opcoes?: { usuario?: string; forcar?: boolean }): Promise<Resultado<{ tokenPrefixo: string }>>
   logout(): Promise<Resultado<null>>
   chamar<T = Record<string, unknown>>(servico: string, metodo: string, verbo: Verbo, corpo: Record<string, unknown>): Promise<Resultado<T>>
   consultarSituacaoTransportador(c: ConsultaSituacao): Promise<Resultado<SituacaoTransportador>>
+  // Passo 3 (CIOT). O corpo da emissão é montado por _shared/ciotEfrete.ts (montarCorpoOperacaoPadrao).
+  consultarTiposCarga(): Promise<Resultado<{ codigo: number; descricao: string }[]>>
+  gravarCadastro(tipo: 'proprietarios' | 'veiculos' | 'motoristas', corpo: Record<string, unknown>): Promise<Resultado<Record<string, unknown>>>
+  emitirOperacaoTransporte(corpo: Record<string, unknown>): Promise<Resultado<CiotEmitido>>
+  // ok com null = a efrete diz que não existe operação com essa referência (pode emitir).
+  obterCiotPorReferencia(matrizCnpj: string, idOperacaoCliente: string): Promise<Resultado<CiotPorReferencia | null>>
+  obterPdfOperacao(ciot: string): Promise<Resultado<{ pdfBase64: string }>>
+  obterTransacoes(ciots: string[], dataInicial: string): Promise<Resultado<Record<string, unknown>[]>>
+  cancelarOperacaoTransporte(ciot: string, motivo: string): Promise<Resultado<{ protocolo: string | null; data: string | null }>>
+}
+
+// "Não encontrado" na consulta por referência (texto da efrete varia; sem certeza, NÃO é tratado como inexistente).
+export function ehNaoEncontrado(mensagem: string | null | undefined): boolean {
+  return /n[aã]o\s+(foi\s+)?encontrad|inexistente|n[aã]o\s+existe|nenhuma\s+opera[cç][aã]o/i.test(mensagem ?? '')
 }
 
 export interface DepsEfrete {
@@ -245,7 +270,8 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
       const l = await login({ forcar: tentativa > 0 })
       if (!l.ok) return l
       const c = await cfg()
-      const r = await http(servico, metodo, verbo, { ...corpo, Integrador: c.integrador, Versao: VERSAO, Token: token })
+      // Versao vem do corpo quando o método pede outra (emissão = 8, motorista = 2, proprietário = 4); padrão 1.
+      const r = await http(servico, metodo, verbo, { Versao: VERSAO, ...corpo, Integrador: c.integrador, Token: token })
       if (!r.ok && tentativa === 0 && ehErroDeSessao(r.erro.mensagem)) {
         log('[efrete] sessão caiu; refazendo o login uma vez')
         token = null
@@ -268,11 +294,79 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
     return { ok: true, dados: lerSituacao(r.dados) }
   }
 
+  // ---- Passo 3: CIOT. Todos os métodos vão por POST com JSON (o servidor real recusa GET, ao contrário da lista de URLs).
+  async function consultarTiposCarga(): Promise<Resultado<{ codigo: number; descricao: string }[]>> {
+    const r = await chamar('Pef', 'ConsultarTipoCarga', 'POST', {})
+    if (!r.ok) return r
+    const bruto = r.dados.TipoCargas as unknown
+    const lista = (Array.isArray(bruto) ? bruto : ((bruto as { TipoCarga?: unknown })?.TipoCarga ?? [])) as Record<string, unknown>[]
+    return { ok: true, dados: (Array.isArray(lista) ? lista : []).map((x) => ({ codigo: Number(x.CodigoTipoCarga), descricao: String(x.DescricaoTipoCarga ?? '') })) }
+  }
+
+  async function gravarCadastro(tipo: 'proprietarios' | 'veiculos' | 'motoristas', corpo: Record<string, unknown>) {
+    return await chamar(tipo, tipo === 'proprietarios' ? 'gravarV2' : 'gravar', 'POST', corpo)
+  }
+
+  async function emitirOperacaoTransporte(corpo: Record<string, unknown>): Promise<Resultado<CiotEmitido>> {
+    const r = await chamar('Pef', 'AdicionarOperacaoTransporteV2', 'POST', corpo)
+    if (!r.ok) return r
+    const ciot = String(r.dados.CodigoIdentificacaoOperacao ?? '')
+    if (!ciot) return { ok: false, erro: { codigo: 'SEM_CIOT', mensagem: 'A efrete respondeu sucesso sem CodigoIdentificacaoOperacao.' } }
+    return { ok: true, dados: { ciot, protocolo: r.dados.ProtocoloServico != null ? String(r.dados.ProtocoloServico) : null } }
+  }
+
+  async function obterCiotPorReferencia(matrizCnpj: string, idOperacaoCliente: string): Promise<Resultado<CiotPorReferencia | null>> {
+    const r = await chamar('Pef', 'ObterCodigoIdentificacaoOperacaoTransportePorIdOperacaoCliente', 'POST', {
+      MatrizCNPJ: soDigitos(matrizCnpj),
+      IdOperacaoCliente: idOperacaoCliente,
+    })
+    if (!r.ok) return ehNaoEncontrado(r.erro.mensagem) ? { ok: true, dados: null } : r
+    const ciot = String(r.dados.CodigoIdentificacaoOperacao ?? '')
+    if (!ciot) return { ok: true, dados: null }
+    return {
+      ok: true,
+      dados: { ciot, estado: r.dados.EstadoCiot != null ? String(r.dados.EstadoCiot) : null, protocolo: r.dados.ProtocoloServico != null ? String(r.dados.ProtocoloServico) : null },
+    }
+  }
+
+  async function obterPdfOperacao(ciot: string): Promise<Resultado<{ pdfBase64: string }>> {
+    const r = await chamar('Pef', 'ObterOperacaoTransportePdf', 'POST', { CodigoIdentificacaoOperacao: ciot })
+    if (!r.ok) return r
+    return { ok: true, dados: { pdfBase64: String(r.dados.Pdf ?? '') } }
+  }
+
+  async function obterTransacoes(ciots: string[], dataInicial: string): Promise<Resultado<Record<string, unknown>[]>> {
+    const r = await chamar('Pef', 'ObterTransacoes', 'POST', { DataInicial: dataInicial, CIOTs: ciots })
+    if (!r.ok) return r
+    const t = r.dados.Transacoes as unknown
+    return { ok: true, dados: (Array.isArray(t) ? t : []) as Record<string, unknown>[] }
+  }
+
+  async function cancelarOperacaoTransporte(ciot: string, motivo: string): Promise<Resultado<{ protocolo: string | null; data: string | null }>> {
+    const r = await chamar('Pef', 'CancelarOperacaoTransporte', 'POST', { CodigoIdentificacaoOperacao: ciot, Motivo: motivo })
+    if (!r.ok) return r
+    return { ok: true, dados: { protocolo: r.dados.Protocolo != null ? String(r.dados.Protocolo) : null, data: r.dados.Data != null ? String(r.dados.Data) : null } }
+  }
+
   async function modo(): Promise<ModoConexao> {
     return modoConexao(await cfg())
   }
 
-  return { login, logout, chamar, consultarSituacaoTransportador, tokenPrefixo: () => prefixoToken(token), modo }
+  return {
+    login,
+    logout,
+    chamar,
+    consultarSituacaoTransportador,
+    consultarTiposCarga,
+    gravarCadastro,
+    emitirOperacaoTransporte,
+    obterCiotPorReferencia,
+    obterPdfOperacao,
+    obterTransacoes,
+    cancelarOperacaoTransporte,
+    tokenPrefixo: () => prefixoToken(token),
+    modo,
+  }
 }
 
 const bool = (v: unknown) => (typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : null)
