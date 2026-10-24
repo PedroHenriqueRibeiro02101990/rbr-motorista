@@ -9,6 +9,7 @@
 //   previa | emitir {confirmar:true} | consultar | pdf | transacoes | cancelar {motivo} | encerrar | status
 // Quem chama: gestor RBR (tela Fiscal) ou o banco com a chave interna de teste (EFRETE_TESTE_CHAMADA_INTERNA).
 // Trava: nesta fase só roda na homologação (dev.efrete.com.br).
+// Trava da operação: com a efrete em homologação, só operação marcada como teste (eh_teste) chama a efrete (travaEfreteOperacao).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -27,6 +28,7 @@ import {
   type PreviaCiot,
   type RepositorioPedidos,
 } from "../_shared/ciotEfrete.ts";
+import { travaEfreteOperacao } from "../_shared/travaEfreteOperacao.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -405,6 +407,13 @@ Deno.serve(async (req: Request) => {
     const operacaoId = String(corpo.operacao_id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(operacaoId)) return json({ ok: false, motivo: "Informe operacao_id." }, 400);
     console.log(`[efrete-ciot-operacao] acao=${acao} quem=${a.ator.quem}`);
+
+    // Antes de qualquer chamada à efrete: operação real não emite CIOT na homologação (o status só lê o banco).
+    if (acao !== "status") {
+      const { data: op } = await admin.from("operacoes").select("eh_teste").eq("id", operacaoId).maybeSingle();
+      const trava = travaEfreteOperacao({ baseUrl: cfg.baseUrl, operacaoEhTeste: op ? op.eh_teste === true : null });
+      if (!trava.ok) return json({ ok: false, motivo: trava.motivo }, 412);
+    }
 
     if (acao === "status") return json({ ok: true, pedido: await pedidoAtual(operacaoId) });
 

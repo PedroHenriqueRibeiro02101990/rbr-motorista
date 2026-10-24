@@ -19,6 +19,7 @@ import {
 import CiotOperacao from './CiotOperacao'
 import NfesCliente from './NfesCliente'
 import CiotEfrete from './CiotEfrete'
+import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 import RetencaoInss from './RetencaoInss'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
@@ -1195,6 +1196,9 @@ function CiotCompacto({ d }: { d: DetalheOperacao }) {
 function EtapaCiot({ d, salvando, executar }: { d: DetalheOperacao; salvando: boolean; executar: Executar }) {
   return (
     <div className="flex flex-col gap-3">
+      {ciotAplicavel(d) && !CIOT_EFRETE_HABILITADO && (
+        <div className="text-xs text-[color:var(--rbr-muted)]">CIOT pela efrete ainda não liberado (conta de produção pendente). Emita o CIOT na Repom e registre o número e o documento abaixo.</div>
+      )}
       {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} />}
       {ciotAplicavel(d) && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {vpoAplicavel(d) && (
