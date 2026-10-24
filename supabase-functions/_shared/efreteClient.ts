@@ -6,6 +6,9 @@
 // - nunca loga usuário, senha, hash nem o token (do token, no máximo os 4 primeiros caracteres);
 // - o token fica só na memória do isolate, com validade conservadora (20 min), e é refeito uma vez se o servidor disser
 //   que a sessão caiu.
+// - se o Vault tiver EFRETE_PROXY_URL e EFRETE_PROXY_CHAVE, TODAS as chamadas passam pelo proxy na Vercel
+//   (vercel/efrete-proxy): a efrete derruba conexões vindas do Supabase. Sem os dois, fala direto (modo "direto").
+//   O proxy só repassa; as credenciais da efrete continuam só aqui (Vault do Supabase).
 // Sem dependências do Deno: roda nas Edge Functions e nos testes do Node (efreteClient.test.ts, com fetch simulado).
 
 export interface ConfigEfrete {
@@ -13,10 +16,16 @@ export interface ConfigEfrete {
   usuario: string
   senha: string
   integrador: string
+  proxyUrl?: string | null // https://…/api/efrete (proxy na Vercel)
+  proxyChave?: string | null // segredo compartilhado (cabeçalho x-rbr-proxy-key)
 }
 
+export type ModoConexao = 'proxy' | 'direto'
+export const modoConexao = (c: Pick<ConfigEfrete, 'proxyUrl' | 'proxyChave'>): ModoConexao => (c.proxyUrl && c.proxyChave ? 'proxy' : 'direto')
+
 export interface ErroEfrete {
-  codigo: string // código da efrete (Excecao.Codigo) ou nosso: HTTP_<n>, TIMEOUT, REDE, LOGIN_NULO, RESPOSTA_INVALIDA, CONFIG
+  codigo: string // código da efrete (Excecao.Codigo) ou nosso: HTTP_<n>, TIMEOUT, REDE, LOGIN_NULO, RESPOSTA_INVALIDA, CONFIG,
+  //                PROXY_RECUSOU (chave/endereço), PROXY_PEDIDO (caminho/formato), EFRETE_CONEXAO, EFRETE_TIMEOUT
   mensagem: string
   http?: number
 }
@@ -55,7 +64,7 @@ export interface DepsEfrete {
   timeoutMs?: number
   validadeTokenMs?: number
   log?: (msg: string) => void
-  // Verbo do login e do logout (o manual diz GET no login e POST no logout; o servidor real decide).
+  // Verbo do login e do logout. O manual diz GET no login, mas o servidor real só aceita POST com JSON (24/10).
   verboLogin?: Verbo
   verboLogout?: Verbo
   verboConsulta?: Verbo // ConsultaSituacaoTransportador (manual: GET)
@@ -68,6 +77,38 @@ export const prefixoToken = (t: string | null | undefined) => (t ? `${t.slice(0,
 // Sessão caiu / token inválido → vale refazer o login uma vez.
 export function ehErroDeSessao(mensagem: string | null | undefined): boolean {
   return /n[aã]o\s+(est[aá]\s+)?logad|token\s+n[aã]o\s+pode\s+ser\s+nulo|token\s+(inv[aá]lido|expirad)|sess[aã]o\s+(expirad|inv[aá]lid)/i.test(mensagem ?? '')
+}
+
+export const caminhoServico = (servico: string, metodo: string) => `/services/${servico}/${metodo}`
+
+// Pedido ao proxy: o proxy monta a URL no host fixo dele (EFRETE_BASE_URL da Vercel) e repassa.
+export function montarPedidoProxy(c: ConfigEfrete, servico: string, metodo: string, verbo: Verbo, corpo: Record<string, unknown>) {
+  return {
+    url: String(c.proxyUrl),
+    init: {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-rbr-proxy-key': String(c.proxyChave) },
+      body: JSON.stringify({ metodoHttp: verbo, caminho: caminhoServico(servico, metodo), corpo }),
+    } as RequestInit,
+  }
+}
+
+// Resposta do proxy -> mesma interpretação de uma resposta direta da efrete.
+export function interpretarRespostaProxy(http: number, texto: string): Resultado<Record<string, unknown>> {
+  let j: { status?: number; corpo?: string; erro?: string; codigo?: string } | null = null
+  try {
+    j = texto ? JSON.parse(texto) : null
+  } catch {
+    j = null
+  }
+  if (http === 200 && j && typeof j.status === 'number') return interpretarResposta(j.status, String(j.corpo ?? ''))
+  if (http === 404) return { ok: false, erro: { codigo: 'PROXY_RECUSOU', mensagem: 'O proxy recusou o pedido (chave ou endereço do proxy errado).', http } }
+  if (http === 400 || http === 405 || http === 413) return { ok: false, erro: { codigo: 'PROXY_PEDIDO', mensagem: `O proxy recusou o formato do pedido: ${j?.erro ?? `HTTP ${http}`}`, http } }
+  if (http === 502 || http === 504) {
+    const codigo = j?.codigo === 'EFRETE_TIMEOUT' || http === 504 ? 'EFRETE_TIMEOUT' : 'EFRETE_CONEXAO'
+    return { ok: false, erro: { codigo, mensagem: j?.erro ?? 'A efrete não respondeu ao proxy.', http } }
+  }
+  return { ok: false, erro: { codigo: `PROXY_HTTP_${http}`, mensagem: (j?.erro ?? texto ?? '').slice(0, 200) || `HTTP ${http}`, http } }
 }
 
 // Monta a URL e o init. GET leva os campos na query (listas/objetos como JSON); POST leva JSON no corpo.
@@ -132,7 +173,7 @@ export function varianteUsuario(usuario: string, variante: 'original' | 'sem_esp
   return usuario
 }
 
-export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPrefixo(): string } {
+export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPrefixo(): string; modo(): Promise<ModoConexao> } {
   const f = deps.fetch ?? fetch
   const agora = deps.agora ?? (() => Date.now())
   const timeoutMs = deps.timeoutMs ?? 25_000
@@ -153,19 +194,21 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
 
   async function http(servico: string, metodo: string, verbo: Verbo, corpo: Record<string, unknown>): Promise<Resultado<Record<string, unknown>>> {
     const c = await cfg()
-    const { url, init } = montarRequisicao(c.baseUrl, servico, metodo, verbo, corpo)
+    const viaProxy = modoConexao(c) === 'proxy'
+    const { url, init } = viaProxy ? montarPedidoProxy(c, servico, metodo, verbo, corpo) : montarRequisicao(c.baseUrl, servico, metodo, verbo, corpo)
+    const segredos = [c.usuario, c.senha, c.integrador, c.proxyChave, token, String(corpo.Usuario ?? '')]
     const ctrl = new AbortController()
     const t = setTimeout(() => ctrl.abort(), timeoutMs)
     try {
       const r = await f(url, { ...init, signal: ctrl.signal })
       const texto = await r.text()
-      const res = interpretarResposta(r.status, texto)
-      if (!res.ok) res.erro.mensagem = limparSegredos(res.erro.mensagem, [c.usuario, c.senha, c.integrador, token, String(corpo.Usuario ?? '')])
+      const res = viaProxy ? interpretarRespostaProxy(r.status, texto) : interpretarResposta(r.status, texto)
+      if (!res.ok) res.erro.mensagem = limparSegredos(res.erro.mensagem, segredos)
       return res
     } catch (e) {
       const abortado = (e as { name?: string })?.name === 'AbortError'
       // O erro de rede do Deno traz a URL inteira (no GET do login, com a senha): passa pela mesma limpeza.
-      const msg = abortado ? `Sem resposta em ${timeoutMs / 1000}s` : limparSegredos(String((e as Error)?.message ?? e), [c.usuario, c.senha, c.integrador, token, String(corpo.Usuario ?? '')])
+      const msg = abortado ? `Sem resposta em ${timeoutMs / 1000}s` : limparSegredos(String((e as Error)?.message ?? e), segredos)
       return { ok: false, erro: { codigo: abortado ? 'TIMEOUT' : 'REDE', mensagem: msg } }
     } finally {
       clearTimeout(t)
@@ -175,7 +218,7 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
   async function login(opcoes: { usuario?: string; forcar?: boolean } = {}): Promise<Resultado<{ tokenPrefixo: string }>> {
     if (!opcoes.forcar && !opcoes.usuario && token && agora() < tokenAte) return { ok: true, dados: { tokenPrefixo: prefixoToken(token) } }
     const c = await cfg()
-    const r = await http('Logon', 'Login', deps.verboLogin ?? 'GET', { Usuario: opcoes.usuario ?? c.usuario, Senha: c.senha, Integrador: c.integrador, Versao: VERSAO })
+    const r = await http('Logon', 'Login', deps.verboLogin ?? 'POST', { Usuario: opcoes.usuario ?? c.usuario, Senha: c.senha, Integrador: c.integrador, Versao: VERSAO })
     if (!r.ok) return r
     const tk = (r.dados.Token ?? r.dados.token) as string | null | undefined
     if (!tk) {
@@ -225,7 +268,11 @@ export function criarClienteEfrete(deps: DepsEfrete): ProvedorCiot & { tokenPref
     return { ok: true, dados: lerSituacao(r.dados) }
   }
 
-  return { login, logout, chamar, consultarSituacaoTransportador, tokenPrefixo: () => prefixoToken(token) }
+  async function modo(): Promise<ModoConexao> {
+    return modoConexao(await cfg())
+  }
+
+  return { login, logout, chamar, consultarSituacaoTransportador, tokenPrefixo: () => prefixoToken(token), modo }
 }
 
 const bool = (v: unknown) => (typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : null)
@@ -243,8 +290,17 @@ export function lerSituacao(d: Record<string, unknown>): SituacaoTransportador {
   }
 }
 
-// Leitura da configuração no servidor: 4 segredos pelo efrete_segredo (só service_role).
+// Leitura da configuração no servidor: segredos pelo efrete_segredo (só service_role). Proxy é opcional.
 export async function carregarConfigDoVault(rpc: (nome: string) => Promise<string | null>): Promise<ConfigEfrete> {
-  const [baseUrl, usuario, senha, integrador] = await Promise.all(['EFRETE_BASE_URL', 'EFRETE_USUARIO', 'EFRETE_SENHA', 'EFRETE_HASH_INTEGRADOR'].map(rpc))
-  return { baseUrl: (baseUrl ?? '').trim(), usuario: usuario ?? '', senha: senha ?? '', integrador: (integrador ?? '').trim() }
+  const [baseUrl, usuario, senha, integrador, proxyUrl, proxyChave] = await Promise.all(
+    ['EFRETE_BASE_URL', 'EFRETE_USUARIO', 'EFRETE_SENHA', 'EFRETE_HASH_INTEGRADOR', 'EFRETE_PROXY_URL', 'EFRETE_PROXY_CHAVE'].map(rpc),
+  )
+  return {
+    baseUrl: (baseUrl ?? '').trim(),
+    usuario: usuario ?? '',
+    senha: senha ?? '',
+    integrador: (integrador ?? '').trim(),
+    proxyUrl: (proxyUrl ?? '').trim() || null,
+    proxyChave: (proxyChave ?? '').trim() || null,
+  }
 }

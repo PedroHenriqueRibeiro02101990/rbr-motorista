@@ -2,7 +2,7 @@
 // Respostas simuladas: sem rede e sem segredos (valores falsos).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { criarClienteEfrete, ehErroDeSessao, limparSegredos, interpretarResposta, montarRequisicao, varianteUsuario, type ConfigEfrete } from './efreteClient.ts'
+import { criarClienteEfrete, ehErroDeSessao, interpretarRespostaProxy, limparSegredos, modoConexao, interpretarResposta, montarRequisicao, varianteUsuario, type ConfigEfrete } from './efreteClient.ts'
 
 const CFG: ConfigEfrete = { baseUrl: 'https://dev.efrete.com.br', usuario: 'usuario falso', senha: 'senha-falsa', integrador: 'hash-falso' }
 type Chamada = { url: string; method: string; body: Record<string, unknown> | null }
@@ -50,9 +50,10 @@ test('login: guarda o token na memória e reaproveita; nunca loga segredo nem o 
   assert.deepEqual(r1, { ok: true, dados: { tokenPrefixo: 'ABCD…' } })
   assert.ok(r2.ok)
   assert.equal(s.chamadas.length, 1) // segunda vez veio da memória
-  const q = new URL(s.chamadas[0].url).searchParams
-  assert.equal(q.get('Usuario'), 'usuario falso')
-  assert.equal(q.get('Versao'), '1')
+  // login é POST com JSON no corpo (o servidor real recusa GET)
+  assert.equal(s.chamadas[0].method, 'POST')
+  assert.equal(s.chamadas[0].body?.Usuario, 'usuario falso')
+  assert.equal(s.chamadas[0].body?.Versao, 1)
   const tudo = logs.join(' ')
   for (const segredo of ['senha-falsa', 'hash-falso', 'usuario falso', 'ABCD1234567890']) assert.ok(!tudo.includes(segredo), `log vazou ${segredo}`)
 })
@@ -136,7 +137,7 @@ test('utilitários: variantes do usuário e detecção de sessão caída', () =>
 
 test('mensagem de erro do servidor nunca devolve credencial (nem codificada na URL)', async () => {
   const s = servidor([(c) => ({ status: 500, texto: `Erro em ${c.url}` })])
-  const c = criarClienteEfrete({ carregarConfig: async () => CFG, fetch: s.f })
+  const c = criarClienteEfrete({ carregarConfig: async () => CFG, fetch: s.f, verboLogin: 'GET' }) // GET põe credenciais na URL
   const r = await c.login()
   assert.ok(!r.ok)
   if (r.ok) return
@@ -149,9 +150,75 @@ test('erro de rede (que traz a URL) também sai sem credencial', async () => {
   const quebra = (async (url: string) => {
     throw new TypeError(`error sending request for url (${url})`)
   }) as unknown as typeof fetch
-  const c = criarClienteEfrete({ carregarConfig: async () => CFG, fetch: quebra })
+  const c = criarClienteEfrete({ carregarConfig: async () => CFG, fetch: quebra, verboLogin: 'GET' })
   const r = await c.login()
   assert.ok(!r.ok && r.erro.codigo === 'REDE')
   if (r.ok) return
   for (const v of ['senha-falsa', 'hash-falso', 'usuario+falso']) assert.ok(!r.erro.mensagem.includes(v), `vazou ${v}`)
+})
+
+// ---- Modo proxy (Vercel) ----
+const CFG_PROXY: ConfigEfrete = { ...CFG, proxyUrl: 'https://proxy.exemplo/api/efrete', proxyChave: 'chave-proxy-falsa' }
+const respProxy = (status: number, corpo: unknown) => ({ json: { status, corpo: typeof corpo === 'string' ? corpo : JSON.stringify(corpo), duracaoMs: 120 } })
+
+test('modo: proxy só com URL e chave; senão direto', () => {
+  assert.equal(modoConexao(CFG), 'direto')
+  assert.equal(modoConexao({ proxyUrl: 'https://x', proxyChave: null }), 'direto')
+  assert.equal(modoConexao(CFG_PROXY), 'proxy')
+})
+
+test('proxy: toda chamada vai ao proxy com a chave no cabeçalho e o pedido {metodoHttp, caminho, corpo}', async () => {
+  const cab: Record<string, string>[] = []
+  const chamadas: Chamada[] = []
+  const respostas = [respProxy(200, { Token: 'TOKPROXY1' }), respProxy(200, { Sucesso: true, RNTRCAtivo: true, TACouEquiparado: true, Veiculos: [{ Placa: 'BWP6E54', FazParteDaFrota: false }] })]
+  let i = 0
+  const f = (async (url: string, init: RequestInit) => {
+    chamadas.push({ url, method: String(init.method), body: JSON.parse(String(init.body)) })
+    cab.push(init.headers as Record<string, string>)
+    return new Response(JSON.stringify(respostas[i++].json), { status: 200 })
+  }) as unknown as typeof fetch
+  const c = criarClienteEfrete({ carregarConfig: async () => CFG_PROXY, fetch: f })
+  assert.equal(await c.modo(), 'proxy')
+  const r = await c.consultarSituacaoTransportador({ interessadoCpfCnpj: '69115969000104', transportadorCpfCnpj: '48384601000171', rntrc: '55887888', placas: ['BWP6E54'] })
+  assert.ok(r.ok)
+  if (!r.ok) return
+  assert.equal(r.dados.tacOuEquiparado, true)
+  assert.deepEqual(chamadas.map((x) => x.url), ['https://proxy.exemplo/api/efrete', 'https://proxy.exemplo/api/efrete'])
+  assert.equal(cab[0]['x-rbr-proxy-key'], 'chave-proxy-falsa')
+  assert.deepEqual([chamadas[0].body?.metodoHttp, chamadas[0].body?.caminho], ['POST', '/services/Logon/Login'])
+  assert.equal((chamadas[0].body?.corpo as Record<string, unknown>).Usuario, 'usuario falso')
+  assert.equal(chamadas[1].body?.caminho, '/services/Pef/ConsultaSituacaoTransportador')
+  assert.equal((chamadas[1].body?.corpo as Record<string, unknown>).Token, 'TOKPROXY1')
+})
+
+test('proxy: chave errada (404), caminho fora da lista (400), efrete caiu (502) e timeout (504)', async () => {
+  const casos: [number, unknown, string][] = [
+    [404, { erro: 'Não encontrado.' }, 'PROXY_RECUSOU'],
+    [400, { erro: 'Caminho não permitido.' }, 'PROXY_PEDIDO'],
+    [502, { erro: 'A efrete fechou a conexão.', codigo: 'EFRETE_CONEXAO' }, 'EFRETE_CONEXAO'],
+    [504, { erro: 'A efrete não respondeu a tempo.', codigo: 'EFRETE_TIMEOUT' }, 'EFRETE_TIMEOUT'],
+  ]
+  for (const [http, corpo, codigo] of casos) {
+    const r = interpretarRespostaProxy(http, JSON.stringify(corpo))
+    assert.equal(!r.ok && r.erro.codigo, codigo, String(http))
+  }
+  // erro de negócio da efrete atravessa o proxy igual ao modo direto
+  const neg = interpretarRespostaProxy(200, JSON.stringify({ status: 200, corpo: '{"Sucesso":false,"Excecao":{"Mensagem":"Integrador não cadastrado","Codigo":null}}' }))
+  assert.equal(!neg.ok && neg.erro.mensagem, 'Integrador não cadastrado')
+})
+
+test('proxy: erro de rede/timeout não vaza a chave do proxy nem credenciais', async () => {
+  const quebra = (async () => {
+    throw new TypeError('error sending request for url (https://proxy.exemplo/api/efrete) chave-proxy-falsa senha-falsa')
+  }) as unknown as typeof fetch
+  const c = criarClienteEfrete({ carregarConfig: async () => CFG_PROXY, fetch: quebra })
+  const r = await c.login()
+  assert.ok(!r.ok && r.erro.codigo === 'REDE')
+  if (r.ok) return
+  for (const v of ['chave-proxy-falsa', 'senha-falsa']) assert.ok(!r.erro.mensagem.includes(v), `vazou ${v}`)
+  const lento = (async (_u: string, init: RequestInit) =>
+    new Promise((_ok, falha) => init.signal?.addEventListener('abort', () => falha(Object.assign(new Error('abort'), { name: 'AbortError' }))))) as unknown as typeof fetch
+  const c2 = criarClienteEfrete({ carregarConfig: async () => CFG_PROXY, fetch: lento, timeoutMs: 20 })
+  const t = await c2.login()
+  assert.equal(!t.ok && t.erro.codigo, 'TIMEOUT')
 })

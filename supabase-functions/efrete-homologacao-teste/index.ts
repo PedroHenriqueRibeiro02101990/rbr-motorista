@@ -2,7 +2,8 @@
 //
 // Passo 2 da integração efrete (NSTech): testa a conexão na HOMOLOGAÇÃO. Não emite CIOT nem registra pagamento.
 // Ações:
-//   {acao:"login", variante?:"original"|"sem_espaco"|"cnpj", verbo?:"GET"|"POST"} -> {ok, motivo}  (nunca o token)
+//   {acao:"login", variante?:"original"|"sem_espaco"|"cnpj", verbo?:"GET"|"POST"} -> {ok, motivo, modo}  (nunca o token)
+// Modo: "proxy" (via Vercel, quando o Vault tem EFRETE_PROXY_URL e EFRETE_PROXY_CHAVE) ou "direto".
 //   {acao:"consultar-situacao", cpfCnpj, rntrc, placas[], dataFimViagem?, interessado?} -> retorno da efrete
 //   {acao:"logout"} -> {ok, motivo}
 // Quem pode chamar: gestor RBR (sessão do app), service_role, ou o próprio banco com a chave interna
@@ -90,13 +91,15 @@ Deno.serve(async (req: Request) => {
 
     const corpo = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const acao = String(corpo.acao ?? "");
-    const verbo: Verbo = corpo.verbo === "POST" ? "POST" : "GET";
+    // Padrão POST: o servidor real recusa GET no login ("Requisição inválida"), ao contrário do manual.
+    const verbo: Verbo = corpo.verbo === "GET" ? "GET" : "POST";
+    const modo = (await cliente(verbo).modo());
 
     if (acao === "login") {
       const variante = (["original", "sem_espaco", "cnpj"].includes(String(corpo.variante)) ? corpo.variante : "original") as "original" | "sem_espaco" | "cnpj";
       const r = await cliente(verbo).login({ usuario: varianteUsuario(cfg.usuario, variante, CNPJ_RBR), forcar: true });
-      console.log(`[efrete-teste] login variante=${variante} verbo=${verbo} quem=${a.quem} http1=${Boolean(http1)} ok=${r.ok}${r.ok ? "" : ` codigo=${r.erro.codigo}`}`);
-      return json(r.ok ? { ok: true, motivo: "Login aceito pela efrete (token guardado só na memória da função)." } : { ok: false, motivo: `${r.erro.codigo}: ${r.erro.mensagem}`, http: r.erro.http ?? null });
+      console.log(`[efrete-teste] login variante=${variante} verbo=${verbo} modo=${modo} quem=${a.quem} ok=${r.ok}${r.ok ? "" : ` codigo=${r.erro.codigo}`}`);
+      return json(r.ok ? { ok: true, modo, motivo: "Login aceito pela efrete (token guardado só na memória da função)." } : { ok: false, modo, motivo: `${r.erro.codigo}: ${r.erro.mensagem}`, http: r.erro.http ?? null });
     }
 
     if (acao === "consultar-situacao") {
@@ -110,7 +113,7 @@ Deno.serve(async (req: Request) => {
         dataPrevistaFimViagem: corpo.dataFimViagem ? String(corpo.dataFimViagem) : undefined,
       });
       console.log(`[efrete-teste] consulta ${String(corpo.cpfCnpj).slice(0, 4)}… ok=${r.ok}`);
-      return json(r.ok ? { ok: true, situacao: r.dados } : { ok: false, motivo: `${r.erro.codigo}: ${r.erro.mensagem}`, http: r.erro.http ?? null });
+      return json(r.ok ? { ok: true, modo, situacao: r.dados } : { ok: false, modo, motivo: `${r.erro.codigo}: ${r.erro.mensagem}`, http: r.erro.http ?? null });
     }
 
     // Diagnóstico de rede SEM credenciais: POST {} no Login (a efrete responde "Integrador não cadastrado").
@@ -181,7 +184,7 @@ Deno.serve(async (req: Request) => {
 
     if (acao === "logout") {
       const r = await cliente(verbo).logout();
-      return json(r.ok ? { ok: true, motivo: "Logout feito (ou não havia sessão neste isolate)." } : { ok: false, motivo: `${r.erro.codigo}: ${r.erro.mensagem}` });
+      return json(r.ok ? { ok: true, modo, motivo: "Logout feito (ou não havia sessão neste isolate)." } : { ok: false, modo, motivo: `${r.erro.codigo}: ${r.erro.mensagem}` });
     }
 
     return json({ ok: false, motivo: "Ação desconhecida. Use login, consultar-situacao ou logout." }, 400);
