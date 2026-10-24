@@ -45,7 +45,7 @@ function op(opts: {
       ...x,
     })),
     averbacaoRcv: opts.rcv ? { averbacao_rcv_status: opts.rcv, averbacao_rcv_numero: null, averbacao_rcv_erro: null, averbacao_rcv_resposta: null, averbacao_rcv_em: null } : null,
-    ciotVpo: { ciot: opts.ciot ?? null, ciot_status: null, ciot_origem: null, vpo_idvpo: opts.vpo ?? null, numero_averbacao: null },
+    ciotVpo: { ciot: opts.ciot ?? null, ciot_status: null, ciot_origem: null, ciot_ambiente: null, vpo_idvpo: opts.vpo ?? null, numero_averbacao: null },
   } as unknown as DetalheOperacao
 }
 

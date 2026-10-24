@@ -27,6 +27,15 @@ export interface PagamentoPedido {
   dataLiberacao: Date
 }
 
+export interface NotaFiscalCiot {
+  numero: string
+  serie: string
+  valorTotal: number
+  valorPorUnidade: number
+  quantidade: number
+  ncm?: string | null // 4 primeiros dígitos vão para a efrete; sem NCM na nota, usa o da carga
+}
+
 export interface PedidoCiotPadrao {
   idOperacaoCliente: string
   documentoViagem: string
@@ -51,11 +60,12 @@ export interface PedidoCiotPadrao {
   destinatario: { cnpj: string; nome: string; endereco: EnderecoEfrete }
   placas: string[]
   composicaoVeicular: boolean
-  notaFiscal: { numero: string; serie: string; valorTotal: number; valorPorUnidade: number; quantidade: number }
+  // Passo 4: todas as NF-e do cliente da operação (operacao_nfes). quantidade = peso (Kg) da nota.
+  notasFiscais: NotaFiscalCiot[]
   pisoMinimo?: number | null // se informado, frete abaixo dele é barrado antes de chamar
 }
 
-const soDigitos = (s: string) => (s ?? '').replace(/\D/g, '')
+const soDigitos = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '')
 const dinheiro = (v: number) => Math.round(v * 100) / 100
 const coord = (v: number) => v.toFixed(6) // até 6 casas, ponto decimal (manual)
 
@@ -72,6 +82,7 @@ export function validarPedidoPadrao(p: PedidoCiotPadrao, agora = new Date()): st
   if (p.dataFim.getTime() - p.dataInicio.getTime() > 90 * 86_400_000) e.push('Data de fim da viagem passa de 90 dias do início (Lotação).')
   if (!/^\d{4}$/.test(p.ncm)) e.push('NCM da carga precisa ter 4 dígitos.')
   if (!(p.pesoKg > 0)) e.push('Peso da carga precisa ser maior que zero.')
+  if (p.notasFiscais.length === 0) e.push('Ao menos uma NF-e do cliente deve ser informada.')
   if (!(p.distanciaKm > 0)) e.push('Distância percorrida precisa ser maior que zero.')
   if (p.origem.lat === p.destino.lat && p.origem.lon === p.destino.lon) e.push('Origem e destino com as mesmas coordenadas.')
   if (!(p.valorFrete > 0)) e.push('Valor do frete precisa ser maior que zero.')
@@ -137,19 +148,17 @@ export function montarCorpoOperacaoPadrao(p: PedidoCiotPadrao): Record<string, u
           Seguro: 0,
         },
         TipoPagamento: 'TransferenciaBancaria',
-        NotasFiscais: [
-          {
-            Numero: p.notaFiscal.numero,
-            Serie: p.notaFiscal.serie,
-            ValorTotal: dinheiro(p.notaFiscal.valorTotal),
-            ValorDaMercadoriaPorUnidade: p.notaFiscal.valorPorUnidade,
-            CodigoNCMNaturezaCarga: p.ncm,
-            UnidadeDeMedidaDaMercadoria: 'Kg',
-            TipoDeCalculo: 'SemQuebra',
-            QuantidadeDaMercadoriaNoEmbarque: p.notaFiscal.quantidade,
-            ToleranciaDePerdaDeMercadoria: { Tipo: 'Nenhum', Valor: 0 },
-          },
-        ],
+        NotasFiscais: p.notasFiscais.map((n) => ({
+          Numero: n.numero,
+          Serie: n.serie,
+          ValorTotal: dinheiro(n.valorTotal),
+          ValorDaMercadoriaPorUnidade: n.valorPorUnidade,
+          CodigoNCMNaturezaCarga: soDigitos(n.ncm ?? '').slice(0, 4) || p.ncm,
+          UnidadeDeMedidaDaMercadoria: 'Kg',
+          TipoDeCalculo: 'SemQuebra',
+          QuantidadeDaMercadoriaNoEmbarque: n.quantidade,
+          ToleranciaDePerdaDeMercadoria: { Tipo: 'Nenhum', Valor: 0 },
+        })),
       },
     ],
     Impostos: { IRRF: 0, SestSenat: 0, INSS: 0, ISSQN: 0 },
@@ -214,6 +223,9 @@ export interface RepositorioPedidos {
   obter(idOperacaoCliente: string): Promise<PedidoRegistrado | null>
   registrarPendente(p: PedidoCiotPadrao): Promise<void>
   marcarTentativa(idOperacaoCliente: string): Promise<void>
+  // Passo 4: grava o protocolo (e o código bruto do CIOT) ANTES de interpretar/validar o retorno — no passo 3 o
+  // protocolo da emissão se perdeu porque a gravação falhou depois.
+  registrarRetorno(idOperacaoCliente: string, r: { protocolo: string | null; ciotBruto: string | null; erro: string | null }): Promise<void>
   marcarEmitido(idOperacaoCliente: string, e: CiotEmitido, resumo: Record<string, unknown>): Promise<void>
   marcarErro(idOperacaoCliente: string, mensagem: string): Promise<void>
 }
@@ -253,6 +265,7 @@ export async function emitirComAntiDuplicidade(
 
   await repo.marcarTentativa(ref)
   const r: Resultado<CiotEmitido> = await provedor.emitirOperacaoTransporte(montarCorpoOperacaoPadrao(pedido))
+  await repo.registrarRetorno(ref, r.ok ? { protocolo: r.dados.protocolo, ciotBruto: r.dados.ciot, erro: null } : { protocolo: r.erro.protocolo ?? null, ciotBruto: null, erro: r.erro.mensagem })
   if (!r.ok) {
     const mensagem = traduzirErroEfrete(r.erro.mensagem)
     await repo.marcarErro(ref, mensagem)
@@ -316,4 +329,221 @@ export function gerarChassi(semente: number, prefixo = '9BW'): string {
     out += alfabeto[x % alfabeto.length]
   }
   return out
+}
+
+// ---- Piso mínimo da ANTT (Resolução 6.084/2026; tabela piso_antt_coeficientes) ----
+// piso = cc_fixo + ccd_por_km × distância. Tabela A = composição completa (cavalo + implemento), B = só tração;
+// C/D = alto desempenho (só se a cotação disser). Tipo de carga comparado sem acento/caixa.
+export interface CoeficientePiso {
+  tabela: string
+  tipo_carga: string
+  eixos: number
+  ccd_por_km: number
+  cc_fixo: number
+  data_vigencia: string
+  fonte?: string | null
+}
+export interface EntradaPiso {
+  tipoCarga: string | null
+  eixos: number
+  distanciaKm: number
+  composicao: boolean // tem implemento (semirreboque/reboque)
+  altoDesempenho?: boolean
+  hoje: string // AAAA-MM-DD
+}
+export type ResultadoPiso =
+  | { ok: true; piso: number; tabela: string; tipoCarga: string; eixos: number; distanciaKm: number; ccFixo: number; ccdPorKm: number; vigencia: string; fonte: string | null }
+  | { ok: false; motivo: string }
+
+const normal = (s: string | null | undefined) =>
+  (s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+
+export function calcularPisoAntt(coefs: CoeficientePiso[], e: EntradaPiso): ResultadoPiso {
+  if (!(e.eixos > 0)) return { ok: false, motivo: 'Número de eixos do veículo (cadastro) não informado.' }
+  if (!(e.distanciaKm > 0)) return { ok: false, motivo: 'Distância da rota não informada na cotação.' }
+  const tabela = e.altoDesempenho ? (e.composicao ? 'C' : 'D') : e.composicao ? 'A' : 'B'
+  const tipo = normal(e.tipoCarga) || 'carga geral'
+  const candidatos = coefs
+    .filter((c) => c.tabela === tabela && normal(c.tipo_carga) === tipo && Number(c.eixos) === e.eixos && c.data_vigencia <= e.hoje)
+    .sort((a, b) => (a.data_vigencia < b.data_vigencia ? 1 : -1))
+  const c = candidatos[0]
+  if (!c) return { ok: false, motivo: `Sem coeficiente da ANTT para tabela ${tabela}, "${e.tipoCarga ?? 'Carga Geral'}", ${e.eixos} eixos.` }
+  const piso = dinheiro(Number(c.cc_fixo) + Number(c.ccd_por_km) * e.distanciaKm)
+  return { ok: true, piso, tabela, tipoCarga: c.tipo_carga, eixos: e.eixos, distanciaKm: e.distanciaKm, ccFixo: Number(c.cc_fixo), ccdPorKm: Number(c.ccd_por_km), vigencia: c.data_vigencia, fonte: c.fonte ?? null }
+}
+
+// Tipo de carga da ANTT (texto de piso_antt_coeficientes) -> CodigoTipoCarga da efrete (enum 1–12 da ANTT).
+// O ConsultarTipoCarga da efrete está desligado no servidor ("não é requisito"), por isso a tabela fixa.
+const CODIGO_TIPO_CARGA: [string, number][] = [
+  ['granel solido', 1],
+  ['granel liquido', 2],
+  ['frigorificada ou aquecida', 3],
+  ['conteinerizada', 4],
+  ['carga geral', 5],
+  ['neogranel', 6],
+  ['perigosa (granel solido)', 7],
+  ['perigosa (granel liquido)', 8],
+  ['perigosa (frigorificada ou aquecida)', 9],
+  ['perigosa (conteinerizada)', 10],
+  ['perigosa (carga geral)', 11],
+  ['carga granel pressurizada', 12],
+]
+export function codigoTipoCarga(tipoCarga: string | null | undefined): number {
+  const t = normal(tipoCarga) || 'carga geral'
+  return CODIGO_TIPO_CARGA.find(([k]) => k === t)?.[1] ?? 5
+}
+
+// Chave Pix do pessoas.pix -> tipo da efrete. Só números com 11/14 dígitos = CPF/CNPJ; e-mail; telefone; senão aleatória.
+export function tipoChavePix(chave: string): { tipo: PedidoCiotPadrao['pix']['tipo']; valor: string } {
+  const c = (chave ?? '').trim()
+  const d = soDigitos(c)
+  if (/^[\d.\-/ ]+$/.test(c) && (d.length === 11 || d.length === 14)) return { tipo: 'CpfOuCnpj', valor: d }
+  if (/@/.test(c)) return { tipo: 'Email', valor: c.toLowerCase() }
+  if (/^\+?[\d ()\-]+$/.test(c) && d.length >= 12) return { tipo: 'TelefoneCelular', valor: d }
+  return { tipo: 'ChaveAleatoria', valor: c }
+}
+
+// ---- Pedido a partir da OPERAÇÃO (passo 4) ----
+// Junta motorista, veículo + implementos, rota, valores de condicoes_pagamento_operacao e NF-e do cliente. Devolve o
+// pedido + bloqueios (impedem emitir) + avisos. Sem I/O: o index.ts lê o banco e passa os dados.
+export interface DadosOperacaoCiot {
+  operacaoId: string
+  ambiente: 'homologacao' | 'producao'
+  agora: Date
+  contratante: { cnpj: string; nome: string; endereco: EnderecoEfrete }
+  motorista: { cpf: string | null; cnh: string | null; celular: string | null } | null
+  contratado: { cpfOuCnpj: string | null; rntrc: string | null; pix: string | null } | null
+  tracao: { placa: string; eixos: number | null } | null
+  implementos: { placa: string; eixos: number | null }[]
+  rota: {
+    origem: { lat: number; lon: number; ibge: number | null } | null
+    destino: { lat: number; lon: number; ibge: number | null } | null
+    distanciaKm: number | null
+  }
+  carga: { tipoCarga: string | null; ncm: string | null; complexa: boolean; tabelaAntt: string | null }
+  condicao: { valorTotal: number | null; adiantamento: number | null; pedagio: number | null } | null
+  datas: { inicio: Date | null; fim: Date | null }
+  notas: { chave: string; numero: string | null; serie: string | null; valor: number | null; pesoKg: number | null; ncm: string | null; destinatarioCnpj: string | null; destinatarioNome: string | null }[]
+  destinatarioEndereco: EnderecoEfrete | null
+  coeficientes: CoeficientePiso[]
+  // Valores já declarados nos documentos fiscais da operação (para a trava de divergência).
+  documentos: { mdfeValorContrato: number | null; cteChaves: string[] | null }
+}
+
+export interface PreviaCiot {
+  pedido: PedidoCiotPadrao | null
+  piso: ResultadoPiso
+  diferencaPiso: number | null // frete - piso
+  bloqueios: string[]
+  avisos: string[]
+}
+
+export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
+  const bloqueios: string[] = []
+  const avisos: string[] = []
+  const ref = `RBR-${d.ambiente === 'homologacao' ? 'HML-' : ''}OP-${d.operacaoId.replace(/-/g, '').slice(0, 12).toUpperCase()}`
+
+  if (!d.motorista?.cpf) bloqueios.push('Motorista sem CPF.')
+  if (!d.motorista?.cnh) bloqueios.push('Motorista sem número da CNH.')
+  if (!d.contratado?.cpfOuCnpj) bloqueios.push('Transportador (titular do veículo) sem CPF/CNPJ.')
+  if (!d.contratado?.rntrc) bloqueios.push('Transportador sem RNTRC.')
+  if (!d.contratado?.pix) bloqueios.push('Transportador sem chave Pix (o pagamento do CIOT vai por Pix).')
+  if (!d.tracao) bloqueios.push('Operação sem veículo alocado.')
+  if (!d.rota.origem || !d.rota.destino) bloqueios.push('Origem ou destino sem coordenadas (cidade não encontrada em municipios_coordenadas).')
+  if (!d.notas.length) bloqueios.push('Operação sem NF-e do cliente: suba o XML ou digite a chave no bloco "NF-e do cliente".')
+  if (!d.condicao?.valorTotal) bloqueios.push('Condição de pagamento do motorista sem valor do frete.')
+
+  const eixos = (d.tracao?.eixos ?? 0) + d.implementos.reduce((s, i) => s + (i.eixos ?? 0), 0)
+  if (d.tracao && d.tracao.eixos == null) bloqueios.push(`Veículo ${d.tracao.placa} sem número de eixos no cadastro.`)
+  for (const i of d.implementos) if (i.eixos == null) bloqueios.push(`Implemento ${i.placa} sem número de eixos no cadastro.`)
+  const tabelaCotacao = (d.carga.tabelaAntt ?? '').toUpperCase()
+  const piso = calcularPisoAntt(d.coeficientes, {
+    tipoCarga: d.carga.tipoCarga,
+    eixos,
+    distanciaKm: d.rota.distanciaKm ?? 0,
+    composicao: d.implementos.length > 0,
+    altoDesempenho: tabelaCotacao === 'C' || tabelaCotacao === 'D',
+    hoje: d.agora.toISOString().slice(0, 10),
+  })
+  const frete = d.condicao?.valorTotal ?? null
+  let diferencaPiso: number | null = null
+  if (!piso.ok) bloqueios.push(`Piso mínimo da ANTT: ${piso.motivo}`)
+  else if (frete != null) {
+    diferencaPiso = dinheiro(frete - piso.piso)
+    if (frete < piso.piso) {
+      bloqueios.push(`Frete pago ao motorista R$ ${frete.toFixed(2)} abaixo do piso mínimo da ANTT R$ ${piso.piso.toFixed(2)} (faltam R$ ${(-diferencaPiso).toFixed(2)}).`)
+    }
+  }
+  if (d.carga.complexa) avisos.push('A operação/NF indica carga complexa (perigosa, indivisível ou excedente): confira se o tipo de carga do piso está certo.')
+
+  // Divergência entre o CIOT e os documentos fiscais já emitidos: bloqueia.
+  if (frete != null && d.documentos.mdfeValorContrato != null && Math.abs(d.documentos.mdfeValorContrato - frete) > 0.01) {
+    bloqueios.push(`Valor do frete do CIOT (R$ ${frete.toFixed(2)}) diferente do valor do contrato no MDF-e (R$ ${d.documentos.mdfeValorContrato.toFixed(2)}).`)
+  }
+  if (d.documentos.cteChaves) {
+    const a = [...d.documentos.cteChaves].sort().join(',')
+    const b = d.notas.map((n) => soDigitos(n.chave)).sort().join(',')
+    if (a !== b) bloqueios.push('As NF-e do CIOT não são as mesmas citadas no CT-e emitido.')
+  }
+
+  const pesoKg = dinheiro(d.notas.reduce((s, n) => s + (n.pesoKg ?? 0), 0))
+  if (d.notas.length && !(pesoKg > 0)) bloqueios.push('NF-e do cliente sem peso bruto (PesoCarga do CIOT).')
+  const ncm = soDigitos(d.carga.ncm ?? d.notas.find((n) => n.ncm)?.ncm ?? '').slice(0, 4)
+  if (ncm.length !== 4) bloqueios.push('Sem NCM da carga (4 primeiros dígitos).')
+
+  const adiant = dinheiro(d.condicao?.adiantamento ?? 0)
+  const quit = frete != null ? dinheiro(frete - adiant) : 0
+  const inicio = d.datas.inicio && d.datas.inicio.getTime() > d.agora.getTime() ? d.datas.inicio : new Date(d.agora.getTime() + 15 * 60_000)
+  const fim = d.datas.fim && d.datas.fim.getTime() > inicio.getTime() ? d.datas.fim : new Date(inicio.getTime() + 24 * 3600_000)
+  if (d.datas.inicio && d.datas.inicio.getTime() <= d.agora.getTime()) avisos.push('Início previsto já passou: o CIOT vai com início daqui a 15 minutos.')
+
+  if (bloqueios.length || !d.tracao || !d.rota.origem || !d.rota.destino || !d.contratado || !d.motorista || frete == null) {
+    return { pedido: null, piso, diferencaPiso, bloqueios, avisos }
+  }
+  const pix = tipoChavePix(d.contratado.pix!)
+  const destinatario = d.notas.find((n) => n.destinatarioCnpj)
+  const pagamentos: PagamentoPedido[] = []
+  if (adiant > 0) pagamentos.push({ idPagamentoCliente: `${ref}-AD`, categoria: 'Adiantamento', valor: adiant, dataLiberacao: inicio })
+  if (quit > 0) pagamentos.push({ idPagamentoCliente: `${ref}-QT`, categoria: 'Quitacao', valor: quit, dataLiberacao: fim })
+  const celular = soDigitos(d.motorista.celular).replace(/^55(?=\d{10,11}$)/, '')
+  const pedido: PedidoCiotPadrao = {
+    idOperacaoCliente: ref,
+    documentoViagem: ref,
+    matrizCnpj: d.contratante.cnpj,
+    dataInicio: inicio,
+    dataFim: fim,
+    ncm,
+    pesoKg,
+    tipoEmbalagem: 'Caixa',
+    codigoTipoCarga: codigoTipoCarga(d.carga.tipoCarga),
+    origem: { lat: d.rota.origem.lat, lon: d.rota.origem.lon, codigoMunicipio: d.rota.origem.ibge ?? undefined },
+    destino: { lat: d.rota.destino.lat, lon: d.rota.destino.lon, codigoMunicipio: d.rota.destino.ibge ?? undefined },
+    distanciaKm: d.rota.distanciaKm ?? 0,
+    valorFrete: frete,
+    pedagio: d.condicao?.pedagio ?? 0,
+    pagamentos,
+    pix,
+    cpfCnpjCreditado: soDigitos(d.contratado.cpfOuCnpj),
+    contratado: { cpfOuCnpj: soDigitos(d.contratado.cpfOuCnpj), rntrc: soDigitos(d.contratado.rntrc) },
+    motorista: { cpf: soDigitos(d.motorista.cpf), cnh: soDigitos(d.motorista.cnh), ddd: Number(celular.slice(0, 2)) || 0, numero: Number(celular.slice(2)) || 0 },
+    contratante: d.contratante,
+    destinatario: {
+      cnpj: soDigitos(destinatario?.destinatarioCnpj ?? d.contratante.cnpj),
+      nome: destinatario?.destinatarioNome ?? d.contratante.nome,
+      endereco: d.destinatarioEndereco ?? d.contratante.endereco,
+    },
+    placas: [d.tracao.placa, ...d.implementos.map((i) => i.placa)],
+    composicaoVeicular: d.implementos.length > 0,
+    notasFiscais: d.notas.map((n) => ({
+      numero: n.numero ?? soDigitos(n.chave).slice(25, 34).replace(/^0+/, ''),
+      serie: n.serie ?? String(Number(soDigitos(n.chave).slice(22, 25))),
+      valorTotal: n.valor ?? 0,
+      valorPorUnidade: n.pesoKg && n.valor ? dinheiro(n.valor / n.pesoKg) : 0,
+      quantidade: n.pesoKg ?? 0,
+      ncm: n.ncm,
+    })),
+    pisoMinimo: piso.ok ? piso.piso : null,
+  }
+  for (const e of validarPedidoPadrao(pedido, d.agora)) bloqueios.push(e)
+  return { pedido: bloqueios.length ? null : pedido, piso, diferencaPiso, bloqueios, avisos }
 }

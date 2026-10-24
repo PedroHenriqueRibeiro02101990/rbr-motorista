@@ -133,7 +133,7 @@ function montarPedido(ref: string, rntrc: string, codigoTipoCarga: number, agora
     destinatario: { cnpj: RBR.cnpj, nome: RBR.nome, endereco: END_RBR },
     placas: ["RQW4D58", "RRD5B39"],
     composicaoVeicular: true,
-    notaFiscal: { numero: "1", serie: "1", valorTotal: 20000, valorPorUnidade: 20, quantidade: 1000 },
+    notasFiscais: [{ numero: "1", serie: "1", valorTotal: 20000, valorPorUnidade: 20, quantidade: 1000 }],
   };
 }
 
@@ -170,6 +170,9 @@ const repo: RepositorioPedidos = {
       })),
     );
     if (e2) throw new Error(`Banco: ${e2.message}`);
+  },
+  async registrarRetorno(ref, r) {
+    await admin.from("efrete_ciot_pedidos").update({ protocolo: r.protocolo, atualizado_em: new Date().toISOString() }).eq("id_operacao_cliente", ref);
   },
   async marcarTentativa(ref) {
     const { data } = await admin.from("efrete_ciot_pedidos").select("tentativas").eq("id_operacao_cliente", ref).single();

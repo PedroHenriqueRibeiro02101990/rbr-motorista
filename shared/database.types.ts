@@ -5163,6 +5163,10 @@ export type Database = {
       }
       operacao_ciot_vpo: {
         Row: {
+          ciot_ambiente: string | null
+          ciot_emitido_em: string | null
+          ciot_protocolo: string | null
+          ciot_verificador: string | null
           ciot: string | null
           ciot_cancelado_em: string | null
           ciot_cnpj_responsavel: string | null
@@ -5195,6 +5199,10 @@ export type Database = {
           vpo_valor: number | null
         }
         Insert: {
+          ciot_ambiente?: string | null
+          ciot_emitido_em?: string | null
+          ciot_protocolo?: string | null
+          ciot_verificador?: string | null
           ciot?: string | null
           ciot_cancelado_em?: string | null
           ciot_cnpj_responsavel?: string | null
@@ -5227,6 +5235,10 @@ export type Database = {
           vpo_valor?: number | null
         }
         Update: {
+          ciot_ambiente?: string | null
+          ciot_emitido_em?: string | null
+          ciot_protocolo?: string | null
+          ciot_verificador?: string | null
           ciot?: string | null
           ciot_cancelado_em?: string | null
           ciot_cnpj_responsavel?: string | null

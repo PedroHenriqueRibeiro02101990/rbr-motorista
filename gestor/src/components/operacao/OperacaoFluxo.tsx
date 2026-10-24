@@ -18,6 +18,7 @@ import {
 } from '../../lib/operacaoDetalhe'
 import CiotOperacao from './CiotOperacao'
 import NfesCliente from './NfesCliente'
+import CiotEfrete from './CiotEfrete'
 import RetencaoInss from './RetencaoInss'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
@@ -1129,7 +1130,12 @@ function CiotCompacto({ d }: { d: DetalheOperacao }) {
   const v = d.ciotVpo
   return (
     <>
-      {ciotAplicavel(d) && v?.ciot && <span className="tabular-nums">CIOT {v.ciot}</span>}
+      {ciotAplicavel(d) && v?.ciot && (
+        <span className="tabular-nums">
+          CIOT {v.ciot}
+          {v.ciot_origem === 'efrete' && ` · efrete${v.ciot_ambiente === 'homologacao' ? ' (homologação, sem validade)' : ''}`}
+        </span>
+      )}
       {vpoAplicavel(d) && v?.vpo_idvpo && <span>vale-pedágio {v.vpo_idvpo}</span>}
     </>
   )
@@ -1138,6 +1144,7 @@ function CiotCompacto({ d }: { d: DetalheOperacao }) {
 function EtapaCiot({ d, salvando, executar }: { d: DetalheOperacao; salvando: boolean; executar: Executar }) {
   return (
     <div className="flex flex-col gap-3">
+      {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} />}
       {ciotAplicavel(d) && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {vpoAplicavel(d) && (
         <div className="text-xs">

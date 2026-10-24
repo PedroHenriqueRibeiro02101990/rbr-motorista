@@ -76,3 +76,22 @@ test('comparação da chave', () => {
   assert.equal(chaveConfere('abc', 'abd'), false)
   assert.equal(chaveConfere(undefined, 'abc'), false)
 })
+
+test('codificacao ascii: acentos viram \\uXXXX e o JSON continua igual depois de lido', () => {
+  const corpo = { Nome: 'José da Conceição', Rua: 'Rua Fictícia' }
+  const { dados } = montarDestino('https://dev.efrete.com.br', 'POST', '/services/motoristas/gravar', corpo, 'ascii')
+  assert.ok(/^[\x00-\x7f]*$/.test(dados))
+  assert.ok(dados.includes('Jos\\u00e9'))
+  assert.deepEqual(JSON.parse(dados), corpo)
+  const utf8 = montarDestino('https://dev.efrete.com.br', 'POST', '/services/motoristas/gravar', corpo).dados
+  assert.ok(utf8.includes('José'))
+})
+
+test('codificacao inválida é recusada', async () => {
+  const r = await tratar(
+    { metodo: 'POST', cabecalhos: { 'x-rbr-proxy-key': 'k' }, corpoBruto: JSON.stringify({ metodoHttp: 'POST', caminho: '/services/motoristas/gravar', corpo: {}, codificacao: 'latin1' }) },
+    { PROXY_CHAVE: 'k', EFRETE_BASE_URL: 'https://dev.efrete.com.br' },
+    async () => ({ status: 200, corpo: '{}' }),
+  )
+  assert.equal(r.status, 400)
+})

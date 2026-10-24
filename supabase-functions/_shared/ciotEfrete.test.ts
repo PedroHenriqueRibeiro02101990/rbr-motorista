@@ -2,7 +2,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  calcularPisoAntt,
+  codigoTipoCarga,
   dataEfrete,
+  pedidoDaOperacao,
+  tipoChavePix,
+  type CoeficientePiso,
+  type DadosOperacaoCiot,
   emitirComAntiDuplicidade,
   gerarChassi,
   gerarCnh,
@@ -49,7 +55,7 @@ const pedido = (x: Partial<PedidoCiotPadrao> = {}): PedidoCiotPadrao => ({
   destinatario: { cnpj: '69115969000104', nome: 'RBR CARGO TRANSPORTE DE CARGA E LOGISTICA LTDA', endereco: END },
   placas: ['RQW4D58', 'rrd-5b39'],
   composicaoVeicular: true,
-  notaFiscal: { numero: '1', serie: '1', valorTotal: 10000, valorPorUnidade: 10, quantidade: 1000 },
+  notasFiscais: [{ numero: '1', serie: '1', valorTotal: 10000, valorPorUnidade: 10, quantidade: 1000 }],
   ...x,
 })
 
@@ -111,6 +117,7 @@ function repoMemoria() {
   const r: RepositorioPedidos = {
     obter: async (id) => m.get(id) ?? null,
     registrarPendente: async (p) => void m.set(p.idOperacaoCliente, { status: 'pendente', ciot: null, tentativas: 0 }),
+    registrarRetorno: async (id, r) => void m.set(id, { ...m.get(id)!, protocolo: r.protocolo } as PedidoRegistrado),
     marcarTentativa: async (id) => void m.set(id, { ...m.get(id)!, tentativas: (m.get(id)?.tentativas ?? 0) + 1 }),
     marcarEmitido: async (id, e) => void m.set(id, { ...(m.get(id) ?? { tentativas: 0 }), status: 'emitido', ciot: e.ciot }),
     marcarErro: async (id) => void m.set(id, { ...(m.get(id) ?? { tentativas: 0, ciot: null }), status: 'erro' }),
@@ -216,4 +223,107 @@ test('CIOT da efrete: 12 dígitos + "/" + verificador de 4 (formato real) separa
   assert.equal(separarCiot('XXXXXXXXXXXX'), null)
   assert.equal(juntarCiot('560000596706', '4165'), '560000596706/4165')
   assert.equal(juntarCiot('560000596706', null), '560000596706')
+})
+
+// ---- Passo 4 ----------------------------------------------------------------------------------------
+const COEFS: CoeficientePiso[] = [
+  { tabela: 'A', tipo_carga: 'Carga Geral', eixos: 6, ccd_por_km: 7.3547, cc_fixo: 671.93, data_vigencia: '2026-07-17', fonte: 'Resolucao ANTT 6.084/2026 (Anexo II)' },
+  { tabela: 'A', tipo_carga: 'Carga Geral', eixos: 6, ccd_por_km: 7.0, cc_fixo: 600, data_vigencia: '2025-01-20' },
+  { tabela: 'B', tipo_carga: 'Carga Geral', eixos: 3, ccd_por_km: 5.0, cc_fixo: 500, data_vigencia: '2026-07-17' },
+]
+
+test('piso ANTT: cc_fixo + ccd_por_km × km, linha vigente mais recente; composição usa a tabela A', () => {
+  const r = calcularPisoAntt(COEFS, { tipoCarga: 'Carga geral', eixos: 6, distanciaKm: 100, composicao: true, hoje: '2026-10-24' })
+  assert.ok(r.ok)
+  assert.equal(r.ok && r.piso, 1407.4) // 671,93 + 735,47
+  assert.equal(r.ok && r.tabela, 'A')
+  const b = calcularPisoAntt(COEFS, { tipoCarga: null, eixos: 3, distanciaKm: 100, composicao: false, hoje: '2026-10-24' })
+  assert.equal(b.ok && b.piso, 1000)
+  assert.equal(calcularPisoAntt(COEFS, { tipoCarga: 'Neogranel', eixos: 6, distanciaKm: 100, composicao: true, hoje: '2026-10-24' }).ok, false)
+})
+
+test('tipo de carga -> código da efrete e chave Pix -> tipo', () => {
+  assert.equal(codigoTipoCarga('Carga geral'), 5)
+  assert.equal(codigoTipoCarga('Perigosa (granel líquido)'), 8)
+  assert.deepEqual(tipoChavePix('48.386.492/0001-21'), { tipo: 'CpfOuCnpj', valor: '48386492000121' })
+  assert.deepEqual(tipoChavePix('Fulano@Exemplo.com'), { tipo: 'Email', valor: 'fulano@exemplo.com' })
+  assert.deepEqual(tipoChavePix('+55 (11) 91234-5678'), { tipo: 'TelefoneCelular', valor: '5511912345678' })
+  assert.equal(tipoChavePix('123e4567-e89b-12d3-a456-426614174000').tipo, 'ChaveAleatoria')
+})
+
+const OP = (x: Partial<DadosOperacaoCiot> = {}): DadosOperacaoCiot => ({
+  operacaoId: '11111111-2222-3333-4444-555555555555',
+  ambiente: 'homologacao',
+  agora: AGORA,
+  contratante: { cnpj: '69115969000104', nome: 'RBR', endereco: END },
+  motorista: { cpf: gerarCpf(20261024), cnh: gerarCnh(20261024), celular: '5511912345678' },
+  contratado: { cpfOuCnpj: '48386492000121', rntrc: '56802388', pix: '48386492000121' },
+  tracao: { placa: 'RQW4D58', eixos: 3 },
+  implementos: [{ placa: 'RRD5B39', eixos: 3 }],
+  rota: { origem: { lat: -23.55, lon: -46.63, ibge: 3550308 }, destino: { lat: -22.9, lon: -47.06, ibge: 3509502 }, distanciaKm: 100 },
+  carga: { tipoCarga: 'Carga Geral', ncm: null, complexa: false, tabelaAntt: 'A' },
+  condicao: { valorTotal: 8000, adiantamento: 3000, pedagio: 0 },
+  datas: { inicio: h(1), fim: h(25) },
+  notas: [
+    { chave: '35261069115969000104550010000000011000000019', numero: '1', serie: '1', valor: 6000, pesoKg: 600, ncm: '39231090', destinatarioCnpj: '11222333000181', destinatarioNome: 'DEST' },
+    { chave: '35261069115969000104550010000000021000000024', numero: '2', serie: '1', valor: 4000, pesoKg: 400, ncm: '39235000', destinatarioCnpj: '11222333000181', destinatarioNome: 'DEST' },
+  ],
+  destinatarioEndereco: null,
+  coeficientes: COEFS,
+  documentos: { mdfeValorContrato: null, cteChaves: null },
+  ...x,
+})
+
+test('pedido da operação: motorista, cavalo + implemento, NFs (todas), peso somado, Pix e piso calculado', () => {
+  const r = pedidoDaOperacao(OP())
+  assert.deepEqual(r.bloqueios, [])
+  assert.ok(r.pedido)
+  const p = r.pedido!
+  assert.deepEqual(p.placas, ['RQW4D58', 'RRD5B39'])
+  assert.equal(p.composicaoVeicular, true)
+  assert.equal(p.pesoKg, 1000)
+  assert.equal(p.ncm, '3923')
+  assert.equal(p.notasFiscais.length, 2)
+  assert.deepEqual(p.pagamentos.map((x) => [x.categoria, x.valor]), [['Adiantamento', 3000], ['Quitacao', 5000]])
+  assert.equal(p.pix.tipo, 'CpfOuCnpj')
+  assert.equal(p.motorista.ddd, 11)
+  assert.equal(r.piso.ok && r.piso.piso, 1407.4)
+  assert.equal(r.diferencaPiso, 6592.6)
+  assert.match(p.idOperacaoCliente, /^RBR-HML-OP-/)
+  const c = montarCorpoOperacaoPadrao(p) as Record<string, any>
+  assert.equal(c.Viagens[0].NotasFiscais.length, 2)
+  assert.equal(c.Viagens[0].NotasFiscais[1].CodigoNCMNaturezaCarga, '3923')
+})
+
+test('pedido da operação: frete abaixo do piso BLOQUEIA e mostra a diferença', () => {
+  const r = pedidoDaOperacao(OP({ condicao: { valorTotal: 1000, adiantamento: 0, pedagio: 0 } }))
+  assert.equal(r.pedido, null)
+  assert.equal(r.diferencaPiso, -407.4)
+  assert.ok(r.bloqueios.some((b) => /abaixo do piso mínimo da ANTT R\$ 1407\.40 \(faltam R\$ 407\.40\)/.test(b)))
+})
+
+test('pedido da operação: valor diferente do MDF-e e NFs diferentes do CT-e bloqueiam; sem NF bloqueia; carga complexa só avisa', () => {
+  const r = pedidoDaOperacao(OP({ documentos: { mdfeValorContrato: 7500, cteChaves: ['35261069115969000104550010000000011000000019'] } }))
+  assert.ok(r.bloqueios.some((b) => /diferente do valor do contrato no MDF-e/.test(b)))
+  assert.ok(r.bloqueios.some((b) => /não são as mesmas citadas no CT-e/.test(b)))
+  assert.ok(pedidoDaOperacao(OP({ notas: [] })).bloqueios.some((b) => /sem NF-e do cliente/.test(b)))
+  const cx = pedidoDaOperacao(OP({ carga: { tipoCarga: 'Carga Geral', ncm: null, complexa: true, tabelaAntt: 'A' } }))
+  assert.equal(cx.bloqueios.length, 0)
+  assert.ok(cx.avisos.some((a) => /carga complexa/.test(a)))
+})
+
+test('protocolo da emissão é gravado ANTES de interpretar: fica salvo mesmo se gravar o CIOT falhar', async () => {
+  const { r, m } = repoMemoria()
+  r.marcarEmitido = async () => {
+    throw new Error('banco recusou')
+  }
+  await assert.rejects(() =>
+    emitirComAntiDuplicidade(
+      { emitirOperacaoTransporte: async () => ({ ok: true, dados: { ciot: '560000596706/4165', protocolo: '6126266' } }), obterCiotPorReferencia: async () => ({ ok: true, dados: null }) },
+      r,
+      pedido(),
+      AGORA,
+    ),
+  )
+  assert.equal((m.get('RBR-TESTE-0001') as unknown as { protocolo: string }).protocolo, '6126266')
 })
