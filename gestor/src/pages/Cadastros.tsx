@@ -45,7 +45,7 @@ const miniInputClass = 'border rounded-lg px-2.5 py-1.5 text-xs outline-none bg-
 const labelClass = 'text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mt-1'
 
 const TABS = [
-  { value: 'pendencias', label: 'Pendências' },
+  { value: 'pendencias', label: 'Aprovações' },
   { value: 'clientes', label: 'Clientes' },
   { value: 'motoristas', label: 'Motoristas' },
   { value: 'agenciadores', label: 'Agenciadores' },
