@@ -1,7 +1,8 @@
 // CIOT na efrete (NSTech) — passo 3: emissão de CIOT Padrão (Lotação) com pagamento por Pix.
 //
-// - montarCorpoOperacaoPadrao: corpo do AdicionarOperacaoTransporteV2 (Versao 8), conforme o manual v8.2 e o exemplo
-//   JSON "Lotação": Viagens como objeto e NotasFiscais { NotaFiscal: [...] }.
+// - montarCorpoOperacaoPadrao: corpo do AdicionarOperacaoTransporteV2 (Versao 8), conforme o manual v8.2.
+//   Viagens e NotasFiscais vão como LISTAS (tabela do manual: 0-N). O exemplo JSON do manual mostra Viagens como objeto,
+//   mas o servidor recusa (24/10: "requires a JSON array ... Viagem[]").
 // - validarPedidoPadrao: barra antes de chamar a efrete o que ela/ANTT recusariam (datas no passado, soma dos pagamentos,
 //   frete abaixo do piso quando o piso é informado, Pix com caractere proibido, coordenadas sem par…).
 // - traduzirErroEfrete: glossário de erros do manual -> mensagem clara em português.
@@ -116,27 +117,27 @@ export function montarCorpoOperacaoPadrao(p: PedidoCiotPadrao): Record<string, u
     CodigoNCMNaturezaCarga: p.ncm,
     PesoCarga: p.pesoKg,
     TipoEmbalagem: p.tipoEmbalagem,
-    Viagens: {
-      DocumentoViagem: p.documentoViagem,
-      ...(p.origem.codigoMunicipio ? { CodigoMunicipioOrigem: p.origem.codigoMunicipio } : {}),
-      ...(p.destino.codigoMunicipio ? { CodigoMunicipioDestino: p.destino.codigoMunicipio } : {}),
-      LatitudeOrigem: coord(p.origem.lat),
-      LongitudeOrigem: coord(p.origem.lon),
-      LatitudeDestino: coord(p.destino.lat),
-      LongitudeDestino: coord(p.destino.lon),
-      DistanciaPercorrida: Math.round(p.distanciaKm),
-      Valores: {
-        TotalOperacao: dinheiro(p.valorFrete),
-        TotalViagem: dinheiro(adiant + quit),
-        TotalDeAdiantamento: adiant,
-        TotalDeQuitacao: quit,
-        Combustivel: 0,
-        Pedagio: dinheiro(p.pedagio),
-        Seguro: 0,
-      },
-      TipoPagamento: 'TransferenciaBancaria',
-      NotasFiscais: {
-        NotaFiscal: [
+    Viagens: [
+      {
+        DocumentoViagem: p.documentoViagem,
+        ...(p.origem.codigoMunicipio ? { CodigoMunicipioOrigem: p.origem.codigoMunicipio } : {}),
+        ...(p.destino.codigoMunicipio ? { CodigoMunicipioDestino: p.destino.codigoMunicipio } : {}),
+        LatitudeOrigem: coord(p.origem.lat),
+        LongitudeOrigem: coord(p.origem.lon),
+        LatitudeDestino: coord(p.destino.lat),
+        LongitudeDestino: coord(p.destino.lon),
+        DistanciaPercorrida: Math.round(p.distanciaKm),
+        Valores: {
+          TotalOperacao: dinheiro(p.valorFrete),
+          TotalViagem: dinheiro(adiant + quit),
+          TotalDeAdiantamento: adiant,
+          TotalDeQuitacao: quit,
+          Combustivel: 0,
+          Pedagio: dinheiro(p.pedagio),
+          Seguro: 0,
+        },
+        TipoPagamento: 'TransferenciaBancaria',
+        NotasFiscais: [
           {
             Numero: p.notaFiscal.numero,
             Serie: p.notaFiscal.serie,
@@ -150,7 +151,7 @@ export function montarCorpoOperacaoPadrao(p: PedidoCiotPadrao): Record<string, u
           },
         ],
       },
-    },
+    ],
     Impostos: { IRRF: 0, SestSenat: 0, INSS: 0, ISSQN: 0 },
     Pagamentos: pagamentos,
     Contratado: { CpfOuCnpj: soDigitos(p.contratado.cpfOuCnpj), RNTRC: soDigitos(p.contratado.rntrc) },

@@ -59,11 +59,12 @@ test('corpo Padrão (Lotação) com Pix: versão 8, totais, pagamentos e Pix sem
   const c = montarCorpoOperacaoPadrao(pedido()) as Record<string, any>
   assert.equal(c.TipoViagem, 'Padrao')
   assert.equal(c.Versao, 8)
+  assert.ok(Array.isArray(c.Viagens) && c.Viagens.length === 1) // servidor exige lista (manual mostra objeto)
   assert.equal(c.MatrizCNPJ, '69115969000104')
   assert.equal(c.DataInicioViagem, '2026-10-24T12:00:00')
-  assert.deepEqual(c.Viagens.Valores, { TotalOperacao: 8000, TotalViagem: 8000, TotalDeAdiantamento: 3000, TotalDeQuitacao: 5000, Combustivel: 0, Pedagio: 0, Seguro: 0 })
-  assert.equal(c.Viagens.LatitudeOrigem, '-23.561414')
-  assert.equal(c.Viagens.NotasFiscais.NotaFiscal[0].TipoDeCalculo, 'SemQuebra')
+  assert.deepEqual(c.Viagens[0].Valores, { TotalOperacao: 8000, TotalViagem: 8000, TotalDeAdiantamento: 3000, TotalDeQuitacao: 5000, Combustivel: 0, Pedagio: 0, Seguro: 0 })
+  assert.equal(c.Viagens[0].LatitudeOrigem, '-23.561414')
+  assert.equal(c.Viagens[0].NotasFiscais[0].TipoDeCalculo, 'SemQuebra')
   assert.equal(c.Pagamentos.length, 2)
   for (const p of c.Pagamentos) {
     assert.equal(p.TipoChavePix, 'CpfOuCnpj')
