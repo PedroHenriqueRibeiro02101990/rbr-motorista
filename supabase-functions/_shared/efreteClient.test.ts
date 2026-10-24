@@ -2,7 +2,7 @@
 // Respostas simuladas: sem rede e sem segredos (valores falsos).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { criarClienteEfrete, ehErroDeSessao, interpretarRespostaProxy, limparSegredos, modoConexao, interpretarResposta, montarRequisicao, varianteUsuario, type ConfigEfrete } from './efreteClient.ts'
+import { criarClienteEfrete, ehErroDeSessao, ehNaoEncontrado, interpretarRespostaProxy, limparSegredos, modoConexao, interpretarResposta, montarRequisicao, varianteUsuario, type ConfigEfrete } from './efreteClient.ts'
 
 const CFG: ConfigEfrete = { baseUrl: 'https://dev.efrete.com.br', usuario: 'usuario falso', senha: 'senha-falsa', integrador: 'hash-falso' }
 type Chamada = { url: string; method: string; body: Record<string, unknown> | null }
@@ -221,4 +221,17 @@ test('proxy: erro de rede/timeout não vaza a chave do proxy nem credenciais', a
   const c2 = criarClienteEfrete({ carregarConfig: async () => CFG_PROXY, fetch: lento, timeoutMs: 20 })
   const t = await c2.login()
   assert.equal(!t.ok && t.erro.codigo, 'TIMEOUT')
+})
+
+test('erro da efrete traz o ProtocoloServico quando vier', () => {
+  const r = interpretarResposta(200, JSON.stringify({ Sucesso: false, Excecao: { Codigo: 1, Mensagem: 'Rejeição: X' }, ProtocoloServico: 6126300 }))
+  assert.deepEqual(r, { ok: false, erro: { codigo: '1', mensagem: 'Rejeição: X', http: 200, protocolo: '6126300' } })
+  const sem = interpretarResposta(200, JSON.stringify({ Sucesso: false, Excecao: { Mensagem: 'Y' } }))
+  assert.equal(!sem.ok && sem.erro.protocolo, undefined)
+})
+
+test('consulta por referência: "não localizada" (texto e código reais da efrete) = não existe; erro de rede não', () => {
+  assert.equal(ehNaoEncontrado('Erro obtendo código de identificação de operação de transporte: Operação de transporte não localizada'), true)
+  assert.equal(ehNaoEncontrado('qualquer texto', 'Operacao.Nao.Localizada'), true)
+  assert.equal(ehNaoEncontrado('A efrete fechou a conexão.', 'EFRETE_CONEXAO'), false)
 })
