@@ -357,7 +357,12 @@ export function montarMdfe(
 
   const ciotVpo = d.ciotVpo;
   const ehTac = Boolean(v && !v.is_veiculo_proprio);
-  const ciotNum = digitos(ciotVpo?.ciot);
+  // Passo 4: CIOT emitido na homologação da efrete (ciot_ambiente = 'homologacao') NUNCA vale para MDF-e em produção.
+  const ciotDeHomologacao = ciotVpo?.ciot_ambiente === "homologacao" && !homologacao;
+  if (ciotDeHomologacao && digitos(ciotVpo?.ciot)) {
+    aviso("antt", "O CIOT registrado foi emitido na HOMOLOGAÇÃO da efrete (sem validade): não vale para MDF-e em produção.");
+  }
+  const ciotNum = ciotDeHomologacao ? "" : digitos(ciotVpo?.ciot);
   if (ehTac && ciotNum.length !== 12) {
     const msgCiot =
       "CIOT não informado (12 dígitos) — gere no portal da Repom e preencha aqui. Obrigatório quando o veículo é de transportador autônomo (TAC).";

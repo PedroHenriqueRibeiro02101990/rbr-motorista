@@ -1,5 +1,6 @@
 import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
+import { resumoNfes } from './NfesCliente'
 
 type Item = { doc: string; item: string; ok: boolean; motivo: string }
 
@@ -8,6 +9,7 @@ type Item = { doc: string; item: string; ok: boolean; motivo: string }
 export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo: 'cte' | 'mdfe' | 'nfse' }) {
   const [itens, setItens] = useState<Item[] | null>(null)
   const [erro, setErro] = useState(false)
+  const [nfes, setNfes] = useState<{ quantidade: number; valor_total: number } | null>(null)
 
   useEffect(() => {
     let vivo = true
@@ -15,6 +17,7 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
       if (!vivo) return
       if (error || !data) return setErro(true)
       setItens((data as { itens?: Item[] }).itens ?? [])
+      setNfes((data as { nfes_cliente?: { quantidade: number; valor_total: number } }).nfes_cliente ?? null)
     })
     return () => {
       vivo = false
@@ -29,6 +32,7 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
   return (
     <div className="rounded-lg px-3 py-2 text-xs" style={{ background: faltam.length ? '#FDF1DC' : '#E7F5EC', color: faltam.length ? '#8A5A00' : 'var(--rbr-positive)' }}>
       <div className="font-bold mb-1">{faltam.length ? `Pré-voo: ${faltam.length} pendência(s) antes de emitir` : '✓ Pré-voo completo: nada pendente'}</div>
+      {nfes && tipo !== 'nfse' && <div className="mb-1 tabular-nums">{resumoNfes(Number(nfes.quantidade), Number(nfes.valor_total))}</div>}
       {faltam.length > 0 && (
         <ul className="list-disc pl-4">
           {faltam.map((i) => (
