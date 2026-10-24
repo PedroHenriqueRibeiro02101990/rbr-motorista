@@ -113,6 +113,43 @@ Deno.serve(async (req: Request) => {
       return json(r.ok ? { ok: true, situacao: r.dados } : { ok: false, motivo: `${r.erro.codigo}: ${r.erro.mensagem}`, http: r.erro.http ?? null });
     }
 
+    // Diagnóstico de rede SEM credenciais: POST {} no Login (a efrete responde "Integrador não cadastrado").
+    if (acao === "sondar") {
+      const alvo = `${cfg.baseUrl.replace(/\/+$/, "").replace(/\/services$/i, "")}/services/Logon/Login`;
+      const tentar = async (nome: string, f: typeof fetch) => {
+        const inicio = Date.now();
+        try {
+          const r = await f(alvo, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          const t = (await r.text()).slice(0, 200);
+          return { modo: nome, http: r.status, ms: Date.now() - inicio, resposta: t };
+        } catch (e) {
+          return { modo: nome, erro: String((e as Error)?.message ?? e).slice(0, 300), ms: Date.now() - inicio };
+        }
+      };
+      const tls = async () => {
+        const inicio = Date.now();
+        try {
+          const host = new URL(alvo).hostname;
+          const conn = await Deno.connectTls({ hostname: host, port: 443, alpnProtocols: ["http/1.1"] });
+          const req = `POST /services/Logon/Login HTTP/1.1\r\nHost: ${host}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}`;
+          await conn.write(new TextEncoder().encode(req));
+          const buf = new Uint8Array(4096);
+          let txt = "";
+          for (;;) {
+            const n = await conn.read(buf);
+            if (n === null) break;
+            txt += new TextDecoder().decode(buf.subarray(0, n));
+            if (txt.length > 3000) break;
+          }
+          try { conn.close(); } catch { /* já fechada */ }
+          return { modo: "tls-direto-http1.1", ms: Date.now() - inicio, resposta: txt.slice(0, 400) };
+        } catch (e) {
+          return { modo: "tls-direto-http1.1", erro: String((e as Error)?.message ?? e).slice(0, 300), ms: Date.now() - inicio };
+        }
+      };
+      return json({ ok: true, alvo, http1Disponivel: Boolean(http1), resultados: [await tentar("fetch-padrao", fetch), await tentar("fetch-http1", fetchHttp1), await tls()] });
+    }
+
     if (acao === "logout") {
       const r = await cliente(verbo).logout();
       return json(r.ok ? { ok: true, motivo: "Logout feito (ou não havia sessão neste isolate)." } : { ok: false, motivo: `${r.erro.codigo}: ${r.erro.mensagem}` });
