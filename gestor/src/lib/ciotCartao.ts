@@ -56,7 +56,7 @@ export function montarConferencia(previa: Previa | null): Linha[] {
     motorista: 'CPF e CNH conferidos',
     rota: p ? `${p.distanciaKm} km · NCM ${p.ncm} · ${p.pesoKg.toLocaleString('pt-BR')} kg` : 'Conferidos',
     notas: p ? `${p.notas} NF-e` : 'Conferidas',
-    piso: previa.piso?.ok ? `${brl(p?.frete ?? 0)} contra piso de ${brl(previa.piso.piso)}` : 'Conferido',
+    piso: previa.piso?.ok ? (p ? `${brl(p.frete)} contra piso de ${brl(previa.piso.piso)}` : `Piso mínimo da ANTT: ${brl(previa.piso.piso)}`) : 'Conferido',
     pagamento: p ? p.pagamentos.map((g) => `${g.categoria === 'Quitacao' ? 'Saldo' : g.categoria} ${brl(g.valor)}`).join(' · ') : 'Conferido',
     pix: p ? `Pix por ${p.pix === 'CpfOuCnpj' ? 'CPF/CNPJ' : p.pix}` : 'Conferida',
   }
