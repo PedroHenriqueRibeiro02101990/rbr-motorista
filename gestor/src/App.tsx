@@ -14,9 +14,14 @@ import Mapa from './pages/Mapa'
 import Fiscal from './pages/Fiscal'
 import Risco from './pages/Risco'
 import Cadastros from './pages/Cadastros'
+import DemoCiot from './pages/DemoCiot'
+
+// Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
+const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
 
 export default function App() {
   const auth = useAuth()
+  if (DEMO_CIOT && window.location.pathname === '/demo-ciot') return <DemoCiot />
 
   if (auth.loading) {
     return (

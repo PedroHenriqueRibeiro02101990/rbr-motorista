@@ -1329,7 +1329,7 @@ export default function Fiscal() {
                 )}
 
                 {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
-                {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} />}
+                {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs} />}
 
                 <div className="flex gap-2 flex-wrap">
                   {ofereceCteMdfe && (

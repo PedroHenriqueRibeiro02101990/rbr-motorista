@@ -1199,7 +1199,7 @@ function EtapaCiot({ d, salvando, executar }: { d: DetalheOperacao; salvando: bo
       {ciotAplicavel(d) && !CIOT_EFRETE_HABILITADO && (
         <div className="text-xs text-[color:var(--rbr-muted)]">CIOT pela efrete ainda não liberado (conta de produção pendente). Emita o CIOT na Repom e registre o número e o documento abaixo.</div>
       )}
-      {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} />}
+      {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} ehTeste={d.operacao.eh_teste === true} docs={d.documentos} placa={d.veiculo?.placa} />}
       {ciotAplicavel(d) && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {vpoAplicavel(d) && (
         <div className="text-xs">
