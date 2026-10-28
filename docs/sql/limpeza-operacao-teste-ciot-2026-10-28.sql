@@ -4,7 +4,9 @@
 -- Rode dentro de uma transação e confira as contagens antes de confirmar. Rollback: ROLLBACK no lugar de COMMIT,
 -- depois de confirmado não há volta (a operação era só de teste): para repetir, crie outra operação de teste.
 begin;
-  select count(*) as pedidos_efrete from efrete_ciot_pedidos where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97'; -- se > 0, o pedido fica como evidência: pare e decida
+  select count(*) as pedidos_efrete from efrete_ciot_pedidos where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97'; -- 1 pedido em erro (evidência da falha da ANTT na homologação em 28/10): guarde o retorno antes de apagar
+  delete from efrete_ciot_pedidos where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97'; -- pedido em erro (ANTT.Falha.Comunicacao); os pagamentos saem em cascata
+  delete from operacao_reboques where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97';   -- 1 linha (RRD5B39), adicionada em 28/10
   delete from documentacao_operacao where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97'; -- 8 linhas geradas por gatilho
   delete from operacao_nfes where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97';        -- 1 linha
   delete from condicoes_pagamento_operacao where operacao_id = '965ceb0d-6097-43f5-b3c2-25a31c0e4e97'; -- 1 linha
