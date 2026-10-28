@@ -415,7 +415,13 @@ Deno.serve(async (req: Request) => {
       if (!trava.ok) return json({ ok: false, motivo: trava.motivo }, 412);
     }
 
-    if (acao === "status") return json({ ok: true, pedido: await pedidoAtual(operacaoId) });
+    if (acao === "status") {
+      const pedido = await pedidoAtual(operacaoId);
+      const { data: pagamentos } = pedido
+        ? await admin.from("efrete_ciot_pagamentos").select("categoria, valor, status, data_liberacao").eq("pedido_id", pedido.id).order("data_liberacao")
+        : { data: [] };
+      return json({ ok: true, ambiente: AMBIENTE, pedido, pagamentos: pagamentos ?? [] });
+    }
 
     if (acao === "previa" || acao === "emitir") {
       const ctx = await carregar(operacaoId);
