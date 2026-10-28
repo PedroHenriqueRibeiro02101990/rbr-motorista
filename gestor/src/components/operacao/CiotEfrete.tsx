@@ -46,6 +46,9 @@ type Pedido = {
   confirmado_em: string | null
   ultimo_erro: string | null
 }
+type Pagamento = { categoria: string; valor: number; status: string; data_liberacao: string }
+const PAG_ROTULO: Record<string, string> = { Adiantamento: 'Adiantamento', Quitacao: 'Quitação', Estadia: 'Estadia', SemCategoria: 'Outro' }
+const PAG_STATUS: Record<string, string> = { pendente: 'Pendente', registrado: 'Registrado', liquidado: 'Pago', estornado: 'Estornado', cancelado: 'Cancelado', erro: 'Erro' }
 type Resposta = { ok: boolean; motivo?: string; mensagem?: string; protocolo?: string | null; [k: string]: unknown }
 
 const STATUS: Record<Pedido['status'], { rotulo: string; cor: string }> = {
@@ -55,7 +58,7 @@ const STATUS: Record<Pedido['status'], { rotulo: string; cor: string }> = {
   cancelado: { rotulo: 'Cancelado', cor: 'var(--rbr-muted)' },
   encerrado: { rotulo: 'Encerrado', cor: 'var(--rbr-navy)' },
 }
-const dataHora = (v: string | null) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—')
+const dataHora = (v: string | null) => (v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')
 const botao = 'text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60'
 
 async function chamar(body: Record<string, unknown>): Promise<Resposta> {
@@ -81,11 +84,18 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [pagamentos, setPagamentos] = useState<Pagamento[]>([])
+  const [ambiente, setAmbiente] = useState<string | null>(null)
+  const [etapaErro, setEtapaErro] = useState<string | null>(null)
+  const [cancelando, setCancelando] = useState(false)
+  const [motivo, setMotivo] = useState('')
   const [transacoes, setTransacoes] = useState<Record<string, unknown>[] | null>(null)
 
   const carregar = useCallback(async () => {
     const r = await chamar({ acao: 'status', operacao_id: operacaoId })
     setPedido(r.ok ? ((r.pedido as Pedido | null) ?? null) : null)
+    setPagamentos(r.ok ? ((r.pagamentos as Pagamento[] | undefined) ?? []) : [])
+    if (r.ok && typeof r.ambiente === 'string') setAmbiente(r.ambiente)
   }, [operacaoId])
   useEffect(() => {
     void carregar()
@@ -94,12 +104,14 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
   async function acao(nome: string, body: Record<string, unknown>, sucesso?: (r: Resposta) => string | null) {
     setOcupado(nome)
     setErro(null)
+    setEtapaErro(null)
     setInfo(null)
     try {
       const r = await chamar({ ...body, operacao_id: operacaoId })
       if (!r.ok) {
         const msg = r.mensagem ?? r.motivo ?? 'A efrete recusou.'
         setErro(r.protocolo ? `${msg} (protocolo ${r.protocolo})` : msg)
+        setEtapaErro(typeof r.mensagemOriginal === 'string' && r.mensagemOriginal !== msg ? `Texto original da efrete: ${r.mensagemOriginal}` : null)
       } else if (sucesso) setInfo(sucesso(r))
       await carregar()
       onMudou?.()
@@ -145,10 +157,11 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
   }
 
   async function cancelar() {
-    const motivo = window.prompt('Motivo do cancelamento do CIOT (mín. 15 caracteres):')
-    if (!motivo) return
-    if (!window.confirm('Cancelar este CIOT na efrete? Não tem volta.')) return
-    await acao('cancelar', { acao: 'cancelar', motivo }, (x) => `CIOT cancelado (protocolo ${String(x.protocolo ?? '—')}).`)
+    const r = await acao('cancelar', { acao: 'cancelar', motivo: motivo.trim() }, (x) => `CIOT cancelado (protocolo ${String(x.protocolo ?? '—')}).`)
+    if (r?.ok) {
+      setCancelando(false)
+      setMotivo('')
+    }
   }
 
   async function encerrar() {
@@ -162,12 +175,18 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
 
   return (
     <div className="rounded-xl border p-3.5 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
+      {ambiente === 'homologacao' && (
+        <div className="fixed top-0 inset-x-0 z-[60] text-center text-xs font-bold py-1.5" style={{ background: '#8A5A00', color: '#fff' }} role="status">
+          HOMOLOGAÇÃO: nenhum CIOT real
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">CIOT pela efrete</div>
         <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
           homologação
         </span>
       </div>
+      {!pedido && <div className="text-xs text-[color:var(--rbr-muted)]">Sem CIOT nesta operação. Monte a prévia para conferir os dados antes de emitir.</div>}
 
       {pedido && st && (
         <div className="text-xs flex flex-col gap-1">
@@ -181,6 +200,29 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
             )}
             {pedido.protocolo && <span className="text-[color:var(--rbr-muted)]">protocolo {pedido.protocolo}</span>}
           </div>
+          {pedido.ciot && <div className="text-[color:var(--rbr-muted)]">Emitido em {dataHora(pedido.emitido_em)}</div>}
+          {pagamentos.length > 0 && (
+            <table className="text-xs tabular-nums mt-1 w-full max-w-md">
+              <thead>
+                <tr className="text-left text-[color:var(--rbr-muted)]">
+                  <th className="font-semibold">Pagamento</th>
+                  <th className="font-semibold">Valor</th>
+                  <th className="font-semibold">Situação</th>
+                  <th className="font-semibold">Libera em</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagamentos.map((g, i) => (
+                  <tr key={i}>
+                    <td>{PAG_ROTULO[g.categoria] ?? g.categoria}</td>
+                    <td>{formatMoney(g.valor)}</td>
+                    <td>{PAG_STATUS[g.status] ?? g.status}</td>
+                    <td>{dataHora(g.data_liberacao)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
           <div className="text-[color:var(--rbr-muted)]">
             Frete {formatMoney(pedido.valor_frete)} · piso ANTT {formatMoney(pedido.piso_minimo)} · confirmado por {pedido.confirmado_por_nome ?? '—'} em {dataHora(pedido.confirmado_em)}
           </div>
@@ -192,7 +234,7 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
 
       {(!pedido || pedido.status === 'erro') && (
         <button type="button" disabled={!!ocupado} onClick={() => void verPrevia()} className={`${botao} self-start border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>
-          {ocupado === 'previa' ? 'Montando…' : 'Prévia do CIOT'}
+          {ocupado === 'previa' ? 'Montando…' : pedido?.status === 'erro' ? 'Tentar de novo' : 'Prévia do CIOT'}
         </button>
       )}
 
@@ -255,11 +297,30 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
               <button type="button" disabled={!!ocupado} onClick={() => void encerrar()} className={`${botao} border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>
                 Encerrar viagem
               </button>
-              <button type="button" disabled={!!ocupado} onClick={() => void cancelar()} className={`${botao} border`} style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}>
+              <button type="button" disabled={!!ocupado} onClick={() => setCancelando(true)} className={`${botao} border`} style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}>
                 Cancelar CIOT
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {cancelando && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.45)' }} role="dialog" aria-modal="true">
+          <div className="bg-white rounded-xl p-4 w-full max-w-md flex flex-col gap-3">
+            <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Cancelar CIOT {pedido?.ciot}</div>
+            <div className="text-xs text-[color:var(--rbr-muted)]">O cancelamento na efrete não tem volta. Escreva o motivo (mínimo 15 caracteres).</div>
+            <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} className="border rounded-lg px-3 py-2 text-sm w-full" style={{ borderColor: 'var(--rbr-border)' }} autoFocus />
+            <div className="flex gap-2 justify-end">
+              <button type="button" disabled={!!ocupado} onClick={() => { setCancelando(false); setMotivo('') }} className={`${botao} border`} style={{ borderColor: 'var(--rbr-border)' }}>
+                Voltar
+              </button>
+              <button type="button" disabled={!!ocupado || motivo.trim().length < 15} onClick={() => void cancelar()} className={botao} style={{ background: 'var(--rbr-danger)', color: '#fff' }}>
+                {ocupado === 'cancelar' ? 'Cancelando…' : 'Cancelar CIOT'}
+              </button>
+            </div>
+            {erro && <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>{erro}</div>}
+          </div>
         </div>
       )}
 
@@ -283,6 +344,8 @@ function CiotEfreteAtivo({ operacaoId, onMudou }: { operacaoId: string; onMudou?
       {erro && (
         <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {erro}
+          {etapaErro && <div className="mt-1 opacity-80">{etapaErro}</div>}
+          {/Só operação de TESTE|operação de teste|Use o CIOT manual/i.test(erro) && <div className="mt-1">Marque a operação como teste na cotação (opção "Operação de teste") para usar a efrete na homologação.</div>}
         </div>
       )}
       <div className="text-[11px] text-[color:var(--rbr-muted)]">Se a efrete estiver fora do ar, digite o CIOT à mão no bloco "CIOT" da operação: o caminho manual continua valendo.</div>
