@@ -119,6 +119,10 @@ export default function DemoCiot() {
             setTela('emitido')
             setCancelado(false)
           }}
+          onEmitirNovamente={() => {
+            setTela('emitido')
+            setCancelado(false)
+          }}
           onConsultar={() => aviso('Consulta feita')}
           onPdf={() => aviso('PDF baixado')}
           onTransacoes={() => aviso('Transações listadas')}

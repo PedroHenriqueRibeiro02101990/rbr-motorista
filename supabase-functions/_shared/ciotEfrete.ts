@@ -408,6 +408,8 @@ export function tipoChavePix(chave: string): { tipo: PedidoCiotPadrao['pix']['ti
 // pedido + bloqueios (impedem emitir) + avisos. Sem I/O: o index.ts lê o banco e passa os dados.
 export interface DadosOperacaoCiot {
   operacaoId: string
+  // 1 (padrão) = referência de sempre. Depois de um CIOT cancelado, "emitir novamente" usa 2, 3… e a referência ganha o sufixo -T2, -T3…
+  tentativa?: number
   ambiente: 'homologacao' | 'producao'
   agora: Date
   contratante: { cnpj: string; nome: string; endereco: EnderecoEfrete }
@@ -441,7 +443,7 @@ export interface PreviaCiot {
 export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
   const bloqueios: string[] = []
   const avisos: string[] = []
-  const ref = `RBR-${d.ambiente === 'homologacao' ? 'HML-' : ''}OP-${d.operacaoId.replace(/-/g, '').slice(0, 12).toUpperCase()}`
+  const ref = `RBR-${d.ambiente === 'homologacao' ? 'HML-' : ''}OP-${d.operacaoId.replace(/-/g, '').slice(0, 12).toUpperCase()}${d.tentativa && d.tentativa > 1 ? `-T${Math.floor(d.tentativa)}` : ''}`
 
   if (!d.motorista?.cpf) bloqueios.push('Motorista sem CPF.')
   if (!d.motorista?.cnh) bloqueios.push('Motorista sem número da CNH.')
