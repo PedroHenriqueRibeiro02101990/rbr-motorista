@@ -26,3 +26,11 @@ Leia primeiro. Atualizado ao fim de cada bloco. Nada foi mesclado, nada foi publ
 - Rota `/demo-ciot`: `DemoCiot.tsx`, sem login, dados fictícios, faixa "DEMONSTRAÇÃO: dados fictícios", usa o mesmo cartão e não faz nenhuma chamada. Só monta quando `VITE_DEMO_CIOT=true`.
 - **Depende de você:** Supabase Auth > URL Configuration: incluir `https://rbr-gestor-git-*-rbr4.vercel.app/**` em Redirect URLs (só afeta link de e-mail/recuperação de senha; login por senha não precisa). Não consegui alterar isso pelas ferramentas que tenho.
 
+### 0c. Ciclo e acentos: NÃO executado (bloqueado, 1ª falha inesperada)
+- Operação de teste criada (única): **965ceb0d-6097-43f5-b3c2-25a31c0e4e97** (cotação c073079b-e348-4969-a788-7590ad9bf035, observação "TESTE CIOT ..."), `eh_teste = true`, 1 NF-e fictícia (chave com DV válido, CNPJ da RBR como remetente e destinatário), condição de pagamento R$ 8.000 (adiantamento R$ 3.000), cavalo RQW4D58, motorista e cliente RBR só por FK. Nenhuma linha existente foi alterada.
+- A função (publicada) respondeu à prévia, 200, ambiente homologação. Nada foi enviado à efrete (a prévia só lê o banco).
+- **Bloqueio 1:** o reboque RRD5B39 (único semirreboque de teste) está `aguardando_documentos`; o banco recusa por gatilho (`trg_fn_reboque_exige_aprovado`): "Reboque RRD5B39 ainda não está aprovado". Aprovar exigiria UPDATE em linha existente (proibido).
+- **Bloqueio 2:** sem reboque, o piso da ANTT falha: "Sem coeficiente da ANTT para tabela B, Carga Geral, 3 eixos" (tabela B começa em 4 eixos; 3 eixos só existe na A/C, que exigem composição).
+- Não contornei nenhuma das duas travas (conservador). Resultado: **ciclo (emitir, consultar, PDF, cancelar, emitir de novo) e teste de acentos: não rodados. Nenhum CIOT, protocolo ou chamada à efrete.**
+- **Decisão sua:** (a) autorizar aprovar o semirreboque de teste RRD5B39 (UPDATE de `aprovacao_status` numa linha eh_teste) e então eu insiro o reboque nesta operação e rodo o ciclo; ou (b) cadastrar um semirreboque de teste novo já aprovado.
+- Limpeza (não executada, com rollback): `docs/sql/limpeza-operacao-teste-ciot-2026-10-28.sql`.
