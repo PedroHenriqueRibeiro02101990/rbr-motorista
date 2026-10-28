@@ -17,6 +17,7 @@ import {
   type Veiculo,
 } from '../../lib/operacaoDetalhe'
 import CiotOperacao from './CiotOperacao'
+import DatasPrevistas from './DatasPrevistas'
 import NfesCliente from './NfesCliente'
 import CiotEfrete from './CiotEfrete'
 import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
@@ -1466,6 +1467,7 @@ function EtapaViagem({ d, salvando, executar, extra }: { d: DetalheOperacao; sal
   }
   return (
     <div className="flex flex-col gap-3">
+      <DatasPrevistas d={d} salvando={salvando} executar={executar} />
       <div className="text-xs text-[color:var(--rbr-muted)]">
         <ViagemCompacta d={d} />
       </div>
