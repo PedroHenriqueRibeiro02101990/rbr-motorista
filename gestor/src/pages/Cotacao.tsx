@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
@@ -630,6 +630,16 @@ export default function Cotacao() {
   // condições de pagamento, ajuste manual de alíquota de imposto).
   // Tipo da cotação (carga única / veículos juntos / várias entregas) e fluxo de conversão.
   const navigate = useNavigate()
+  // ?cotacao=<id> (vindo do painel "O que fazer agora") abre a cotação direto, uma vez.
+  const [params] = useSearchParams()
+  const cotacaoDaUrl = params.get('cotacao')
+  const abriuCotacaoDaUrl = useRef(false)
+  useEffect(() => {
+    if (!cotacaoDaUrl || abriuCotacaoDaUrl.current || !cotacoes) return
+    abriuCotacaoDaUrl.current = true
+    const alvo = cotacoes.find((c) => c.id === cotacaoDaUrl)
+    if (alvo) abrirEdicao(alvo)
+  }, [cotacaoDaUrl, cotacoes])
   const { confirmacao, rodar: rodarAcao, ocupado: ocupadoAcao } = useConfirmacao()
   const [tipoCotacao, setTipoCotacao] = useState<TipoCotacaoValor>('carga_unica')
   const [qtdVeiculos, setQtdVeiculos] = useState(2)
