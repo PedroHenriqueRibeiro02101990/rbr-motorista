@@ -5,6 +5,7 @@ import { initials } from '@rbr/shared/format'
 import { IconCamera, IconLogOut } from '@rbr/shared/icons'
 import { IconFileText } from '../icons-local'
 import { BadgeAprovacao, enviarDocumentoPessoal, lerDocumento, MeusDados, StatusCadastro } from '@rbr/shared/cadastro'
+import EnviarDocumento from '../components/EnviarDocumento'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import { formatarDoc } from '@rbr/shared/documento'
 import { useCobrancaAtiva } from '@rbr/shared/useCobranca'
@@ -147,7 +148,6 @@ export default function Perfil({
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
-  const [cnhUploading, setCnhUploading] = useState(false)
   const [veiculoFormOpen, setVeiculoFormOpen] = useState(false)
   const [veiculoForm, setVeiculoForm] = useState<VeiculoFormState>(VEICULO_VAZIO)
   const [veiculoSaving, setVeiculoSaving] = useState(false)
@@ -230,24 +230,6 @@ export default function Perfil({
     }
     setSavedMsg('Dados salvos com sucesso.')
     await onRecarregar()
-  }
-
-  async function handleCnhUpload(file: File) {
-    setCnhUploading(true)
-    setErrorMsg(null)
-    setSavedMsg(null)
-    const r = await enviarDocumentoPessoal({ tipo: 'cnh', arquivo: file, pessoaId: pessoa.id, pastaPessoaId: pessoa.id })
-    setCnhUploading(false)
-    if (r.erro) {
-      setErrorMsg(r.erro)
-      return
-    }
-    await onRecarregar()
-    setSavedMsg(
-      r.campos
-        ? 'Foto da CNH recebida e conferida automaticamente. Veja a situação do cadastro no topo.'
-        : 'Foto da CNH recebida. A leitura automática está indisponível agora — a RBR confere manualmente.',
-    )
   }
 
   async function handleCartaoCnpjUpload(file: File) {
@@ -578,27 +560,14 @@ export default function Perfil({
         </div>
 
 
-        <label
-          htmlFor="cnh-foto"
-          className="flex items-center justify-center gap-2 border rounded-xl py-2.5 text-sm font-semibold"
-          style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)', opacity: cnhUploading ? 0.6 : 1 }}
-        >
-          <IconCamera width={16} height={16} />
-          {cnhUploading ? 'Enviando e conferindo…' : pessoa.cnh_foto_url ? 'Trocar foto da CNH' : 'Enviar foto da CNH'}
-          <input
-            id="cnh-foto"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            disabled={cnhUploading}
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ''
-              if (file) handleCnhUpload(file)
-            }}
-          />
-        </label>
+        <EnviarDocumento
+          tipo="cnh"
+          rotulo={pessoa.cnh_foto_url ? 'Trocar foto da CNH' : 'Enviar foto da CNH'}
+          pessoaId={pessoa.id}
+          onEnviado={async () => {
+            await onRecarregar()
+          }}
+        />
       </div>
       )}
 

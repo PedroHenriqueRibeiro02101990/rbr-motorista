@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import type { Database } from './database.types'
+import { caminhoDocumento, prepararImagemDocumento } from './imagemDocumento'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Veiculo = Database['public']['Tables']['veiculos']['Row']
@@ -61,7 +62,43 @@ export function ListaItens({ itens, mostrarOk = false }: { itens: ItemVerificaca
   )
 }
 
+// Mensagem legível do erro de uma Edge Function (o supabase-js só diz "non-2xx status code").
+async function erroDaFuncao(error: unknown, data: unknown): Promise<string> {
+  const d = data as { erro?: string } | null
+  if (d?.erro) return d.erro
+  const ctx = (error as { context?: { json?: () => Promise<unknown> } } | null)?.context
+  if (ctx?.json) {
+    try {
+      const corpo = (await ctx.json()) as { erro?: string } | null
+      if (corpo?.erro) return corpo.erro
+    } catch {
+      /* corpo não era JSON */
+    }
+  }
+  return (error as { message?: string } | null)?.message ?? 'erro desconhecido'
+}
+
+export type ResultadoEnvio = {
+  erro: string | null // não subiu/não registrou: nada foi guardado (ou só o arquivo) — enviar de novo
+  erroLeitura: string | null // foto guardada e registrada, mas a leitura automática falhou — "Tentar de novo" relê
+  campos: Record<string, unknown> | null
+  path: string
+  documentoId: string | null
+}
+
+// Pede a leitura automática de um documento já registrado e reavalia o cadastro. Usado no envio e no "Tentar de novo".
+export async function lerDocumentoRegistrado(p: { tipo: TipoDocPessoal; path: string; documentoId: string }) {
+  const { data, error } = await supabase.functions.invoke('extrair-documento', {
+    body: { tipo: p.tipo, path: p.path, documento_id: p.documentoId },
+  })
+  const erroLeitura = error || !data?.sucesso ? await erroDaFuncao(error, data) : null
+  await supabase.rpc('reavaliar_meu_cadastro')
+  return { erroLeitura, campos: erroLeitura ? null : ((data.campos as Record<string, unknown>) ?? null) }
+}
+
 // Envia a foto, registra o documento e pede a leitura automática (que dispara a verificação no banco).
+// Foto: convertida para JPEG de até 1600 px; caminho pessoa/<id>/<tipo>-<timestamp>.jpg; sem upsert (o bucket não
+// tem política de UPDATE/DELETE — cada envio é um arquivo novo, e o banco inativa o documento anterior do mesmo tipo).
 export async function enviarDocumentoPessoal(p: {
   tipo: TipoDocPessoal
   arquivo?: File
@@ -69,38 +106,42 @@ export async function enviarDocumentoPessoal(p: {
   veiculoId?: string
   pastaPessoaId: string // dono da pasta no Storage (pessoa/<id>/…)
   caminhoExistente?: string // foto já enviada (ex.: CRLV lido antes de salvar o veículo)
-}): Promise<{ erro: string | null; campos: Record<string, unknown> | null; path: string }> {
+}): Promise<ResultadoEnvio> {
   let path = p.caminhoExistente ?? ''
+  const falha = (erro: string): ResultadoEnvio => ({ erro, erroLeitura: null, campos: null, path, documentoId: null })
   if (!path) {
-    if (!p.arquivo) return { erro: 'Selecione a foto.', campos: null, path }
-    const ext = (p.arquivo.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
-    path = `pessoa/${p.pastaPessoaId}/${p.tipo}-${Date.now()}.${ext}`
-    const { error: upErr } = await supabase.storage.from('documentos-pessoais').upload(path, p.arquivo, {
-      contentType: p.arquivo.type || undefined,
-    })
-    if (upErr) return { erro: upErr.message, campos: null, path }
+    if (!p.arquivo) return falha('Selecione a foto.')
+    let foto: Blob
+    try {
+      foto = await prepararImagemDocumento(p.arquivo)
+    } catch (e) {
+      return falha(e instanceof Error ? e.message : 'Não consegui preparar a foto.')
+    }
+    path = caminhoDocumento(p.pastaPessoaId, p.tipo)
+    const { error: upErr } = await supabase.storage.from('documentos-pessoais').upload(path, foto, { contentType: 'image/jpeg', upsert: false })
+    if (upErr) return falha(`Não consegui enviar a foto: ${upErr.message}`)
   }
   const { data: doc, error: insErr } = await supabase
     .from('documentos_pessoais_imagens')
     .insert({ tipo: p.tipo, arquivo_url: path, pessoa_id: p.pessoaId ?? null, veiculo_id: p.veiculoId ?? null })
     .select('id')
     .single()
-  if (insErr || !doc) return { erro: insErr?.message ?? 'Não foi possível registrar o documento.', campos: null, path }
-  const { data, error } = await supabase.functions.invoke('extrair-documento', {
-    body: { tipo: p.tipo, path, documento_id: doc.id },
-  })
-  if (error || !data?.sucesso) {
-    return { erro: null, campos: null, path } // foto guardada; a RBR confere manualmente
-  }
-  return { erro: null, campos: data.campos as Record<string, unknown>, path }
+  if (insErr || !doc) return falha(`A foto subiu, mas não consegui registrar o documento: ${insErr?.message ?? 'sem resposta'}`)
+  const { erroLeitura, campos } = await lerDocumentoRegistrado({ tipo: p.tipo, path, documentoId: doc.id })
+  return { erro: null, erroLeitura, campos, path, documentoId: doc.id }
 }
 
 // Só lê (pré-preenche o formulário), sem gravar.
 export async function lerDocumento(tipo: TipoDocPessoal, arquivo: File, pastaPessoaId: string) {
-  const ext = (arquivo.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
-  const path = `pessoa/${pastaPessoaId}/${tipo}-${Date.now()}.${ext}`
-  const { error: upErr } = await supabase.storage.from('documentos-pessoais').upload(path, arquivo, { contentType: arquivo.type || undefined })
-  if (upErr) return { erro: upErr.message, campos: null as Record<string, unknown> | null, path }
+  let foto: Blob
+  try {
+    foto = await prepararImagemDocumento(arquivo)
+  } catch (e) {
+    return { erro: e instanceof Error ? e.message : 'Não consegui preparar a foto.', campos: null as Record<string, unknown> | null, path: '' }
+  }
+  const path = caminhoDocumento(pastaPessoaId, tipo)
+  const { error: upErr } = await supabase.storage.from('documentos-pessoais').upload(path, foto, { contentType: 'image/jpeg', upsert: false })
+  if (upErr) return { erro: `Não consegui enviar a foto: ${upErr.message}`, campos: null as Record<string, unknown> | null, path }
   const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { tipo, path } })
   if (error || !data?.sucesso) return { erro: null, campos: null, path }
   return { erro: null, campos: data.campos as Record<string, unknown>, path }

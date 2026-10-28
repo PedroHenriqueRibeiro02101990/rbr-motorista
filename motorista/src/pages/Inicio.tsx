@@ -5,6 +5,7 @@ import { formatMoney, initials, STATUS_OPERACAO_LABEL } from '@rbr/shared/format
 import { IconStar } from '@rbr/shared/icons'
 import { useLocationReporter } from '@rbr/shared/useLocationReporter'
 import { StatusCadastro } from '@rbr/shared/cadastro'
+import EnviarDocumento from '../components/EnviarDocumento'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -31,6 +32,22 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
   )
   const [saldoPontos, setSaldoPontos] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  // Card "Falta enviar seus documentos": só enquanto não há documento de identificação ativo (CNH; PJ: cartão CNPJ).
+  const docIdentificacao = pessoa.tipo_pessoa_doc === 'PJ' ? 'cartao_cnpj' : 'cnh'
+  const [faltaDocumento, setFaltaDocumento] = useState(false)
+  const conferirDocumento = useCallback(async () => {
+    const { data } = await supabase
+      .from('documentos_pessoais_imagens')
+      .select('id')
+      .eq('pessoa_id', pessoa.id)
+      .eq('tipo', docIdentificacao)
+      .eq('status', 'ativo')
+      .limit(1)
+    setFaltaDocumento((data ?? []).length === 0)
+  }, [pessoa.id, docIdentificacao])
+  useEffect(() => {
+    void conferirDocumento()
+  }, [conferirDocumento])
 
   const titularId = pessoa.papel === 'condutor' ? pessoa.titular_id : pessoa.id
 
@@ -147,6 +164,26 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
 
   return (
     <div className="px-5 pt-8 flex flex-col gap-3.5">
+      {faltaDocumento && (
+        <div className="rounded-[16px] px-4 py-3.5 flex flex-col gap-2.5" style={{ background: 'var(--rbr-warning-bg)' }}>
+          <div className="text-[13px] font-bold text-[color:var(--rbr-navy-dark)]">Falta enviar seus documentos</div>
+          <div className="text-xs text-[color:var(--rbr-navy-dark)]">
+            {docIdentificacao === 'cnh'
+              ? 'Tire uma foto da sua CNH (física ou digital, sem reflexo). Sem ela a RBR não consegue liberar cargas para você.'
+              : 'Tire uma foto do cartão CNPJ da sua empresa. Sem ele a RBR não consegue liberar cargas para você.'}
+          </div>
+          <EnviarDocumento
+            tipo={docIdentificacao}
+            rotulo={docIdentificacao === 'cnh' ? 'Enviar CNH' : 'Enviar cartão CNPJ'}
+            pessoaId={pessoa.id}
+            onEnviado={async ({ lido }) => {
+              if (!lido) return
+              await conferirDocumento()
+              await onRecarregar?.()
+            }}
+          />
+        </div>
+      )}
       <StatusCadastro
         pessoa={pessoa}
         veiculos={meusVeiculos}
