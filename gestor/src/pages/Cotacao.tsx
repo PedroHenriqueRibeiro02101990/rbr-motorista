@@ -24,6 +24,7 @@ import type { EmpresaCotacao, CotacaoPdfDados, ItemPrecoCotacao } from '../lib/c
 import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
+import { tituloRota } from '../lib/tituloRota'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -2517,6 +2518,7 @@ export default function Cotacao() {
             <div className="flex items-center gap-2.5">
               <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
                 {editingId ? 'Editar cotação' : 'Nova cotação'}
+                {(form.cidade_origem || form.cidade_destino) && <span className="font-normal text-[color:var(--rbr-muted)]"> · {tituloRota({ ...form, tipo_cotacao: tipoCotacao })}</span>}
               </div>
               {editingId && (
                 <span
@@ -4805,10 +4807,9 @@ export default function Cotacao() {
                     <IconChevronRight width={16} height={16} style={{ color: 'var(--rbr-muted)' }} />
                   </div>
                 </div>
-                <div className="text-[15px] font-bold mb-1">{c.clienteNome ?? 'Cliente a confirmar'}</div>
+                <div className="text-[15px] font-bold mb-1">{tituloRota(c)}</div>
                 <div className="text-xs text-[color:var(--rbr-muted)]">
-                  {c.cidade_origem ?? '?'}/{c.uf_origem ?? '?'} → {c.cidade_destino ?? '?'}/{c.uf_destino ?? '?'} · criada em{' '}
-                  {formatDateTime(c.created_at)}
+                  {c.clienteNome ?? 'Cliente a confirmar'} · criada em {formatDateTime(c.created_at)}
                 </div>
                 {c.valor_frete_motorista != null && (
                   <div className="text-xs text-[color:var(--rbr-muted)] mt-1 tabular-nums">
