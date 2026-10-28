@@ -327,3 +327,31 @@ test('protocolo da emissão é gravado ANTES de interpretar: fica salvo mesmo se
   )
   assert.equal((m.get('RBR-TESTE-0001') as unknown as { protocolo: string }).protocolo, '6126266')
 })
+
+test('referência: sem tentativa (ou 1) é igual à de sempre; depois de cancelar vira -T2, -T3', () => {
+  const base = pedidoDaOperacao(OP())
+  const r1 = pedidoDaOperacao(OP({ tentativa: 1 }))
+  const r2 = pedidoDaOperacao(OP({ tentativa: 2 }))
+  const r3 = pedidoDaOperacao(OP({ tentativa: 3 }))
+  assert.equal(r1.pedido?.idOperacaoCliente, base.pedido?.idOperacaoCliente)
+  assert.equal(r2.pedido?.idOperacaoCliente, `${base.pedido?.idOperacaoCliente}-T2`)
+  assert.equal(r3.pedido?.idOperacaoCliente, `${base.pedido?.idOperacaoCliente}-T3`)
+  // o resto do pedido não muda
+  assert.equal(r2.pedido!.valorFrete, base.pedido!.valorFrete)
+  assert.deepEqual(r2.pedido!.placas, base.pedido!.placas)
+  assert.deepEqual(r2.pedido!.pagamentos.map((g) => g.valor), base.pedido!.pagamentos.map((g) => g.valor))
+  // os ids dos pagamentos (únicos no banco) acompanham a referência nova
+  assert.ok(r2.pedido!.pagamentos.every((g) => g.idPagamentoCliente.startsWith(r2.pedido!.idOperacaoCliente)))
+})
+
+test('"emitir novamente" nunca pula a anti-duplicidade: referência nova já emitida volta como já existente', async () => {
+  const pedido = pedidoDaOperacao(OP({ tentativa: 2 })).pedido!
+  let emitiu = 0
+  const r = await emitirComAntiDuplicidade(
+    { emitirOperacaoTransporte: async () => { emitiu++; return { ok: true as const, dados: { ciot: '1', protocolo: 'p' } } }, obterCiotPorReferencia: async () => ({ ok: true as const, dados: null }) },
+    { obter: async () => ({ status: 'emitido', ciot: '123456789012', tentativas: 1 }), registrarPendente: async () => {}, marcarTentativa: async () => {}, registrarRetorno: async () => {}, marcarEmitido: async () => {}, marcarErro: async () => {} },
+    pedido,
+  )
+  assert.equal(r.ok && r.jaExistia, true)
+  assert.equal(emitiu, 0)
+})

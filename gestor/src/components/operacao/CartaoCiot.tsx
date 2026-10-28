@@ -85,11 +85,13 @@ export type PropsCartao = {
   onPdf: () => void
   onTransacoes: () => void
   onCancelar: (motivo: string) => Promise<boolean>
+  onEmitirNovamente: () => void
 }
 
 export default function CartaoCiot(p: PropsCartao) {
   const [confirmando, setConfirmando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
+  const [reemitindo, setReemitindo] = useState(false)
   const [motivo, setMotivo] = useState('')
   const ped = p.pedido
   const emitido = ped?.status === 'emitido' || ped?.status === 'encerrado'
@@ -284,7 +286,14 @@ export default function CartaoCiot(p: PropsCartao) {
           </div>
           {p.naoCancela && ped.status === 'emitido' && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FDF1DC', color: '#8A5A00' }}>{p.naoCancela}</div>}
           {ped.status === 'emitido' && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#EEF2FF', color: 'var(--rbr-navy)' }}>Próximo passo: <b>MDF-e</b>. É o último documento e leva o CIOT.</div>}
-          {cancelado && <div className="text-xs text-[color:var(--rbr-muted)]">Para emitir outro CIOT desta operação, a efrete exige uma nova referência. Peça a liberação a um gestor.</div>}
+          {cancelado && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button type="button" disabled={ocupado} onClick={() => setReemitindo(true)} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+                {p.ocupado === 'emitir' ? 'Emitindo…' : 'Emitir novamente'}
+              </button>
+              <span className="text-xs text-[color:var(--rbr-muted)]">Gera um CIOT novo, com uma nova referência na efrete. O cancelado continua registrado.</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -306,6 +315,19 @@ export default function CartaoCiot(p: PropsCartao) {
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={() => setConfirmando(false)} className={`${botao} border`} style={borda}>Voltar</button>
             <button type="button" onClick={() => { setConfirmando(false); p.onEmitir() }} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>Confirmar e emitir</button>
+          </div>
+        </Modal>
+      )}
+
+      {reemitindo && (
+        <Modal titulo="Emitir um novo CIOT para esta operação?" onFechar={() => setReemitindo(false)}>
+          <div className="text-xs text-[color:var(--rbr-muted)]">
+            O CIOT {ped?.ciot} está cancelado. A efrete vai receber um pedido novo, com uma nova referência (sufixo de tentativa). Só é possível se não houver outro CIOT ativo nesta operação.
+            {p.ambiente === 'homologacao' && <b className="block mt-1">Homologação: nenhum CIOT real.</b>}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setReemitindo(false)} className={`${botao} border`} style={borda}>Voltar</button>
+            <button type="button" onClick={() => { setReemitindo(false); p.onEmitirNovamente() }} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>Confirmar e emitir</button>
           </div>
         </Modal>
       )}

@@ -123,7 +123,7 @@ function enderecoPessoa(p: Pessoa | null, ibge: number | null): EnderecoEfrete |
   return { Rua: semAcento(p.logradouro), Numero: soDigitos(p.numero_endereco) || "0", Bairro: semAcento(p.bairro) || "Centro", CEP: soDigitos(p.cep), CodigoMunicipio: ibge };
 }
 
-async function carregar(operacaoId: string): Promise<Contexto> {
+async function carregar(operacaoId: string, tentativa = 1): Promise<Contexto> {
   const { data: op, error } = await admin
     .from("operacoes")
     .select("id, cotacao_id, veiculo_id, pessoa_alocada_id, carga_complexa, carga_complexa_eixo1_perigosa, carga_complexa_eixo2_superdimensionada, ncm, coleta_prevista, entrega_prevista, eh_teste, deleted_at")
@@ -167,6 +167,7 @@ async function carregar(operacaoId: string): Promise<Contexto> {
 
   const dados: DadosOperacaoCiot = {
     operacaoId,
+    tentativa,
     ambiente: AMBIENTE,
     agora: new Date(),
     contratante: { cnpj: soDigitos(pf.data?.cnpj), nome: String(pf.data?.razao_social ?? ""), endereco: enderecoContratante },
@@ -424,7 +425,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (acao === "previa" || acao === "emitir") {
-      const ctx = await carregar(operacaoId);
+      // Depois de um CIOT cancelado, a efrete não aceita a mesma referência: "emitir novamente" usa uma nova (-T2, -T3…).
+      // Nunca com CIOT ativo: o índice único (um pedido ativo por operação) e a anti-duplicidade continuam valendo.
+      const { count: cancelados } = await admin.from("efrete_ciot_pedidos").select("id", { count: "exact", head: true }).eq("operacao_id", operacaoId).eq("status", "cancelado");
+      const ultimo = await pedidoAtual(operacaoId);
+      if (acao === "emitir" && ultimo?.status === "cancelado" && corpo.emitir_novamente !== true) {
+        return json({ ok: false, motivo: 'Este CIOT foi cancelado. Para emitir outro, use "Emitir novamente".' }, 409);
+      }
+      const ctx = await carregar(operacaoId, (cancelados ?? 0) + 1);
       const previa = pedidoDaOperacao(ctx.dados);
       if (acao === "previa") return json({ ok: true, ambiente: AMBIENTE, ...resumoPrevia(previa), atual: await pedidoAtual(operacaoId) });
       // Confirmação humana: quem confirmou e quando ficam no pedido.

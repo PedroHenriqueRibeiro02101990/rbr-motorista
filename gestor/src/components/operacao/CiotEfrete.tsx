@@ -125,6 +125,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
         linkCorrigir={(c) => LINK_CORRIGIR[c] ?? null}
         onEmitir={() => void acao('emitir', { acao: 'emitir', confirmar: true }, (x) => `CIOT ${String(x.ciot ?? '')} emitido${x.jaExistia ? ' (já existia na efrete; nada foi emitido de novo)' : ''}.`)}
         onConsultar={() => void acao('consultar', { acao: 'consultar' }, () => 'Consultado na efrete pela referência da operação.')}
+        onEmitirNovamente={() => void acao('emitir', { acao: 'emitir', confirmar: true, emitir_novamente: true }, (x) => `Novo CIOT ${String(x.ciot ?? '')} emitido.`)}
         onPdf={() => void baixarPdf()}
         onTransacoes={async () => {
           const r = await acao('transacoes', { acao: 'transacoes' })
