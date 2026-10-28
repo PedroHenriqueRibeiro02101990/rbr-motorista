@@ -7,7 +7,7 @@ type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Veiculo = Database['public']['Tables']['veiculos']['Row']
 
 export type ItemVerificacao = { codigo: string; nivel: 'ok' | 'info' | 'pendente' | 'atencao' | 'bloqueio'; titulo: string; detalhe?: string | null }
-export type TipoDocPessoal = 'cnh' | 'rg' | 'crlv' | 'cartao_cnpj'
+export type TipoDocPessoal = 'cnh' | 'rg' | 'crlv' | 'cartao_cnpj' | 'comprovante_residencia'
 
 export const APROVACAO: Record<string, { texto: string; bg: string; cor: string }> = {
   aprovado: { texto: 'Aprovado', bg: '#E7F6EE', cor: '#137A45' },
