@@ -56,3 +56,50 @@ Migração "aplicada" = conferida em `list_migrations` do projeto Supabase. Nenh
 - #13: a função `receber-lead` (pública) e as tabelas já estão no ar; o merge só alinha o repositório e mostra a Fila do dia no menu. Mesclo, mas anoto aqui.
 - #14 está fechado (não foi mesclado) e fica como está.
 - #1 aponta para a base `integracao-2026-10-15` (já incorporada na main pelo #4): não dá para mesclar sem refazer a base e aplicar a migração.
+
+## Resultado da execução (2026-10-28)
+
+### Merges (squash, em lotes; SHA da main antes → depois)
+| Lote | PR | Antes | Depois |
+|---|---|---|---|
+| 1 | #32 checklist de produção + esta auditoria | 6414908 | 273f1db |
+| 1 | #31 datas previstas | 273f1db | 481141a |
+| 1 | #30 cartão do CIOT + /demo-ciot | 481141a | 2a80c99 |
+| 2 | #8 avisos acionáveis | 2a80c99 | c1be234 |
+| 2 | #9 envio de documento no app do motorista | c1be234 | a724e5c |
+| 2 | #10 título origem → destino | a724e5c | d0acad3 |
+| 3 | #11 comprovante de residência | d0acad3 | f606623 |
+| 3 | #12 ordem de coleta | f606623 | a975e89 |
+| 3 | #13 CRM / Fila do dia | a975e89 | 38cc974 |
+| 4 | #27 painel "O que fazer agora" | 38cc974 | a30bcf6 |
+| 4 | #28 lista de clientes | a30bcf6 | b07ee81 |
+
+Antes de cada lote o merge com a main foi testado de novo (tsc nos 3 apps, testes, build). Reversão, se precisar: um PR de revert por merge, a partir do SHA "antes".
+
+### Verificação da produção (gestor.rbrcargo.com.br) depois de cada lote
+- Página e arquivo principal respondem 200; o chunk do cliente Supabase tem a URL do projeto; o endpoint de saúde do Auth responde 200.
+- O pacote de produção NÃO contém o cartão do CIOT nem a demonstração (0 ocorrências de "Conferência antes de emitir" e "DEMONSTRAÇÃO: dados fictícios" em todos os arquivos JS da página): com a flag desligada o código nem é incluído.
+- `/demo-ciot` na produção devolve a página normal do app (200 do SPA, sem a demonstração).
+- Limite: não há navegador aqui. "Login abre" e "painel carrega" foram verificados só até a página, o pacote e o Auth; a passada visual com login é sua.
+- Variáveis da Vercel: nada alterado em Production. As variáveis novas (`VITE_EFRETE_CIOT_HABILITADO`, `VITE_DEMO_CIOT`, `VITE_SUPABASE_*`) existem só no escopo Preview, da branch `tela-ciot-homologacao-2026-10-28`.
+
+### Não feito
+- Deploy da função `efrete-ciot-operacao`: não fiz. A versão publicada (v2) é anterior ao PR #29 (não tem `travaEfreteOperacao`) e à mudança do `status`. Publicar exige enviar 4 arquivos (~83 KB) pelo conector; recusei copiar à mão por risco de erro de transcrição. Comando: `supabase functions deploy efrete-ciot-operacao --project-ref kwscmegsfbtvlnyxougt`. Depois, a chamada de status da operação 965ceb0d (sem emitir nada) mostra `ambiente` e `pagamentos`.
+- Nenhuma migração aplicada. Nenhum PR fechado. Nenhuma branch apagada.
+
+### Contagem final (#1 a #32)
+- Mesclados antes desta tarefa: 18 (#2 a #7, #16 a #26, #29). Mesclados agora: 11. Total mesclado: 29 de 32.
+- Fechado sem mesclar: #14 (já estava fechado).
+- Abertos para o Pedro: #1 e #15.
+- Consertados nesta tarefa: 0 (nenhum precisou de conserto).
+
+## Fase D: o que fica para o Pedro
+**#1 Política de prazo e desconto (draft, conflito)**
+- Muda: cotador com prazo de pagamento e desconto (−2% a +4,5% sobre 7 DDL), regra de recebimento e desconto condicional em fatura. Mexe em preço e fatura.
+- Risco: base antiga (`integracao-2026-10-15`), conflito, migração `20261016_01` não aplicada e depende de funções da `20261014_01`/`20261015_12`.
+- Pergunta: 1) Você ainda quer esta política de prazo e desconto? Se sim, eu refaço a branch sobre a main e deixo a migração pronta para você aplicar.
+
+**#15 Segurança Supabase (propostas, sem aplicar)**
+- Muda: propõe revogar EXECUTE de 2 funções (`sincronizar_financeiro_operacao`, `trg_fn_interacao_primeiro_contato`) e recriar `pg_net` fora do schema `public`.
+- Risco: o `pg_net` derruba por segundos as chamadas HTTP dos gatilhos de averbação/MDF-e e do cron; fazer fora do horário de emissão.
+- Pergunta: 2) Posso mesclar só o documento e as propostas (sem aplicar nada)? 3) Quando você autoriza aplicar as duas migrações, e em que horário?
