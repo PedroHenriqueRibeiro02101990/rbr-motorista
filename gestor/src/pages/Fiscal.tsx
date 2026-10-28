@@ -18,6 +18,7 @@ import CancelarDocumentoModal, {
 import BaixarDocumentoFiscal from '../components/operacao/BaixarDocumentoFiscal'
 import EmitirNfeProducaoModal from '../components/operacao/EmitirNfeProducaoModal'
 import FaixaTeste, { PassoAPassoTeste } from '../components/FaixaTeste'
+import { mostrarAvisoAguardandoCte, mostrarOrdemDocumentos, mostrarSeloHomologacao, testeEncerrado } from '../lib/avisos'
 import SeloProcessando from '../components/SeloProcessando'
 import { estaProcessando, useDocumentosAoVivo } from '../lib/useDocumentosAoVivo'
 import { AvisoSompo, LinhaAverbacaoSompo, OrdemDocumentos } from '../components/operacao/AverbacaoSompo'
@@ -781,7 +782,12 @@ export default function Fiscal() {
 
             return (
               <div key={op.id} className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
-                {op.eh_teste && (
+                {op.eh_teste && testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
+                  <div className="text-xs font-semibold rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}>
+                    Operação de teste · Teste encerrado (documentos cancelados)
+                  </div>
+                )}
+                {op.eh_teste && !testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
                   <div className="flex flex-col gap-2 rounded-lg p-2.5 border" style={{ borderColor: 'var(--rbr-danger)' }}>
                     <FaixaTeste />
                     <PassoAPassoTeste
@@ -815,12 +821,14 @@ export default function Fiscal() {
 
                 {ofereceCteMdfe && (
                   <div className="flex flex-col gap-1.5">
+                    {mostrarOrdemDocumentos(docCte, docs.find((d) => d.tipo === 'atm'), docMdfe, rcvPorOperacao.get(op.id)?.averbacao_rcv_status) && (
                     <OrdemDocumentos
                       cte={docCte}
                       atm={docs.find((d) => d.tipo === 'atm')}
                       mdfe={docMdfe}
                       rcv={rcvPorOperacao.get(op.id)}
                     />
+                    )}
                     <AvisoSompo mdfe={docMdfe} rcv={rcvPorOperacao.get(op.id)} />
                   </div>
                 )}
@@ -953,7 +961,7 @@ export default function Fiscal() {
                                     atualizado em {formatDateTime(doc.atualizado_em)}
                                   </span>
                                 )}
-                                {doc.ambiente === 'homologacao' && (
+                                {mostrarSeloHomologacao(doc) && (
                                   <span
                                     className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
                                     style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}
@@ -1056,7 +1064,7 @@ export default function Fiscal() {
                       {cteAutorizado && !emProducao && (
                         <div className="text-[11px] text-[color:var(--rbr-muted)]">CT-e de homologação não é averbado (sem validade fiscal).</div>
                       )}
-                      {!cteAutorizado && (
+                      {mostrarAvisoAguardandoCte(docCte, docAtm) && (
                         <div className="text-[11px] text-[color:var(--rbr-muted)]">A averbação só pode ser enviada depois que o CT-e for autorizado.</div>
                       )}
                       {docAtm && (docAtm.status === 'bloqueado' || docAtm.status === 'erro') && docAtm.mensagem_erro && (

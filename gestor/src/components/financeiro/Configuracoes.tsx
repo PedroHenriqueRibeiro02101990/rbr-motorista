@@ -27,6 +27,7 @@ import {
 import { Aviso, Botao, Campo, Card, Chips, Modal, Vazio, inputClass, inputStyle } from './ui'
 import { EditorParcelas, PreviaRegra } from './PrazoEditor'
 import { NATUREZA_LABEL, OpcoesCategoria } from './CategoriaOpcoes'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 type Secao = 'contas' | 'prazos' | 'recorrencias' | 'categorias' | 'parametros' | 'regras'
 
@@ -760,7 +761,7 @@ function Parametros() {
   const [aliq, setAliq] = useState('')
   const [prazoSaldo, setPrazoSaldo] = useState('')
   const [banco, setBanco] = useState<Record<string, string>>({ favorecido: '', pix: '', banco: '', agencia: '', conta: '' })
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [erro, setErro] = useState<string | null>(null)
   useEffect(() => {
     Promise.all([lerParametro<number>('saldo_minimo_alerta'), lerParametro<number>('aliquota_das_efetiva'), lerParametro<number>('saldo_motorista_prazo_dias'), lerParametro<Record<string, string>>('dados_bancarios_rbr')]).then(

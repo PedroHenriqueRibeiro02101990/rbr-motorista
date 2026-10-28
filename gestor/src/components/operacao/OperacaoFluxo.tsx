@@ -50,6 +50,8 @@ import {
   type Etapa,
   type IdEtapa,
 } from '../../lib/etapasOperacao'
+import { mostrarAvisoMudancaDocumento } from '../../lib/avisos'
+import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 // Detalhe da operação — painel enxuto (2026-10-16): uma linha "Próximo passo", uma linha do tempo só com as etapas que
 // se aplicam a esta operação (etapa concluída = uma linha; atual ou com problema = aberta; futura = cinza) e o resto
@@ -130,7 +132,7 @@ export default function OperacaoFluxo({
 }) {
   const [d, setD] = useState<DetalheOperacao | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [ok, setOk] = useState<string | null>(null)
+  const [ok, setOk] = useMensagemTemporaria<string>()
   const [salvando, setSalvando] = useState(false)
   const [pedido, setPedido] = useState<PedidoConformidade>(null)
   const [fichaAberta, setFichaAberta] = useState(false)
@@ -321,7 +323,7 @@ export default function OperacaoFluxo({
           }}
         />
       </div>
-      {o.tipo_documento_mudou_em && (
+      {mostrarAvisoMudancaDocumento(o.tipo_documento_mudou_em, o.status, d.documentos) && (
         <div className="text-xs rounded-xl px-3 py-2 font-semibold" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
           A origem ou o destino mudou em {formatDateTime(o.tipo_documento_mudou_em)} e o documento ao cliente foi recalculado. Confira antes de emitir.
         </div>
