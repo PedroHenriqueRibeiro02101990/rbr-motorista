@@ -4,6 +4,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatDateTime, formatMoney, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconCamera, IconCheck, IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle } from '../icons-local'
+import OrdemColetaBotao from '../components/OrdemColetaBotao'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -262,6 +263,9 @@ export default function Cargas({ pessoa }: { pessoa: Pessoa }) {
 
               {isExpanded && (
                 <div className="border-t px-[18px] pb-[18px] pt-3.5" style={{ borderColor: 'var(--rbr-border)' }}>
+                  {['liberada_coleta', 'carregando', 'em_transito'].includes(op.status) && (
+                    <OrdemColetaBotao operacaoId={op.id} motorista={op.condutorNome ?? pessoa.nome} />
+                  )}
                   {op.bloqueio_fiscal && (
                     <div
                       className="flex items-start gap-2 rounded-xl px-3 py-2.5 mb-3.5"
