@@ -35,3 +35,9 @@ Legenda: **[NSTech]** depende de resposta da NSTech · **[Pedro]** depende de vo
 - [ ] **[Pedro]** Uma operação real, com valor baixo, com alguém da RBR acompanhando: emitir, consultar, baixar o PDF. Cancelamento só se necessário.
 - [ ] **[Pedro]** Conferir o CIOT no portal da efrete e na ANTT antes de liberar a saída.
 - [ ] **[Pedro]** Plano de volta: se a efrete cair, o CIOT manual (Repom) continua valendo e o caminho não foi removido.
+
+## Acrescentado em 28/10 (subida)
+- [ ] **[NSTech]** A homologação da efrete respondeu `ANTT.Falha.Comunicacao` ("Não foi possível estabelecer uma comunicação com ANTT") na emissão do CIOT e no cadastro do proprietário (protocolos 6133655, 6133660, 6133675 e 6133683). Perguntar se o link com a ANTT da homologação está fora e quando volta.
+- [ ] **[Pedro]** Publicar a função `efrete-ciot-operacao` (hoje no ar a v2, sem a trava 412 do PR #29, sem `status` com pagamentos e sem "emitir novamente").
+- [ ] **[NSTech]** Confirmar a regra de cancelamento do CIOT (24 h antes do início) e de encerramento (5 dias): a tela já aplica os 24 h por combinação.
+- [ ] **[Pedro]** Flags FISCAL_PAPEIS_ESTENDIDOS e de pagamento: ainda não existem (Fases 2 a 5 não foram feitas).
