@@ -101,10 +101,18 @@ export function passosAntesDoCiot(docs: DocLeve[], ehTeste: boolean): Passo[] {
 }
 
 // Ordem inversa: com MDF-e já emitido (ou enviado), o CIOT não cancela.
-export function motivoNaoCancela(docs: DocLeve[]): string | null {
+// Prazo combinado com o Pedro: o CIOT cancela até 24 h antes do início da viagem (a efrete pode ter regra própria; a resposta dela vale).
+export const PRAZO_CANCELAR_CIOT_HORAS = 24
+export function motivoNaoCancela(docs: DocLeve[], inicioViagem?: string | null, agora = new Date()): string | null {
   const mdfe = docs.find((d) => d.tipo === 'mdfe')
   if (mdfe && ['emitido', 'pendente', 'autorizado'].includes(mdfe.status) && mdfe.exigido !== false) {
     return 'Este CIOT não pode ser cancelado enquanto o MDF-e existir. Cancele o MDF-e primeiro.'
+  }
+  if (inicioViagem) {
+    const limite = new Date(inicioViagem).getTime() - PRAZO_CANCELAR_CIOT_HORAS * 3600_000
+    if (Number.isFinite(limite) && agora.getTime() > limite) {
+      return `O prazo para cancelar este CIOT acabou: era até ${PRAZO_CANCELAR_CIOT_HORAS} horas antes do início da viagem. Fale com a efrete se precisar cancelar mesmo assim.`
+    }
   }
   return null
 }

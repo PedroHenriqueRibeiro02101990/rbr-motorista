@@ -12,6 +12,7 @@ export type PedidoCiot = {
   valor_frete: number | null
   piso_minimo: number | null
   emitido_em: string | null
+  data_inicio_viagem?: string | null
   cancelado_em: string | null
   encerrado_em: string | null
   cancelamento_protocolo: string | null

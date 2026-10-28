@@ -52,3 +52,14 @@ test('motivo do cancelamento: mínimo de 15 caracteres, sem contar espaços nas 
   assert.equal(motivoValido('   dez chars   '), false)
   assert.equal(motivoValido('dados do motorista errados'), true)
 })
+
+test('cancelar CIOT: até 24 h antes do início; depois disso mostra o motivo', () => {
+  const agora = new Date('2026-10-30T12:00:00Z')
+  assert.equal(motivoNaoCancela([], '2026-11-01T12:00:00Z', agora), null) // 48 h antes
+  assert.equal(motivoNaoCancela([], '2026-10-31T13:00:00Z', agora), null) // 25 h antes
+  assert.match(motivoNaoCancela([], '2026-10-31T11:00:00Z', agora)!, /prazo para cancelar/) // 23 h antes
+  assert.match(motivoNaoCancela([], '2026-10-29T12:00:00Z', agora)!, /prazo para cancelar/) // já começou
+  assert.equal(motivoNaoCancela([], null, agora), null) // sem data: não bloqueia
+  // MDF-e continua vindo primeiro
+  assert.match(motivoNaoCancela([{ tipo: 'mdfe', status: 'emitido', exigido: true }], '2026-11-05T12:00:00Z', agora)!, /MDF-e/)
+})
