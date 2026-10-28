@@ -15,6 +15,7 @@ import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
+import { FILAS, casaBusca, contarFilas, passaFila, type DadosFila, type FilaId } from '../lib/filasOperacao'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -107,6 +108,14 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   // ?status=em_transito (vindo do Início) já abre a lista filtrada.
   const [filtro, setFiltro] = useState<StatusOperacao | 'todas'>(() => (params.get('status') as StatusOperacao | null) ?? 'todas')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Filas (?fila=sem_motorista): seções da tela. Dados vindos de operacao_nfes e documentacao_operacao.
+  const [fila, setFila] = useState<FilaId | null>(() => {
+    const f = params.get('fila')
+    return FILAS.some((x) => x.id === f) ? (f as FilaId) : null
+  })
+  const [ocultarTestes, setOcultarTestes] = useState(false)
+  const [nfesPorOp, setNfesPorOp] = useState<Record<string, string[]>>({})
+  const [problemasPorOp, setProblemasPorOp] = useState<Record<string, number>>({})
   const opDaUrl = params.get('op')
   const abriuDaUrl = useRef(false)
 
@@ -185,6 +194,27 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       cotacaoDetalhe: (op as any).cotacoes ?? null,
     }))
     setOperacoes(mapeadas)
+    const ids = mapeadas.map((o) => o.id)
+    if (ids.length) {
+      void supabase
+        .from('operacao_nfes')
+        .select('operacao_id, numero, chave_acesso')
+        .in('operacao_id', ids)
+        .then(({ data: nf }) => {
+          const m: Record<string, string[]> = {}
+          for (const r of nf ?? []) (m[r.operacao_id] ??= []).push(r.numero ?? '', r.chave_acesso)
+          setNfesPorOp(m)
+        })
+      void supabase
+        .from('documentacao_operacao')
+        .select('operacao_id, status, conferencia_status')
+        .in('operacao_id', ids)
+        .then(({ data: dc }) => {
+          const m: Record<string, number> = {}
+          for (const r of dc ?? []) if (r.status === 'erro' || r.status === 'bloqueado' || r.conferencia_status === 'divergente' || r.conferencia_status === 'erro') m[r.operacao_id] = (m[r.operacao_id] ?? 0) + 1
+          setProblemasPorOp(m)
+        })
+    }
     supabase.from('operacoes')
       .select('id, sequencia, grupo_saida_id, cotacoes(cargas_total)')
       .order('updated_at', { ascending: false })
@@ -500,15 +530,34 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     }
   }
 
+  const dadosFila = useMemo(() => {
+    const m = new Map<string, DadosFila>()
+    for (const op of operacoes ?? []) {
+      m.set(op.id, {
+        id: op.id,
+        status: op.status,
+        pessoaAlocada: !!op.pessoa_alocada_id,
+        bloqueioFiscal: op.bloqueio_fiscal === true,
+        ehTeste: op.eh_teste === true,
+        nfes: (nfesPorOp[op.id] ?? []).filter(Boolean).length > 0 ? 1 : 0,
+        docsComProblema: problemasPorOp[op.id] ?? 0,
+      })
+    }
+    return m
+  }, [operacoes, nfesPorOp, problemasPorOp])
+  const contagem = useMemo(() => contarFilas([...dadosFila.values()], ocultarTestes), [dadosFila, ocultarTestes])
+
   const lista = useMemo(() => {
-    const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    const termo = norm(busca.trim())
+    const placaDe = new Map(veiculos.map((v) => [v.id, v.placa]))
     const filtradas = (operacoes ?? []).filter((op) => {
       if (filtro !== 'todas' && op.status !== filtro) return false
-      if (!termo) return true
+      const d = dadosFila.get(op.id)
+      if (d && !passaFila(d, fila, ocultarTestes)) return false
+      if (!busca.trim()) return true
       const cot = op.cotacaoDetalhe
-      const campos = [op.clienteNome ?? '', cot?.cidade_origem ?? '', cot?.cidade_destino ?? '', cot?.uf_origem ?? '', cot?.uf_destino ?? '', op.id.slice(0, 8)]
-      return campos.some((c) => norm(c).includes(termo))
+      const texto = [op.clienteNome ?? '', cot?.cidade_origem ?? '', cot?.cidade_destino ?? '', cot?.uf_origem ?? '', cot?.uf_destino ?? '', op.id.slice(0, 8)]
+      const placa = op.veiculo_id ? placaDe.get(op.veiculo_id) : null
+      return casaBusca(busca, { texto, placas: placa ? [placa] : [], nfes: nfesPorOp[op.id] ?? [] })
     })
     // Operações da mesma saída conjunta ficam juntas (na posição da primeira).
     const grupos = new Map<string, OperacaoEnriquecida[]>()
@@ -527,7 +576,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       }
     }
     return saida
-  }, [operacoes, filtro, busca, extras])
+  }, [operacoes, filtro, busca, extras, veiculos, dadosFila, fila, ocultarTestes, nfesPorOp])
 
   return (
     <div className="flex flex-col gap-4">
@@ -535,7 +584,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Operações</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <input
-            placeholder="Buscar cliente, cidade, nº…"
+            placeholder="Buscar cliente, cidade, placa, NF-e, código…"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="border rounded-xl px-3 py-2 text-sm outline-none"
@@ -637,6 +686,20 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           <DadosEmissao onSalvo={(a) => setAssessoria(a)} />
         </div>
       )}
+
+      <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filas">
+        <button type="button" onClick={() => setFila(null)} className="text-xs font-bold px-3.5 py-2 rounded-full border" style={fila === null ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' } : { borderColor: 'var(--rbr-border)', background: '#fff' }}>
+          Todas
+        </button>
+        {FILAS.map((f) => (
+          <button key={f.id} type="button" title={f.ajuda} onClick={() => setFila(fila === f.id ? null : f.id)} className="text-xs font-bold px-3.5 py-2 rounded-full border" style={fila === f.id ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' } : { borderColor: 'var(--rbr-border)', background: '#fff' }}>
+            {f.rotulo} <span className="tabular-nums opacity-80">({contagem[f.id]})</span>
+          </button>
+        ))}
+        <label className="text-xs flex items-center gap-1.5 ml-auto text-[color:var(--rbr-muted)]">
+          <input type="checkbox" checked={ocultarTestes} onChange={(e) => setOcultarTestes(e.target.checked)} /> Ocultar testes
+        </label>
+      </div>
 
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 
