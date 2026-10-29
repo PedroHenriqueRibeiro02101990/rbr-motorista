@@ -10,6 +10,7 @@ export function PainelSobreposto({
   onFechar,
   largura = 760,
   rodape = true,
+  fixo,
   cartaoProps,
   children,
 }: {
@@ -20,11 +21,15 @@ export function PainelSobreposto({
   onFechar: () => void
   largura?: number
   rodape?: boolean
+  // Linhas extras do cabeçalho (resumo, navegação). O cabeçalho inteiro fica fixo no topo ao rolar o painel.
+  fixo?: ReactNode
   cartaoProps?: HTMLAttributes<HTMLDivElement>
   children: ReactNode
 }) {
   const fecharRef = useRef(onFechar)
-  fecharRef.current = onFechar
+  useEffect(() => {
+    fecharRef.current = onFechar
+  })
 
   useEffect(() => {
     const overflowAnterior = document.body.style.overflow
@@ -58,6 +63,7 @@ export function PainelSobreposto({
           maxWidth: largura,
         }}
       >
+        <div className="sticky top-0 z-10 bg-white -mx-[18px] -mt-[18px] px-[18px] pt-[18px] pb-3 md:rounded-t-[20px] flex flex-col gap-2.5 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2.5 flex-wrap">
             {titulo != null && <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">{titulo}</div>}
@@ -72,6 +78,8 @@ export function PainelSobreposto({
           >
             <IconX width={14} height={14} />
           </button>
+        </div>
+        {fixo}
         </div>
         {children}
         {rodape && (
