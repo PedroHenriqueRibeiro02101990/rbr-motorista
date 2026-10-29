@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { PainelSobreposto } from '../components/PainelSobreposto'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
 import { IconQuote, IconChevronRight, IconCheck } from '@rbr/shared/icons'
-import { IconX } from '../icons-local'
 import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
 import CatalogoCustos from '../components/CatalogoCustos'
@@ -673,17 +673,6 @@ export default function Cotacao() {
   const tipoCargaRef = useRef<HTMLSelectElement | null>(null)
   const [cargaComplexaAberta, setCargaComplexaAberta] = useState(false)
 
-  // Formulário abre como painel flutuante sobre o resto da tela (igual ao preview aprovado) —
-  // trava o scroll do body enquanto ele está aberto pra não rolar o conteúdo por trás junto.
-  useEffect(() => {
-    if (!form) return
-    const overflowAnterior = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = overflowAnterior
-    }
-  }, [form])
-
   const load = useCallback(async () => {
     setLoading(true)
     setListError(null)
@@ -1307,18 +1296,6 @@ export default function Cotacao() {
     if (rascunho.sujo) rascunho.limpar()
     fecharForm()
   }
-
-  // Esc fecha o painel — menos quando há outro modal (role="dialog") aberto por cima, que trata o próprio Esc.
-  useEffect(() => {
-    if (!form) return
-    const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
-      pedirParaFechar()
-    }
-    window.addEventListener('keydown', aoTeclar)
-    return () => window.removeEventListener('keydown', aoTeclar)
-  })
 
   async function processXmlFile(file: File) {
     if (!form) return
@@ -2512,44 +2489,27 @@ export default function Cotacao() {
       )}
 
       {form && (
-        <div
-          className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-3 py-6 md:py-10"
-          style={{ background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          // Clique no fundo NÃO fecha (fechava sem querer e perdia o que estava preenchido). Esc fecha, com
-          // confirmação se houver alteração (efeito "Esc fecha o painel" mais acima).
+        <PainelSobreposto
+          titulo={
+            <>
+              {editingId ? 'Editar cotação' : 'Nova cotação'}
+              {(form.cidade_origem || form.cidade_destino) && <span className="font-normal text-[color:var(--rbr-muted)]"> · {tituloRota({ ...form, tipo_cotacao: tipoCotacao })}</span>}
+            </>
+          }
+          cabecalho={
+            editingId ? (
+              <span
+                className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                style={{ background: statusBadgeBg(editingStatus) }}
+              >
+                {STATUS_COTACAO_LABEL[editingStatus]}
+              </span>
+            ) : undefined
+          }
+          onFechar={pedirParaFechar}
+          rodape={false}
+          cartaoProps={{ onPointerDownCapture: rascunho.marcarInteracao, onKeyDownCapture: rascunho.marcarInteracao }}
         >
-        <div
-          className="w-full bg-white border rounded-[20px] p-[18px] flex flex-col gap-4 my-auto"
-          style={{ ...cardStyle, maxWidth: 760 }}
-          onPointerDownCapture={rascunho.marcarInteracao}
-          onKeyDownCapture={rascunho.marcarInteracao}
-        >
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">
-                {editingId ? 'Editar cotação' : 'Nova cotação'}
-                {(form.cidade_origem || form.cidade_destino) && <span className="font-normal text-[color:var(--rbr-muted)]"> · {tituloRota({ ...form, tipo_cotacao: tipoCotacao })}</span>}
-              </div>
-              {editingId && (
-                <span
-                  className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                  style={{ background: statusBadgeBg(editingStatus) }}
-                >
-                  {STATUS_COTACAO_LABEL[editingStatus]}
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={pedirParaFechar}
-              aria-label="Fechar"
-              className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
-            >
-              <IconX width={14} height={14} />
-            </button>
-          </div>
-
           {editingTeste && (
             <FaixaTeste detalhe="RBR remetente e destinatária · NF e frete até R$ 5,00 · fora do financeiro e dos relatórios" />
           )}
@@ -4764,8 +4724,7 @@ export default function Cotacao() {
               </button>
             </div>
           )}
-        </div>
-        </div>
+        </PainelSobreposto>
       )}
 
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
