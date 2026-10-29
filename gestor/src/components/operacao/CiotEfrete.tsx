@@ -16,9 +16,9 @@ async function chamar(body: Record<string, unknown>): Promise<Resposta> {
     // Erro HTTP: a função devolve {motivo} no corpo.
     const ctx = (error as { context?: Response }).context
     const corpo = ctx ? await ctx.json().catch(() => null) : null
-    return { ok: false, motivo: (corpo as Resposta | null)?.motivo ?? error.message }
+    return { ok: false, motivo: (corpo as Resposta | null)?.motivo ?? 'Não consegui falar com o servidor agora. Tente de novo em instantes.' }
   }
-  return data ?? { ok: false, motivo: 'Sem resposta da função.' }
+  return data ?? { ok: false, motivo: 'O servidor não respondeu. Tente de novo em instantes.' }
 }
 
 const LINK_CORRIGIR: Partial<Record<Corrigir, string>> = {
@@ -31,7 +31,8 @@ const LINK_CORRIGIR: Partial<Record<Corrigir, string>> = {
 export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void }
 export default function CiotEfrete(props: PropsCiotEfrete) {
   if (!CIOT_EFRETE_HABILITADO) return null
-  return <CiotEfreteAtivo {...props} />
+  // key: ao trocar de operação com o painel aberto, o cartão recomeça do zero (nunca mostra o CIOT de uma operação na outra).
+  return <CiotEfreteAtivo key={props.operacaoId} {...props} />
 }
 
 function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCiotEfrete) {
@@ -47,6 +48,8 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
 
   const carregar = useCallback(async () => {
     const r = await chamar({ acao: 'status', operacao_id: operacaoId })
+    // Se a leitura falhar, o cartão não finge que "nada foi emitido": avisa e deixa tentar de novo (consultar).
+    if (!r.ok) setErro(`Não consegui ler o estado do CIOT desta operação. ${r.mensagem ?? r.motivo ?? ''}`.trim())
     setPedido(r.ok ? ((r.pedido as PedidoCiot | null) ?? null) : null)
     setPagamentos(r.ok ? ((r.pagamentos as PagamentoCiot[] | undefined) ?? []) : [])
     if (r.ok && typeof r.ambiente === 'string') setAmbiente(r.ambiente)
@@ -77,7 +80,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
       if (!r.ok) {
         const msg = r.mensagem ?? r.motivo ?? 'A efrete recusou.'
         setErro(r.protocolo ? `${msg} (protocolo ${r.protocolo})` : msg)
-        if (r.mensagemOriginal && r.mensagemOriginal !== msg) setErroOriginal(`Excecao.Mensagem: ${r.mensagemOriginal}`)
+        if (r.mensagemOriginal && r.mensagemOriginal !== msg) setErroOriginal(r.mensagemOriginal)
       } else if (sucesso) setInfo(sucesso(r))
       await carregar()
       onMudou?.()
@@ -89,7 +92,11 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
 
   async function baixarPdf() {
     const r = await acao('pdf', { acao: 'pdf' })
-    if (!r?.ok || typeof r.pdfBase64 !== 'string') return
+    if (!r?.ok) return
+    if (typeof r.pdfBase64 !== 'string') {
+      setErro('A efrete não devolveu o PDF deste CIOT. Use "Consultar" e tente de novo.')
+      return
+    }
     const bytes = Uint8Array.from(atob(r.pdfBase64), (c) => c.charCodeAt(0))
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
     const a = document.createElement('a')

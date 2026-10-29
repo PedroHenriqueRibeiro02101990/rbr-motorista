@@ -51,7 +51,7 @@ export function PainelSobreposto({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-0 py-0 md:px-3 md:py-10"
+      className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-0 pt-8 pb-0 md:px-3 md:py-10"
       style={{ background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
     >
       <div

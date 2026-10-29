@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -1472,6 +1472,15 @@ export default function Fiscal() {
         {!loading && lista.filter((o) => o.id !== opAbertaId).map(renderCard)}
       </div>
 
+      {!loading && opAbertaId && !opAberta && (
+        <div className="text-xs rounded-xl px-3 py-2.5 flex items-center justify-between gap-2 flex-wrap" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
+          <span>Não encontrei essa operação no Fiscal. Ela pode ter sido apagada ou o link está errado.</span>
+          <button type="button" onClick={fecharPainelFiscal} className="font-bold underline">
+            Ver todas
+          </button>
+        </div>
+      )}
+
       {!loading && opAberta && (
         <PainelSobreposto
           titulo={codigoCurto(opAberta.id)}
@@ -1494,7 +1503,7 @@ export default function Fiscal() {
           onFechar={fecharPainelFiscal}
           largura={880}
         >
-          {renderCard(opAberta)}
+          <Fragment key={opAberta.id}>{renderCard(opAberta)}</Fragment>
         </PainelSobreposto>
       )}
     </div>

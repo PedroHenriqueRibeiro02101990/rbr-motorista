@@ -241,7 +241,7 @@ export default function OperacaoFluxo({
           compacto: <CiotCompacto d={d} />,
           aberto: (
             <div className="flex flex-col gap-3">
-              <EtapaCiot d={d} salvando={salvando} executar={executar} />
+              <EtapaCiot d={d} salvando={salvando} executar={executar} onMudou={() => void recarregar().then(onChanged)} />
               <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ background: 'var(--rbr-navy-tint)', color: 'var(--rbr-navy-dark)' }}>
@@ -1272,13 +1272,13 @@ function CiotCompacto({ d }: { d: DetalheOperacao }) {
   )
 }
 
-function EtapaCiot({ d, salvando, executar }: { d: DetalheOperacao; salvando: boolean; executar: Executar }) {
+function EtapaCiot({ d, salvando, executar, onMudou }: { d: DetalheOperacao; salvando: boolean; executar: Executar; onMudou?: () => void }) {
   return (
     <div className="flex flex-col gap-3">
       {ciotAplicavel(d) && !CIOT_EFRETE_HABILITADO && (
         <div className="text-xs text-[color:var(--rbr-muted)]">CIOT pela efrete ainda não liberado (conta de produção pendente). Emita o CIOT na Repom e registre o número e o documento abaixo.</div>
       )}
-      {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} ehTeste={d.operacao.eh_teste === true} docs={d.documentos} placa={d.veiculo?.placa} />}
+      {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} ehTeste={d.operacao.eh_teste === true} docs={d.documentos} placa={d.veiculo?.placa} onMudou={onMudou} />}
       {ciotAplicavel(d) && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {vpoAplicavel(d) && (
         <div className="text-xs">
