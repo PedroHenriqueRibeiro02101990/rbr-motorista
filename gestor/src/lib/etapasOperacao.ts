@@ -210,6 +210,40 @@ export function etapasDaOperacao(d: DetalheOperacao): Etapa[] {
   })
 }
 
+// O que fazer em cada etapa (texto do "Próximo passo" e do "Falta:" de cada passo).
+export function verboDaEtapa(e: Pick<Etapa, 'id' | 'titulo'>): string | undefined {
+  const verbo: Partial<Record<IdEtapa, string>> = {
+    motorista: 'Alocar motorista e veículo',
+    documento: `Emitir o ${e.titulo} na tela Fiscal`,
+    mdfe: 'Emitir o MDF-e na tela Fiscal',
+    ciot: `Registrar o ${e.titulo}`,
+    pagamento: 'Definir o pagamento ao motorista',
+    gr: 'Registrar a pesquisa GR',
+    aet: 'Providenciar a AET',
+    rastreio: 'Confirmar o rastreamento',
+    averbacao_allianz: 'Averbar o CT-e na Allianz',
+    averbacao_sompo: 'Averbar o MDF-e na Sompo',
+  }
+  return verbo[e.id]
+}
+
+// "Falta: ..." de um passo: vazio quando já está concluído.
+export function oQueFalta(e: Etapa): string | null {
+  if (e.estado === 'concluida') return null
+  if (e.estado === 'processando') return 'aguardando o retorno'
+  if (e.id === 'liberar') return 'cumprir os passos acima'
+  if (e.id === 'viagem') return 'acompanhar até a entrega'
+  return verboDaEtapa(e) ?? null
+}
+
+export const ROTULO_ESTADO: Record<EstadoEtapa, string> = {
+  concluida: 'Concluído',
+  processando: 'Processando',
+  problema: 'Com problema',
+  atual: 'Fazer agora',
+  futura: 'Depois',
+}
+
 export interface ProximoPasso {
   texto: string
   pronto: boolean // verde: tudo o que se aplica está cumprido e dá para liberar
@@ -227,19 +261,7 @@ export function proximoPasso(d: DetalheOperacao, etapas: Etapa[] = etapasDaOpera
   if (problema) return { texto: `Resolver: ${problema.titulo}`, pronto: false, etapa: problema.id }
   const atual = etapas.find((e) => e.estado === 'atual' && e.id !== 'liberar')
   if (atual) {
-    const verbo: Partial<Record<IdEtapa, string>> = {
-      motorista: 'Alocar motorista e veículo',
-      documento: `Emitir o ${atual.titulo} na tela Fiscal`,
-      mdfe: 'Emitir o MDF-e na tela Fiscal',
-      ciot: `Registrar o ${atual.titulo}`,
-      pagamento: 'Definir o pagamento ao motorista',
-      gr: 'Registrar a pesquisa GR',
-      aet: 'Providenciar a AET',
-      rastreio: 'Confirmar o rastreamento',
-      averbacao_allianz: 'Averbar o CT-e na Allianz',
-      averbacao_sompo: 'Averbar o MDF-e na Sompo',
-    }
-    return { texto: verbo[atual.id] ?? atual.titulo, pronto: false, etapa: atual.id }
+    return { texto: verboDaEtapa(atual) ?? atual.titulo, pronto: false, etapa: atual.id }
   }
   const processando = etapas.find((e) => e.estado === 'processando')
   if (processando) return { texto: `Aguardando: ${processando.titulo}`, pronto: false, etapa: processando.id }

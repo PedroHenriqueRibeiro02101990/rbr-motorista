@@ -26,6 +26,8 @@ import OrdemColeta from './OrdemColeta'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
 import PreVoo from './PreVoo'
+import HistoricoOperacao from './HistoricoOperacao'
+import { abaDaEtapa, sinaisDasAbas, type IdAba, type SinalAba } from '../../lib/abasOperacao'
 import BotaoAcao from './BotaoAcao'
 import CartaoGr from './CartaoGr'
 import SeguroCard from './SeguroCard'
@@ -43,9 +45,10 @@ import {
   documentoProcessando,
   etapasDaOperacao,
   pendenciasLiberacao,
+  oQueFalta,
   proximoPasso,
+  ROTULO_ESTADO,
   rotuloAcaoDocumento,
-  separarEtapas,
   vpoAplicavel,
   visualEtapa,
   type Etapa,
@@ -121,12 +124,20 @@ export default function OperacaoFluxo({
   onChanged,
   onCancelar,
   extras,
+  aba = 'resumo',
+  onAba,
+  onSinais,
 }: {
   operacaoId: string
   gestor: Pessoa
   assessoria: AssessoriaContato
   onChanged: () => void
   onCancelar?: () => void
+  // Aba do painel (controlada por quem abre o painel); sem ela, tudo aparece como Resumo.
+  aba?: IdAba
+  onAba?: (a: IdAba) => void
+  // Avisa quais abas têm algo a fazer ou com problema (bolinha na aba).
+  onSinais?: (s: Record<IdAba, SinalAba>) => void
   // Blocos que a página Operações já mantém e que entram dentro de uma etapa (AET, seguro excedente, avisar
   // motoristas, finalizar viagem) e o rodapé discreto (pagamento pós-entrega).
   extras?: Partial<Record<'motorista' | 'aet' | 'averbacao_allianz' | 'viagem' | 'rodape', React.ReactNode>>
@@ -180,12 +191,16 @@ export default function OperacaoFluxo({
 
   const atendido = useCallback(() => setPedido(null), [])
 
+  const sinaisJson = d ? JSON.stringify(sinaisDasAbas(etapasDaOperacao(d))) : null
+  useEffect(() => {
+    if (sinaisJson) onSinais?.(JSON.parse(sinaisJson) as Record<IdAba, SinalAba>)
+  }, [sinaisJson, onSinais])
+
   if (!d) return <div className="text-xs text-[color:var(--rbr-muted)]">{erro ?? 'Carregando detalhes…'}</div>
 
   const o = d.operacao
   const etapas = etapasDaOperacao(d)
   const passo = proximoPasso(d, etapas)
-  const { principais, recolhidas, abrirRecolhidas } = separarEtapas(etapas)
   const linha = (e: Etapa, i: number, lista: Etapa[]) => {
     const c = conteudo(e)
     return (
@@ -273,8 +288,14 @@ export default function OperacaoFluxo({
     }
   }
 
+  const daAba = (a: IdAba) => etapas.filter((e) => abaDaEtapa(e.id) === a)
+  const faltas = [...pendenciasLiberacao(d).bloqueiam, ...pendenciasLiberacao(d).ressalvaveis]
+  const irParaEtapa = (id: IdEtapa) => {
+    onAba?.(abaDaEtapa(id))
+    setTimeout(() => document.getElementById(`etapa-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+  }
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
     <div className="flex flex-col gap-3 min-w-0">
       {erro && (
         <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
@@ -288,6 +309,8 @@ export default function OperacaoFluxo({
         </div>
       )}
 
+      {aba === 'resumo' && (
+      <>
       {/* Próximo passo (uma ação) + Mais ações */}
       <div
         className="rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 flex-wrap"
@@ -307,7 +330,7 @@ export default function OperacaoFluxo({
         {passo.etapa && (
           <button
             type="button"
-            onClick={() => document.getElementById(`etapa-${passo.etapa}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            onClick={() => passo.etapa && irParaEtapa(passo.etapa)}
             className="text-xs font-bold px-3.5 py-1.5 rounded-lg"
             style={passo.pronto ? { background: '#137A45', color: '#fff' } : { background: 'var(--rbr-navy)', color: '#fff' }}
           >
@@ -341,20 +364,72 @@ export default function OperacaoFluxo({
         onPedidoAtendido={atendido}
       />
 
-      <ol className="flex flex-col list-none m-0 p-0" aria-label="Etapas da operação">
-        {principais.map((e, i) => linha(e, i, principais))}
+      <div className="rounded-xl border p-3 flex flex-col gap-1.5" style={{ borderColor: 'var(--rbr-border)' }}>
+        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Andamento</div>
+        <ul className="flex flex-col list-none m-0 p-0 gap-1">
+          {etapas.map((e) => {
+            const { cor, marca } = visualEtapa(e.estado)
+            const falta = oQueFalta(e)
+            return (
+              <li key={e.id}>
+                <button type="button" onClick={() => irParaEtapa(e.id)} className="w-full text-left flex items-center gap-2 text-xs rounded-lg px-1.5 py-1 hover:bg-[color:var(--rbr-muted-bg)]">
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ background: e.estado === 'futura' ? '#fff' : cor, border: `2px solid ${cor}` }}>
+                    {marca}
+                  </span>
+                  <span className="font-semibold">{e.titulo}</span>
+                  <span className="text-[color:var(--rbr-muted)] truncate">· {ROTULO_ESTADO[e.estado]}{falta ? ` · falta: ${falta}` : ''}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+      <ResumoLinha d={d} aberto={resumoAberto} onAlternar={() => setResumoAberto((v) => !v)} />
+      <SeguroCard operacaoId={o.id} apolice={d.apolice} />
+      <ol className="flex flex-col list-none m-0 p-0" aria-label="Liberação">
+        {daAba('resumo').map((e, i, l) => linha(e, i, l))}
       </ol>
-      {recolhidas.length > 0 && (
-        <details open={abrirRecolhidas} className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--rbr-border)' }}>
-          <summary className="text-xs font-bold cursor-pointer text-[color:var(--rbr-muted)]">Outras etapas ({recolhidas.length})</summary>
-          <ol className="flex flex-col list-none m-0 p-0 mt-3" aria-label="Outras etapas da operação">
-            {recolhidas.map((e, i) => linha(e, i, recolhidas))}
-          </ol>
-        </details>
-      )}
-
       <Dispensados d={d} executar={executar} />
       {extras?.rodape}
+      </>
+      )}
+
+      {aba === 'fiscal' && (
+        <>
+          <div className="text-xs rounded-xl px-3 py-2.5" style={faltas.length > 0 ? { background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' } : { background: '#E7F5EC', color: '#137A45' }}>
+            {faltas.length > 0 ? <><b>O que falta para liberar:</b> {faltas.join('; ')}.</> : <b>Nada falta nos documentos para liberar a coleta.</b>}
+          </div>
+          <ol className="flex flex-col list-none m-0 p-0" aria-label="Documentos fiscais da operação">
+            {daAba('fiscal').map((e, i, l) => linha(e, i, l))}
+          </ol>
+        </>
+      )}
+
+      {aba === 'motorista' && (
+        <>
+          <ol className="flex flex-col list-none m-0 p-0" aria-label="Motorista e veículo">
+            {daAba('motorista').map((e, i, l) => linha(e, i, l))}
+          </ol>
+          <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'cte'} />
+        </>
+      )}
+
+      {aba === 'financeiro' && (
+        <>
+          {daAba('financeiro').length > 0 ? (
+            <ol className="flex flex-col list-none m-0 p-0" aria-label="Pagamento ao motorista">
+              {daAba('financeiro').map((e, i, l) => linha(e, i, l))}
+            </ol>
+          ) : (
+            <div className="text-xs text-[color:var(--rbr-muted)]">Sem pagamento a parceiro nesta operação (frota própria ou motorista ainda não definido).</div>
+          )}
+          <Link to="/financeiro" className="text-xs font-bold underline self-start" style={{ color: 'var(--rbr-navy)' }}>
+            Abrir o Financeiro
+          </Link>
+        </>
+      )}
+
+      {aba === 'historico' && <HistoricoOperacao operacaoId={o.id} />}
 
       {ordemAberta && (
         <Modal titulo="Ordem de coleta" onFechar={() => setOrdemAberta(false)} largura="max-w-2xl">
@@ -366,18 +441,6 @@ export default function OperacaoFluxo({
           <FichaAssessoria d={d} assessoria={assessoria} />
         </Modal>
       )}
-    </div>
-
-    {/* Painel lateral: motorista e veículo, resumo da cotação, seguro e pré-voo */}
-    <aside className="flex flex-col gap-3">
-      <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
-        <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Motorista e veículo</div>
-        <MotoristaCompacto d={d} />
-      </div>
-      <ResumoLinha d={d} aberto={resumoAberto} onAlternar={() => setResumoAberto((v) => !v)} />
-      <SeguroCard operacaoId={o.id} apolice={d.apolice} />
-      <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'cte'} />
-    </aside>
     </div>
   )
 }
@@ -420,6 +483,7 @@ function EtapaLinha({
           >
             {etapa.titulo}
           </span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">{ROTULO_ESTADO[estado]}</span>
           {estado === 'processando' && (
             <SeloProcessando texto={etapa.id === 'averbacao_allianz' || etapa.id === 'averbacao_sompo' ? 'Processando na Averba…' : 'Processando na SEFAZ…'} />
           )}
@@ -435,6 +499,7 @@ function EtapaLinha({
             </span>
           )}
         </div>
+        {estado !== 'concluida' && oQueFalta(etapa) && <div className="text-xs text-[color:var(--rbr-muted)]">Falta: {oQueFalta(etapa)}</div>}
         {abrir && aberto && <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: estado === 'problema' ? '#F4C9C9' : 'var(--rbr-border)' }}>{aberto}</div>}
       </div>
     </li>

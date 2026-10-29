@@ -17,6 +17,7 @@ import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
+import { ABAS, abaValida, type IdAba, type SinalAba } from '../lib/abasOperacao'
 import { FILAS, casaBusca, contarFilas, passaFila, type DadosFila, type FilaId } from '../lib/filasOperacao'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -128,6 +129,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [problemasPorOp, setProblemasPorOp] = useState<Record<string, number>>({})
   const opDaUrl = params.get('op')
   const preparadaRef = useRef<string | null>(null)
+  const aba = abaValida(params.get('aba'))
+  const [sinaisAbas, setSinaisAbas] = useState<Record<IdAba, SinalAba> | null>(null)
 
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [motoristas, setMotoristas] = useState<Pessoa[]>([])
@@ -304,11 +307,24 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     })
   }
 
+  function trocarAba(a: IdAba) {
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p)
+        if (a === 'resumo') n.delete('aba')
+        else n.set('aba', a)
+        return n
+      },
+      { replace: true },
+    )
+  }
+
   function fecharPainel() {
     setParams(
       (p) => {
         const n = new URLSearchParams(p)
         n.delete('op')
+        n.delete('aba')
         return n
       },
       { replace: true },
@@ -877,6 +893,32 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                     </button>
                   </div>
                 )}
+                <div role="tablist" aria-label="Seções da operação" className="flex gap-1 overflow-x-auto -mb-3 pt-1">
+                  {ABAS.map((a) => {
+                    const ativa = aba === a.id
+                    const sinal = sinaisAbas?.[a.id]
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={ativa}
+                        onClick={() => trocarAba(a.id)}
+                        className="relative whitespace-nowrap text-xs font-bold px-3 py-2 rounded-t-lg border-b-2"
+                        style={ativa ? { borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy-dark)' } : { borderColor: 'transparent', color: 'var(--rbr-muted)' }}
+                      >
+                        {a.rotulo}
+                        {sinal && (
+                          <span
+                            className="inline-block w-2 h-2 rounded-full ml-1.5 align-middle"
+                            style={{ background: sinal === 'problema' ? 'var(--rbr-danger)' : 'var(--rbr-gold)' }}
+                            title={sinal === 'problema' ? 'Há um passo com problema' : 'Há algo a fazer'}
+                          />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </>
             }
             onFechar={fecharPainel}
@@ -917,7 +959,11 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
               )}
     
               <OperacaoFluxo
+                key={op.id}
                 operacaoId={op.id}
+                aba={aba}
+                onAba={trocarAba}
+                onSinais={setSinaisAbas}
                 gestor={gestor}
                 assessoria={assessoria}
                 onChanged={load}
