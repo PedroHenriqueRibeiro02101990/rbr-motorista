@@ -1,5 +1,6 @@
 import type { DetalheOperacao, Documento } from './operacaoDetalhe'
 import { estadoSompo } from './averbacaoSompo.ts'
+import { CIOT_EFRETE_HABILITADO } from './efreteFlags.ts'
 
 // Linha do tempo da operação (painel enxuto, 2026-10-16). Só decide QUAIS etapas aparecem e em que estado; não cria
 // regra nova. De onde vem cada regra:
@@ -79,9 +80,14 @@ export function aplicavel(doc: Doc | undefined): boolean {
 
 const CIOT_OK = (n: string | null | undefined) => (n ?? '').replace(/\D/g, '').length === 12
 
-export function ciotAplicavel(d: DetalheOperacao): boolean {
+// Operação de teste: o modo teste dispensa o CIOT (migração 20261014_01), mas com a efrete ligada ele pode ser exercitado
+// na homologação. Então, nesse caso, a etapa e o cartão do CIOT aparecem mesmo com a linha dispensada. Não muda a
+// liberação: ela olha só os documentos exigidos (pendenciasLiberacao).
+export function ciotAplicavel(d: DetalheOperacao, efreteLigada: boolean = CIOT_EFRETE_HABILITADO): boolean {
   const ciot = docPor(d, 'ciot')
-  return !frotaPropria(d) && !!ciot && !dispensado(ciot)
+  if (frotaPropria(d) || !ciot) return false
+  if (!dispensado(ciot)) return true
+  return efreteLigada && d.operacao.eh_teste === true
 }
 
 export function vpoAplicavel(d: DetalheOperacao): boolean {
