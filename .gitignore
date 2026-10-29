@@ -5,3 +5,6 @@ workspaces/efrete-docs/
 
 # Estado local da CLI do Supabase (não versionar)
 supabase/.temp/
+
+# Material privado (kit da NSTech etc.): nunca versionar
+docs-privado/
