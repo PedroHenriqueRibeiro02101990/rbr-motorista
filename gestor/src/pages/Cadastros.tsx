@@ -20,6 +20,7 @@ import PainelPendencias from '../components/PainelPendencias'
 import { CamposParceiro, SeloClassificacao } from '../components/cadastros/ParceiroFiscal'
 import { SeloTermo, useAceitesPrestador } from '../components/cadastros/SeloTermo'
 import { SeloContrato } from '../components/conformidade/ContratosAgenciador'
+import { mensagemErroSalvar } from '../lib/erroSupabase'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -997,7 +998,7 @@ export default function Cadastros() {
       fecharFormMotorista()
       await loadMotoristas()
     } catch (e) {
-      setErroMotorista(e instanceof Error ? e.message : 'Erro ao salvar motorista.')
+      setErroMotorista(mensagemErroSalvar(e, 'Erro ao salvar motorista.'))
     } finally {
       setSalvandoMotorista(false)
     }

@@ -63,3 +63,11 @@ test('cancelar CIOT: até 24 h antes do início; depois disso mostra o motivo', 
   // MDF-e continua vindo primeiro
   assert.match(motivoNaoCancela([{ tipo: 'mdfe', status: 'emitido', exigido: true }], '2026-11-05T12:00:00Z', agora)!, /MDF-e/)
 })
+
+test('piso sem pedido montado: mostra só o piso, não "R$ 0,00 contra piso"', () => {
+  const l = montarConferencia({ ok: true, pedido: null, bloqueios: ['Transportador sem chave Pix (o pagamento do CIOT vai por Pix).'], piso: { ok: true, piso: 4870, tabela: 'A', tipoCarga: 'Carga Geral', eixos: 6, distanciaKm: 188 } })
+  const piso = l.find((x) => x.id === 'piso')!
+  assert.equal(piso.ok, true)
+  assert.doesNotMatch(piso.detalhe, /0,00 contra/)
+  assert.match(piso.detalhe, /Piso mínimo da ANTT/)
+})
