@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { PainelSobreposto } from '../components/PainelSobreposto'
+import NavegacaoServico from '../components/NavegacaoServico'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
@@ -630,9 +631,9 @@ export default function Cotacao() {
   // condições de pagamento, ajuste manual de alíquota de imposto).
   // Tipo da cotação (carga única / veículos juntos / várias entregas) e fluxo de conversão.
   const navigate = useNavigate()
-  // ?cotacao=<id> (vindo do painel "O que fazer agora") abre a cotação direto, uma vez.
+  // ?id=<id> (navegação do serviço) ou ?cotacao=<id> (painel "O que fazer agora") abre a cotação direto, uma vez.
   const [params] = useSearchParams()
-  const cotacaoDaUrl = params.get('cotacao')
+  const cotacaoDaUrl = params.get('id') ?? params.get('cotacao')
   const abriuCotacaoDaUrl = useRef(false)
   useEffect(() => {
     if (!cotacaoDaUrl || abriuCotacaoDaUrl.current || !cotacoes) return
@@ -2508,6 +2509,16 @@ export default function Cotacao() {
           }
           onFechar={pedirParaFechar}
           rodape={false}
+          fixo={
+            editingId ? (
+              <NavegacaoServico
+                atual="cotacao"
+                cotacaoId={editingId}
+                operacaoId={null}
+                confirmarSaida={() => !rascunho.sujo || window.confirm('Há alterações não salvas nesta cotação. Sair mesmo assim? O rascunho fica guardado neste navegador.')}
+              />
+            ) : undefined
+          }
           cartaoProps={{ onPointerDownCapture: rascunho.marcarInteracao, onKeyDownCapture: rascunho.marcarInteracao }}
         >
           {editingTeste && (

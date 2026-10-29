@@ -15,6 +15,7 @@ import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, t
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
+import NavegacaoServico from '../components/NavegacaoServico'
 import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
 import { FILTROS_VAZIOS, SEM_MOTORISTA, passaFiltrosLista, temFiltro, type FiltrosLista } from '../lib/listaOperacoes'
 import { ABAS, abaValida, type IdAba, type SinalAba } from '../lib/abasOperacao'
@@ -652,6 +653,9 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     return motoristas.filter((m) => ids.has(m.id)).map((m) => [m.id, m.nome] as const).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
   }, [operacoes, motoristas])
 
+  // Campos do painel preenchidos e ainda não salvos (motivo de liberação, dados do veículo e da carga): a troca de tela avisa.
+  const edicaoPendente = motivoLiberacao.trim() !== '' || Object.values(veiculoForm).some((v) => v !== '') || Object.values(cargaForm).some((v) => v !== '')
+
   // Anterior/próxima seguem a lista filtrada, na ordem da tela.
   const vizinhosAbertos = opAberta ? vizinhos(lista.map((o) => o.id), opAberta.id) : null
 
@@ -910,6 +914,12 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 <div className="text-xs text-[color:var(--rbr-muted)]">
                   {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
                 </div>
+                <NavegacaoServico
+                  atual="operacao"
+                  cotacaoId={op.cotacao_id}
+                  operacaoId={op.id}
+                  confirmarSaida={() => !edicaoPendente || window.confirm('Há campos preenchidos e não salvos nesta operação. Sair mesmo assim?')}
+                />
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
                   <ResumoItem rotulo="Motorista" valor={motoristas.find((m) => m.id === op.pessoa_alocada_id)?.nome ?? 'sem motorista'} />
                   <ResumoItem rotulo="Placa" valor={veiculos.find((v) => v.id === op.veiculo_id)?.placa ?? 'sem veículo'} />
