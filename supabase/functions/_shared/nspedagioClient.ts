@@ -247,7 +247,7 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
   function falhaNoCorpo(r: RespostaHttp): ResultadoNs<never> | null {
     if (r.status < 200 || r.status >= 300) return null
     const chave = achar(r.corpo, ['messageKey'])
-    if (typeof chave === 'string' && /FALHA|NAO_LOCALIZADO|ERRO|INVALID/i.test(chave)) {
+    if (typeof chave === 'string' && /FALHA|NAO_LOCALIZADO|NAO_TEM|NAO_EXISTE|ERRO|INVALID/i.test(chave)) {
       const desc = achar(r.corpo, ['descricao'])
       return { ok: false, http: r.status, erro: typeof desc === 'string' ? desc : chave, bruto: r.corpo }
     }
