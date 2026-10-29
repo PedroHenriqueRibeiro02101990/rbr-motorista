@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
+import { mensagemClara } from '../../lib/mensagemClara'
 
 // Eventos fiscais pós-emissão (cancelar MDF-e/CT-e, carta de correção, trocar condutor).
 // Encerrar o MDF-e fica no botão "Finalizar viagem" (FinalizarViagem.tsx).
@@ -36,7 +37,7 @@ export async function extrairErro(error: unknown): Promise<string> {
   } catch {
     // corpo não veio como JSON — cai no fallback
   }
-  return error instanceof Error ? error.message : 'Erro desconhecido ao chamar a função.'
+  return mensagemClara(error, 'Não consegui falar com o servidor. Tente de novo em instantes.')
 }
 
 export default function EventoFiscalModal({

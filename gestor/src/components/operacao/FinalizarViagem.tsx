@@ -4,6 +4,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatDateTime } from '@rbr/shared/format'
 import { Aviso, Campo, inputClass, inputStyle, Modal } from '../financeiro/ui'
 import { extrairErro } from './EventoFiscalModal'
+import { mensagemClara } from '../../lib/mensagemClara'
 
 // "Finalizar viagem" = encerrar o MDF-e da operação. Por enquanto é SÓ manual: o gestor confere os
 // dados já preenchidos e confirma. Não muda o status da operação (entregue/fechada), só o MDF-e.
@@ -271,7 +272,7 @@ function ConfirmarFinalizacao({
       }
       await onTentou(true, resp?.ja_encerrado ? 'Esse MDF-e já estava encerrado.' : 'Viagem finalizada. O MDF-e foi encerrado.')
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Não foi possível finalizar a viagem.')
+      setErro(mensagemClara(e, 'Não foi possível finalizar a viagem.'))
     } finally {
       enviandoRef.current = false
       setEnviando(false)

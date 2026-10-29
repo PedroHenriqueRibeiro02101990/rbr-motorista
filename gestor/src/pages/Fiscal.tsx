@@ -7,6 +7,7 @@ import { formatMoney, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import NavegacaoServico from '../components/NavegacaoServico'
 import { codigoCurto } from '../lib/painelOperacao'
+import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
 import PainelPendencias from '../components/PainelPendencias'
 import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
@@ -186,7 +187,7 @@ async function extrairDetalheErroInvoke(error: unknown): Promise<DetalheErro> {
     // Corpo não veio como JSON válido (ou o stream já tinha sido consumido) —
     // cai no fallback abaixo em vez de quebrar a tela.
   }
-  const mensagem = error instanceof Error ? error.message : 'Erro desconhecido ao chamar a função.'
+  const mensagem = mensagemClara(error, 'Não consegui falar com o servidor. Tente de novo em instantes.')
   return { erro: mensagem }
 }
 
@@ -274,7 +275,7 @@ export default function Fiscal() {
       .order('created_at', { ascending: false })
       .limit(100)
 
-    if (error) setErrorMsg(error.message)
+    if (error) setErrorMsg(mensagemClara(error))
 
     const mapeadas: OperacaoEnriquecida[] = (data ?? []).map((op) => ({
       ...op,
@@ -349,7 +350,7 @@ export default function Fiscal() {
     } catch (e) {
       setErroPorOperacao((prev) => ({
         ...prev,
-        [op.id]: { erro: e instanceof Error ? e.message : 'Erro inesperado ao emitir documento.' },
+        [op.id]: { erro: mensagemClara(e, 'Não consegui emitir o documento agora. Tente de novo.') },
       }))
     } finally {
       marcarEmAndamento(chave, false)
@@ -381,7 +382,7 @@ export default function Fiscal() {
     } catch (e) {
       setErroPorOperacao((prev) => ({
         ...prev,
-        [op.id]: { erro: e instanceof Error ? e.message : 'Erro inesperado ao averbar.' },
+        [op.id]: { erro: mensagemClara(e, 'Não consegui enviar a averbação agora. Tente de novo.') },
       }))
     } finally {
       marcarEmAndamento(chave, false)
@@ -434,7 +435,7 @@ export default function Fiscal() {
         },
       })
       if (error || !data?.sucesso) {
-        let msg = data?.erro ?? error?.message ?? 'erro desconhecido'
+        let msg = data?.erro ?? (error ? mensagemClara(error) : 'o servidor não explicou o motivo')
         const ctx = (error as { context?: Response } | null)?.context
         if (ctx && typeof ctx.json === 'function') {
           try { msg = (await ctx.json())?.erro ?? msg } catch { /* mantém msg */ }
@@ -485,7 +486,7 @@ export default function Fiscal() {
     } catch (e) {
       setErroPorOperacao((prev) => ({
         ...prev,
-        [op.id]: { erro: e instanceof Error ? e.message : 'Erro inesperado na NF-e de teste.' },
+        [op.id]: { erro: mensagemClara(e, 'Não consegui emitir a NF-e de teste agora. Tente de novo.') },
       }))
     } finally {
       marcarEmAndamento(chave, false)
@@ -544,7 +545,7 @@ export default function Fiscal() {
         }
       }
     } catch (e) {
-      mostrarErro({ erro: e instanceof Error ? e.message : 'Erro inesperado na NF-e de teste (produção).' })
+      mostrarErro({ erro: mensagemClara(e, 'Não consegui emitir a NF-e de teste agora. Tente de novo.') })
     } finally {
       marcarEmAndamento(chave, false)
     }
@@ -586,7 +587,7 @@ export default function Fiscal() {
     })
     setSalvandoDoc(false)
     if (error) {
-      setErroDocPorOperacao((prev) => ({ ...prev, [op.id]: error.message }))
+      setErroDocPorOperacao((prev) => ({ ...prev, [op.id]: mensagemClara(error) }))
       return
     }
     setFormNovoDocOperacaoId(null)
@@ -637,7 +638,7 @@ export default function Fiscal() {
       .eq('id', docId)
     setSalvandoDoc(false)
     if (error) {
-      setErroDocPorOperacao((prev) => ({ ...prev, [op.id]: error.message }))
+      setErroDocPorOperacao((prev) => ({ ...prev, [op.id]: mensagemClara(error) }))
       return
     }
     setEditandoDocId(null)
@@ -654,7 +655,7 @@ export default function Fiscal() {
     const { error } = await supabase.from('documentacao_operacao').delete().eq('id', docId)
     setSalvandoDoc(false)
     if (error) {
-      setErroDocPorOperacao((prev) => ({ ...prev, [op.id]: error.message }))
+      setErroDocPorOperacao((prev) => ({ ...prev, [op.id]: mensagemClara(error) }))
       return
     }
     await carregarDocumentos([op.id])

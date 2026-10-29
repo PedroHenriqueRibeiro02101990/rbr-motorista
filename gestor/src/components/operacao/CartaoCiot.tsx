@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatMoney } from '@rbr/shared/format'
+import { mensagemClara } from '../../lib/mensagemClara'
 import { faltamCaracteres, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
 
 // Cartão visual do CIOT (4 estados). Só apresenta: quem chama a função é CiotEfrete; /demo-ciot usa o mesmo cartão com dados de mentira.
@@ -198,8 +199,8 @@ export default function CartaoCiot(p: PropsCartao) {
             {comErro && (
               <div className="rounded-lg px-3 py-2 text-xs flex flex-col gap-1" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                 <b>A efrete recusou a emissão.</b>
-                <span>{ped?.ultimo_erro ?? p.erro}</span>
-                {p.erroOriginal && <MensagemOriginal texto={p.erroOriginal} />}
+                <span>{mensagemClara(ped?.ultimo_erro ?? p.erro, 'A efrete não explicou o motivo.')}</span>
+                {(p.erroOriginal || (ped?.ultimo_erro && mensagemClara(ped.ultimo_erro) !== ped.ultimo_erro)) && <MensagemOriginal texto={p.erroOriginal ?? ped?.ultimo_erro ?? ''} />}
                 <span className="text-[color:var(--rbr-muted)]">Tentar de novo não gera outro CIOT: antes de emitir, o sistema pergunta à efrete se esta operação já tem um.</span>
               </div>
             )}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { extrairErro } from './EventoFiscalModal'
+import { mensagemClara } from '../../lib/mensagemClara'
 
 // Cancelamento de CT-e, MDF-e e NF-e de teste pela Edge Function `cancelar-documento-fiscal`.
 // A função valida a ordem (MDF-e → CT-e → NF-e), usa o ambiente gravado no documento e devolve
@@ -77,7 +78,7 @@ export default function CancelarDocumentoModal({
       }
       onCancelado(data)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro inesperado ao cancelar o documento.')
+      setErro(mensagemClara(e, 'Não consegui cancelar o documento agora. Tente de novo.'))
     } finally {
       setEnviando(false)
     }

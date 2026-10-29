@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
 import PreVoo from './PreVoo'
+import { mensagemClara } from '../../lib/mensagemClara'
 
 // Card de conferência que abre ANTES de emitir CT-e ou MDF-e. Pede às próprias funções de emissão o
 // "payload de prévia" (o que seria enviado à Focus + o que está faltando, sem gravar nada) e mostra,
@@ -424,7 +425,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
     )
     setSalvando(false)
     if (error) {
-      setMsg(`Não consegui salvar: ${error.message}`)
+      setMsg(`Não consegui salvar: ${mensagemClara(error)}`)
       return
     }
     setMsg('Salvo.')
