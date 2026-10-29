@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
+import { mensagemClara } from '../../lib/mensagemClara'
 import { montarConferencia, motivoNaoCancela, passosAntesDoCiot, type Corrigir, type DocLeve, type Previa } from '../../lib/ciotCartao'
 import CartaoCiot, { FaixaFixa, type PagamentoCiot, type PedidoCiot } from './CartaoCiot'
 
@@ -49,7 +50,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
   const carregar = useCallback(async () => {
     const r = await chamar({ acao: 'status', operacao_id: operacaoId })
     // Se a leitura falhar, o cartão não finge que "nada foi emitido": avisa e deixa tentar de novo (consultar).
-    if (!r.ok) setErro(`Não consegui ler o estado do CIOT desta operação. ${r.mensagem ?? r.motivo ?? ''}`.trim())
+    if (!r.ok) setErro(`Não consegui ler o estado do CIOT desta operação. ${mensagemClara(r.mensagem ?? r.motivo, '')}`.trim())
     setPedido(r.ok ? ((r.pedido as PedidoCiot | null) ?? null) : null)
     setPagamentos(r.ok ? ((r.pagamentos as PagamentoCiot[] | undefined) ?? []) : [])
     if (r.ok && typeof r.ambiente === 'string') setAmbiente(r.ambiente)
@@ -78,7 +79,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
     try {
       const r = await chamar({ ...body, operacao_id: operacaoId })
       if (!r.ok) {
-        const msg = r.mensagem ?? r.motivo ?? 'A efrete recusou.'
+        const msg = mensagemClara(r.mensagem ?? r.motivo, 'A efrete recusou o pedido.')
         setErro(r.protocolo ? `${msg} (protocolo ${r.protocolo})` : msg)
         if (r.mensagemOriginal && r.mensagemOriginal !== msg) setErroOriginal(r.mensagemOriginal)
       } else if (sucesso) setInfo(sucesso(r))

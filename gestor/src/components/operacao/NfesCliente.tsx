@@ -12,6 +12,7 @@ import {
   type NfDaCotacao,
   type NotaOperacao,
 } from '@rbr/shared/nfeOperacao'
+import { mensagemClara } from '../../lib/mensagemClara'
 
 // Passo 4: NF-e do CLIENTE na operação. A RBR não emite NF-e em operação real; o CT-e/MDF-e citam as notas do
 // embarcador. Uma carga pode ter várias notas (operacao_nfes). XML no bucket privado operacao-nfe/<operacao>/<chave>.xml.
@@ -118,7 +119,7 @@ export default function NfesCliente({ operacaoId, onMudou }: { operacaoId: strin
     }
     const { data: pid } = await supabase.rpc('current_pessoa_id')
     const { error } = await supabase.from('operacao_nfes').insert({ ...nota, operacao_id: operacaoId, arquivo_xml_path: path, criado_por: (pid as string | null) ?? null })
-    if (error) throw new Error(error.code === '23505' ? 'Esta nota já está na operação.' : error.message)
+    if (error) throw new Error(error.code === '23505' ? 'Esta nota já está na operação.' : mensagemClara(error))
   }
 
   async function executar(fn: () => Promise<void>) {
@@ -129,7 +130,7 @@ export default function NfesCliente({ operacaoId, onMudou }: { operacaoId: strin
       await carregar()
       onMudou?.()
     } catch (e) {
-      setErros([e instanceof Error ? e.message : 'Erro ao salvar a nota.'])
+      setErros([mensagemClara(e, 'Não consegui salvar a nota. Tente de novo.')])
     } finally {
       setSalvando(false)
     }

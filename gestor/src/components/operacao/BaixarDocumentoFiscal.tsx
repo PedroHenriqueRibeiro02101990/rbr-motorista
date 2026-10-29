@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { extrairErro } from './EventoFiscalModal'
+import { mensagemClara } from '../../lib/mensagemClara'
 
 // Download do PDF (DANFE/DACTE/DAMDFE) ou XML pela Edge Function `baixar-documento-fiscal`.
 // Sucesso vem como arquivo: o supabase-js entrega Blob para application/pdf e texto para application/xml.
@@ -65,7 +66,7 @@ export default function BaixarDocumentoFiscal({
         nomeDoHeader(response) ?? `${ROTULO_ARQUIVO[tipo]}-${(chave ?? '').replace(/\D/g, '') || operacaoId}.${formato}`
       salvarArquivo(blob, nome)
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro inesperado ao baixar o arquivo.')
+      setErro(mensagemClara(e, 'Não consegui baixar o arquivo agora. Tente de novo.'))
     } finally {
       setBaixando(null)
     }
