@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatMoney } from '@rbr/shared/format'
 import { faltamCaracteres, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
 
@@ -53,13 +53,29 @@ export function FaixaFixa({ texto }: { texto: string }) {
 }
 
 function Modal({ titulo, children, onFechar }: { titulo: string; children: React.ReactNode; onFechar: () => void }) {
+  // Esc fecha o modal mesmo sem foco dentro dele (o painel por baixo ignora o Esc enquanto há um modal aberto).
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => e.key === 'Escape' && onFechar()
+    window.addEventListener('keydown', aoTeclar)
+    return () => window.removeEventListener('keydown', aoTeclar)
+  }, [onFechar])
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(18,23,61,.55)' }} role="dialog" aria-modal="true" aria-label={titulo} onKeyDown={(e) => e.key === 'Escape' && onFechar()}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: 'rgba(18,23,61,.55)' }} role="dialog" aria-modal="true" aria-label={titulo}>
       <div className="bg-white rounded-xl p-4 w-full max-w-md flex flex-col gap-3">
         <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">{titulo}</div>
         {children}
       </div>
     </div>
+  )
+}
+
+// O texto exato que a efrete devolveu fica à mão (útil para o suporte), mas recolhido: a tela fala em português claro.
+function MensagemOriginal({ texto }: { texto: string }) {
+  return (
+    <details className="text-[11px] mt-1">
+      <summary className="cursor-pointer font-semibold">Ver a mensagem original da efrete</summary>
+      <div className="font-mono break-words mt-1">{texto}</div>
+    </details>
   )
 }
 
@@ -183,7 +199,7 @@ export default function CartaoCiot(p: PropsCartao) {
               <div className="rounded-lg px-3 py-2 text-xs flex flex-col gap-1" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                 <b>A efrete recusou a emissão.</b>
                 <span>{ped?.ultimo_erro ?? p.erro}</span>
-                {p.erroOriginal && <span className="font-mono text-[11px] break-words">{p.erroOriginal}</span>}
+                {p.erroOriginal && <MensagemOriginal texto={p.erroOriginal} />}
                 <span className="text-[color:var(--rbr-muted)]">Tentar de novo não gera outro CIOT: antes de emitir, o sistema pergunta à efrete se esta operação já tem um.</span>
               </div>
             )}
@@ -302,7 +318,7 @@ export default function CartaoCiot(p: PropsCartao) {
       {p.erro && !comErro && !cancelando && !confirmando && (
         <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {p.erro}
-          {p.erroOriginal && <div className="font-mono text-[11px] mt-1 break-words">{p.erroOriginal}</div>}
+          {p.erroOriginal && <MensagemOriginal texto={p.erroOriginal} />}
         </div>
       )}
       <div className="text-[11px] text-[color:var(--rbr-muted)]">Se a efrete estiver fora do ar, digite o CIOT à mão no bloco "CIOT" da operação: o caminho manual continua valendo.</div>
