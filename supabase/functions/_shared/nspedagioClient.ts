@@ -14,6 +14,7 @@ export interface ConfigNsPedagio {
   cnpj: string // NSPEDAGIO_CNPJ (unidade que compra)
   // Compra real fica travada até alguém ligar de propósito (a homologação também gera movimento no meio de pagamento).
   compraLiberada?: boolean
+  limiteMs?: number // tempo máximo de cada chamada ao NSPEDAGIO (padrão 60 s)
 }
 
 export interface PontoRota {
@@ -216,7 +217,9 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
   async function chamar(metodo: string, caminho: string, corpo?: unknown): Promise<RespostaHttp> {
     for (let tentativa = 0; tentativa < 2; tentativa++) {
       const t = await obterToken(tentativa > 0)
+      // Limite de tempo: sem ele a chamada pode ficar pendurada e a linha de vpo_requisicoes fica sem resposta.
       const r = await fetchFn(`${base}/${caminho}`, {
+        signal: AbortSignal.timeout(config.limiteMs ?? 60_000),
         method: metodo,
         headers: { authorization: `Bearer ${t}`, accept: 'application/json', ...(corpo !== undefined ? { 'content-type': 'application/json' } : {}) },
         body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
@@ -266,7 +269,14 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
       return resultado(await chamar('DELETE', 'valePedagio/', [String(id)]), (c) => ({ mensagem: typeof c === 'string' ? c : JSON.stringify(c).slice(0, 300) }))
     },
     async recibo(id) {
-      return resultado(await chamar('POST', 'valePedagio/recibo', [id]), lerCompra)
+      // O NSPEDAGIO responde HTTP 200 mesmo quando não há viagem ("Recibo ... não foi localizado"): sem dados, é falha.
+      const r = await chamar('POST', 'valePedagio/recibo', [id])
+      const res = resultado(r, lerCompra)
+      if (res.ok && !res.dados.idVpoAntt && !res.dados.numeroViagem && !res.dados.idRecibo) {
+        const desc = achar(r.corpo, ['descricao'])
+        return { ok: false, http: r.status, erro: typeof desc === 'string' ? desc : 'Recibo não localizado.', bruto: r.corpo }
+      }
+      return res
     },
     async trocarPlaca(id, novaPlaca, motivo) {
       const trava = travaCompra<CompraVpo>()

@@ -15,7 +15,7 @@ import { chaveIdempotencia, criarNsPedagio, validarCompra, type AcaoVpo, type Pe
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-nspedagio-chave-interna",
 };
 const AMBIENTE = "homologacao" as const;
 
@@ -43,7 +43,20 @@ async function provedor(): Promise<ProvedorNsPedagio> {
 
 const json = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
 
-async function gestor(req: Request): Promise<{ ok: true; authUserId: string } | { ok: false; status: number; erro: string }> {
+function iguais(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+// Quem chama: gestor RBR logado, ou o banco/teste com a chave interna (NSPEDAGIO_TESTE_CHAMADA_INTERNA no Vault).
+async function gestor(req: Request): Promise<{ ok: true; authUserId: string | null } | { ok: false; status: number; erro: string }> {
+  const interna = req.headers.get("x-nspedagio-chave-interna") ?? "";
+  if (interna) {
+    const esperada = (await segredo("NSPEDAGIO_TESTE_CHAMADA_INTERNA")) ?? "";
+    return iguais(interna, esperada) ? { ok: true, authUserId: null } : { ok: false, status: 403, erro: "Chave interna inválida." };
+  }
   const auth = req.headers.get("Authorization") ?? "";
   const comoUsuario = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
   const { data } = await comoUsuario.auth.getUser();
@@ -83,6 +96,7 @@ Deno.serve(async (req) => {
     if (gravaMudanca && b.confirmar !== true) return json({ ok: false, erro: "Confirme a ação para continuar." }, 400);
 
     let chave = "";
+    let reaproveitar: string | null = null;
     let pedidoCompra: PedidoCompra | null = null;
     let requisicao: unknown = { acao, operacao_id: operacaoId };
     if (acao === "comprar") {
@@ -96,8 +110,10 @@ Deno.serve(async (req) => {
       chave = chaveIdempotencia(operacaoId, pedidoCompra.placa, pedidoCompra.inicioVigencia);
       requisicao = { acao, operacao_id: operacaoId, pedido: pedidoCompra };
       // Compra repetida com a mesma chave devolve o que já foi comprado, sem comprar de novo.
-      const { data: ja } = await admin.from("vpo_requisicoes").select("response_json, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem").eq("idempotency_key", chave).maybeSingle();
-      if (ja && ja.http_status && ja.http_status >= 200 && ja.http_status < 300) return json({ ok: true, repetida: true, simulado: prov.simulado, ambiente: AMBIENTE, resultado: ja });
+      const { data: ja } = await admin.from("vpo_requisicoes").select("id, response_json, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro").eq("idempotency_key", chave).maybeSingle();
+      if (ja && ja.http_status && ja.http_status >= 200 && ja.http_status < 300 && !ja.erro) return json({ ok: true, repetida: true, simulado: prov.simulado, ambiente: AMBIENTE, resultado: ja });
+      // Linha anterior sem sucesso (travou ou deu erro): a tentativa nova reaproveita a mesma linha em vez de bater na chave única.
+      if (ja) reaproveitar = ja.id as string;
     } else {
       chave = `vpo:${operacaoId}:${acao}:${crypto.randomUUID()}`;
       if (acao === "simular") requisicao = { acao, operacao_id: operacaoId, pontos: b.pontos };
@@ -107,11 +123,13 @@ Deno.serve(async (req) => {
     }
 
     // 1) grava a linha ANTES de chamar e de interpretar a resposta
-    const { data: linha, error: eIns } = await admin
-      .from("vpo_requisicoes")
-      .insert({ operacao_id: operacaoId, acao, ambiente: AMBIENTE, idempotency_key: chave, request_json: requisicao, criado_por: quem.authUserId })
-      .select("id")
-      .single();
+    const { data: linha, error: eIns } = reaproveitar
+      ? await admin.from("vpo_requisicoes").update({ request_json: requisicao, response_json: null, http_status: null, erro: null, criado_por: quem.authUserId }).eq("id", reaproveitar).select("id").single()
+      : await admin
+          .from("vpo_requisicoes")
+          .insert({ operacao_id: operacaoId, acao, ambiente: AMBIENTE, idempotency_key: chave, request_json: requisicao, criado_por: quem.authUserId })
+          .select("id")
+          .single();
     if (eIns || !linha) return json({ ok: false, erro: "Não consegui registrar a chamada. Nada foi enviado ao NSPEDAGIO." }, 500);
 
     // 2) chama o provedor
@@ -124,7 +142,8 @@ Deno.serve(async (req) => {
       else if (acao === "trocar-placa") r = await prov.trocarPlaca(op.numero, String(b.placa ?? ""), String(b.motivo ?? ""));
       else r = await prov.recibo(op.numero); // recibo e status
     } catch (e) {
-      const erro = e instanceof Error ? e.message : "Falha ao falar com o NSPEDAGIO.";
+      const demorou = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+      const erro = demorou ? "O NSPEDAGIO não respondeu a tempo. Confira com Reemitir recibo se a viagem foi criada antes de tentar de novo." : e instanceof Error ? e.message : "Falha ao falar com o NSPEDAGIO.";
       await admin.from("vpo_requisicoes").update({ erro }).eq("id", linha.id);
       return json({ ok: false, erro }, 502);
     }

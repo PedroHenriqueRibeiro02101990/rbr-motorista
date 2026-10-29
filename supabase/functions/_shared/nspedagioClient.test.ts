@@ -140,3 +140,20 @@ test('falha de autenticação não vaza segredo na mensagem', async () => {
   const p = criarNsPedagioReal(CFG, async () => resp(401, { error: 'invalid_client' }))
   await assert.rejects(p.simular({ pontos: [{ codIbge: '3550308' }, { codIbge: '3106200' }] }), (e: Error) => /autenticar/.test(e.message) && !e.message.includes(CFG.clientSecret))
 })
+
+test('recibo "não localizado" (HTTP 200) vira falha com a descrição do NSPEDAGIO', async () => {
+  const naoLocalizado = [{ status: { id: 219, descricao: 'Recibo de Vale Pedágio não foi localizado.' }, dadosRetorno: null, nroTransporte: 100001 }]
+  const p = criarNsPedagioReal(CFG, async (url: string) => (url === CFG.authUrl ? resp(200, { access_token: 't', expires_in: 60 }) : resp(200, naoLocalizado)))
+  const r = await p.recibo(100001)
+  assert.equal(r.ok, false)
+  assert.match((r as { erro: string }).erro, /não foi localizado/)
+})
+
+test('chamada que passa do limite de tempo é abortada (não fica pendurada)', async () => {
+  const pendurado = (url: string, init?: RequestInit) =>
+    url === CFG.authUrl
+      ? Promise.resolve(resp(200, { access_token: 't', expires_in: 60 }))
+      : new Promise<Response>((_, rej) => init?.signal?.addEventListener('abort', () => rej(init.signal!.reason)))
+  const p = criarNsPedagioReal({ ...CFG, limiteMs: 50 }, pendurado as never)
+  await assert.rejects(p.simular({ pontos: [{ codIbge: '3550308' }, { codIbge: '3106200' }] }), (e: Error) => e.name === 'TimeoutError')
+})
