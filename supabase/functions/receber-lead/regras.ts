@@ -1,4 +1,4 @@
-// Regras puras da receber-lead (testes: regras.test.ts — rodar `node --test supabase-functions/receber-lead/regras.test.ts`).
+// Regras puras da receber-lead (testes: regras.test.ts — rodar `node --test supabase/functions/receber-lead/regras.test.ts`).
 
 export const PADRAO_PRIMEIRA_ACAO_MIN = 15 // padrão a revisar (Pedro): 1ª ação em até 15 min em horário comercial
 const INICIO_H = 8

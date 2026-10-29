@@ -1,5 +1,5 @@
 // Testes da NF-e de teste (nfe.ts). Rodar na raiz do repositório:
-//   node --test supabase-functions/emitir-nfe-teste/nfe.test.ts
+//   node --test supabase/functions/emitir-nfe-teste/nfe.test.ts
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

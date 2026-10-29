@@ -1,5 +1,5 @@
 // Testes das regras do MDF-e (mdfe.ts). Rodar na raiz do repositório:
-//   node --test supabase-functions/emitir-mdfe/mdfe.test.ts
+//   node --test supabase/functions/emitir-mdfe/mdfe.test.ts
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

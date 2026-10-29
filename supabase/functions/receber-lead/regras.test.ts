@@ -1,4 +1,4 @@
-// node --test supabase-functions/receber-lead/regras.test.ts
+// node --test supabase/functions/receber-lead/regras.test.ts
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { cidadeUf, normalizarLead, prazoPrimeiraAcao } from './regras.ts'

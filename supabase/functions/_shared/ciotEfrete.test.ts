@@ -1,4 +1,4 @@
-// node --test supabase-functions/_shared/ciotEfrete.test.ts   (sem rede, sem segredos)
+// node --test supabase/functions/_shared/ciotEfrete.test.ts   (sem rede, sem segredos)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
