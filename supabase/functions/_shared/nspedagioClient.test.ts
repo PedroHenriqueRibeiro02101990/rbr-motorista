@@ -157,3 +157,11 @@ test('chamada que passa do limite de tempo é abortada (não fica pendurada)', a
   const p = criarNsPedagioReal({ ...CFG, limiteMs: 50 }, pendurado as never)
   await assert.rejects(p.simular({ pontos: [{ codIbge: '3550308' }, { codIbge: '3106200' }] }), (e: Error) => e.name === 'TimeoutError')
 })
+
+test('cancelamento com FALHA_CANCELAMENTO_VIAGEM (HTTP 200) vira falha, não "cancelado"', async () => {
+  const corpo = [{ nroTransporte: 100001, status: { id: 109, messageKey: 'FALHA_CANCELAMENTO_VIAGEM', descricao: 'Falha no cancelamento da viagem' } }]
+  const p = criarNsPedagioReal({ ...CFG, compraLiberada: true }, async (url: string) => (url === CFG.authUrl ? resp(200, { access_token: 't', expires_in: 60 }) : resp(200, corpo)))
+  const r = await p.cancelar(100001, 'teste')
+  assert.equal(r.ok, false)
+  assert.match((r as { erro: string }).erro, /Falha no cancelamento/)
+})

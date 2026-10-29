@@ -243,7 +243,18 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
     return { ok: false, http: r.status, erro: msg, bruto: r.corpo }
   }
 
-  const travaCompra = <T>(): ResultadoNs<T> | null =>
+  // O NSPEDAGIO responde HTTP 200 com o resultado dentro do corpo (status.messageKey). FALHA_*, *_NAO_LOCALIZADO e ERRO_* são recusas.
+  function falhaNoCorpo(r: RespostaHttp): ResultadoNs<never> | null {
+    if (r.status < 200 || r.status >= 300) return null
+    const chave = achar(r.corpo, ['messageKey'])
+    if (typeof chave === 'string' && /FALHA|NAO_LOCALIZADO|ERRO|INVALID/i.test(chave)) {
+      const desc = achar(r.corpo, ['descricao'])
+      return { ok: false, http: r.status, erro: typeof desc === 'string' ? desc : chave, bruto: r.corpo }
+    }
+    return null
+  }
+
+  const travaCompra =<T>(): ResultadoNs<T> | null =>
     config.compraLiberada ? null : { ok: false, http: 0, erro: 'Compra real travada: a homologação precisa ser liberada de propósito.', bruto: null }
 
   return {
@@ -266,7 +277,8 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
       const trava = travaCompra<{ mensagem: string }>()
       if (trava) return trava
       void motivo // a API só recebe o número do documento; o motivo fica em vpo_requisicoes
-      return resultado(await chamar('DELETE', 'valePedagio/', [String(id)]), (c) => ({ mensagem: typeof c === 'string' ? c : JSON.stringify(c).slice(0, 300) }))
+      const r = await chamar('DELETE', 'valePedagio/', [String(id)])
+      return falhaNoCorpo(r) ?? resultado(r, (c) => ({ mensagem: typeof c === 'string' ? c : JSON.stringify(c).slice(0, 300) }))
     },
     async recibo(id) {
       // O NSPEDAGIO responde HTTP 200 mesmo quando não há viagem ("Recibo ... não foi localizado"): sem dados, é falha.
@@ -282,7 +294,8 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
       const trava = travaCompra<CompraVpo>()
       if (trava) return trava
       const corpo = [{ idDocumentoTransporte: String(id), placa: novaPlaca.toUpperCase(), nroEixo: 0, meansOfPayment: '', numeroCartao: '', motivoAlteracao: motivo, tipoRodagem: '' }]
-      return resultado(await chamar('POST', 'valePedagio/reemissao', corpo), lerCompra)
+      const r = await chamar('POST', 'valePedagio/reemissao', corpo)
+      return falhaNoCorpo(r) ?? resultado(r, lerCompra)
     },
   }
 }
