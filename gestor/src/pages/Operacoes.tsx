@@ -16,6 +16,7 @@ import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, t
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
+import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
 import { FILAS, casaBusca, contarFilas, passaFila, type DadosFila, type FilaId } from '../lib/filasOperacao'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -94,6 +95,15 @@ const AVERBACAO_LABEL: Record<StatusAverbacao, string> = {
 const cardStyle = {
   borderColor: 'var(--rbr-border)',
   boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 6px 18px rgba(18,23,61,0.05)',
+}
+
+function ResumoItem({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">{rotulo}</div>
+      <div className="font-semibold truncate">{valor}</div>
+    </div>
+  )
 }
 
 function badgeBackground(status: StatusOperacao): string {
@@ -598,6 +608,21 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     return saida
   }, [operacoes, filtro, busca, extras, veiculos, dadosFila, fila, ocultarTestes, nfesPorOp])
 
+  // Anterior/próxima seguem a lista filtrada, na ordem da tela.
+  const vizinhosAbertos = opAberta ? vizinhos(lista.map((o) => o.id), opAberta.id) : null
+
+  function irPara(id: string | null) {
+    if (!id) return
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p)
+        n.set('op', id)
+        return n
+      },
+      { replace: true },
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -809,26 +834,56 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         const averbacao = averbacoes[op.id]
         return (
           <PainelSobreposto
-            titulo={
-              <>
-                Operação
-                {op.cotacaoDetalhe?.cidade_origem && (
-                  <span className="font-normal text-[color:var(--rbr-muted)]">
-                    {' · '}{op.cotacaoDetalhe.cidade_origem}/{op.cotacaoDetalhe.uf_origem} → {op.cotacaoDetalhe.cidade_destino}/{op.cotacaoDetalhe.uf_destino}
-                  </span>
-                )}
-              </>
-            }
+            titulo={codigoCurto(op.id)}
             cabecalho={
               <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: badgeBackground(op.status) }}>
                 {STATUS_OPERACAO_LABEL[op.status]}
               </span>
             }
+            fixo={
+              <>
+                <div className="text-[15px] font-bold leading-tight">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+                <div className="text-xs text-[color:var(--rbr-muted)]">
+                  {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+                  <ResumoItem rotulo="Motorista" valor={motoristas.find((m) => m.id === op.pessoa_alocada_id)?.nome ?? 'sem motorista'} />
+                  <ResumoItem rotulo="Placa" valor={veiculos.find((v) => v.id === op.veiculo_id)?.placa ?? 'sem veículo'} />
+                  <ResumoItem rotulo="Frete" valor={op.valorCliente != null ? formatMoney(op.valorCliente) : '—'} />
+                  <ResumoItem rotulo="NF-es" valor={resumoNfes(nfesPorOp[op.id] ?? [])} />
+                </div>
+                {vizinhosAbertos && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      disabled={!vizinhosAbertos.anteriorId}
+                      onClick={() => irPara(vizinhosAbertos.anteriorId)}
+                      className="font-bold px-3 py-1.5 rounded-lg border disabled:opacity-40"
+                      style={{ borderColor: 'var(--rbr-border)' }}
+                    >
+                      ‹ Anterior
+                    </button>
+                    <span className="text-[color:var(--rbr-muted)] tabular-nums">
+                      {vizinhosAbertos.posicao} de {vizinhosAbertos.total}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!vizinhosAbertos.proximaId}
+                      onClick={() => irPara(vizinhosAbertos.proximaId)}
+                      className="font-bold px-3 py-1.5 rounded-lg border disabled:opacity-40"
+                      style={{ borderColor: 'var(--rbr-border)' }}
+                    >
+                      Próxima ›
+                    </button>
+                  </div>
+                )}
+              </>
+            }
             onFechar={fecharPainel}
             largura={880}
           >
             {op.eh_teste && <FaixaTeste />}
-            <div className="border-t px-[18px] pb-[18px] pt-4 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="flex flex-col gap-4">
               {errorMsg && (
                 <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
                   {errorMsg}
