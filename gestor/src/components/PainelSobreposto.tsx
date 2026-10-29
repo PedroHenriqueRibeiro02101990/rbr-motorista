@@ -66,6 +66,9 @@ export function PainelSobreposto({
         <div className="sticky top-0 z-10 bg-white -mx-[18px] -mt-[18px] px-[18px] pt-[18px] pb-3 md:rounded-t-[20px] flex flex-col gap-2.5 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2.5 flex-wrap">
+            <button type="button" onClick={onFechar} className="md:hidden text-xs font-bold px-2.5 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
+              ‹ Voltar
+            </button>
             {titulo != null && <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">{titulo}</div>}
             {cabecalho}
           </div>

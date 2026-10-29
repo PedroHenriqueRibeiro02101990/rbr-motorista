@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
-import { formatMoney, formatDateTime } from '@rbr/shared/format'
+import { formatMoney, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
+import { PainelSobreposto } from '../components/PainelSobreposto'
+import NavegacaoServico from '../components/NavegacaoServico'
+import { codigoCurto } from '../lib/painelOperacao'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
 import PainelPendencias from '../components/PainelPendencias'
 import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
@@ -187,6 +191,7 @@ async function extrairDetalheErroInvoke(error: unknown): Promise<DetalheErro> {
 }
 
 export default function Fiscal() {
+  const [params, setParams] = useSearchParams()
   const [operacoes, setOperacoes] = useState<OperacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -657,6 +662,717 @@ export default function Fiscal() {
 
   const lista = operacoes ?? []
 
+  // Painel do Fiscal: /fiscal?op=<id> abre a operação por cima da lista (mesmo padrão do painel da Operação).
+  const opAbertaId = params.get('op')
+  const opAberta = opAbertaId ? lista.find((o) => o.id === opAbertaId) ?? null : null
+  function fecharPainelFiscal() {
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev)
+        n.delete('op')
+        return n
+      },
+      { replace: true },
+    )
+  }
+
+  const renderCard = (op: OperacaoEnriquecida) => {
+      const docs = docsPorOperacao.get(op.id) ?? []
+      const docsExibidos = TIPOS_EXIBIDOS.map((tipo) => docs.find((d) => d.tipo === tipo)).filter(
+        (d): d is DocumentacaoOperacao => Boolean(d),
+      )
+      const docCte = docs.find((d) => d.tipo === 'cte')
+      const docMdfe = docs.find((d) => d.tipo === 'mdfe')
+      const erroCard = erroPorOperacao[op.id]
+      const infoCard = infoPorOperacao[op.id]
+      const xmlCancelamento = xmlCancelamentoPorOperacao[op.id]
+      const nfeCancelada = nfeCanceladaPorOperacao[op.id] === true
+      // Tarefa 6: só o botão do documento detectado pela origem/destino (IBGE).
+      const tipoDoc = op.tipo_documento_cliente
+      const ofereceCteMdfe = tipoDoc === 'cte_mdfe'
+      const ofereceNfse = tipoDoc === 'nfse'
+
+      const chaveCte = `${op.id}:cte`
+      const chaveMdfe = `${op.id}:mdfe`
+      const chaveNfse = `${op.id}:nfse`
+
+      const tiposDisponiveisParaRegistro = TIPOS_DOC_MANUAL.filter(
+        (tipo) => !docs.some((d) => d.tipo === tipo),
+      )
+      const formNovoDocAberto = formNovoDocOperacaoId === op.id
+      const erroDoc = erroDocPorOperacao[op.id]
+
+      return (
+        <div key={op.id} className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+          {op.eh_teste && testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
+            <div className="text-xs font-semibold rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}>
+              Operação de teste · Teste encerrado (documentos cancelados)
+            </div>
+          )}
+          {op.eh_teste && !testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
+            <div className="flex flex-col gap-2 rounded-lg p-2.5 border" style={{ borderColor: 'var(--rbr-danger)' }}>
+              <FaixaTeste />
+              <PassoAPassoTeste
+                nfe={Boolean(op.nfChaveAcesso)}
+                cte={docCte?.status ?? null}
+                atm={docs.find((d) => d.tipo === 'atm')?.status ?? null}
+                mdfe={docMdfe?.status ?? null}
+              />
+              <div>
+                <button
+                  onClick={() => void cancelarTudoTeste(op)}
+                  className="text-xs font-bold px-3.5 py-2 rounded-lg text-white"
+                  style={{ background: 'var(--rbr-danger)' }}
+                >
+                  Cancelar tudo do teste
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-[15px] font-bold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+            {op.valorTotal != null && <div className="text-sm font-bold">{formatMoney(op.valorTotal)}</div>}
+          </div>
+          <div className="text-xs text-[color:var(--rbr-muted)]">
+            {op.cidadeOrigem ?? '?'}/{op.ufOrigem ?? '?'} → {op.cidadeDestino ?? '?'}/{op.ufDestino ?? '?'}
+          </div>
+          <div className="text-xs rounded-lg px-3 py-2 font-semibold" style={estiloDeteccao(tipoDoc)}>
+            Documento ao cliente: {rotuloDocumento(tipoDoc)}
+            {op.tipo_documento_aviso ? ` · ${op.tipo_documento_aviso}` : ''}
+          </div>
+
+          {ofereceCteMdfe && (
+            <div className="flex flex-col gap-1.5">
+              {mostrarOrdemDocumentos(docCte, docs.find((d) => d.tipo === 'atm'), docMdfe, rcvPorOperacao.get(op.id)?.averbacao_rcv_status) && (
+              <OrdemDocumentos
+                cte={docCte}
+                atm={docs.find((d) => d.tipo === 'atm')}
+                mdfe={docMdfe}
+                rcv={rcvPorOperacao.get(op.id)}
+              />
+              )}
+              <AvisoSompo mdfe={docMdfe} rcv={rcvPorOperacao.get(op.id)} />
+            </div>
+          )}
+
+          {docsExibidos.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {docsExibidos.map((doc) => {
+                const documentoManual = TIPOS_DOC_MANUAL.includes(doc.tipo)
+                const emEdicao = editandoDocId === doc.id
+                return (
+                  <div key={doc.tipo} className="flex flex-col gap-1.5">
+                    {emEdicao ? (
+                      <div
+                        className="flex flex-col gap-2 bg-white rounded-lg p-2.5 border"
+                        style={{ borderColor: 'var(--rbr-border)' }}
+                      >
+                        <div className="text-xs font-bold">{TIPO_DOC_LABEL[doc.tipo]} — editar registro manual</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            placeholder="Número do documento"
+                            value={editDocForm.numero_documento}
+                            onChange={(e) => setEditDocForm((f) => ({ ...f, numero_documento: e.target.value }))}
+                            className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ borderColor: 'var(--rbr-border)' }}
+                          />
+                          <input
+                            placeholder="Chave de acesso (opcional)"
+                            value={editDocForm.chave_acesso}
+                            onChange={(e) => setEditDocForm((f) => ({ ...f, chave_acesso: e.target.value }))}
+                            className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ borderColor: 'var(--rbr-border)' }}
+                          />
+                          <input
+                            placeholder="Provedor / portal usado"
+                            value={editDocForm.provedor}
+                            onChange={(e) => setEditDocForm((f) => ({ ...f, provedor: e.target.value }))}
+                            className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ borderColor: 'var(--rbr-border)' }}
+                          />
+                          <input
+                            placeholder="Link do PDF / comprovante (opcional)"
+                            value={editDocForm.url_pdf}
+                            onChange={(e) => setEditDocForm((f) => ({ ...f, url_pdf: e.target.value }))}
+                            className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ borderColor: 'var(--rbr-border)' }}
+                          />
+                          <input
+                            type="date"
+                            value={editDocForm.emitido_em}
+                            onChange={(e) => setEditDocForm((f) => ({ ...f, emitido_em: e.target.value }))}
+                            className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ borderColor: 'var(--rbr-border)' }}
+                          />
+                          <select
+                            value={editDocForm.status}
+                            onChange={(e) =>
+                              setEditDocForm((f) => ({ ...f, status: e.target.value as StatusDocumentoFiscal }))
+                            }
+                            className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                            style={{ borderColor: 'var(--rbr-border)' }}
+                          >
+                            {STATUS_DOC_MANUAL_OPCOES.map((s) => (
+                              <option key={s} value={s}>
+                                {STATUS_DOC_LABEL[s]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <textarea
+                          placeholder="Referência / observações (opcional)"
+                          value={editDocForm.referencia}
+                          onChange={(e) => setEditDocForm((f) => ({ ...f, referencia: e.target.value }))}
+                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                          style={{ borderColor: 'var(--rbr-border)' }}
+                          rows={2}
+                        />
+                        <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)]">
+                          <input
+                            type="checkbox"
+                            checked={editDocForm.disponivel_para_agenciador}
+                            onChange={(e) =>
+                              setEditDocForm((f) => ({ ...f, disponivel_para_agenciador: e.target.checked }))
+                            }
+                          />
+                          Disponibilizar este documento para o agenciador
+                        </label>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => salvarEdicaoDocumento(op, doc.id)}
+                            disabled={salvandoDoc}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                          >
+                            {salvandoDoc ? 'Salvando…' : 'Salvar'}
+                          </button>
+                          <button
+                            onClick={() => cancelarEdicaoDocumento(op.id)}
+                            disabled={salvandoDoc}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
+                            style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold w-14 flex-shrink-0">{TIPO_DOC_LABEL[doc.tipo]}</span>
+                          {estaProcessando(doc) ? (
+                            <SeloProcessando />
+                          ) : (
+                            <span
+                              className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                              style={{ background: statusDocBackground(doc.status) }}
+                            >
+                              {STATUS_DOC_LABEL[doc.status]}
+                            </span>
+                          )}
+                          {doc.numero_documento && (
+                            <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                              Nº {doc.numero_documento}
+                            </span>
+                          )}
+                          {doc.provedor && (
+                            <span className="text-[11px] text-[color:var(--rbr-muted)]">via {doc.provedor}</span>
+                          )}
+                          {doc.atualizado_em && (
+                            <span className="text-[11px] text-[color:var(--rbr-muted)]">
+                              atualizado em {formatDateTime(doc.atualizado_em)}
+                            </span>
+                          )}
+                          {mostrarSeloHomologacao(doc) && (
+                            <span
+                              className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                              style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}
+                              title="Emitido no ambiente de testes do provedor — não tem validade fiscal."
+                            >
+                              Homologação — sem validade fiscal
+                            </span>
+                          )}
+                          {(doc.tipo === 'cte' || doc.tipo === 'mdfe') &&
+                            (doc.status === 'emitido' || doc.status === 'cancelado') &&
+                            doc.referencia && (
+                              <BaixarDocumentoFiscal operacaoId={op.id} tipo={doc.tipo} chave={doc.chave_acesso} />
+                            )}
+                          {documentoManual && (
+                            <span className="flex gap-2 ml-auto">
+                              <button
+                                onClick={() => iniciarEdicaoDocumento(doc)}
+                                className="text-[11px] font-bold underline"
+                                style={{ color: 'var(--rbr-navy)' }}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => excluirDocumento(op, doc.id)}
+                                disabled={salvandoDoc}
+                                className="text-[11px] font-bold underline disabled:opacity-60"
+                                style={{ color: 'var(--rbr-danger)' }}
+                              >
+                                Excluir
+                              </button>
+                            </span>
+                          )}
+                        </div>
+                        {(doc.status === 'bloqueado' || doc.status === 'erro') && doc.mensagem_erro && (
+                          <div
+                            className="text-[11px] rounded-lg px-3 py-2"
+                            style={{
+                              background: doc.status === 'erro' ? '#FBE9E9' : 'var(--rbr-warning-bg)',
+                              color: doc.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
+                            }}
+                          >
+                            {doc.mensagem_erro}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Averbação do seguro (NS Tech/Averba): depende do CT-e autorizado e alimenta o MDF-e. */}
+          {docCte && (() => {
+            const docAtm = docs.find((d) => d.tipo === 'atm')
+            const cteAutorizado = docCte.status === 'emitido'
+            const averbado = docAtm?.status === 'emitido'
+            const emProducao = docCte.ambiente !== 'homologacao'
+            const rotulo = averbado
+              ? 'Averbado'
+              : !cteAutorizado
+                ? 'Aguardando CT-e'
+                : docAtm?.status === 'erro'
+                  ? 'Erro'
+                  : docAtm?.status === 'bloqueado'
+                    ? 'Bloqueado'
+                    : 'Pendente'
+            const cor = averbado ? '#137A45' : docAtm?.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy)'
+            const ocupado = emAndamento.has(`${op.id}:averbar`)
+            return (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold w-14 flex-shrink-0">Averb.</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: cor }}>
+                    {rotulo}
+                  </span>
+                  {docAtm?.numero_documento && (
+                    <span className="text-[11px] text-[color:var(--rbr-muted)]">Nº {docAtm.numero_documento}</span>
+                  )}
+                  <span className="text-[11px] text-[color:var(--rbr-muted)]">seguro RCTR-C · NS Tech/Averba</span>
+                  {docAtm?.atualizado_em && (
+                    <span className="text-[11px] text-[color:var(--rbr-muted)]">atualizado em {formatDateTime(docAtm.atualizado_em)}</span>
+                  )}
+                  {cteAutorizado && !averbado && emProducao && (
+                    <button
+                      onClick={() => averbarCte(op)}
+                      disabled={ocupado}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                      style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                    >
+                      {ocupado ? 'Enviando…' : docAtm?.status === 'erro' ? 'Tentar averbar de novo' : 'Averbar CT-e'}
+                    </button>
+                  )}
+                  {docAtm && (
+                    <button onClick={() => verRespostaAverba(op)} className="text-[11px] font-bold underline" style={{ color: 'var(--rbr-navy)' }}>
+                      {respostaAverba[op.id] !== undefined ? 'Ocultar resposta' : 'Ver resposta da Averba'}
+                    </button>
+                  )}
+                </div>
+                {cteAutorizado && !emProducao && (
+                  <div className="text-[11px] text-[color:var(--rbr-muted)]">CT-e de homologação não é averbado (sem validade fiscal).</div>
+                )}
+                {mostrarAvisoAguardandoCte(docCte, docAtm) && (
+                  <div className="text-[11px] text-[color:var(--rbr-muted)]">A averbação só pode ser enviada depois que o CT-e for autorizado.</div>
+                )}
+                {docAtm && (docAtm.status === 'bloqueado' || docAtm.status === 'erro') && docAtm.mensagem_erro && (
+                  <div
+                    className="text-[11px] rounded-lg px-3 py-2"
+                    style={{
+                      background: docAtm.status === 'erro' ? '#FBE9E9' : 'var(--rbr-warning-bg)',
+                      color: docAtm.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
+                    }}
+                  >
+                    {docAtm.mensagem_erro}
+                  </div>
+                )}
+                {respostaAverba[op.id] !== undefined && (
+                  <pre className="text-[10px] rounded-lg p-2.5 overflow-x-auto" style={{ background: 'var(--rbr-muted-bg)' }}>
+                    {respostaAverba[op.id]}
+                  </pre>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Averbação RC-V (Sompo) do MDF-e: automática quando o MDF-e é autorizado; aqui só resultado e reenvio. */}
+          {docCte && (
+            <LinhaAverbacaoSompo
+              operacaoId={op.id}
+              mdfe={docMdfe}
+              rcv={rcvPorOperacao.get(op.id)}
+              onMudou={() => void carregarDocumentos([op.id])}
+            />
+          )}
+
+          {/* NF-e de teste: vive na cotação (nf_chave_acesso), não em documentacao_operacao. */}
+          {(op.nfChaveAcesso || nfeCancelada) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold w-14 flex-shrink-0">NF-e</span>
+              <span
+                className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                style={{ background: statusDocBackground(op.nfChaveAcesso ? 'emitido' : 'cancelado') }}
+              >
+                {op.nfChaveAcesso ? 'Autorizada' : STATUS_DOC_LABEL.cancelado}
+              </span>
+              {op.nfChaveAcesso && (
+                <span className="text-[11px] text-[color:var(--rbr-muted)] font-mono break-all">{op.nfChaveAcesso}</span>
+              )}
+              <BaixarDocumentoFiscal operacaoId={op.id} tipo="nfe" chave={op.nfChaveAcesso ?? null} />
+            </div>
+          )}
+
+          {ambienteFiscal === 'producao' && op.eh_teste && (
+            <div
+              className="flex flex-col gap-2 rounded-lg p-2.5 border"
+              style={{ borderColor: 'var(--rbr-danger)' }}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold">NF-e de teste (produção)</span>
+                <span
+                  className="text-[11px] font-extrabold uppercase tracking-wide text-white px-2 py-0.5 rounded-full"
+                  style={{ background: 'var(--rbr-danger)' }}
+                >
+                  Produção
+                </span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {!op.nfChaveAcesso && (
+                  <button
+                    onClick={() => {
+                      setErroNfeProducao(null)
+                      setNfeProducao(op)
+                    }}
+                    className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                    style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                  >
+                    Emitir NF-e de teste (R$ 1,00)
+                  </button>
+                )}
+                <button
+                  onClick={() => nfeTesteProducao(op, 'consultar')}
+                  disabled={emAndamento.has(`${op.id}:nfe-producao:consultar`)}
+                  className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                  style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                >
+                  {emAndamento.has(`${op.id}:nfe-producao:consultar`) ? 'Consultando…' : 'Consultar NF-e'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {!formNovoDocAberto && tiposDisponiveisParaRegistro.length > 0 && (
+              <button
+                onClick={() => abrirFormNovoDocumento(op.id, tiposDisponiveisParaRegistro[0])}
+                className="self-start text-xs font-bold px-3.5 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+              >
+                Registrar documento emitido manualmente
+              </button>
+            )}
+
+            {formNovoDocAberto && (
+              <div
+                className="flex flex-col gap-2 bg-white rounded-lg p-2.5 border"
+                style={{ borderColor: 'var(--rbr-border)' }}
+              >
+                <div className="text-xs font-bold">Registrar documento emitido manualmente</div>
+                <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                  Para CT-e/MDF-e/CIOT já emitidos fora do sistema (portal do fornecedor). Fica registrado como
+                  ambiente produção.
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={novoDocForm.tipo}
+                    onChange={(e) => setNovoDocForm((f) => ({ ...f, tipo: e.target.value as TipoDocumentoFiscal }))}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  >
+                    {tiposDisponiveisParaRegistro.map((tipo) => (
+                      <option key={tipo} value={tipo}>
+                        {TIPO_DOC_LABEL[tipo]}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={novoDocForm.status}
+                    onChange={(e) =>
+                      setNovoDocForm((f) => ({ ...f, status: e.target.value as StatusDocumentoFiscal }))
+                    }
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  >
+                    {STATUS_DOC_MANUAL_OPCOES.map((s) => (
+                      <option key={s} value={s}>
+                        {STATUS_DOC_LABEL[s]}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="Número do documento"
+                    value={novoDocForm.numero_documento}
+                    onChange={(e) => setNovoDocForm((f) => ({ ...f, numero_documento: e.target.value }))}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  />
+                  <input
+                    placeholder="Chave de acesso (opcional)"
+                    value={novoDocForm.chave_acesso}
+                    onChange={(e) => setNovoDocForm((f) => ({ ...f, chave_acesso: e.target.value }))}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  />
+                  <input
+                    placeholder="Provedor / portal usado"
+                    value={novoDocForm.provedor}
+                    onChange={(e) => setNovoDocForm((f) => ({ ...f, provedor: e.target.value }))}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  />
+                  <input
+                    placeholder="Link do PDF / comprovante (opcional)"
+                    value={novoDocForm.url_pdf}
+                    onChange={(e) => setNovoDocForm((f) => ({ ...f, url_pdf: e.target.value }))}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  />
+                  <input
+                    type="date"
+                    value={novoDocForm.emitido_em}
+                    onChange={(e) => setNovoDocForm((f) => ({ ...f, emitido_em: e.target.value }))}
+                    className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  />
+                </div>
+                <textarea
+                  placeholder="Referência / observações (opcional)"
+                  value={novoDocForm.referencia}
+                  onChange={(e) => setNovoDocForm((f) => ({ ...f, referencia: e.target.value }))}
+                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
+                  style={{ borderColor: 'var(--rbr-border)' }}
+                  rows={2}
+                />
+                <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={novoDocForm.disponivel_para_agenciador}
+                    onChange={(e) =>
+                      setNovoDocForm((f) => ({ ...f, disponivel_para_agenciador: e.target.checked }))
+                    }
+                  />
+                  Disponibilizar este documento para o agenciador
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => salvarNovoDocumento(op)}
+                    disabled={salvandoDoc}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                  >
+                    {salvandoDoc ? 'Salvando…' : 'Salvar registro'}
+                  </button>
+                  <button
+                    onClick={() => fecharFormNovoDocumento(op.id)}
+                    disabled={salvandoDoc}
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
+                    style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {erroDoc && (
+              <div
+                className="text-xs rounded-lg px-3 py-2.5"
+                style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}
+              >
+                {erroDoc}
+              </div>
+            )}
+          </div>
+
+          {erroCard && (
+            erroCard.motivos && erroCard.motivos.length > 0 ? (
+              <RegrasFiscais
+                bloqueios={erroCard.motivos}
+                avisos={erroCard.avisos}
+                regras={erroCard.regras}
+                tituloBloqueios="Emissão bloqueada"
+              />
+            ) : (
+              <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                {erroCard.erro ?? 'Erro ao processar solicitação.'}
+              </div>
+            )
+          )}
+
+          {avisosRbrPorOperacao[op.id] && (
+            <RegrasFiscais
+              avisos={avisosRbrPorOperacao[op.id]!.map((r) => r.mensagem)}
+              regras={avisosRbrPorOperacao[op.id]!}
+            />
+          )}
+
+          {infoCard && (
+            <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>
+              {infoCard}
+            </div>
+          )}
+
+          {xmlCancelamento && (
+            <a
+              href={xmlCancelamento.url}
+              target="_blank"
+              rel="noreferrer"
+              className="self-start text-[11px] font-bold underline"
+              style={{ color: 'var(--rbr-navy)' }}
+            >
+              XML de cancelamento ({xmlCancelamento.tipo === 'nfe' ? 'NF-e de teste' : TIPO_DOC_LABEL[xmlCancelamento.tipo]})
+            </a>
+          )}
+
+          {docMdfe && (
+            <FinalizarViagem
+              operacaoId={op.id}
+              statusOperacao={op.status}
+              entregueEm={op.entregue_em}
+              mdfe={docMdfe}
+              onAtualizado={() => carregarDocumentos([op.id])}
+            />
+          )}
+
+          {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
+          {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs} />}
+
+          <div className="flex gap-2 flex-wrap">
+            {ofereceCteMdfe && (
+            <button
+              onClick={() => setConferencia({ op, tipo: 'cte' })}
+              disabled={emAndamento.has(chaveCte)}
+              className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+            >
+              {emAndamento.has(chaveCte) ? 'Enviando…' : 'Emitir CT-e'}
+            </button>
+            )}
+            {ofereceCteMdfe && (
+            <button
+              onClick={() => setConferencia({ op, tipo: 'mdfe' })}
+              disabled={emAndamento.has(chaveMdfe)}
+              className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+            >
+              {emAndamento.has(chaveMdfe) ? 'Enviando…' : 'Emitir MDF-e'}
+            </button>
+            )}
+            {ofereceNfse && (
+            <button
+              onClick={() => setConferencia({ op, tipo: 'nfse' })}
+              disabled={emAndamento.has(chaveNfse)}
+              className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+            >
+              {emAndamento.has(chaveNfse) ? 'Enviando…' : 'Emitir NFS-e (intramunicipal)'}
+            </button>
+            )}
+            {ambienteFiscal === 'homologacao' && (
+              <>
+                <button
+                  onClick={() => nfeTeste(op, 'emitir')}
+                  disabled={emAndamento.has(`${op.id}:nfe-teste:emitir`)}
+                  title="Só homologação: a RBR emite uma NF-e de teste com os dados da cotação, para o CT-e citar uma nota que existe na SEFAZ."
+                  className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                  style={{ borderColor: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                >
+                  {emAndamento.has(`${op.id}:nfe-teste:emitir`) ? 'Enviando…' : 'Gerar NF-e de teste'}
+                </button>
+                <button
+                  onClick={() => nfeTeste(op, 'consultar')}
+                  disabled={emAndamento.has(`${op.id}:nfe-teste:consultar`)}
+                  className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
+                  style={{ borderColor: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                >
+                  {emAndamento.has(`${op.id}:nfe-teste:consultar`) ? 'Consultando…' : 'Consultar NF-e de teste'}
+                </button>
+              </>
+            )}
+            {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
+              <>
+                <button
+                  onClick={() => setEvento({ op, acao: 'incluir_condutor_mdfe' })}
+                  className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                  style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+                >
+                  Trocar condutor
+                </button>
+              </>
+            )}
+            {docCte?.status === 'emitido' && (
+              <button
+                onClick={() => setEvento({ op, acao: 'carta_correcao_cte' })}
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
+              >
+                Carta de correção CT-e
+              </button>
+            )}
+            {/* Cancelamentos na ordem exigida: MDF-e, depois CT-e, depois NF-e de teste. */}
+            {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
+              <button
+                onClick={() =>
+                  setCancelamento({ op, tipo: 'mdfe', ambiente: docMdfe.ambiente, chave: docMdfe.chave_acesso })
+                }
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+              >
+                Cancelar MDF-e
+              </button>
+            )}
+            {docCte?.status === 'emitido' && (
+              <button
+                onClick={() =>
+                  setCancelamento({ op, tipo: 'cte', ambiente: docCte.ambiente, chave: docCte.chave_acesso })
+                }
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+              >
+                Cancelar CT-e
+              </button>
+            )}
+            {/* A função só cancela a NF-e de teste da RBR (ref rbr-nfe-teste-/rbr-nfe-prod-<cotação>), no ambiente atual. */}
+            {ambienteFiscal && op.nfChaveAcesso && (
+              <button
+                onClick={() =>
+                  setCancelamento({ op, tipo: 'nfe', ambiente: ambienteFiscal, chave: op.nfChaveAcesso ?? null })
+                }
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border"
+                style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+              >
+                Cancelar NF-e de teste
+              </button>
+            )}
+          </div>
+        </div>
+      )
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -753,704 +1469,34 @@ export default function Fiscal() {
       )}
 
       <div className="flex flex-col gap-3">
-        {!loading &&
-          lista.map((op) => {
-            const docs = docsPorOperacao.get(op.id) ?? []
-            const docsExibidos = TIPOS_EXIBIDOS.map((tipo) => docs.find((d) => d.tipo === tipo)).filter(
-              (d): d is DocumentacaoOperacao => Boolean(d),
-            )
-            const docCte = docs.find((d) => d.tipo === 'cte')
-            const docMdfe = docs.find((d) => d.tipo === 'mdfe')
-            const erroCard = erroPorOperacao[op.id]
-            const infoCard = infoPorOperacao[op.id]
-            const xmlCancelamento = xmlCancelamentoPorOperacao[op.id]
-            const nfeCancelada = nfeCanceladaPorOperacao[op.id] === true
-            // Tarefa 6: só o botão do documento detectado pela origem/destino (IBGE).
-            const tipoDoc = op.tipo_documento_cliente
-            const ofereceCteMdfe = tipoDoc === 'cte_mdfe'
-            const ofereceNfse = tipoDoc === 'nfse'
-
-            const chaveCte = `${op.id}:cte`
-            const chaveMdfe = `${op.id}:mdfe`
-            const chaveNfse = `${op.id}:nfse`
-
-            const tiposDisponiveisParaRegistro = TIPOS_DOC_MANUAL.filter(
-              (tipo) => !docs.some((d) => d.tipo === tipo),
-            )
-            const formNovoDocAberto = formNovoDocOperacaoId === op.id
-            const erroDoc = erroDocPorOperacao[op.id]
-
-            return (
-              <div key={op.id} className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
-                {op.eh_teste && testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
-                  <div className="text-xs font-semibold rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}>
-                    Operação de teste · Teste encerrado (documentos cancelados)
-                  </div>
-                )}
-                {op.eh_teste && !testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
-                  <div className="flex flex-col gap-2 rounded-lg p-2.5 border" style={{ borderColor: 'var(--rbr-danger)' }}>
-                    <FaixaTeste />
-                    <PassoAPassoTeste
-                      nfe={Boolean(op.nfChaveAcesso)}
-                      cte={docCte?.status ?? null}
-                      atm={docs.find((d) => d.tipo === 'atm')?.status ?? null}
-                      mdfe={docMdfe?.status ?? null}
-                    />
-                    <div>
-                      <button
-                        onClick={() => void cancelarTudoTeste(op)}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg text-white"
-                        style={{ background: 'var(--rbr-danger)' }}
-                      >
-                        Cancelar tudo do teste
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="text-[15px] font-bold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
-                  {op.valorTotal != null && <div className="text-sm font-bold">{formatMoney(op.valorTotal)}</div>}
-                </div>
-                <div className="text-xs text-[color:var(--rbr-muted)]">
-                  {op.cidadeOrigem ?? '?'}/{op.ufOrigem ?? '?'} → {op.cidadeDestino ?? '?'}/{op.ufDestino ?? '?'}
-                </div>
-                <div className="text-xs rounded-lg px-3 py-2 font-semibold" style={estiloDeteccao(tipoDoc)}>
-                  Documento ao cliente: {rotuloDocumento(tipoDoc)}
-                  {op.tipo_documento_aviso ? ` · ${op.tipo_documento_aviso}` : ''}
-                </div>
-
-                {ofereceCteMdfe && (
-                  <div className="flex flex-col gap-1.5">
-                    {mostrarOrdemDocumentos(docCte, docs.find((d) => d.tipo === 'atm'), docMdfe, rcvPorOperacao.get(op.id)?.averbacao_rcv_status) && (
-                    <OrdemDocumentos
-                      cte={docCte}
-                      atm={docs.find((d) => d.tipo === 'atm')}
-                      mdfe={docMdfe}
-                      rcv={rcvPorOperacao.get(op.id)}
-                    />
-                    )}
-                    <AvisoSompo mdfe={docMdfe} rcv={rcvPorOperacao.get(op.id)} />
-                  </div>
-                )}
-
-                {docsExibidos.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    {docsExibidos.map((doc) => {
-                      const documentoManual = TIPOS_DOC_MANUAL.includes(doc.tipo)
-                      const emEdicao = editandoDocId === doc.id
-                      return (
-                        <div key={doc.tipo} className="flex flex-col gap-1.5">
-                          {emEdicao ? (
-                            <div
-                              className="flex flex-col gap-2 bg-white rounded-lg p-2.5 border"
-                              style={{ borderColor: 'var(--rbr-border)' }}
-                            >
-                              <div className="text-xs font-bold">{TIPO_DOC_LABEL[doc.tipo]} — editar registro manual</div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <input
-                                  placeholder="Número do documento"
-                                  value={editDocForm.numero_documento}
-                                  onChange={(e) => setEditDocForm((f) => ({ ...f, numero_documento: e.target.value }))}
-                                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                  style={{ borderColor: 'var(--rbr-border)' }}
-                                />
-                                <input
-                                  placeholder="Chave de acesso (opcional)"
-                                  value={editDocForm.chave_acesso}
-                                  onChange={(e) => setEditDocForm((f) => ({ ...f, chave_acesso: e.target.value }))}
-                                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                  style={{ borderColor: 'var(--rbr-border)' }}
-                                />
-                                <input
-                                  placeholder="Provedor / portal usado"
-                                  value={editDocForm.provedor}
-                                  onChange={(e) => setEditDocForm((f) => ({ ...f, provedor: e.target.value }))}
-                                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                  style={{ borderColor: 'var(--rbr-border)' }}
-                                />
-                                <input
-                                  placeholder="Link do PDF / comprovante (opcional)"
-                                  value={editDocForm.url_pdf}
-                                  onChange={(e) => setEditDocForm((f) => ({ ...f, url_pdf: e.target.value }))}
-                                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                  style={{ borderColor: 'var(--rbr-border)' }}
-                                />
-                                <input
-                                  type="date"
-                                  value={editDocForm.emitido_em}
-                                  onChange={(e) => setEditDocForm((f) => ({ ...f, emitido_em: e.target.value }))}
-                                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                  style={{ borderColor: 'var(--rbr-border)' }}
-                                />
-                                <select
-                                  value={editDocForm.status}
-                                  onChange={(e) =>
-                                    setEditDocForm((f) => ({ ...f, status: e.target.value as StatusDocumentoFiscal }))
-                                  }
-                                  className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                  style={{ borderColor: 'var(--rbr-border)' }}
-                                >
-                                  {STATUS_DOC_MANUAL_OPCOES.map((s) => (
-                                    <option key={s} value={s}>
-                                      {STATUS_DOC_LABEL[s]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <textarea
-                                placeholder="Referência / observações (opcional)"
-                                value={editDocForm.referencia}
-                                onChange={(e) => setEditDocForm((f) => ({ ...f, referencia: e.target.value }))}
-                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                                style={{ borderColor: 'var(--rbr-border)' }}
-                                rows={2}
-                              />
-                              <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)]">
-                                <input
-                                  type="checkbox"
-                                  checked={editDocForm.disponivel_para_agenciador}
-                                  onChange={(e) =>
-                                    setEditDocForm((f) => ({ ...f, disponivel_para_agenciador: e.target.checked }))
-                                  }
-                                />
-                                Disponibilizar este documento para o agenciador
-                              </label>
-                              <div className="flex gap-2 flex-wrap">
-                                <button
-                                  onClick={() => salvarEdicaoDocumento(op, doc.id)}
-                                  disabled={salvandoDoc}
-                                  className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
-                                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                                >
-                                  {salvandoDoc ? 'Salvando…' : 'Salvar'}
-                                </button>
-                                <button
-                                  onClick={() => cancelarEdicaoDocumento(op.id)}
-                                  disabled={salvandoDoc}
-                                  className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
-                                  style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                                >
-                                  Cancelar
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-bold w-14 flex-shrink-0">{TIPO_DOC_LABEL[doc.tipo]}</span>
-                                {estaProcessando(doc) ? (
-                                  <SeloProcessando />
-                                ) : (
-                                  <span
-                                    className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                                    style={{ background: statusDocBackground(doc.status) }}
-                                  >
-                                    {STATUS_DOC_LABEL[doc.status]}
-                                  </span>
-                                )}
-                                {doc.numero_documento && (
-                                  <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                                    Nº {doc.numero_documento}
-                                  </span>
-                                )}
-                                {doc.provedor && (
-                                  <span className="text-[11px] text-[color:var(--rbr-muted)]">via {doc.provedor}</span>
-                                )}
-                                {doc.atualizado_em && (
-                                  <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                                    atualizado em {formatDateTime(doc.atualizado_em)}
-                                  </span>
-                                )}
-                                {mostrarSeloHomologacao(doc) && (
-                                  <span
-                                    className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                                    style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}
-                                    title="Emitido no ambiente de testes do provedor — não tem validade fiscal."
-                                  >
-                                    Homologação — sem validade fiscal
-                                  </span>
-                                )}
-                                {(doc.tipo === 'cte' || doc.tipo === 'mdfe') &&
-                                  (doc.status === 'emitido' || doc.status === 'cancelado') &&
-                                  doc.referencia && (
-                                    <BaixarDocumentoFiscal operacaoId={op.id} tipo={doc.tipo} chave={doc.chave_acesso} />
-                                  )}
-                                {documentoManual && (
-                                  <span className="flex gap-2 ml-auto">
-                                    <button
-                                      onClick={() => iniciarEdicaoDocumento(doc)}
-                                      className="text-[11px] font-bold underline"
-                                      style={{ color: 'var(--rbr-navy)' }}
-                                    >
-                                      Editar
-                                    </button>
-                                    <button
-                                      onClick={() => excluirDocumento(op, doc.id)}
-                                      disabled={salvandoDoc}
-                                      className="text-[11px] font-bold underline disabled:opacity-60"
-                                      style={{ color: 'var(--rbr-danger)' }}
-                                    >
-                                      Excluir
-                                    </button>
-                                  </span>
-                                )}
-                              </div>
-                              {(doc.status === 'bloqueado' || doc.status === 'erro') && doc.mensagem_erro && (
-                                <div
-                                  className="text-[11px] rounded-lg px-3 py-2"
-                                  style={{
-                                    background: doc.status === 'erro' ? '#FBE9E9' : 'var(--rbr-warning-bg)',
-                                    color: doc.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
-                                  }}
-                                >
-                                  {doc.mensagem_erro}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Averbação do seguro (NS Tech/Averba): depende do CT-e autorizado e alimenta o MDF-e. */}
-                {docCte && (() => {
-                  const docAtm = docs.find((d) => d.tipo === 'atm')
-                  const cteAutorizado = docCte.status === 'emitido'
-                  const averbado = docAtm?.status === 'emitido'
-                  const emProducao = docCte.ambiente !== 'homologacao'
-                  const rotulo = averbado
-                    ? 'Averbado'
-                    : !cteAutorizado
-                      ? 'Aguardando CT-e'
-                      : docAtm?.status === 'erro'
-                        ? 'Erro'
-                        : docAtm?.status === 'bloqueado'
-                          ? 'Bloqueado'
-                          : 'Pendente'
-                  const cor = averbado ? '#137A45' : docAtm?.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy)'
-                  const ocupado = emAndamento.has(`${op.id}:averbar`)
-                  return (
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold w-14 flex-shrink-0">Averb.</span>
-                        <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: cor }}>
-                          {rotulo}
-                        </span>
-                        {docAtm?.numero_documento && (
-                          <span className="text-[11px] text-[color:var(--rbr-muted)]">Nº {docAtm.numero_documento}</span>
-                        )}
-                        <span className="text-[11px] text-[color:var(--rbr-muted)]">seguro RCTR-C · NS Tech/Averba</span>
-                        {docAtm?.atualizado_em && (
-                          <span className="text-[11px] text-[color:var(--rbr-muted)]">atualizado em {formatDateTime(docAtm.atualizado_em)}</span>
-                        )}
-                        {cteAutorizado && !averbado && emProducao && (
-                          <button
-                            onClick={() => averbarCte(op)}
-                            disabled={ocupado}
-                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
-                            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                          >
-                            {ocupado ? 'Enviando…' : docAtm?.status === 'erro' ? 'Tentar averbar de novo' : 'Averbar CT-e'}
-                          </button>
-                        )}
-                        {docAtm && (
-                          <button onClick={() => verRespostaAverba(op)} className="text-[11px] font-bold underline" style={{ color: 'var(--rbr-navy)' }}>
-                            {respostaAverba[op.id] !== undefined ? 'Ocultar resposta' : 'Ver resposta da Averba'}
-                          </button>
-                        )}
-                      </div>
-                      {cteAutorizado && !emProducao && (
-                        <div className="text-[11px] text-[color:var(--rbr-muted)]">CT-e de homologação não é averbado (sem validade fiscal).</div>
-                      )}
-                      {mostrarAvisoAguardandoCte(docCte, docAtm) && (
-                        <div className="text-[11px] text-[color:var(--rbr-muted)]">A averbação só pode ser enviada depois que o CT-e for autorizado.</div>
-                      )}
-                      {docAtm && (docAtm.status === 'bloqueado' || docAtm.status === 'erro') && docAtm.mensagem_erro && (
-                        <div
-                          className="text-[11px] rounded-lg px-3 py-2"
-                          style={{
-                            background: docAtm.status === 'erro' ? '#FBE9E9' : 'var(--rbr-warning-bg)',
-                            color: docAtm.status === 'erro' ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
-                          }}
-                        >
-                          {docAtm.mensagem_erro}
-                        </div>
-                      )}
-                      {respostaAverba[op.id] !== undefined && (
-                        <pre className="text-[10px] rounded-lg p-2.5 overflow-x-auto" style={{ background: 'var(--rbr-muted-bg)' }}>
-                          {respostaAverba[op.id]}
-                        </pre>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                {/* Averbação RC-V (Sompo) do MDF-e: automática quando o MDF-e é autorizado; aqui só resultado e reenvio. */}
-                {docCte && (
-                  <LinhaAverbacaoSompo
-                    operacaoId={op.id}
-                    mdfe={docMdfe}
-                    rcv={rcvPorOperacao.get(op.id)}
-                    onMudou={() => void carregarDocumentos([op.id])}
-                  />
-                )}
-
-                {/* NF-e de teste: vive na cotação (nf_chave_acesso), não em documentacao_operacao. */}
-                {(op.nfChaveAcesso || nfeCancelada) && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold w-14 flex-shrink-0">NF-e</span>
-                    <span
-                      className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                      style={{ background: statusDocBackground(op.nfChaveAcesso ? 'emitido' : 'cancelado') }}
-                    >
-                      {op.nfChaveAcesso ? 'Autorizada' : STATUS_DOC_LABEL.cancelado}
-                    </span>
-                    {op.nfChaveAcesso && (
-                      <span className="text-[11px] text-[color:var(--rbr-muted)] font-mono break-all">{op.nfChaveAcesso}</span>
-                    )}
-                    <BaixarDocumentoFiscal operacaoId={op.id} tipo="nfe" chave={op.nfChaveAcesso ?? null} />
-                  </div>
-                )}
-
-                {ambienteFiscal === 'producao' && op.eh_teste && (
-                  <div
-                    className="flex flex-col gap-2 rounded-lg p-2.5 border"
-                    style={{ borderColor: 'var(--rbr-danger)' }}
-                  >
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold">NF-e de teste (produção)</span>
-                      <span
-                        className="text-[11px] font-extrabold uppercase tracking-wide text-white px-2 py-0.5 rounded-full"
-                        style={{ background: 'var(--rbr-danger)' }}
-                      >
-                        Produção
-                      </span>
-                    </div>
-                    <div className="flex gap-2 flex-wrap">
-                      {!op.nfChaveAcesso && (
-                        <button
-                          onClick={() => {
-                            setErroNfeProducao(null)
-                            setNfeProducao(op)
-                          }}
-                          className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                          style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                        >
-                          Emitir NF-e de teste (R$ 1,00)
-                        </button>
-                      )}
-                      <button
-                        onClick={() => nfeTesteProducao(op, 'consultar')}
-                        disabled={emAndamento.has(`${op.id}:nfe-producao:consultar`)}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                      >
-                        {emAndamento.has(`${op.id}:nfe-producao:consultar`) ? 'Consultando…' : 'Consultar NF-e'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  {!formNovoDocAberto && tiposDisponiveisParaRegistro.length > 0 && (
-                    <button
-                      onClick={() => abrirFormNovoDocumento(op.id, tiposDisponiveisParaRegistro[0])}
-                      className="self-start text-xs font-bold px-3.5 py-2 rounded-lg border"
-                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                    >
-                      Registrar documento emitido manualmente
-                    </button>
-                  )}
-
-                  {formNovoDocAberto && (
-                    <div
-                      className="flex flex-col gap-2 bg-white rounded-lg p-2.5 border"
-                      style={{ borderColor: 'var(--rbr-border)' }}
-                    >
-                      <div className="text-xs font-bold">Registrar documento emitido manualmente</div>
-                      <div className="text-[11px] text-[color:var(--rbr-muted)]">
-                        Para CT-e/MDF-e/CIOT já emitidos fora do sistema (portal do fornecedor). Fica registrado como
-                        ambiente produção.
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          value={novoDocForm.tipo}
-                          onChange={(e) => setNovoDocForm((f) => ({ ...f, tipo: e.target.value as TipoDocumentoFiscal }))}
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        >
-                          {tiposDisponiveisParaRegistro.map((tipo) => (
-                            <option key={tipo} value={tipo}>
-                              {TIPO_DOC_LABEL[tipo]}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={novoDocForm.status}
-                          onChange={(e) =>
-                            setNovoDocForm((f) => ({ ...f, status: e.target.value as StatusDocumentoFiscal }))
-                          }
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        >
-                          {STATUS_DOC_MANUAL_OPCOES.map((s) => (
-                            <option key={s} value={s}>
-                              {STATUS_DOC_LABEL[s]}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          placeholder="Número do documento"
-                          value={novoDocForm.numero_documento}
-                          onChange={(e) => setNovoDocForm((f) => ({ ...f, numero_documento: e.target.value }))}
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                        <input
-                          placeholder="Chave de acesso (opcional)"
-                          value={novoDocForm.chave_acesso}
-                          onChange={(e) => setNovoDocForm((f) => ({ ...f, chave_acesso: e.target.value }))}
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                        <input
-                          placeholder="Provedor / portal usado"
-                          value={novoDocForm.provedor}
-                          onChange={(e) => setNovoDocForm((f) => ({ ...f, provedor: e.target.value }))}
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                        <input
-                          placeholder="Link do PDF / comprovante (opcional)"
-                          value={novoDocForm.url_pdf}
-                          onChange={(e) => setNovoDocForm((f) => ({ ...f, url_pdf: e.target.value }))}
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                        <input
-                          type="date"
-                          value={novoDocForm.emitido_em}
-                          onChange={(e) => setNovoDocForm((f) => ({ ...f, emitido_em: e.target.value }))}
-                          className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                      </div>
-                      <textarea
-                        placeholder="Referência / observações (opcional)"
-                        value={novoDocForm.referencia}
-                        onChange={(e) => setNovoDocForm((f) => ({ ...f, referencia: e.target.value }))}
-                        className="border rounded-lg px-2.5 py-1.5 text-xs outline-none resize-none"
-                        style={{ borderColor: 'var(--rbr-border)' }}
-                        rows={2}
-                      />
-                      <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)]">
-                        <input
-                          type="checkbox"
-                          checked={novoDocForm.disponivel_para_agenciador}
-                          onChange={(e) =>
-                            setNovoDocForm((f) => ({ ...f, disponivel_para_agenciador: e.target.checked }))
-                          }
-                        />
-                        Disponibilizar este documento para o agenciador
-                      </label>
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => salvarNovoDocumento(op)}
-                          disabled={salvandoDoc}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
-                          style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                        >
-                          {salvandoDoc ? 'Salvando…' : 'Salvar registro'}
-                        </button>
-                        <button
-                          onClick={() => fecharFormNovoDocumento(op.id)}
-                          disabled={salvandoDoc}
-                          className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
-                          style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {erroDoc && (
-                    <div
-                      className="text-xs rounded-lg px-3 py-2.5"
-                      style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}
-                    >
-                      {erroDoc}
-                    </div>
-                  )}
-                </div>
-
-                {erroCard && (
-                  erroCard.motivos && erroCard.motivos.length > 0 ? (
-                    <RegrasFiscais
-                      bloqueios={erroCard.motivos}
-                      avisos={erroCard.avisos}
-                      regras={erroCard.regras}
-                      tituloBloqueios="Emissão bloqueada"
-                    />
-                  ) : (
-                    <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                      {erroCard.erro ?? 'Erro ao processar solicitação.'}
-                    </div>
-                  )
-                )}
-
-                {avisosRbrPorOperacao[op.id] && (
-                  <RegrasFiscais
-                    avisos={avisosRbrPorOperacao[op.id]!.map((r) => r.mensagem)}
-                    regras={avisosRbrPorOperacao[op.id]!}
-                  />
-                )}
-
-                {infoCard && (
-                  <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>
-                    {infoCard}
-                  </div>
-                )}
-
-                {xmlCancelamento && (
-                  <a
-                    href={xmlCancelamento.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="self-start text-[11px] font-bold underline"
-                    style={{ color: 'var(--rbr-navy)' }}
-                  >
-                    XML de cancelamento ({xmlCancelamento.tipo === 'nfe' ? 'NF-e de teste' : TIPO_DOC_LABEL[xmlCancelamento.tipo]})
-                  </a>
-                )}
-
-                {docMdfe && (
-                  <FinalizarViagem
-                    operacaoId={op.id}
-                    statusOperacao={op.status}
-                    entregueEm={op.entregue_em}
-                    mdfe={docMdfe}
-                    onAtualizado={() => carregarDocumentos([op.id])}
-                  />
-                )}
-
-                {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
-                {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs} />}
-
-                <div className="flex gap-2 flex-wrap">
-                  {ofereceCteMdfe && (
-                  <button
-                    onClick={() => setConferencia({ op, tipo: 'cte' })}
-                    disabled={emAndamento.has(chaveCte)}
-                    className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                  >
-                    {emAndamento.has(chaveCte) ? 'Enviando…' : 'Emitir CT-e'}
-                  </button>
-                  )}
-                  {ofereceCteMdfe && (
-                  <button
-                    onClick={() => setConferencia({ op, tipo: 'mdfe' })}
-                    disabled={emAndamento.has(chaveMdfe)}
-                    className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                  >
-                    {emAndamento.has(chaveMdfe) ? 'Enviando…' : 'Emitir MDF-e'}
-                  </button>
-                  )}
-                  {ofereceNfse && (
-                  <button
-                    onClick={() => setConferencia({ op, tipo: 'nfse' })}
-                    disabled={emAndamento.has(chaveNfse)}
-                    className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                  >
-                    {emAndamento.has(chaveNfse) ? 'Enviando…' : 'Emitir NFS-e (intramunicipal)'}
-                  </button>
-                  )}
-                  {ambienteFiscal === 'homologacao' && (
-                    <>
-                      <button
-                        onClick={() => nfeTeste(op, 'emitir')}
-                        disabled={emAndamento.has(`${op.id}:nfe-teste:emitir`)}
-                        title="Só homologação: a RBR emite uma NF-e de teste com os dados da cotação, para o CT-e citar uma nota que existe na SEFAZ."
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                        style={{ borderColor: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
-                      >
-                        {emAndamento.has(`${op.id}:nfe-teste:emitir`) ? 'Enviando…' : 'Gerar NF-e de teste'}
-                      </button>
-                      <button
-                        onClick={() => nfeTeste(op, 'consultar')}
-                        disabled={emAndamento.has(`${op.id}:nfe-teste:consultar`)}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border disabled:opacity-60"
-                        style={{ borderColor: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
-                      >
-                        {emAndamento.has(`${op.id}:nfe-teste:consultar`) ? 'Consultando…' : 'Consultar NF-e de teste'}
-                      </button>
-                    </>
-                  )}
-                  {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
-                    <>
-                      <button
-                        onClick={() => setEvento({ op, acao: 'incluir_condutor_mdfe' })}
-                        className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                        style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                      >
-                        Trocar condutor
-                      </button>
-                    </>
-                  )}
-                  {docCte?.status === 'emitido' && (
-                    <button
-                      onClick={() => setEvento({ op, acao: 'carta_correcao_cte' })}
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                      style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}
-                    >
-                      Carta de correção CT-e
-                    </button>
-                  )}
-                  {/* Cancelamentos na ordem exigida: MDF-e, depois CT-e, depois NF-e de teste. */}
-                  {docMdfe?.status === 'emitido' && !docMdfe.encerrado_em && (
-                    <button
-                      onClick={() =>
-                        setCancelamento({ op, tipo: 'mdfe', ambiente: docMdfe.ambiente, chave: docMdfe.chave_acesso })
-                      }
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                      style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                    >
-                      Cancelar MDF-e
-                    </button>
-                  )}
-                  {docCte?.status === 'emitido' && (
-                    <button
-                      onClick={() =>
-                        setCancelamento({ op, tipo: 'cte', ambiente: docCte.ambiente, chave: docCte.chave_acesso })
-                      }
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                      style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                    >
-                      Cancelar CT-e
-                    </button>
-                  )}
-                  {/* A função só cancela a NF-e de teste da RBR (ref rbr-nfe-teste-/rbr-nfe-prod-<cotação>), no ambiente atual. */}
-                  {ambienteFiscal && op.nfChaveAcesso && (
-                    <button
-                      onClick={() =>
-                        setCancelamento({ op, tipo: 'nfe', ambiente: ambienteFiscal, chave: op.nfChaveAcesso ?? null })
-                      }
-                      className="text-xs font-bold px-3.5 py-2 rounded-lg border"
-                      style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                    >
-                      Cancelar NF-e de teste
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+        {!loading && lista.filter((o) => o.id !== opAbertaId).map(renderCard)}
       </div>
+
+      {!loading && opAberta && (
+        <PainelSobreposto
+          titulo={codigoCurto(opAberta.id)}
+          cabecalho={
+            <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: 'var(--rbr-navy)' }}>
+              {STATUS_OPERACAO_LABEL[opAberta.status]}
+            </span>
+          }
+          fixo={
+            <>
+              <div className="text-[15px] font-bold leading-tight">{opAberta.clienteNome ?? 'Cliente a confirmar'}</div>
+              <NavegacaoServico
+                atual="fiscal"
+                cotacaoId={opAberta.cotacao_id}
+                operacaoId={opAberta.id}
+                confirmarSaida={() => formNovoDocOperacaoId !== opAberta.id || window.confirm('O formulário de documento desta operação está aberto e não foi salvo. Sair mesmo assim?')}
+              />
+            </>
+          }
+          onFechar={fecharPainelFiscal}
+          largura={880}
+        >
+          {renderCard(opAberta)}
+        </PainelSobreposto>
+      )}
     </div>
   )
 }
