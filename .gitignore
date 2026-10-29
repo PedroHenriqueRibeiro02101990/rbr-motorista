@@ -2,3 +2,6 @@
 # Documentação confidencial da efrete (NSTech): nunca versionar
 efrete-docs/
 workspaces/efrete-docs/
+
+# Estado local da CLI do Supabase (não versionar)
+supabase/.temp/

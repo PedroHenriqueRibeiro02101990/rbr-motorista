@@ -15,6 +15,7 @@ import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
+import { PainelSobreposto } from '../components/PainelSobreposto'
 import { FILAS, casaBusca, contarFilas, passaFila, type DadosFila, type FilaId } from '../lib/filasOperacao'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -104,10 +105,9 @@ function badgeBackground(status: StatusOperacao): string {
 export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [operacoes, setOperacoes] = useState<OperacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   // ?status=em_transito (vindo do Início) já abre a lista filtrada.
   const [filtro, setFiltro] = useState<StatusOperacao | 'todas'>(() => (params.get('status') as StatusOperacao | null) ?? 'todas')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
   // Filas (?fila=sem_motorista): seções da tela. Dados vindos de operacao_nfes e documentacao_operacao.
   const [fila, setFila] = useState<FilaId | null>(() => {
     const f = params.get('fila')
@@ -117,7 +117,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [nfesPorOp, setNfesPorOp] = useState<Record<string, string[]>>({})
   const [problemasPorOp, setProblemasPorOp] = useState<Record<string, number>>({})
   const opDaUrl = params.get('op')
-  const abriuDaUrl = useRef(false)
+  const preparadaRef = useRef<string | null>(null)
 
   const [veiculos, setVeiculos] = useState<Veiculo[]>([])
   const [motoristas, setMotoristas] = useState<Pessoa[]>([])
@@ -285,14 +285,29 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     })
   }
 
-  async function toggleExpand(op: OperacaoEnriquecida) {
+  // O painel da operação é guiado pela URL (?op=<id>): abrir, fechar e o botão voltar do navegador passam por ela.
+  function abrirOperacao(op: OperacaoEnriquecida) {
+    setParams((p) => {
+      const n = new URLSearchParams(p)
+      n.set('op', op.id)
+      return n
+    })
+  }
+
+  function fecharPainel() {
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p)
+        n.delete('op')
+        return n
+      },
+      { replace: true },
+    )
+  }
+
+  async function prepararOperacao(op: OperacaoEnriquecida) {
     setErrorMsg(null)
     setMotivoLiberacao('')
-    if (expandedId === op.id) {
-      setExpandedId(null)
-      return
-    }
-    setExpandedId(op.id)
     setVeiculoForm({})
     setCargaForm({})
     setCopiadoId(null)
@@ -304,15 +319,18 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     }
   }
 
-  // Link vindo do Financeiro (/operacoes?op=<id>): abre e rola até a operação.
+  // Abre o painel da operação da URL assim que a lista carrega (link do Financeiro, Mapa, Início, etc.).
   useEffect(() => {
-    if (!opDaUrl || abriuDaUrl.current || !operacoes) return
+    if (!opDaUrl) {
+      preparadaRef.current = null
+      return
+    }
+    if (!operacoes || preparadaRef.current === opDaUrl) return
     const alvo = operacoes.find((o) => o.id === opDaUrl)
     if (!alvo) return
-    abriuDaUrl.current = true
-    setFiltro('todas')
-    toggleExpand(alvo)
-    setTimeout(() => document.getElementById(`op-${alvo.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+    if (preparadaRef.current === null) setFiltro('todas')
+    preparadaRef.current = opDaUrl
+    void prepararOperacao(alvo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opDaUrl, operacoes])
 
@@ -547,6 +565,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   }, [operacoes, nfesPorOp, problemasPorOp])
   const contagem = useMemo(() => contarFilas([...dadosFila.values()], ocultarTestes), [dadosFila, ocultarTestes])
 
+  const opAberta = opDaUrl ? (operacoes ?? []).find((o) => o.id === opDaUrl) ?? null : null
+
   const lista = useMemo(() => {
     const placaDe = new Map(veiculos.map((v) => [v.id, v.placa]))
     const filtradas = (operacoes ?? []).filter((op) => {
@@ -675,8 +695,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           const alvo = operacoes?.find((o) => o.id === id)
           if (!alvo) return
           setFiltro('todas')
-          if (expandedId !== id) toggleExpand(alvo)
-          setTimeout(() => document.getElementById(`op-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+          abrirOperacao(alvo)
         }}
       />
 
@@ -712,8 +731,6 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       <div className="flex flex-col gap-3">
         {!loading &&
           lista.map((op) => {
-            const isExpanded = expandedId === op.id
-            const averbacao = averbacoes[op.id]
             return (
               <div
                 key={op.id}
@@ -726,7 +743,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                     <FaixaTeste />
                   </div>
                 )}
-                <button className="w-full text-left p-[18px]" onClick={() => toggleExpand(op)}>
+                <button className="w-full text-left p-[18px]" onClick={() => abrirOperacao(op)}>
                   <div className="flex items-center justify-between mb-2.5 gap-3 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span
@@ -764,8 +781,6 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                         height={16}
                         style={{
                           color: 'var(--rbr-muted)',
-                          transform: isExpanded ? 'rotate(90deg)' : 'none',
-                          transition: 'transform 0.15s',
                         }}
                       />
                     </div>
@@ -784,401 +799,427 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                   )}
                 </button>
 
-                {isExpanded && (
-                  <div className="border-t px-[18px] pb-[18px] pt-4 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
-                    {errorMsg && (
-                      <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
-                        {errorMsg}
-                      </div>
-                    )}
-
-                    {op.bloqueio_fiscal && (
-                      <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2" style={{ background: '#FBE9E9' }}>
-                        <div className="text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
-                          Bloqueio fiscal ativo
-                        </div>
-                        <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
-                          {op.bloqueio_fiscal_motivo ?? 'Sem motivo registrado.'}
-                        </div>
-                        <input
-                          value={motivoLiberacao}
-                          onChange={(e) => setMotivoLiberacao(e.target.value)}
-                          placeholder="Nota de liberação (opcional)"
-                          className="border rounded-lg px-3 py-2 text-xs outline-none bg-white"
-                          style={{ borderColor: 'var(--rbr-border)' }}
-                        />
-                        <button
-                          onClick={() => liberarBloqueio(op)}
-                          disabled={saving}
-                          className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                          style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
-                        >
-                          {saving ? 'Salvando…' : 'Liberar bloqueio fiscal'}
-                        </button>
-                      </div>
-                    )}
-
-                    <OperacaoFluxo
-                      operacaoId={op.id}
-                      gestor={gestor}
-                      assessoria={assessoria}
-                      onChanged={load}
-                      onCancelar={() => abrirCancelamento(op)}
-                      extras={{
-                        averbacao_allianz: op.carga_complexa_eixo3_seguro_excedido ? (
-                          <>
-                    {op.carga_complexa_eixo3_seguro_excedido && (
-                      <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2" style={{ background: 'var(--rbr-warning-bg)' }}>
-                        <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
-                          Averbação de seguro (valor excede limite)
-                        </div>
-                        <div className="text-xs text-[color:var(--rbr-muted)]">
-                          Status atual: {averbacao ? AVERBACAO_LABEL[averbacao.status] : 'Nenhuma negociação registrada'}
-                        </div>
-                        <div className="flex gap-2 flex-wrap">
-                          {(['em_analise', 'aprovada', 'recusada'] as StatusAverbacao[]).map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => atualizarAverbacao(op, s)}
-                              disabled={saving}
-                              className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
-                              style={{
-                                borderColor: 'var(--rbr-navy)',
-                                background: averbacao?.status === s ? 'var(--rbr-navy)' : 'transparent',
-                                color: averbacao?.status === s ? '#fff' : 'var(--rbr-navy)',
-                              }}
-                            >
-                              {AVERBACAO_LABEL[s]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                          </>
-                        ) : undefined,
-                        aet: op.carga_complexa_eixo2_superdimensionada ? (
-                          <>
-                    {op.carga_complexa_eixo2_superdimensionada &&
-                      (() => {
-                        const veiculo = veiculos.find((v) => v.id === op.veiculo_id)
-                        const motorista = motoristas.find((m) => m.id === op.pessoa_alocada_id)
-                        const aet = autorizacoesAet[op.id]
-                        const status = aet?.status ?? 'nao_solicitada'
-                        const dias = diasDesde(aet?.data_solicitacao)
-                        const prazo = aet?.prazo_estimado_dias ?? PRAZO_AET_DIAS_PADRAO
-                        const camposVeiculoFaltando =
-                          !!veiculo &&
-                          (!veiculo.chassi || !veiculo.tara_kg || !veiculo.potencia_cv || !veiculo.quantidade_eixos || !veiculo.quantidade_pneus)
-                        const dimensoesFaltando = !op.comprimento_cm || !op.largura_cm || !op.altura_cm
-
-                        return (
-                          <div className="rounded-xl px-3.5 py-3 flex flex-col gap-3" style={{ background: 'var(--rbr-warning-bg)' }}>
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                              <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
-                                Carga superdimensionada — AET (DNIT/SIAET)
-                              </div>
-                              <span
-                                className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                                style={{ background: badgeAet(status) }}
-                              >
-                                {STATUS_AET_LABEL[status]}
-                              </span>
-                            </div>
-
-                            {status === 'protocolada' && dias !== null && (
-                              <div
-                                className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                                style={{
-                                  background: dias >= prazo ? '#FBE9E9' : dias >= prazo - 10 ? '#FFF4D6' : '#EDEFF7',
-                                  color: dias >= prazo ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
-                                }}
-                              >
-                                <IconClock width={14} height={14} style={{ flexShrink: 0, marginTop: 1 }} />
-                                <span>
-                                  {dias >= prazo
-                                    ? `Prazo estimado do SIAET (${prazo} dias) já passou — solicitado há ${dias} dias. Verifique o andamento no site do DNIT.`
-                                    : dias >= prazo - 10
-                                      ? `Atenção ao prazo: solicitado há ${dias} dias, o SIAET pode levar até ${prazo} dias para emitir.`
-                                      : `Solicitado há ${dias} dias. Prazo estimado de emissão: até ${prazo} dias corridos.`}
-                                </span>
-                              </div>
-                            )}
-
-                            {veiculo?.quantidade_eixos && op.peso_bruto && (() => {
-                              const limite = limitesPesoEixos[veiculo.quantidade_eixos!]
-                              if (!limite) return null
-                              const dentroDoLimite = op.peso_bruto! < limite
-                              return (
-                                <div
-                                  className="text-[11px] rounded-lg px-3 py-2"
-                                  style={{ background: dentroDoLimite ? '#EDEFF7' : '#FBE9E9', color: dentroDoLimite ? 'var(--rbr-navy-dark)' : 'var(--rbr-danger)' }}
-                                >
-                                  {dentroDoLimite
-                                    ? `Peso (${op.peso_bruto} kg) está dentro do limite legal pra um veículo de ${veiculo.quantidade_eixos} eixos (limite: ${limite.toLocaleString('pt-BR')} kg). Confirme se a AET é mesmo necessária por peso, ou se foi sinalizada por outro motivo (carga indivisível/dimensão fora do padrão).`
-                                    : `Peso (${op.peso_bruto} kg) excede o limite legal pra um veículo de ${veiculo.quantidade_eixos} eixos (limite: ${limite.toLocaleString('pt-BR')} kg) — AET necessária por excesso de peso.`}
-                                </div>
-                              )
-                            })()}
-
-                            {aet && (aet.data_solicitacao || aet.data_validade || aet.numero_aet) && (
-                              <div className="text-[11px] text-[color:var(--rbr-navy-dark)] flex flex-wrap gap-x-4 gap-y-1">
-                                {aet.data_solicitacao && <span>Solicitada em: {formatDate(aet.data_solicitacao)}</span>}
-                                {aet.numero_aet && <span>Nº AET: {aet.numero_aet}</span>}
-                                {aet.data_validade && <span>Válida até: {formatDate(aet.data_validade)}</span>}
-                              </div>
-                            )}
-
-                            <div className="text-xs" style={{ color: 'var(--rbr-navy-dark)' }}>
-                              O SIAET não tem integração automática — gere a ficha abaixo, copie e cole no site{' '}
-                              <span className="font-semibold">siaet.dnit.gov.br</span> para protocolar o pedido.
-                            </div>
-
-                            <textarea
-                              readOnly
-                              value={gerarTextoFichaAet(op)}
-                              rows={6}
-                              className="w-full border rounded-lg px-3 py-2 text-[11px] font-mono outline-none bg-white resize-y"
-                              style={{ borderColor: 'var(--rbr-border)' }}
-                            />
-                            <button
-                              onClick={() => copiarFicha(op)}
-                              className="self-start flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-lg"
-                              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                            >
-                              <IconCopy width={13} height={13} />
-                              {copiadoId === op.id ? 'Ficha copiada!' : 'Copiar ficha completa'}
-                            </button>
-
-                            {(camposVeiculoFaltando || dimensoesFaltando) && (
-                              <div className="rounded-lg px-3 py-2.5 flex flex-col gap-2.5 bg-white">
-                                <div className="text-[11px] font-bold text-[color:var(--rbr-danger)]">
-                                  Campos obrigatórios do SIAET ainda não cadastrados — preencha para completar a ficha:
-                                </div>
-                                {camposVeiculoFaltando && veiculo && (
-                                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                                    <input
-                                      placeholder="Chassi"
-                                      defaultValue={veiculo.chassi ?? ''}
-                                      onChange={(e) => setVeiculoForm((f) => ({ ...f, chassi: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Tara (kg)"
-                                      type="number"
-                                      defaultValue={veiculo.tara_kg ?? ''}
-                                      onChange={(e) => setVeiculoForm((f) => ({ ...f, tara_kg: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Potência (CV)"
-                                      type="number"
-                                      defaultValue={veiculo.potencia_cv ?? ''}
-                                      onChange={(e) => setVeiculoForm((f) => ({ ...f, potencia_cv: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Qtd. eixos"
-                                      type="number"
-                                      defaultValue={veiculo.quantidade_eixos ?? ''}
-                                      onChange={(e) => setVeiculoForm((f) => ({ ...f, quantidade_eixos: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Qtd. pneus"
-                                      type="number"
-                                      defaultValue={veiculo.quantidade_pneus ?? ''}
-                                      onChange={(e) => setVeiculoForm((f) => ({ ...f, quantidade_pneus: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <button
-                                      onClick={() => salvarCamposVeiculo(veiculo.id)}
-                                      disabled={saving || Object.keys(veiculoForm).length === 0}
-                                      className="col-span-2 md:col-span-1 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                                      style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
-                                    >
-                                      Salvar veículo
-                                    </button>
-                                  </div>
-                                )}
-                                {dimensoesFaltando && (
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                    <input
-                                      placeholder="Comprimento (cm)"
-                                      type="number"
-                                      defaultValue={op.comprimento_cm ?? ''}
-                                      onChange={(e) => setCargaForm((f) => ({ ...f, comprimento_cm: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Largura (cm)"
-                                      type="number"
-                                      defaultValue={op.largura_cm ?? ''}
-                                      onChange={(e) => setCargaForm((f) => ({ ...f, largura_cm: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Altura (cm)"
-                                      type="number"
-                                      defaultValue={op.altura_cm ?? ''}
-                                      onChange={(e) => setCargaForm((f) => ({ ...f, altura_cm: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <button
-                                      onClick={() => salvarDimensoesCarga(op)}
-                                      disabled={saving || Object.keys(cargaForm).length === 0}
-                                      className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                                      style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
-                                    >
-                                      Salvar dimensões
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex flex-col gap-2">
-                              {status === 'nao_solicitada' && (
-                                <button
-                                  onClick={() => protocolarAet(op)}
-                                  disabled={saving}
-                                  className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                                >
-                                  {saving ? 'Salvando…' : 'Marcar como protocolada no SIAET (hoje)'}
-                                </button>
-                              )}
-
-                              {(status === 'protocolada' || status === 'emitida') && (
-                                <div className="flex flex-col gap-2 bg-white rounded-lg p-2.5">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <input
-                                      placeholder="Nº da AET"
-                                      value={aetForm.numero_aet}
-                                      onChange={(e) => setAetForm((f) => ({ ...f, numero_aet: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Protocolo SIAET"
-                                      value={aetForm.protocolo_siaet}
-                                      onChange={(e) => setAetForm((f) => ({ ...f, protocolo_siaet: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      type="date"
-                                      placeholder="Validade"
-                                      value={aetForm.data_validade}
-                                      onChange={(e) => setAetForm((f) => ({ ...f, data_validade: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                    <input
-                                      placeholder="Observações"
-                                      value={aetForm.observacoes}
-                                      onChange={(e) => setAetForm((f) => ({ ...f, observacoes: e.target.value }))}
-                                      className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                                      style={{ borderColor: 'var(--rbr-border)' }}
-                                    />
-                                  </div>
-                                  <div className="flex gap-2 flex-wrap">
-                                    {status === 'protocolada' && (
-                                      <button
-                                        onClick={() => emitirAet(op)}
-                                        disabled={saving}
-                                        className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
-                                        style={{ background: 'var(--rbr-positive)', color: '#fff' }}
-                                      >
-                                        Marcar como emitida
-                                      </button>
-                                    )}
-                                    {status === 'protocolada' && (
-                                      <button
-                                        onClick={() => marcarStatusAet(op, 'negada')}
-                                        disabled={saving}
-                                        className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
-                                        style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
-                                      >
-                                        Marcar como negada
-                                      </button>
-                                    )}
-                                    {status === 'emitida' && (
-                                      <button
-                                        onClick={() => salvarAet(op, aetForm)}
-                                        disabled={saving}
-                                        className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
-                                        style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                                      >
-                                        Atualizar dados da AET
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {(status === 'negada' || status === 'vencida') && (
-                                <button
-                                  onClick={() => protocolarAet(op)}
-                                  disabled={saving}
-                                  className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-                                >
-                                  Registrar novo protocolo (hoje)
-                                </button>
-                              )}
-                            </div>
-
-                            {!motorista && (
-                              <div className="text-[11px] text-[color:var(--rbr-muted)]">
-                                Aloque um motorista para incluir os dados de CNH na ficha.
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })()}
-
-                          </>
-                        ) : undefined,
-                        motorista:
-                          op.status === 'alocando_motorista' && !op.pessoa_alocada_id ? (
-                            <MotoristasSugeridos
-                              operacaoId={op.id}
-                              carga={cargasAguardando.find((c) => c.operacao_id === op.id)}
-                              onAvisado={() => carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))}
-                            />
-                          ) : undefined,
-                        // "Finalizar viagem" (encerrar o MDF-e) continua aqui, dentro da etapa da viagem.
-                        viagem: !['alocando_motorista', 'aguardando_liberacao_fiscal', 'cancelada'].includes(op.status) ? (
-                          <FinalizarViagem operacaoId={op.id} statusOperacao={op.status} entregueEm={op.entregue_em} />
-                        ) : undefined,
-                        rodape: (
-                          <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)] cursor-pointer self-start">
-                            <input
-                              type="checkbox"
-                              checked={!!op.pagamento_pos_entrega_confirmado}
-                              disabled={saving}
-                              onChange={() => togglePagamentoPosEntrega(op)}
-                            />
-                            Pagamento pós-entrega confirmado (liberação manual do gestor)
-                          </label>
-                        ),
-                      }}
-                    />
-                  </div>
-                )}
               </div>
             )
           })}
       </div>
+
+      {opAberta && (() => {
+        const op = opAberta
+        const averbacao = averbacoes[op.id]
+        return (
+          <PainelSobreposto
+            titulo={
+              <>
+                Operação
+                {op.cotacaoDetalhe?.cidade_origem && (
+                  <span className="font-normal text-[color:var(--rbr-muted)]">
+                    {' · '}{op.cotacaoDetalhe.cidade_origem}/{op.cotacaoDetalhe.uf_origem} → {op.cotacaoDetalhe.cidade_destino}/{op.cotacaoDetalhe.uf_destino}
+                  </span>
+                )}
+              </>
+            }
+            cabecalho={
+              <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: badgeBackground(op.status) }}>
+                {STATUS_OPERACAO_LABEL[op.status]}
+              </span>
+            }
+            onFechar={fecharPainel}
+            largura={880}
+          >
+            {op.eh_teste && <FaixaTeste />}
+            <div className="border-t px-[18px] pb-[18px] pt-4 flex flex-col gap-4" style={{ borderColor: 'var(--rbr-border)' }}>
+              {errorMsg && (
+                <div className="text-xs rounded-xl px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                  {errorMsg}
+                </div>
+              )}
+    
+              {op.bloqueio_fiscal && (
+                <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2" style={{ background: '#FBE9E9' }}>
+                  <div className="text-xs font-bold" style={{ color: 'var(--rbr-danger)' }}>
+                    Bloqueio fiscal ativo
+                  </div>
+                  <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>
+                    {op.bloqueio_fiscal_motivo ?? 'Sem motivo registrado.'}
+                  </div>
+                  <input
+                    value={motivoLiberacao}
+                    onChange={(e) => setMotivoLiberacao(e.target.value)}
+                    placeholder="Nota de liberação (opcional)"
+                    className="border rounded-lg px-3 py-2 text-xs outline-none bg-white"
+                    style={{ borderColor: 'var(--rbr-border)' }}
+                  />
+                  <button
+                    onClick={() => liberarBloqueio(op)}
+                    disabled={saving}
+                    className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+                    style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                  >
+                    {saving ? 'Salvando…' : 'Liberar bloqueio fiscal'}
+                  </button>
+                </div>
+              )}
+    
+              <OperacaoFluxo
+                operacaoId={op.id}
+                gestor={gestor}
+                assessoria={assessoria}
+                onChanged={load}
+                onCancelar={() => abrirCancelamento(op)}
+                extras={{
+                  averbacao_allianz: op.carga_complexa_eixo3_seguro_excedido ? (
+                    <>
+              {op.carga_complexa_eixo3_seguro_excedido && (
+                <div className="rounded-xl px-3.5 py-3 flex flex-col gap-2" style={{ background: 'var(--rbr-warning-bg)' }}>
+                  <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
+                    Averbação de seguro (valor excede limite)
+                  </div>
+                  <div className="text-xs text-[color:var(--rbr-muted)]">
+                    Status atual: {averbacao ? AVERBACAO_LABEL[averbacao.status] : 'Nenhuma negociação registrada'}
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {(['em_analise', 'aprovada', 'recusada'] as StatusAverbacao[]).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => atualizarAverbacao(op, s)}
+                        disabled={saving}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
+                        style={{
+                          borderColor: 'var(--rbr-navy)',
+                          background: averbacao?.status === s ? 'var(--rbr-navy)' : 'transparent',
+                          color: averbacao?.status === s ? '#fff' : 'var(--rbr-navy)',
+                        }}
+                      >
+                        {AVERBACAO_LABEL[s]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+    
+                    </>
+                  ) : undefined,
+                  aet: op.carga_complexa_eixo2_superdimensionada ? (
+                    <>
+              {op.carga_complexa_eixo2_superdimensionada &&
+                (() => {
+                  const veiculo = veiculos.find((v) => v.id === op.veiculo_id)
+                  const motorista = motoristas.find((m) => m.id === op.pessoa_alocada_id)
+                  const aet = autorizacoesAet[op.id]
+                  const status = aet?.status ?? 'nao_solicitada'
+                  const dias = diasDesde(aet?.data_solicitacao)
+                  const prazo = aet?.prazo_estimado_dias ?? PRAZO_AET_DIAS_PADRAO
+                  const camposVeiculoFaltando =
+                    !!veiculo &&
+                    (!veiculo.chassi || !veiculo.tara_kg || !veiculo.potencia_cv || !veiculo.quantidade_eixos || !veiculo.quantidade_pneus)
+                  const dimensoesFaltando = !op.comprimento_cm || !op.largura_cm || !op.altura_cm
+    
+                  return (
+                    <div className="rounded-xl px-3.5 py-3 flex flex-col gap-3" style={{ background: 'var(--rbr-warning-bg)' }}>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-xs font-bold text-[color:var(--rbr-navy-dark)]">
+                          Carga superdimensionada — AET (DNIT/SIAET)
+                        </div>
+                        <span
+                          className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
+                          style={{ background: badgeAet(status) }}
+                        >
+                          {STATUS_AET_LABEL[status]}
+                        </span>
+                      </div>
+    
+                      {status === 'protocolada' && dias !== null && (
+                        <div
+                          className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                          style={{
+                            background: dias >= prazo ? '#FBE9E9' : dias >= prazo - 10 ? '#FFF4D6' : '#EDEFF7',
+                            color: dias >= prazo ? 'var(--rbr-danger)' : 'var(--rbr-navy-dark)',
+                          }}
+                        >
+                          <IconClock width={14} height={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                          <span>
+                            {dias >= prazo
+                              ? `Prazo estimado do SIAET (${prazo} dias) já passou — solicitado há ${dias} dias. Verifique o andamento no site do DNIT.`
+                              : dias >= prazo - 10
+                                ? `Atenção ao prazo: solicitado há ${dias} dias, o SIAET pode levar até ${prazo} dias para emitir.`
+                                : `Solicitado há ${dias} dias. Prazo estimado de emissão: até ${prazo} dias corridos.`}
+                          </span>
+                        </div>
+                      )}
+    
+                      {veiculo?.quantidade_eixos && op.peso_bruto && (() => {
+                        const limite = limitesPesoEixos[veiculo.quantidade_eixos!]
+                        if (!limite) return null
+                        const dentroDoLimite = op.peso_bruto! < limite
+                        return (
+                          <div
+                            className="text-[11px] rounded-lg px-3 py-2"
+                            style={{ background: dentroDoLimite ? '#EDEFF7' : '#FBE9E9', color: dentroDoLimite ? 'var(--rbr-navy-dark)' : 'var(--rbr-danger)' }}
+                          >
+                            {dentroDoLimite
+                              ? `Peso (${op.peso_bruto} kg) está dentro do limite legal pra um veículo de ${veiculo.quantidade_eixos} eixos (limite: ${limite.toLocaleString('pt-BR')} kg). Confirme se a AET é mesmo necessária por peso, ou se foi sinalizada por outro motivo (carga indivisível/dimensão fora do padrão).`
+                              : `Peso (${op.peso_bruto} kg) excede o limite legal pra um veículo de ${veiculo.quantidade_eixos} eixos (limite: ${limite.toLocaleString('pt-BR')} kg) — AET necessária por excesso de peso.`}
+                          </div>
+                        )
+                      })()}
+    
+                      {aet && (aet.data_solicitacao || aet.data_validade || aet.numero_aet) && (
+                        <div className="text-[11px] text-[color:var(--rbr-navy-dark)] flex flex-wrap gap-x-4 gap-y-1">
+                          {aet.data_solicitacao && <span>Solicitada em: {formatDate(aet.data_solicitacao)}</span>}
+                          {aet.numero_aet && <span>Nº AET: {aet.numero_aet}</span>}
+                          {aet.data_validade && <span>Válida até: {formatDate(aet.data_validade)}</span>}
+                        </div>
+                      )}
+    
+                      <div className="text-xs" style={{ color: 'var(--rbr-navy-dark)' }}>
+                        O SIAET não tem integração automática — gere a ficha abaixo, copie e cole no site{' '}
+                        <span className="font-semibold">siaet.dnit.gov.br</span> para protocolar o pedido.
+                      </div>
+    
+                      <textarea
+                        readOnly
+                        value={gerarTextoFichaAet(op)}
+                        rows={6}
+                        className="w-full border rounded-lg px-3 py-2 text-[11px] font-mono outline-none bg-white resize-y"
+                        style={{ borderColor: 'var(--rbr-border)' }}
+                      />
+                      <button
+                        onClick={() => copiarFicha(op)}
+                        className="self-start flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-lg"
+                        style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                      >
+                        <IconCopy width={13} height={13} />
+                        {copiadoId === op.id ? 'Ficha copiada!' : 'Copiar ficha completa'}
+                      </button>
+    
+                      {(camposVeiculoFaltando || dimensoesFaltando) && (
+                        <div className="rounded-lg px-3 py-2.5 flex flex-col gap-2.5 bg-white">
+                          <div className="text-[11px] font-bold text-[color:var(--rbr-danger)]">
+                            Campos obrigatórios do SIAET ainda não cadastrados — preencha para completar a ficha:
+                          </div>
+                          {camposVeiculoFaltando && veiculo && (
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                              <input
+                                placeholder="Chassi"
+                                defaultValue={veiculo.chassi ?? ''}
+                                onChange={(e) => setVeiculoForm((f) => ({ ...f, chassi: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Tara (kg)"
+                                type="number"
+                                defaultValue={veiculo.tara_kg ?? ''}
+                                onChange={(e) => setVeiculoForm((f) => ({ ...f, tara_kg: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Potência (CV)"
+                                type="number"
+                                defaultValue={veiculo.potencia_cv ?? ''}
+                                onChange={(e) => setVeiculoForm((f) => ({ ...f, potencia_cv: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Qtd. eixos"
+                                type="number"
+                                defaultValue={veiculo.quantidade_eixos ?? ''}
+                                onChange={(e) => setVeiculoForm((f) => ({ ...f, quantidade_eixos: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Qtd. pneus"
+                                type="number"
+                                defaultValue={veiculo.quantidade_pneus ?? ''}
+                                onChange={(e) => setVeiculoForm((f) => ({ ...f, quantidade_pneus: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <button
+                                onClick={() => salvarCamposVeiculo(veiculo.id)}
+                                disabled={saving || Object.keys(veiculoForm).length === 0}
+                                className="col-span-2 md:col-span-1 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                              >
+                                Salvar veículo
+                              </button>
+                            </div>
+                          )}
+                          {dimensoesFaltando && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              <input
+                                placeholder="Comprimento (cm)"
+                                type="number"
+                                defaultValue={op.comprimento_cm ?? ''}
+                                onChange={(e) => setCargaForm((f) => ({ ...f, comprimento_cm: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Largura (cm)"
+                                type="number"
+                                defaultValue={op.largura_cm ?? ''}
+                                onChange={(e) => setCargaForm((f) => ({ ...f, largura_cm: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Altura (cm)"
+                                type="number"
+                                defaultValue={op.altura_cm ?? ''}
+                                onChange={(e) => setCargaForm((f) => ({ ...f, altura_cm: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <button
+                                onClick={() => salvarDimensoesCarga(op)}
+                                disabled={saving || Object.keys(cargaForm).length === 0}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                              >
+                                Salvar dimensões
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+    
+                      <div className="flex flex-col gap-2">
+                        {status === 'nao_solicitada' && (
+                          <button
+                            onClick={() => protocolarAet(op)}
+                            disabled={saving}
+                            className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+                            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                          >
+                            {saving ? 'Salvando…' : 'Marcar como protocolada no SIAET (hoje)'}
+                          </button>
+                        )}
+    
+                        {(status === 'protocolada' || status === 'emitida') && (
+                          <div className="flex flex-col gap-2 bg-white rounded-lg p-2.5">
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                placeholder="Nº da AET"
+                                value={aetForm.numero_aet}
+                                onChange={(e) => setAetForm((f) => ({ ...f, numero_aet: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Protocolo SIAET"
+                                value={aetForm.protocolo_siaet}
+                                onChange={(e) => setAetForm((f) => ({ ...f, protocolo_siaet: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                type="date"
+                                placeholder="Validade"
+                                value={aetForm.data_validade}
+                                onChange={(e) => setAetForm((f) => ({ ...f, data_validade: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                              <input
+                                placeholder="Observações"
+                                value={aetForm.observacoes}
+                                onChange={(e) => setAetForm((f) => ({ ...f, observacoes: e.target.value }))}
+                                className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                                style={{ borderColor: 'var(--rbr-border)' }}
+                              />
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                              {status === 'protocolada' && (
+                                <button
+                                  onClick={() => emitirAet(op)}
+                                  disabled={saving}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                                  style={{ background: 'var(--rbr-positive)', color: '#fff' }}
+                                >
+                                  Marcar como emitida
+                                </button>
+                              )}
+                              {status === 'protocolada' && (
+                                <button
+                                  onClick={() => marcarStatusAet(op, 'negada')}
+                                  disabled={saving}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-60"
+                                  style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}
+                                >
+                                  Marcar como negada
+                                </button>
+                              )}
+                              {status === 'emitida' && (
+                                <button
+                                  onClick={() => salvarAet(op, aetForm)}
+                                  disabled={saving}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                                  style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                                >
+                                  Atualizar dados da AET
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+    
+                        {(status === 'negada' || status === 'vencida') && (
+                          <button
+                            onClick={() => protocolarAet(op)}
+                            disabled={saving}
+                            className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
+                            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
+                          >
+                            Registrar novo protocolo (hoje)
+                          </button>
+                        )}
+                      </div>
+    
+                      {!motorista && (
+                        <div className="text-[11px] text-[color:var(--rbr-muted)]">
+                          Aloque um motorista para incluir os dados de CNH na ficha.
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+    
+                    </>
+                  ) : undefined,
+                  motorista:
+                    op.status === 'alocando_motorista' && !op.pessoa_alocada_id ? (
+                      <MotoristasSugeridos
+                        operacaoId={op.id}
+                        carga={cargasAguardando.find((c) => c.operacao_id === op.id)}
+                        onAvisado={() => carregarCargasAguardando().then(({ cargas }) => setCargasAguardando(cargas))}
+                      />
+                    ) : undefined,
+                  // "Finalizar viagem" (encerrar o MDF-e) continua aqui, dentro da etapa da viagem.
+                  viagem: !['alocando_motorista', 'aguardando_liberacao_fiscal', 'cancelada'].includes(op.status) ? (
+                    <FinalizarViagem operacaoId={op.id} statusOperacao={op.status} entregueEm={op.entregue_em} />
+                  ) : undefined,
+                  rodape: (
+                    <label className="flex items-center gap-2 text-[11px] text-[color:var(--rbr-muted)] cursor-pointer self-start">
+                      <input
+                        type="checkbox"
+                        checked={!!op.pagamento_pos_entrega_confirmado}
+                        disabled={saving}
+                        onChange={() => togglePagamentoPosEntrega(op)}
+                      />
+                      Pagamento pós-entrega confirmado (liberação manual do gestor)
+                    </label>
+                  ),
+                }}
+              />
+            </div>
+          </PainelSobreposto>
+        )
+      })()}
 
       {cancelando && (
         <Modal titulo="Cancelar operação" onFechar={ocupadoCancel ? () => {} : () => setCancelando(null)} largura="max-w-md">
