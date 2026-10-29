@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
-import { formatMoney, formatDate, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
+import { formatMoney, formatDate, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import PainelPendencias from '../components/PainelPendencias'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
-import { proximoPassoPorStatus } from '../lib/etapasOperacao'
 import DadosEmissao from '../components/operacao/DadosEmissao'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, type CargaAguardando } from '../components/operacao/MotoristasSugeridos'
@@ -17,6 +16,7 @@ import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
+import { FILTROS_VAZIOS, SEM_MOTORISTA, passaFiltrosLista, temFiltro, type FiltrosLista } from '../lib/listaOperacoes'
 import { ABAS, abaValida, type IdAba, type SinalAba } from '../lib/abasOperacao'
 import { FILAS, casaBusca, contarFilas, passaFila, type DadosFila, type FilaId } from '../lib/filasOperacao'
 
@@ -98,6 +98,17 @@ const cardStyle = {
   boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 6px 18px rgba(18,23,61,0.05)',
 }
 
+const selectFiltro = 'border rounded-xl px-2.5 py-1.5 text-xs outline-none bg-white'
+
+function CampoFiltro({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-0.5 text-[10px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
+      {rotulo}
+      {children}
+    </label>
+  )
+}
+
 function ResumoItem({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <div className="min-w-0">
@@ -124,7 +135,10 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     const f = params.get('fila')
     return FILAS.some((x) => x.id === f) ? (f as FilaId) : null
   })
-  const [ocultarTestes, setOcultarTestes] = useState(false)
+  // Operações de teste ficam escondidas, a não ser que o gestor marque "Mostrar testes" (ou abra uma por link).
+  const [mostrarTestes, setMostrarTestes] = useState(false)
+  const ocultarTestes = !mostrarTestes
+  const [filtrosLista, setFiltrosLista] = useState<FiltrosLista>(FILTROS_VAZIOS)
   const [nfesPorOp, setNfesPorOp] = useState<Record<string, string[]>>({})
   const [problemasPorOp, setProblemasPorOp] = useState<Record<string, number>>({})
   const opDaUrl = params.get('op')
@@ -354,7 +368,10 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     if (!operacoes || preparadaRef.current === opDaUrl) return
     const alvo = operacoes.find((o) => o.id === opDaUrl)
     if (!alvo) return
-    if (preparadaRef.current === null) setFiltro('todas')
+    if (preparadaRef.current === null) {
+      setFiltro('todas')
+      if (alvo.eh_teste) setMostrarTestes(true)
+    }
     preparadaRef.current = opDaUrl
     void prepararOperacao(alvo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -599,6 +616,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       if (filtro !== 'todas' && op.status !== filtro) return false
       const d = dadosFila.get(op.id)
       if (d && !passaFila(d, fila, ocultarTestes)) return false
+      if (!passaFiltrosLista({ criadaEm: op.created_at, clienteId: op.cliente_id, motoristaId: op.pessoa_alocada_id }, filtrosLista)) return false
       if (!busca.trim()) return true
       const cot = op.cotacaoDetalhe
       const texto = [op.clienteNome ?? '', cot?.cidade_origem ?? '', cot?.cidade_destino ?? '', cot?.uf_origem ?? '', cot?.uf_destino ?? '', op.id.slice(0, 8)]
@@ -622,7 +640,17 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       }
     }
     return saida
-  }, [operacoes, filtro, busca, extras, veiculos, dadosFila, fila, ocultarTestes, nfesPorOp])
+  }, [operacoes, filtro, busca, extras, veiculos, dadosFila, fila, ocultarTestes, nfesPorOp, filtrosLista])
+
+  const opcoesCliente = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const o of operacoes ?? []) if (o.cliente_id) m.set(o.cliente_id, o.clienteNome ?? 'Cliente a confirmar')
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
+  }, [operacoes])
+  const opcoesMotorista = useMemo(() => {
+    const ids = new Set((operacoes ?? []).map((o) => o.pessoa_alocada_id).filter(Boolean) as string[])
+    return motoristas.filter((m) => ids.has(m.id)).map((m) => [m.id, m.nome] as const).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
+  }, [operacoes, motoristas])
 
   // Anterior/próxima seguem a lista filtrada, na ordem da tela.
   const vizinhosAbertos = opAberta ? vizinhos(lista.map((o) => o.id), opAberta.id) : null
@@ -757,8 +785,48 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           </button>
         ))}
         <label className="text-xs flex items-center gap-1.5 ml-auto text-[color:var(--rbr-muted)]">
-          <input type="checkbox" checked={ocultarTestes} onChange={(e) => setOcultarTestes(e.target.checked)} /> Ocultar testes
+          <input type="checkbox" checked={mostrarTestes} onChange={(e) => setMostrarTestes(e.target.checked)} /> Mostrar testes
         </label>
+      </div>
+
+      <div className="flex items-end gap-2 flex-wrap" role="group" aria-label="Filtros da lista">
+        <CampoFiltro rotulo="Cliente">
+          <select value={filtrosLista.clienteId} onChange={(e) => setFiltrosLista({ ...filtrosLista, clienteId: e.target.value })} className={selectFiltro} style={{ borderColor: 'var(--rbr-border)' }}>
+            <option value="">Todos</option>
+            {opcoesCliente.map(([id, nome]) => (
+              <option key={id} value={id}>
+                {nome}
+              </option>
+            ))}
+          </select>
+        </CampoFiltro>
+        <CampoFiltro rotulo="Motorista">
+          <select value={filtrosLista.motoristaId} onChange={(e) => setFiltrosLista({ ...filtrosLista, motoristaId: e.target.value })} className={selectFiltro} style={{ borderColor: 'var(--rbr-border)' }}>
+            <option value="">Todos</option>
+            <option value={SEM_MOTORISTA}>Sem motorista</option>
+            {opcoesMotorista.map(([id, nome]) => (
+              <option key={id} value={id}>
+                {nome}
+              </option>
+            ))}
+          </select>
+        </CampoFiltro>
+        <CampoFiltro rotulo="Criada de">
+          <input type="date" value={filtrosLista.de} max={filtrosLista.ate || undefined} onChange={(e) => setFiltrosLista({ ...filtrosLista, de: e.target.value })} className={selectFiltro} style={{ borderColor: 'var(--rbr-border)' }} />
+        </CampoFiltro>
+        <CampoFiltro rotulo="até">
+          <input type="date" value={filtrosLista.ate} min={filtrosLista.de || undefined} onChange={(e) => setFiltrosLista({ ...filtrosLista, ate: e.target.value })} className={selectFiltro} style={{ borderColor: 'var(--rbr-border)' }} />
+        </CampoFiltro>
+        {temFiltro(filtrosLista) && (
+          <button type="button" onClick={() => setFiltrosLista(FILTROS_VAZIOS)} className="text-xs font-bold underline pb-2" style={{ color: 'var(--rbr-navy)' }}>
+            Limpar filtros
+          </button>
+        )}
+        {!loading && (
+          <span className="text-xs text-[color:var(--rbr-muted)] ml-auto pb-2 tabular-nums">
+            {lista.length} operaç{lista.length === 1 ? 'ão' : 'ões'}
+          </span>
+        )}
       </div>
 
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
@@ -769,78 +837,58 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
         {!loading &&
           lista.map((op) => {
+            const motorista = motoristas.find((m) => m.id === op.pessoa_alocada_id)
+            const placa = veiculos.find((v) => v.id === op.veiculo_id)?.placa
+            const nNfes = (nfesPorOp[op.id] ?? []).filter(Boolean).length
+            const ex = extras[op.id]
             return (
-              <div
+              <button
                 key={op.id}
                 id={`op-${op.id}`}
-                className="bg-white border rounded-[20px] overflow-hidden"
-                style={extras[op.id]?.grupo ? { ...cardStyle, borderLeft: '4px solid var(--rbr-gold)' } : cardStyle}
+                type="button"
+                onClick={() => abrirOperacao(op)}
+                className="w-full text-left bg-white border rounded-xl px-3.5 py-2.5 flex items-center gap-x-3 gap-y-1 flex-wrap md:flex-nowrap hover:bg-[color:var(--rbr-muted-bg)]"
+                style={ex?.grupo ? { ...cardStyle, borderLeft: '4px solid var(--rbr-gold)' } : cardStyle}
               >
-                {op.eh_teste && (
-                  <div className="px-[18px] pt-[14px]">
-                    <FaixaTeste />
-                  </div>
-                )}
-                <button className="w-full text-left p-[18px]" onClick={() => abrirOperacao(op)}>
-                  <div className="flex items-center justify-between mb-2.5 gap-3 flex-wrap">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full"
-                        style={{ background: badgeBackground(op.status) }}
-                      >
-                        {STATUS_OPERACAO_LABEL[op.status]}
-                      </span>
-                      {extras[op.id]?.grupo && (
-                        <span className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
-                          Saída conjunta
-                        </span>
-                      )}
-                      {extras[op.id]?.sequencia != null && (extras[op.id]?.total ?? 1) > 1 && (
-                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
-                          carga {extras[op.id]?.sequencia} de {extras[op.id]?.total}
-                        </span>
-                      )}
-                      {op.bloqueio_fiscal && (
-                        <span
-                          className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
-                          style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}
-                        >
-                          <IconAlertTriangle width={12} height={12} />
-                          Bloqueio fiscal
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {op.valorCliente != null && (
-                        <span className="text-sm font-bold">{formatMoney(op.valorCliente)}</span>
-                      )}
-                      <IconChevronRight
-                        width={16}
-                        height={16}
-                        style={{
-                          color: 'var(--rbr-muted)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="text-[15px] font-bold mb-1">{op.clienteNome ?? 'Cliente a confirmar'}</div>
-                  <div className="text-xs text-[color:var(--rbr-muted)]">
-                    {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/
-                    {op.cotacaoDetalhe?.uf_destino ?? '?'} · {op.peso_bruto ? `${op.peso_bruto.toLocaleString('pt-BR')} kg` : 'peso não informado'}
-                    {op.valorMotorista != null ? ` · motorista ${formatMoney(op.valorMotorista)}` : ''} · atualizado em {formatDateTime(op.updated_at)}
-                  </div>
-                  {proximoPassoPorStatus(op.status, !!op.pessoa_alocada_id) && (
-                    <div className="text-xs mt-1.5 text-[color:var(--rbr-navy-dark)]">
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mr-1.5">Próximo passo</span>
-                      <b>{proximoPassoPorStatus(op.status, !!op.pessoa_alocada_id)}</b>
-                    </div>
+                <span
+                  className="text-[10px] font-bold uppercase tracking-wide text-white px-2 py-1 rounded-full whitespace-nowrap text-center md:w-[150px] flex-shrink-0"
+                  style={{ background: badgeBackground(op.status) }}
+                >
+                  {STATUS_OPERACAO_LABEL[op.status]}
+                </span>
+                <span className="text-[11px] font-mono text-[color:var(--rbr-muted)] flex-shrink-0">{codigoCurto(op.id)}</span>
+                <span className="text-sm font-bold truncate md:w-[190px] flex-shrink-0">{op.clienteNome ?? 'Cliente a confirmar'}</span>
+                <span className="text-xs text-[color:var(--rbr-muted)] truncate flex-1 min-w-[140px]">
+                  {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
+                </span>
+                <span className="text-xs truncate md:w-[170px] flex-shrink-0">
+                  {motorista ? motorista.nome : <span className="text-[color:var(--rbr-muted)]">sem motorista</span>}
+                  {placa ? <span className="text-[color:var(--rbr-muted)]"> · {placa}</span> : null}
+                </span>
+                <span className="text-xs text-[color:var(--rbr-muted)] tabular-nums md:w-[64px] flex-shrink-0">{nNfes > 0 ? `${nNfes} NF-e` : 'sem NF-e'}</span>
+                <span className="text-sm font-bold tabular-nums md:w-[100px] md:text-right flex-shrink-0">{op.valorCliente != null ? formatMoney(op.valorCliente) : '—'}</span>
+                <span className="flex items-center gap-1 flex-shrink-0">
+                  {op.eh_teste && (
+                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
+                      teste
+                    </span>
                   )}
-                </button>
-
-              </div>
+                  {ex?.grupo && (
+                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: '#FDF1DC', color: '#8A5A00' }} title="Saída conjunta">
+                      {ex.sequencia != null && (ex.total ?? 1) > 1 ? `${ex.sequencia}/${ex.total}` : 'conjunta'}
+                    </span>
+                  )}
+                  {op.bloqueio_fiscal && (
+                    <span className="flex items-center" style={{ color: 'var(--rbr-danger)' }} title="Bloqueio fiscal">
+                      <IconAlertTriangle width={14} height={14} />
+                    </span>
+                  )}
+                  <IconChevronRight width={16} height={16} style={{ color: 'var(--rbr-muted)' }} />
+                </span>
+              </button>
             )
           })}
       </div>
