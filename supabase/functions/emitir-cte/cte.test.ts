@@ -1,5 +1,5 @@
 // Testes das regras do CT-e (cte.ts). Rodar na raiz do repositório:
-//   node --test supabase-functions/emitir-cte/cte.test.ts
+//   node --test supabase/functions/emitir-cte/cte.test.ts
 // (Node 22+ executa TypeScript direto; não precisa instalar nada.)
 //
 // O caso "operação de teste" usa os mesmos dados da operação de homologação 72dc89d2 (São Paulo -> Campinas),

@@ -1,4 +1,4 @@
-// node --test supabase-functions/_shared/efreteClient.test.ts
+// node --test supabase/functions/_shared/efreteClient.test.ts
 // Respostas simuladas: sem rede e sem segredos (valores falsos).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
