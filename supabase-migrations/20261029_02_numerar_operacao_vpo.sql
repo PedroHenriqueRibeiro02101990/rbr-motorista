@@ -1,5 +1,4 @@
--- PROPOSTA, NÃO APLICADA. Mostrar ao dono antes de aplicar.
--- numerar_operacao_vpo(p_operacao): devolve operacoes.numero_vpo; se a operação ainda não tem, atribui o próximo da sequence.
+-- numerar_operacao_vpo(p_operacao): devolve operacoes.numero_vpo; se a operacao ainda nao tem, atribui o proximo da sequence (so quando nula). Somente service_role.
 -- Só mexe na coluna nova numero_vpo e só quando está nula. Somente service_role.
 -- Rollback: drop function if exists public.numerar_operacao_vpo(uuid);
 create function public.numerar_operacao_vpo(p_operacao uuid)

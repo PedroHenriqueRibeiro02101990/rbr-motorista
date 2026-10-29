@@ -57,7 +57,7 @@ async function gestor(req: Request): Promise<{ ok: true; authUserId: string } | 
 async function numeroDaOperacao(operacaoId: string): Promise<{ numero: number; ehTeste: boolean } | { erro: string }> {
   const { data: op, error } = await admin.from("operacoes").select("id, eh_teste").eq("id", operacaoId).maybeSingle();
   if (error || !op) return { erro: "Operação não encontrada." };
-  // numerar_operacao_vpo (supabase-migrations/PROPOSTA_20261029_02): devolve o número existente ou atribui o próximo.
+  // numerar_operacao_vpo (supabase-migrations/20261029_02): devolve o número existente ou atribui o próximo.
   const { data: numero, error: e2 } = await admin.rpc("numerar_operacao_vpo", { p_operacao: operacaoId });
   if (e2 || !numero) return { erro: "Não consegui numerar a operação para o vale-pedágio." };
   return { numero: Number(numero), ehTeste: op.eh_teste === true };
