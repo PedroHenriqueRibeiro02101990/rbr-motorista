@@ -180,7 +180,7 @@ const repo: RepositorioPedidos = {
   },
   async marcarEmitido(ref, e, resumo) {
     const agora = new Date().toISOString();
-    const c = separarCiot(e.ciot);
+    const c = separarCiot(e.ciot, "homologacao");
     if (!c) throw new Error(`CIOT em formato inesperado: ${e.ciot}`);
     const { data, error } = await admin
       .from("efrete_ciot_pedidos")
@@ -301,6 +301,8 @@ Deno.serve(async (req: Request) => {
       const txt = new TextDecoder("latin1").decode(bytes);
       return json({
         ok: true,
+        // base64 só quando pedido (incluirBase64:true), para salvar o PDF como prova; o padrão continua só os metadados.
+        ...(corpo.incluirBase64 === true ? { pdfBase64: r.dados.pdfBase64 } : {}),
         bytes: bytes.length,
         cabecalho: txt.slice(0, 8),
         terminaComEOF: /%%EOF\s*$/.test(txt),
