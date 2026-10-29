@@ -14,6 +14,7 @@ import { estiloDeteccao, rotuloDocumento } from '@rbr/shared/DocumentoCliente'
 import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/operacao/ConferenciaEmissaoModal'
 import NfesCliente from '../components/operacao/NfesCliente'
 import CiotEfrete from '../components/operacao/CiotEfrete'
+import CartaoVpo from '../components/operacao/CartaoVpo'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import CancelarDocumentoModal, {
@@ -1261,6 +1262,7 @@ export default function Fiscal() {
 
           {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
           {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs} />}
+          {ofereceCteMdfe && <CartaoVpo operacaoId={op.id} ehTeste={op.eh_teste === true} />}
 
           <div className="flex gap-2 flex-wrap">
             {ofereceCteMdfe && (

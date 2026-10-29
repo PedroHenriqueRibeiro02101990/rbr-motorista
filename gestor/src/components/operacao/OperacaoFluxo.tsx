@@ -20,6 +20,7 @@ import CiotOperacao from './CiotOperacao'
 import DatasPrevistas from './DatasPrevistas'
 import NfesCliente from './NfesCliente'
 import CiotEfrete from './CiotEfrete'
+import CartaoVpo from './CartaoVpo'
 import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 import RetencaoInss from './RetencaoInss'
 import OrdemColeta from './OrdemColeta'
@@ -1279,6 +1280,7 @@ function EtapaCiot({ d, salvando, executar, onMudou }: { d: DetalheOperacao; sal
         <div className="text-xs text-[color:var(--rbr-muted)]">CIOT pela efrete ainda não liberado (conta de produção pendente). Emita o CIOT na Repom e registre o número e o documento abaixo.</div>
       )}
       {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} ehTeste={d.operacao.eh_teste === true} docs={d.documentos} placa={d.veiculo?.placa} onMudou={onMudou} />}
+      {d.operacao.eh_teste === true && <CartaoVpo operacaoId={d.operacao.id} ehTeste placa={d.veiculo?.placa} />}
       {ciotAplicavel(d) && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {vpoAplicavel(d) && (
         <div className="text-xs">
