@@ -84,3 +84,14 @@ Nada executado. Preparado para a confirmação única: credenciais e saldo efret
 3. Agendar o saude-fiscal (pg_cron) e criar a tela Saúde fiscal (G09).
 4. Perguntas externas: NSPEDÁGIO (ver 6e), NSTech, Averba, Focus, Alan, corretora.
 5. Merge na main só com autorização expressa do Pedro.
+
+## 6g. Lote de comportamento APLICADO (30/10/2026)
+
+Aplicado pelo usuário (`supabase db query -f 20261030_03_lote_comportamento.sql`, uma transação). Verificação feita depois:
+
+- **Papéis (set local role, rollback ao fim): OK.** Os 3 sócios gestores seguem vendo 100% das 14 tabelas testadas (operações 8/8, clientes 8/8, cotações 15/15, documentos 48/48, lançamentos 72/72, VPO 16/16, pessoas 34/34). Comercial sem carteira vê 0 de tudo; financeiro vê só clientes, operações e lançamentos; fiscal vê clientes, cotações, operações, documentos e eventos fiscais; operação vê clientes, cotações, operações, documentos e eventos fiscais. Nenhum papel novo vê lançamentos, apólices, VPO, metas ou CIOT fora da sua função. `efrete_ciot_pedidos` segue sem política para autenticados (-1), igual ao ANTES.
+- **Advisors: OK.** Segurança: 6 INFO, 1, 1, 1 como antes; avisos de função SECURITY DEFINER para autenticados foram de 90 para 92 (`cliente_na_minha_carteira` e `avancar_em_nome_do_motorista`, ambas esperadas e com checagem interna).
+- **Funções: OK.** saude-fiscal, emitir-mdfe, emitir-cte, cancelar-documento-fiscal, efrete-ciot-operacao e nspedagio-vpo respondem 401 sem login (no ar, protegidas). Não houve emissão real.
+- **B12:** gatilho de encerramento automático do MDF-e removido (0 no banco). **B13:** pré-voo único no detalhe da operação.
+- Teste `shared/test/nfeOperacao.test.ts` só roda no Deno (importa `npm:`); fora da lista do CI, não é regressão.
+- Merge na main: ainda não feito; falta o build completo de todos os apps e fica para depois da autorização de push (limite diário de 4 pushes já usado).

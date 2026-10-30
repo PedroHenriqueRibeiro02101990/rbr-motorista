@@ -7,7 +7,8 @@ type Item = { doc: string; item: string; ok: boolean; motivo: string }
 
 // Pré-voo: o que ainda falta na operação antes de emitir (função checar_pre_voo do banco).
 // Mostra só o que interessa ao documento em emissão + itens gerais; ✓ quando tudo certo.
-export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo: 'cte' | 'mdfe' | 'nfse' }) {
+// B13: tipo 'todos' é o pré-voo único da operação (CT-e, MDF-e, risco e itens gerais numa lista só).
+export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo: 'cte' | 'mdfe' | 'nfse' | 'todos' }) {
   const [itens, setItens] = useState<Item[] | null>(null)
   const [erro, setErro] = useState(false)
   const [nfes, setNfes] = useState<{ quantidade: number; valor_total: number } | null>(null)
@@ -53,7 +54,7 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
   if (erro || !itens) return null
   const apolice: SituacaoApolice | null = nfes && teto ? situacaoApolice(Number(nfes.valor_total), 0, teto) : null
   const doc = tipo === 'cte' ? 'CT-e' : tipo === 'mdfe' ? 'MDF-e' : null
-  const relevantes = itens.filter((i) => i.doc === 'Geral' || (doc && i.doc === doc) || (tipo === 'mdfe' && i.doc === 'Risco'))
+  const relevantes = tipo === 'todos' ? itens : itens.filter((i) => i.doc === 'Geral' || (doc && i.doc === doc) || (tipo === 'mdfe' && i.doc === 'Risco'))
   const faltam = relevantes.filter((i) => !i.ok)
 
   return (
