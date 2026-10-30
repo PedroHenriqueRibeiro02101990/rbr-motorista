@@ -1611,7 +1611,7 @@ export default function Cadastros() {
             <button
               onClick={() => (showNovoCliente ? fecharFormCliente() : setShowNovoCliente(true))}
               className="text-sm font-bold px-4 py-2 rounded-xl"
-              style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
             >
               {showNovoCliente ? 'Cancelar' : '+ Novo'}
             </button>
@@ -1911,7 +1911,7 @@ export default function Cadastros() {
             <button
               onClick={() => (showNovoMotorista ? fecharFormMotorista() : setShowNovoMotorista(true))}
               className="text-sm font-bold px-4 py-2 rounded-xl"
-              style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
             >
               {showNovoMotorista ? 'Cancelar' : '+ Novo'}
             </button>
@@ -2481,7 +2481,7 @@ export default function Cadastros() {
                             }
                           }}
                           className="self-start text-xs font-bold px-3.5 py-2 rounded-lg"
-                          style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                          style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                         >
                           {showNovoVeiculoId === m.id ? 'Cancelar' : '+ Adicionar veículo'}
                         </button>
@@ -2929,7 +2929,7 @@ export default function Cadastros() {
             <button
               onClick={() => (showNovoAgenciador ? fecharFormAgenciador() : setShowNovoAgenciador(true))}
               className="text-sm font-bold px-4 py-2 rounded-xl"
-              style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
             >
               {showNovoAgenciador ? 'Cancelar' : '+ Novo'}
             </button>
@@ -3155,7 +3155,7 @@ export default function Cadastros() {
             <button
               onClick={() => (showNovoFornecedor ? fecharFormFornecedor() : setShowNovoFornecedor(true))}
               className="text-sm font-bold px-4 py-2 rounded-xl"
-              style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
             >
               {showNovoFornecedor ? 'Cancelar' : '+ Novo'}
             </button>
@@ -3399,7 +3399,7 @@ export default function Cadastros() {
             <button
               onClick={() => (showNovoPrestador ? fecharFormPrestador() : setShowNovoPrestador(true))}
               className="text-sm font-bold px-4 py-2 rounded-xl"
-              style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+              style={{ background: 'var(--rbr-navy)', color: '#fff' }}
             >
               {showNovoPrestador ? 'Cancelar' : '+ Novo'}
             </button>

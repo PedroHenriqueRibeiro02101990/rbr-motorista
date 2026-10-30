@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { Aviso, Botao, Card, Carregando, Vazio, inputClass, inputStyle } from '../components/financeiro/ui'
+import { Aviso, Carregando } from '../components/financeiro/ui'
 import { mensagemClara } from '../lib/mensagemClara'
 import { MIN_BUSCA, ocultos, termoDeBusca, textoOcultos } from '../lib/busca'
 
@@ -21,6 +21,10 @@ export default function Busca() {
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [res, setRes] = useState<Resultado | null>(null)
+  const [papel, setPapel] = useState<string | null>(null)
+  useEffect(() => {
+    void supabase.rpc('current_papel').then(({ data }) => setPapel((data as unknown as string) ?? null))
+  }, [])
 
   async function buscar(e: React.FormEvent) {
     e.preventDefault()
@@ -68,64 +72,65 @@ export default function Busca() {
   }
 
   const vazio = res && res.clientes.length + res.cotacoes.length + res.operacoes.length === 0
-  const aviso = (n: number) => {
-    const t = textoOcultos(n)
-    return t ? <div className="text-xs text-[color:var(--rbr-muted)]">{t}</div> : null
-  }
+  const aviso = (n: number) => textoOcultos(n)
+  const ocultosTotal = res ? res.ocultosClientes + res.ocultosCotacoes : 0
+  const textoOculto = ocultosTotal > 0 ? textoOcultos(ocultosTotal) : null
+  const COMO: Record<string, string> = { gestor_rbr: 'Gestor · vê tudo', comercial: 'Comercial · suas cotações e seus clientes', operacao: 'Operação · sem financeiro', fiscal: 'Fiscal · operações e documentos', financeiro: 'Financeiro · títulos e pagamentos' }
+  const linha = (rotulo: string, cor: { bg: string; fg: string }, titulo: React.ReactNode, sub: string, para: string, k: string) => (
+    <Link key={k} to={para} className="flex items-center gap-3.5 px-4 py-3 hover:bg-[#f7f8fc]" style={{ borderTop: '1px solid #eef0f5' }}>
+      <span className="text-[11px] font-extrabold uppercase tracking-wide rounded-full px-3 py-1.5 w-[96px] text-center flex-shrink-0" style={{ background: cor.bg, color: cor.fg }}>
+        {rotulo}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[14px] font-extrabold text-[color:var(--rbr-navy-dark)] truncate">{titulo}</span>
+        <span className="block text-[12px] truncate" style={{ color: 'var(--rbr-muted)' }}>
+          {sub}
+        </span>
+      </span>
+    </Link>
+  )
+  const COR_CLI = { bg: '#d6ecdf', fg: '#1a6b3c' }
+  const COR_COT = { bg: '#f3e6cf', fg: '#7a5200' }
+  const COR_OP = { bg: '#eef0fa', fg: '#1c2559' }
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Busca</h1>
-      <form onSubmit={(e) => void buscar(e)} className="flex gap-2 flex-wrap">
-        <input value={texto} onChange={(e) => setTexto(e.target.value)} className={inputClass} style={{ ...inputStyle, flex: '1 1 240px' }} placeholder="Cliente, CNPJ ou cidade (ex.: Santos)" aria-label="Buscar" />
-        <Botao type="submit" disabled={carregando}>
+    <div className="flex flex-col gap-4 max-w-[760px]">
+      <div>
+        <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Busca</h1>
+        <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>
+          Cada pessoa encontra só o que é da sua função.
+        </div>
+      </div>
+      <form onSubmit={(e) => void buscar(e)} className="flex items-center gap-2.5 bg-white border-[1.5px] rounded-xl px-3 py-2.5" style={{ borderColor: '#1c2559' }}>
+        <input value={texto} onChange={(e) => setTexto(e.target.value)} className="flex-1 min-w-0 outline-none text-[14px] font-semibold bg-transparent" placeholder="Cliente, CNPJ ou cidade (ex.: Santos)" aria-label="Buscar" autoFocus />
+        <button type="submit" disabled={carregando} className="text-[12px] font-bold px-3.5 py-1.5 rounded-[10px] text-white disabled:opacity-60" style={{ background: '#1c2559' }}>
           {carregando ? 'Buscando…' : 'Buscar'}
-        </Botao>
+        </button>
       </form>
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
       {carregando && <Carregando />}
       {res && !carregando && (
-        <>
-          {vazio && <Vazio>Nada encontrado para "{res.termo}".</Vazio>}
-          {res.clientes.length > 0 && (
-            <Card>
-              <div className="font-bold text-sm text-[color:var(--rbr-navy-dark)] mb-2">Clientes</div>
-              <div className="flex flex-col gap-1.5 text-sm">
-                {res.clientes.map((c) => (
-                  <Link key={c.id} to={`/cadastros?aba=clientes&q=${encodeURIComponent(c.nome_fantasia ?? c.razao_social ?? '')}`} className="underline text-[color:var(--rbr-navy)]">
-                    {c.nome_fantasia ?? c.razao_social} <span className="text-xs text-[color:var(--rbr-muted)]">{c.cnpj}</span>
-                  </Link>
-                ))}
-              </div>
-              {aviso(res.ocultosClientes)}
-            </Card>
+        <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ background: '#f7f8fc' }}>
+            <span className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+              VOCÊ BUSCA COMO
+            </span>
+            {papel && (
+              <span className="text-[11px] font-extrabold rounded-full px-3 py-1" style={{ background: papel === 'gestor_rbr' ? '#d6ecdf' : '#ece6fb', color: papel === 'gestor_rbr' ? '#1a6b3c' : '#6b4fb3' }}>
+                {COMO[papel] ?? 'Equipe'}
+              </span>
+            )}
+          </div>
+          {vazio && <div className="px-4 py-6 text-sm text-center" style={{ color: 'var(--rbr-muted)' }}>Nada encontrado para "{res.termo}".</div>}
+          {res.clientes.map((c) => linha('Cliente', COR_CLI, c.nome_fantasia ?? c.razao_social ?? 'Cliente', c.cnpj ?? 'contrato, contatos e histórico', `/cadastros?aba=clientes&q=${encodeURIComponent(c.nome_fantasia ?? c.razao_social ?? '')}`, `c-${c.id}`))}
+          {res.cotacoes.map((c) => linha('Cotação', COR_COT, `${c.cidade_origem} → ${c.cidade_destino}`, c.status ?? '', '/cotacao', `k-${c.id}`))}
+          {res.operacoes.map((o) => linha('Operação', COR_OP, `Operação ${o.id.slice(0, 8)}`, o.status, `/operacoes?op=${o.id}`, `o-${o.id}`))}
+          {textoOculto && (
+            <div className="px-4 py-2.5 text-[12px] font-bold" style={{ background: '#fff4d9', color: '#7a5200' }}>
+              {aviso(ocultosTotal)}
+            </div>
           )}
-          {res.cotacoes.length > 0 && (
-            <Card>
-              <div className="font-bold text-sm text-[color:var(--rbr-navy-dark)] mb-2">Cotações</div>
-              <div className="flex flex-col gap-1.5 text-sm">
-                {res.cotacoes.map((c) => (
-                  <Link key={c.id} to="/cotacao" className="underline text-[color:var(--rbr-navy)]">
-                    {c.cidade_origem} → {c.cidade_destino} <span className="text-xs text-[color:var(--rbr-muted)]">{c.status}</span>
-                  </Link>
-                ))}
-              </div>
-              {aviso(res.ocultosCotacoes)}
-            </Card>
-          )}
-          {res.operacoes.length > 0 && (
-            <Card>
-              <div className="font-bold text-sm text-[color:var(--rbr-navy-dark)] mb-2">Operações</div>
-              <div className="flex flex-col gap-1.5 text-sm">
-                {res.operacoes.map((o) => (
-                  <Link key={o.id} to={`/operacoes?op=${o.id}`} className="underline text-[color:var(--rbr-navy)]">
-                    Operação {o.id.slice(0, 8)} <span className="text-xs text-[color:var(--rbr-muted)]">{o.status}</span>
-                  </Link>
-                ))}
-              </div>
-            </Card>
-          )}
-        </>
+        </div>
       )}
     </div>
   )

@@ -1259,7 +1259,7 @@ function AcoesDocumento({
             className={inputClass}
             style={{ ...inputStyle, maxWidth: 440 }}
           />
-          <button type="button" disabled={salvando} onClick={() => void confirmar()} className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60" style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}>
+          <button type="button" disabled={salvando} onClick={() => void confirmar()} className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
             Confirmar
           </button>
           <button type="button" onClick={() => setModo(null)} className="text-xs underline">

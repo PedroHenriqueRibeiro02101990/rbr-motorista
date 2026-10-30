@@ -711,7 +711,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           <Link
             to="/cotacao"
             className="text-sm font-bold px-4 py-2 rounded-xl"
-            style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
           >
             + Nova operação
           </Link>
@@ -1018,7 +1018,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                     onClick={() => liberarBloqueio(op)}
                     disabled={saving}
                     className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                    style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                   >
                     {saving ? 'Salvando…' : 'Liberar bloqueio fiscal'}
                   </button>
@@ -1211,7 +1211,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                                 onClick={() => salvarCamposVeiculo(veiculo.id)}
                                 disabled={saving || Object.keys(veiculoForm).length === 0}
                                 className="col-span-2 md:col-span-1 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                               >
                                 Salvar veículo
                               </button>
@@ -1247,7 +1247,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                                 onClick={() => salvarDimensoesCarga(op)}
                                 disabled={saving || Object.keys(cargaForm).length === 0}
                                 className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                               >
                                 Salvar dimensões
                               </button>

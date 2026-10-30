@@ -2465,7 +2465,7 @@ export default function Cotacao() {
           <button
             onClick={() => (form ? pedirParaFechar() : abrirNovaCotacao())}
             className="text-sm font-bold px-4 py-2 rounded-xl"
-            style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
           >
             {form ? 'Fechar formulário' : '+ Nova cotação'}
           </button>
@@ -4639,7 +4639,7 @@ export default function Cotacao() {
                 onClick={enviar}
                 disabled={saving}
                 className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
-                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
               >
                 Enviar cotação
               </button>

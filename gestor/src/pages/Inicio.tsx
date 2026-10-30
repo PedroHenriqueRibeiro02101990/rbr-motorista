@@ -30,7 +30,7 @@ const COR_MOTORISTA = '#C9D3FF'
 
 const cardStyle = {
   borderColor: 'var(--rbr-border)',
-  boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 10px 30px rgba(18,23,61,0.06)',
+  boxShadow: 'none',
 }
 
 function n(v: unknown): number {

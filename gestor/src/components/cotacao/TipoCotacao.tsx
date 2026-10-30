@@ -60,7 +60,7 @@ export default function TipoCotacao({
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">{o.titulo}</span>
                 {o.etiqueta && (
-                  <span className="text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ background: 'var(--rbr-gold)', color: '#fff' }}>
+                  <span className="text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
                     {o.etiqueta}
                   </span>
                 )}
