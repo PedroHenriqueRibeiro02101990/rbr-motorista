@@ -28,6 +28,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { tituloRota } from '../lib/tituloRota'
+import { PrecoCard, PassosCotacao } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -2558,6 +2559,27 @@ export default function Cotacao() {
               {formError}
             </div>
           )}
+
+          {/* Visual aprovado: esteira do status e cartão de preço sempre à vista (só leitura; os campos de edição seguem abaixo) */}
+          <div className="grid gap-3 md:grid-cols-[1fr_minmax(0,380px)] items-start">
+            <div className="flex flex-col gap-2 min-w-0">
+              {editingId && <PassosCotacao status={editingStatus} />}
+              <div className="text-[13px]" style={{ color: '#4a5275' }}>
+                {tituloRota({ ...form, tipo_cotacao: tipoCotacao }) || 'Informe origem e destino abaixo.'}
+              </div>
+            </div>
+            <PrecoCard
+              linhas={[
+                { rotulo: 'Frete do motorista', valor: composicao?.frete ?? null },
+                { rotulo: 'Pedágio', dica: 'histórico da rota', valor: composicao?.pedagio ?? null },
+                { rotulo: `Imposto (${((composicao?.aliquota ?? 0) * 100).toFixed(0)}% sobre o valor final)`, valor: composicao?.imposto ?? null },
+                { rotulo: 'Lucro da RBR', valor: composicao?.lucro ?? null, verde: true },
+              ]}
+              valorCliente={composicao?.valorFinal ?? null}
+              margem={composicao?.margem ?? null}
+              piso={margemMin}
+            />
+          </div>
           {successMsg && (
             <div
               className="text-xs rounded-xl px-3 py-2.5 flex items-center gap-2"
