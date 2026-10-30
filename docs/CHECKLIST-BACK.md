@@ -39,7 +39,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | C05 | pendente | Correções de documentos `[X]` |
 | C06 | pendente | Mesma NF-e em duas operações `[X]` |
 | C07 | pendente | Várias NF-e na mesma operação |
-| C08 | pendente | Limite da apólice `[P]` |
+| C08 | parcial | shared/regrasOperacao.ts situacaoApolice (80% e 100%, comboio, liberação com comunicação) + testes; falta ler o limite das apólices e ligar na emissão |
 | C09 | pendente | Uma operação, um caminhão, uma carga |
 | C10 | pendente | Piso ANTT atualizado `[M]` · tabela tem 272 combinações; faltam os dados da Portaria SUROC 22/2026 além dos valores de conferência |
 | C11 | pendente | GR a cada troca |
