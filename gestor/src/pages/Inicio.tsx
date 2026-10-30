@@ -39,18 +39,9 @@ function n(v: unknown): number {
 }
 const coord = (c: [number, number] | null) => (c ? ([Number(c[0]), Number(c[1])] as [number, number]) : null)
 
-function NumeroDia({ valor, rotulo }: { valor: number | string; rotulo: string }) {
-  return (
-    <div>
-      <div className="rbr-display text-[28px] leading-none font-semibold tabular-nums text-[color:var(--rbr-navy-dark)]">{valor}</div>
-      <div className="text-[11px] text-[color:var(--rbr-muted)] mt-1.5">{rotulo}</div>
-    </div>
-  )
-}
-
 function Mini({ titulo, para, itens }: { titulo: string; para: string; itens: { rotulo: string; valor: string; tom?: 'ruim' }[] }) {
   return (
-    <Link to={para} className="bg-white border rounded-[20px] px-5 py-4 flex items-center gap-6 hover:opacity-90 transition-opacity" style={cardStyle}>
+    <Link to={para} className="bg-white border rounded-2xl px-5 py-3.5 flex items-center gap-6 hover:opacity-90 transition-opacity" style={cardStyle}>
       <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] w-20 flex-shrink-0">{titulo}</div>
       {itens.map((i) => (
         <div key={i.rotulo} className="min-w-0">
@@ -64,8 +55,16 @@ function Mini({ titulo, para, itens }: { titulo: string; para: string; itens: { 
   )
 }
 
-export default function Inicio() {
+export default function Inicio({ nome }: { nome?: string }) {
   const [painel, setPainel] = useState<Painel | null>(null)
+  const [naoLidos, setNaoLidos] = useState(0)
+  useEffect(() => {
+    void supabase
+      .from('notificacoes')
+      .select('id', { count: 'exact', head: true })
+      .neq('status_entrega', 'confirmado_lido')
+      .then(({ count }) => setNaoLidos(count ?? 0))
+  }, [])
   // F05: visão por função. Começa pela função da pessoa (se tiver uma só) ou pela última escolha guardada neste navegador.
   const [visao, setVisao] = useState<FuncaoInicio>(() => {
     try {
@@ -237,61 +236,87 @@ export default function Inicio() {
   const conversao = com?.cotacoes_mes ? Math.round((n(com.convertidas_mes) / n(com.cotacoes_mes)) * 100) : null
   const semViagens = carregado && viagens.length === 0
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Visão por função (F05) */}
-      <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Ver o Início como">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Ver como</span>
-        {FUNCOES_INICIO.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => escolherVisao(f.id)}
-            aria-pressed={visao === f.id}
-            className="text-xs font-bold px-3 py-1.5 rounded-full border"
-            style={visao === f.id ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' } : { background: '#fff', color: 'var(--rbr-navy)', borderColor: 'var(--rbr-border)' }}
-          >
-            {f.rotulo}
-          </button>
-        ))}
+  // "Agora": o que precisa de uma pessoa, tirado dos dados reais (sem motorista, sem sinal, avisos não lidos).
+  const semMotorista = cargas.filter((c) => c.status === 'alocando_motorista')
+  const semSinal = viagens.filter((c) => c.sinal === 'alerta')
+  const precisam = semMotorista.length + semSinal.length + (naoLidos > 0 ? 1 : 0)
+  const hora = new Date().getHours()
+  const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
+  const primeiroNome = (nome ?? '').split(' ')[0]
+  const destaque = semSinal[0] ? `A viagem para ${semSinal[0].destino} está sem sinal.` : null
+
+  const botao = 'text-[12px] font-bold px-3.5 py-2 rounded-[10px] text-white self-start'
+  const kpi = (rotulo: string, valor: string | number, nota?: string, perigo?: boolean) => (
+    <div className="bg-white border rounded-2xl px-3.5 py-2.5" style={{ borderColor: perigo ? '#f2c4c0' : 'var(--rbr-border)', background: perigo ? '#fdeceb' : '#fff' }}>
+      <div className="text-[11px] font-semibold" style={{ color: perigo ? '#b42318' : 'var(--rbr-muted)' }}>
+        {perigo ? '▲ ' : ''}
+        {rotulo}
       </div>
+      <div className="text-[24px] leading-tight font-extrabold tabular-nums" style={{ color: perigo ? '#b42318' : 'var(--rbr-navy-dark)' }}>
+        {valor}
+      </div>
+      {nota && (
+        <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
+          {nota}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Cabeçalho */}
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-[30px] leading-[1.1] text-[color:var(--rbr-navy-dark)]">
+            {saudacao}
+            {primeiroNome ? `, ${primeiroNome}` : ''}
+          </h1>
+          <div className="text-[13px] mt-1.5" style={{ color: '#4a5275' }}>
+            {carregado ? (
+              <>
+                <b style={{ color: 'var(--rbr-navy-dark)' }}>{precisam === 0 ? 'Nada precisa de você agora.' : precisam === 1 ? '1 coisa precisa de você.' : `${precisam} coisas precisam de você.`}</b>
+                {destaque ? ` ${destaque}` : painel ? ` Atualizado ${haQuanto(painel.gerado_em)}.` : ''}
+              </>
+            ) : (
+              'Carregando…'
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5" role="group" aria-label="Ver o Início como">
+            {FUNCOES_INICIO.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => escolherVisao(f.id)}
+                aria-pressed={visao === f.id}
+                className="text-[12px] font-bold px-3 py-1.5 rounded-full border"
+                style={visao === f.id ? { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)', boxShadow: '0 1px 3px rgba(28,37,89,0.12)' } : { background: 'transparent', color: 'var(--rbr-muted)', borderColor: 'transparent' }}
+              >
+                {f.rotulo}
+              </button>
+            ))}
+          </div>
+          <button onClick={gerarResumo} disabled={gerandoResumo} className="text-xs font-bold px-4 py-2 rounded-xl border disabled:opacity-60 inline-flex items-center gap-2" style={{ borderColor: 'var(--rbr-border)', color: 'var(--rbr-navy)', background: '#fff' }}>
+            <span style={{ color: 'var(--rbr-gold)' }}>✦</span>
+            {gerandoResumo ? 'Escrevendo…' : 'Resumo do dia com IA'}
+          </button>
+        </div>
+      </div>
+
       {blocos.atalhos.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {blocos.atalhos.map((a) => (
-            <Link key={a.para} to={a.para} className="text-sm font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--rbr-navy-tint)', color: 'var(--rbr-navy-dark)' }}>
+            <Link key={a.para} to={a.para} className="text-sm font-bold px-4 py-2 rounded-xl bg-white border" style={{ color: 'var(--rbr-navy-dark)', borderColor: 'var(--rbr-border)' }}>
               {a.rotulo}
             </Link>
           ))}
         </div>
       )}
 
-      {/* Cabeçalho */}
-      <div className="flex items-end justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Início</h1>
-          <div className="text-xs text-[color:var(--rbr-muted)] mt-1 flex items-center gap-2">
-            <span className="relative flex w-2 h-2">
-              <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping" style={{ background: 'var(--rbr-positive)' }} />
-              <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: 'var(--rbr-positive)' }} />
-            </span>
-            {painel
-              ? `${new Date(painel.hoje + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })} · ao vivo, atualizado ${haQuanto(painel.gerado_em)}`
-              : 'ao vivo'}
-          </div>
-        </div>
-        <button
-          onClick={gerarResumo}
-          disabled={gerandoResumo}
-          className="text-xs font-bold px-4 py-2 rounded-xl border disabled:opacity-60 inline-flex items-center gap-2"
-          style={{ borderColor: 'var(--rbr-border)', color: 'var(--rbr-navy)', background: '#fff' }}
-        >
-          <span style={{ color: 'var(--rbr-gold)' }}>✦</span>
-          {gerandoResumo ? 'Escrevendo…' : 'Resumo do dia com IA'}
-        </button>
-      </div>
-
       {(resumo || erroResumo) && (
-        <section className="rounded-[20px] px-5 py-4 flex items-start gap-4" style={{ background: 'var(--rbr-navy-tint)' }}>
+        <section className="rounded-2xl px-5 py-4 flex items-start gap-4 bg-white border" style={{ borderColor: 'var(--rbr-border)' }}>
           <span className="text-lg leading-none mt-0.5" style={{ color: 'var(--rbr-gold)' }}>
             ✦
           </span>
@@ -315,23 +340,21 @@ export default function Inicio() {
 
       {erro && <div className="text-xs text-[color:var(--rbr-danger)]">Não foi possível atualizar: {erro}</div>}
 
-      {/* Mapa + Hoje */}
-      <div className={blocos.mapa ? 'grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5' : 'grid gap-5'}>
-        <section hidden={!blocos.mapa} className="relative rounded-[24px] overflow-hidden h-[400px] lg:h-[620px] border" style={{ background: '#F7F8FB', borderColor: 'var(--rbr-border)', boxShadow: '0 12px 40px rgba(30,39,97,0.10)' }}>
-          <FrotaMap
-            pontos={pontos}
-            tema="claro"
-            height="100%"
-            mostrarVazio
-            rolagem
-            selecionadoId={idSelecionadoNoMapa}
-            onSelecionar={clicarNoMapa}
-            linhas={linhas}
-            foco={foco}
-          />
+      {/* Números do dia */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {kpi('Em andamento', op ? n(op.ativas) : '—', semSinal.length ? `${semSinal.length} sem sinal` : undefined)}
+        {kpi('Motoristas online', op ? n(op.motoristas_online) : '—')}
+        {kpi('Coletas hoje', op ? n(op.coletas_hoje) : '—')}
+        {kpi('Entregas hoje', op ? n(op.entregas_hoje) : '—')}
+        {kpi('Precisam de você', carregado ? precisam : '—', undefined, precisam > 0)}
+      </div>
 
-          {/* Abas por cima do mapa */}
-          <div className="absolute top-4 left-4 z-[1000] flex gap-1 p-1 rounded-full" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 10px rgba(30,39,97,0.12)', backdropFilter: 'blur(8px)' }}>
+      {/* Mapa + Agora */}
+      <div className={blocos.mapa ? 'grid lg:grid-cols-[minmax(0,1fr)_320px] gap-3.5' : 'grid gap-3.5'}>
+        <section hidden={!blocos.mapa} className="relative rounded-[20px] overflow-hidden h-[400px] lg:h-[560px] border" style={{ background: '#e4e9f3', borderColor: 'var(--rbr-border)' }}>
+          <FrotaMap pontos={pontos} tema="claro" height="100%" mostrarVazio rolagem selecionadoId={idSelecionadoNoMapa} onSelecionar={clicarNoMapa} linhas={linhas} foco={foco} />
+
+          <div className="absolute top-4 left-4 z-[1000] flex gap-1 p-1 rounded-full" style={{ background: 'rgba(255,255,255,0.94)', boxShadow: '0 2px 10px rgba(28,37,89,0.12)' }}>
             {(
               [
                 ['viagens', 'Viagens'],
@@ -339,22 +362,16 @@ export default function Inicio() {
                 ['coletas', 'Coletas e entregas'],
               ] as [Aba, string][]
             ).map(([v, l]) => (
-              <button
-                key={v}
-                onClick={() => setAba(v)}
-                className="text-xs font-semibold px-3.5 py-1.5 rounded-full transition-colors"
-                style={aba === v ? { background: 'var(--rbr-navy)', color: '#fff' } : { color: 'var(--rbr-muted)' }}
-              >
+              <button key={v} onClick={() => setAba(v)} className="text-xs font-bold px-3.5 py-1.5 rounded-full transition-colors" style={aba === v ? { background: '#1c2559', color: '#fff' } : { color: '#4a5275' }}>
                 {l}
               </button>
             ))}
           </div>
 
-          {/* Legenda discreta */}
-          <div className="absolute bottom-4 left-4 z-[1000] flex gap-3.5 px-3.5 py-2 rounded-full text-[11px]" style={{ background: 'rgba(255,255,255,0.92)', color: 'var(--rbr-muted)', boxShadow: '0 2px 10px rgba(30,39,97,0.12)', backdropFilter: 'blur(8px)' }}>
+          <div className="absolute bottom-4 left-4 z-[1000] flex gap-3.5 px-3.5 py-2 rounded-full text-[11px] font-bold" style={{ background: 'rgba(255,255,255,0.94)', boxShadow: '0 2px 10px rgba(28,37,89,0.12)' }}>
             {(aba === 'viagens'
               ? [
-                  [COR_SINAL.ok, 'Sinal em dia'],
+                  [COR_SINAL.ok, 'Em dia'],
                   [COR_SINAL.atencao, 'Atrasado'],
                   [COR_SINAL.alerta, 'Sem sinal'],
                   ['#8A93A6', 'Parado'],
@@ -369,7 +386,7 @@ export default function Inicio() {
                     [COR_ENTREGA, 'Entrega'],
                   ]
             ).map(([cor, t]) => (
-              <span key={t} className="flex items-center gap-1.5">
+              <span key={t} className="flex items-center gap-1.5" style={{ color: cor }}>
                 <span className="w-2 h-2 rounded-full" style={{ background: cor }} />
                 {t}
               </span>
@@ -378,7 +395,7 @@ export default function Inicio() {
 
           {semViagens && aba !== 'motoristas' && (
             <div className="absolute inset-0 z-[450] flex items-center justify-center pointer-events-none">
-              <div className="text-center px-6 py-5 rounded-[20px]" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 10px rgba(30,39,97,0.12)', backdropFilter: 'blur(6px)' }}>
+              <div className="text-center px-6 py-5 rounded-[20px]" style={{ background: 'rgba(255,255,255,0.92)', boxShadow: '0 2px 10px rgba(28,37,89,0.12)' }}>
                 <div className="text-base font-semibold" style={{ color: 'var(--rbr-navy-dark)' }}>Nenhuma viagem em andamento hoje</div>
                 <div className="text-xs mt-1" style={{ color: 'var(--rbr-muted)' }}>
                   {motoristas.length ? `${motoristas.length} motorista(s) parado(s) no mapa` : 'A frota aparece aqui assim que houver posição'}
@@ -388,71 +405,112 @@ export default function Inicio() {
           )}
         </section>
 
-        {/* Coluna Hoje (ou detalhe do que foi clicado) */}
-        <aside className="bg-white border rounded-[24px] p-6 flex flex-col gap-6 lg:h-[620px] min-h-0" style={cardStyle}>
+        {/* Coluna "Agora" (ou detalhe do que foi clicado no mapa) */}
+        <aside className="bg-white border rounded-[20px] flex flex-col lg:h-[560px] min-h-0 overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
           {viagemSel ? (
-            <DetalheViagem c={viagemSel} onFechar={() => setSel(null)} />
+            <div className="p-5 flex flex-col gap-4 min-h-0 overflow-y-auto">
+              <DetalheViagem c={viagemSel} onFechar={() => setSel(null)} />
+            </div>
           ) : motoristaSel ? (
-            <DetalheMotorista m={motoristaSel} onFechar={() => setSel(null)} />
+            <div className="p-5 flex flex-col gap-4 min-h-0 overflow-y-auto">
+              <DetalheMotorista m={motoristaSel} onFechar={() => setSel(null)} />
+            </div>
           ) : (
             <>
-              <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] -mb-2">Hoje</div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-5">
-                <NumeroDia valor={op ? n(op.ativas) : '—'} rotulo="em andamento" />
-                <NumeroDia valor={op ? n(op.motoristas_online) : '—'} rotulo="motoristas online" />
-                <NumeroDia valor={op ? n(op.coletas_hoje) : '—'} rotulo="coletas hoje" />
-                <NumeroDia valor={op ? n(op.entregas_hoje) : '—'} rotulo="entregas hoje" />
-              </div>
-
-              <div className="h-px" style={{ background: 'var(--rbr-border)' }} />
-
-              <div className="flex flex-col gap-1 min-h-0 flex-1">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Viagens em andamento</div>
-                  <Link to="/mapa" className="text-[11px] font-semibold text-[color:var(--rbr-navy)]">
-                    Mapa completo →
-                  </Link>
+              <div className="flex items-center justify-between px-5 pt-4 pb-3">
+                <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+                  AGORA
                 </div>
+                {painel && (
+                  <div className="text-[11px]" style={{ color: '#8a91ad' }}>
+                    atualizado {haQuanto(painel.gerado_em)}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 {!carregado ? (
                   <div className="text-sm text-[color:var(--rbr-muted)] py-8 text-center">Carregando…</div>
-                ) : viagens.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 py-10">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl" style={{ background: 'var(--rbr-navy-tint)', color: 'var(--rbr-navy)' }}>
-                      ⛟
-                    </div>
-                    <div className="text-sm font-semibold text-[color:var(--rbr-navy-dark)]">Nenhuma viagem em andamento hoje</div>
-                    <div className="text-xs text-[color:var(--rbr-muted)]">Quando uma carga sair, ela aparece aqui.</div>
+                ) : precisam === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-center gap-1 py-12 px-6">
+                    <div className="text-sm font-semibold text-[color:var(--rbr-navy-dark)]">Tudo em ordem agora</div>
+                    <div className="text-xs text-[color:var(--rbr-muted)]">Quando algo precisar de você, aparece aqui.</div>
                   </div>
                 ) : (
-                  <div className="flex flex-col -mx-2 overflow-y-auto min-h-0">
+                  <>
+                    {semSinal.map((c) => (
+                      <div key={`s-${c.id}`} className="px-5 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid #eef0f5' }}>
+                        <div className="flex items-center gap-2 text-[14px] font-extrabold">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COR_SINAL.alerta }} />
+                          Sem sinal{c.ultima ? ` ${haQuanto(c.ultima.em)}` : ''}
+                        </div>
+                        <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
+                          {c.origem} → {c.destino}
+                          {c.motorista ? ` · ${c.motorista}` : ''}
+                        </div>
+                        <button type="button" onClick={() => setSel({ tipo: 'viagem', id: c.id })} className={botao} style={{ background: '#1c2559' }}>
+                          Abrir serviço
+                        </button>
+                      </div>
+                    ))}
+                    {semMotorista.map((c) => (
+                      <div key={`m-${c.id}`} className="px-5 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid #eef0f5' }}>
+                        <div className="flex items-center gap-2 text-[14px] font-extrabold">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COR_SINAL.alerta }} />
+                          Sem motorista alocado
+                        </div>
+                        <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
+                          {c.origem} → {c.destino}
+                        </div>
+                        <Link to="/operacoes" className={botao} style={{ background: '#1c2559' }}>
+                          Escolher motorista
+                        </Link>
+                      </div>
+                    ))}
+                    {naoLidos > 0 && (
+                      <div className="px-5 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid #eef0f5' }}>
+                        <div className="flex items-center gap-2 text-[14px] font-extrabold">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: COR_SINAL.atencao }} />
+                          {naoLidos === 1 ? '1 aviso não lido' : `${naoLidos} avisos não lidos`}
+                        </div>
+                        <Link to="/avisos" className={botao} style={{ background: '#1c2559' }}>
+                          Abrir central de avisos
+                        </Link>
+                      </div>
+                    )}
+                  </>
+                )}
+                {carregado && viagens.length > 0 && (
+                  <div className="px-5 pt-4 pb-2" style={{ borderTop: '1px solid #eef0f5' }}>
+                    <div className="text-[11px] font-extrabold tracking-[0.08em] mb-1" style={{ color: 'var(--rbr-muted)' }}>
+                      VIAGENS EM ANDAMENTO
+                    </div>
                     {viagens.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => setSel({ tipo: 'viagem', id: c.id })}
-                        className="text-left px-2 py-3 rounded-xl hover:bg-[color:var(--rbr-navy-tint)] transition-colors flex items-start gap-3"
-                      >
+                      <button key={c.id} onClick={() => setSel({ tipo: 'viagem', id: c.id })} className="w-full text-left py-2 flex items-start gap-2.5">
                         <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: COR_SINAL[c.sinal ?? 'sem'] ?? COR_SINAL.sem }} />
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-semibold text-[color:var(--rbr-navy-dark)] truncate">
+                          <div className="text-[13px] font-bold text-[color:var(--rbr-navy-dark)] truncate">
                             {c.origem} → {c.destino}
                           </div>
-                          <div className="text-xs text-[color:var(--rbr-muted)] truncate">
+                          <div className="text-[11px] truncate" style={{ color: 'var(--rbr-muted)' }}>
                             {c.motorista ?? 'Sem motorista'} · {STATUS_OPERACAO_LABEL[c.status] ?? c.status}
                           </div>
                         </div>
-                        <div className="text-xs font-semibold text-[color:var(--rbr-navy-dark)] tabular-nums whitespace-nowrap">{previsaoChegada(c) ?? '—'}</div>
+                        <div className="text-[11px] font-bold tabular-nums whitespace-nowrap">{previsaoChegada(c) ?? '—'}</div>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
+              <Link to="/servicos" className="px-5 py-3.5 text-[12px] font-extrabold" style={{ color: '#1c2559' }}>
+                Ver tudo em Serviços →
+              </Link>
             </>
           )}
         </aside>
       </div>
 
       {/* Caixa e Comercial, pequenos */}
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="grid md:grid-cols-2 gap-3.5">
         {blocos.caixa && <Mini
           titulo="Caixa"
           para="/financeiro"
