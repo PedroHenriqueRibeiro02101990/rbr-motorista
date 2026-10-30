@@ -54,7 +54,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | D07 | pendente | Liberar o caminhão |
 | D08 | pendente | Registrar a entrega |
 | D09 | pendente | Finalizar a operação |
-| D10 | parcial | Ocorrência em rota · fluxoDaOcorrencia testado; incidentes_carga já existe; falta tela quadro 49 |
+| D10 | feito | Ocorrência em rota · componente Ocorrência em rota no painel (carga liberada, carregando ou em trânsito): tipo, descrição, próximo passo do tipo (fluxoDaOcorrencia), lista das abertas e Encerrar com motivo; usa registrar_incidente_carga e encerrar_incidente_carga (testadas por gestor em transação descartada); não testado no navegador |
 | D11 | parcial | Lote de viagens · lote por grupo_saida_id e sequencia já existe na lista de Operações |
 | D12 | feito | Alertas de prazo da viagem · painel da operação alerta entrega vencida, CIOT perto de 5 dias do fim previsto e MDF-e perto de 30 dias (agora com o fim previsto do CIOT lido de operacao_ciot_vpo); não testado no navegador |
 | D13 | feito | Operação vê o valor ao cliente · não há restrição de valor ao cliente para gestor/operação hoje; nada a construir |
@@ -63,7 +63,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | F03 | parcial | Aviso vai a quem errou · a devolução do fiscal já avisa quem errou (destinoDoAviso) além dos gestores, e o disjuntor avisa os gestores; falta o escalonamento de 2 h e 4 h (robô agendado) |
 | F04 | parcial | Busca com IA · página Busca (/busca) em clientes, cotações e operações pelas políticas da própria pessoa, com "N resultados ocultos pela sua função" (RPC busca_contagens devolve só números; testada: comercial vê 0 de 2); a interpretação de frase livre por IA NÃO foi feita; não testada no navegador |
 | F05 | feito | Início por função com mapa · Início com seletor Ver como (Geral, Comercial, Operação, Fiscal, Financeiro) e menu filtrado por papel (menuPorPapel, 3 testes); a tela do gestor agora aceita os quatro papéis; login real testado com contas de teste; telas não abertas no navegador |
-| F06 | parcial | Metas · estrutura de metas criada no banco (vendas ligadas; Operação e Fiscal desligadas, com indicadores de exemplo); falta tela |
+| F06 | parcial | Metas · página Metas (/metas, só gestor) lista as metas por função e liga ou desliga cada uma; falta calcular o atingido de cada indicador |
 | F07 | parcial | 'O que fazer agora' por módulo · PainelPendencias já existe; conferir módulos |
 | F08 | parcial | Confirmação visível e janela de edição · componente único useConfirmacao (✓/✗, evita clique duplo) e Modal sobre fundo escurecido já existem e são usados em várias telas; falta conferir as telas que ainda não usam |
 | F09 | parcial | Banner de homologação · FaixaTeste e FaixaFixa (HOMOLOGAÇÃO) já existem; texto exato do item não conferido no navegador |

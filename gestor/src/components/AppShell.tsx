@@ -20,6 +20,7 @@ const NAV_TODOS = [
   { to: '/financeiro', label: 'Financeiro', Icon: IconWallet, end: false },
   { to: '/mapa', label: 'Mapa', Icon: IconMapPin, end: false },
   { to: '/fiscal', label: 'Fiscal', Icon: IconFileText, end: false },
+  { to: '/metas', label: 'Metas', Icon: IconClipboard, end: false },
   { to: '/busca', label: 'Busca', Icon: IconSearch, end: false },
   { to: '/avisos', label: 'Avisos', Icon: IconAlertTriangle, end: false },
   { to: '/saude-fiscal', label: 'Saúde fiscal', Icon: IconAlertTriangle, end: false },

@@ -160,3 +160,8 @@ Migrações aditivas `20261030_10_devolucao_fiscal.sql` e `20261030_11_trilha_st
 - **Menu por função** (branch `feat/menu-por-funcao`, só local, sem push): cada função vê só o que usa (`lib/menuPorPapel.ts`, 3 testes, build ok). É conforto: o que cada uma lê continua decidido pelo banco.
 - **Contas de teste:** criadas `operacao`, `fiscal`, `comercial` e `financeiro` (nomes "TESTE …", e-mails `teste.<papel>@rbrcargo.invalid`, função cadastrada em `funcoes_pessoa`). As senhas são aleatórias e estão só em `docs-privado/contas-teste.txt` (fora do git). Login real e leitura pela API: operação e fiscal veem 8 operações, 8 clientes, 15 cotações e 48 documentos, sem lançamentos; financeiro vê 8 operações, 8 clientes e 72 lançamentos, sem cotações nem documentos; comercial sem carteira vê 0 de tudo. Igual à matriz do lote. **Apagar as contas quando acabar o teste** (rollback: apagar de `funcoes_pessoa`, `pessoas` e `auth.users` onde o e-mail termina em `@rbrcargo.invalid`).
 - **Ainda não feito:** nenhuma tela foi aberta no navegador com essas contas; eu só testei login e API.
+
+## 9. Retomada após reinicialização (30/10/2026)
+
+- **Conferência:** árvore limpa; `feat/menu-por-funcao` está no remoto no mesmo commit do local (`f212048`), então o push foi feito. Produção segue READY nos três projetos (commit `c90f1d5`). A prévia do gestor da branch do menu está READY; as prévias de motorista e agenciador aparecem como canceladas porque esses apps não mudaram (regra `ignoreCommand`), o que é esperado.
+- **Nesta fase (branch local `feat/back-fase2`, sem push, sem merge):** componente de ocorrência em rota (D10) e página Metas (F06). O que falta no checklist são itens de tela sem navegador para conferir, regras que mexem na emissão, ou decisões suas.
