@@ -6,6 +6,7 @@ import { formatMoney, formatDate, STATUS_OPERACAO_LABEL } from '@rbr/shared/form
 import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../components/financeiro/ui'
+import CancelarOperacaoInteira from '../components/operacao/CancelarOperacaoInteira'
 import { useConfirmacao } from '../components/Confirmacao'
 import PainelPendencias from '../components/PainelPendencias'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
@@ -166,6 +167,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [extras, setExtras] = useState<Record<string, { sequencia: number | null; grupo: string | null; total: number | null }>>({})
   const [cancelFeito, setCancelFeito] = useState(false)
   const [cancelando, setCancelando] = useState<OperacaoEnriquecida | null>(null)
+  const [cancelarTudoOp, setCancelarTudoOp] = useState<string | null>(null)
   const [bloqueioCancel, setBloqueioCancel] = useState<{ documentos: { tipo: string; status: string; numero: string | null }[]; ordem: string } | null>(null)
   const { confirmacao: confCancel, rodar: rodarCancel, ocupado: ocupadoCancel } = useConfirmacao()
   const { confirmacao: confIndicacao, rodar: rodarIndicacao, ocupado: ocupadoIndicacao } = useConfirmacao()
@@ -1414,9 +1416,24 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 <Link to="/fiscal" className="underline font-bold">
                   Ir para Fiscal
                 </Link>
+                {cancelando && (
+                  <button type="button" className="ml-3 underline font-bold" onClick={() => setCancelarTudoOp(cancelando.id)}>
+                    Cancelar tudo na ordem
+                  </button>
+                )}
               </Aviso>
             )}
             {confCancel}
+            {cancelarTudoOp && (
+              <CancelarOperacaoInteira
+                operacaoId={cancelarTudoOp}
+                onFechar={() => setCancelarTudoOp(null)}
+                onFeito={() => {
+                  setCancelFeito(true)
+                  void load()
+                }}
+              />
+            )}
             <div className="flex justify-end gap-2">
               <Botao variante="secundario" onClick={() => setCancelando(null)} disabled={ocupadoCancel}>
                 {cancelFeito ? 'Fechar' : 'Voltar'}

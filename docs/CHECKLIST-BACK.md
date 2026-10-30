@@ -28,7 +28,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B12 | feito | Remover o encerramento automático · LOTE APLICADO: gatilho trg_encerrar_mdfe_na_entrega removido (conferido: 0 no banco); quem encerra o MDF-e é o botão Finalizar viagem |
 | B13 | feito | Pré-voo único e esteira · esteira com não se aplica, pré-voo único e botão por pendência que abre a aba certa (preVooEtapas, 4 testes, build ok); não testado no navegador |
 | B14 | parcial | Janela de emissão · dentroDaJanelaDeEmissao (até a véspera, Brasília) testada; falta ligar ao botão de emitir |
-| B15 | parcial | Cancelar a operação inteira · planoDeCancelamentoOperacao/andamentoDoCancelamento testados e tabela operacao_cancelamento_passos criada; falta a função que executa e a tela (quadro 56) |
+| B15 | parcial | Cancelar a operação inteira · modal Cancelar a operação inteira (quadro 56) ligado ao aviso de documento emitido em Operações: MDF-e, CIOT, vale-pedágio, averbação (trava e manda cancelar na seguradora), CT-e e por fim a operação; para no primeiro que trava ou falha e grava cada passo em operacao_cancelamento_passos; prazos conferidos pelo servidor em cada passo; build ok; NÃO executado (cancelamento real só com confirmação); não testado no navegador |
 | B16 | pendente | Cancelar MDF-e com conferência |
 | B17 | parcial | prazos.ts ligado em cancelar-documento-fiscal e efrete-ciot-operacao; falta VPO e telas
 | B18 | parcial | Idempotência geral · deveConsultarSozinho e podeReenviarAposTimeout testadas; efrete e NSPEDÁGIO já consultam antes de recomprar; falta o robô de 10 min |

@@ -107,3 +107,7 @@ Migração aditiva `20261030_05_avisos_lidos.sql` aplicada (rollback em `docs/ro
 ## 6j. B13 botão por etapa e H01 bateria (30/10/2026)
 
 Pré-voo: cada pendência ganhou o botão "Ir para Fiscal/Motorista/Financeiro" (`lib/preVooEtapas.ts`, 4 testes). Bateria `gestor/test/fluxoEmissaoFinalizacao.test.ts`: 14 cenários (janela de emissão até a véspera, CIOT ausente só bloqueia depois de 23/11/2026, CIOT efrete só vale emitido, timeout nunca reenvia sem consultar, referência nova a cada tentativa, vigência do VPO, passos da finalização e retomada só do que falhou, prazos de encerramento e cancelamento, cancelar a operação inteira na ordem e parando no que trava). Não emite nada real. O que continua pendente da bateria está no H01 do checklist.
+
+## 6k. Cancelar a operação inteira (B15)
+
+Novo `CancelarOperacaoInteira.tsx`, aberto pelo link "Cancelar tudo na ordem" que aparece em Operações quando há documento fiscal emitido. Mostra o plano (MDF-e, CIOT, vale-pedágio, averbação, CT-e), exige motivo de 15 a 255 letras e a caixa "Entendo", executa passo a passo chamando as funções que já conferem os prazos no servidor, grava cada passo em `operacao_cancelamento_passos` e só cancela a operação se tudo deu certo. Averbação não tem função de cancelamento: o plano trava e orienta fazer na seguradora. **Não executei nenhum cancelamento** (efeito fiscal e financeiro real). Build ok, não testado no navegador.
