@@ -1,14 +1,16 @@
 import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
 import { resumoNfes } from './NfesCliente'
+import { abaDaPendencia, ROTULO_ABA, type AbaDoPreVoo } from '../../lib/preVooEtapas'
 import { situacaoApolice, type SituacaoApolice } from '@rbr/shared/regrasOperacao'
 
 type Item = { doc: string; item: string; ok: boolean; motivo: string }
 
 // Pré-voo: o que ainda falta na operação antes de emitir (função checar_pre_voo do banco).
 // Mostra só o que interessa ao documento em emissão + itens gerais; ✓ quando tudo certo.
+// B13: onIr mostra, em cada pendência, o botão que abre a aba onde ela se resolve.
 // B13: tipo 'todos' é o pré-voo único da operação (CT-e, MDF-e, risco e itens gerais numa lista só).
-export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo: 'cte' | 'mdfe' | 'nfse' | 'todos' }) {
+export default function PreVoo({ operacaoId, tipo, onIr }: { operacaoId: string; tipo: 'cte' | 'mdfe' | 'nfse' | 'todos'; onIr?: (aba: AbaDoPreVoo) => void }) {
   const [itens, setItens] = useState<Item[] | null>(null)
   const [erro, setErro] = useState(false)
   const [nfes, setNfes] = useState<{ quantidade: number; valor_total: number } | null>(null)
@@ -76,6 +78,11 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
           {faltam.map((i) => (
             <li key={i.doc + i.item}>
               {i.doc}: {i.motivo}
+              {onIr && (
+                <button type="button" onClick={() => onIr(abaDaPendencia(i.item))} className="ml-2 font-bold underline">
+                  {ROTULO_ABA[abaDaPendencia(i.item)]}
+                </button>
+              )}
             </li>
           ))}
         </ul>

@@ -26,7 +26,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B10 | pendente | CIOT com várias NF-e |
 | B11 | feito | Finalizar viagem · Finalizar viagem marca a operação como finalizando e avisa fiscal e gestores (tabela notificacoes), encerra MDF-e e CIOT, refaz só o que faltou e termina em finalizada (ou volta a entregue se falhar); RPCs iniciar_finalizacao/terminar_finalizacao testadas em transação descartada; não testado no navegador |
 | B12 | feito | Remover o encerramento automático · LOTE APLICADO: gatilho trg_encerrar_mdfe_na_entrega removido (conferido: 0 no banco); quem encerra o MDF-e é o botão Finalizar viagem |
-| B13 | parcial | Pré-voo único e esteira · esteira com não se aplica e pré-voo único (CT-e, MDF-e, risco e gerais numa lista) no detalhe da operação; falta o botão por etapa; não testado no navegador |
+| B13 | feito | Pré-voo único e esteira · esteira com não se aplica, pré-voo único e botão por pendência que abre a aba certa (preVooEtapas, 4 testes, build ok); não testado no navegador |
 | B14 | parcial | Janela de emissão · dentroDaJanelaDeEmissao (até a véspera, Brasília) testada; falta ligar ao botão de emitir |
 | B15 | parcial | Cancelar a operação inteira · planoDeCancelamentoOperacao/andamentoDoCancelamento testados e tabela operacao_cancelamento_passos criada; falta a função que executa e a tela (quadro 56) |
 | B16 | pendente | Cancelar MDF-e com conferência |
@@ -88,7 +88,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | G07 | parcial | Disjuntor · disjuntorAberto testado; falta persistir o estado e bloquear emissão |
 | G08 | pendente | Vigia regulatório |
 | G09 | parcial | Tela Saúde fiscal · página Saúde fiscal criada (menu + /saude-fiscal): lista os achados em aberto, cor geral e botão Verificar agora (chama saude-fiscal); build ok; não testada no navegador |
-| H01 | parcial | Bateria de homologação com evidência · rodado em 30/10 em homologação: VPO ciclo completo (compra, timeout, recibo, cancelamento com sucesso explícito); CIOT emitir, consultar, PDF e cancelar em 29/10. O resto da bateria (troca de motorista e veículo, carta de correção, várias NF-e, 2 notas no CIOT, timeouts simulados) não foi rodado |
+| H01 | parcial | Bateria de homologação com evidência · bateria de 14 cenários do fluxo de emissão, finalização e cancelamento (gestor/test/fluxoEmissaoFinalizacao.test.ts) roda no CI; homologação real: VPO ciclo completo 30/10, CIOT 29/10; falta rodar em homologação troca de motorista/veículo, carta de correção, várias NF-e, timeouts simulados |
 | H02 | aguarda o Pedro | Piloto real `[P,$]` · pacote de produção |
 | H03 | aguarda o Pedro | Migrações de segurança do PR #15 `[M,P]` · pacote de produção |
 | H04 | aguarda o Pedro | Produção · pacote de produção |

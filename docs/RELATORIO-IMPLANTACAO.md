@@ -103,3 +103,7 @@ Migração aditiva `20261030_04_finalizando.sql` aplicada (rollback em `docs/rol
 ## 6i. Sino e central de avisos (30/10/2026)
 
 Migração aditiva `20261030_05_avisos_lidos.sql` aplicada (rollback em `docs/rollbacks/20261030-0005-avisos-lidos.sql`): função `marcar_aviso_lido` (cada pessoa só marca os próprios avisos). Gestor: página `/avisos` e item no menu com contador de não lidos. Build ok. Não testado no navegador.
+
+## 6j. B13 botão por etapa e H01 bateria (30/10/2026)
+
+Pré-voo: cada pendência ganhou o botão "Ir para Fiscal/Motorista/Financeiro" (`lib/preVooEtapas.ts`, 4 testes). Bateria `gestor/test/fluxoEmissaoFinalizacao.test.ts`: 14 cenários (janela de emissão até a véspera, CIOT ausente só bloqueia depois de 23/11/2026, CIOT efrete só vale emitido, timeout nunca reenvia sem consultar, referência nova a cada tentativa, vigência do VPO, passos da finalização e retomada só do que falhou, prazos de encerramento e cancelamento, cancelar a operação inteira na ordem e parando no que trava). Não emite nada real. O que continua pendente da bateria está no H01 do checklist.

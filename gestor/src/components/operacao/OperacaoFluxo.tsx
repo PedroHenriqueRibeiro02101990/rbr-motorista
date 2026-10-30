@@ -436,7 +436,7 @@ export default function OperacaoFluxo({
           <ol className="flex flex-col list-none m-0 p-0" aria-label="Motorista e veículo">
             {daAba('motorista').map((e, i, l) => linha(e, i, l))}
           </ol>
-          <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'todos'} />
+          <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'todos'} onIr={onAba} />
         </>
       )}
 
