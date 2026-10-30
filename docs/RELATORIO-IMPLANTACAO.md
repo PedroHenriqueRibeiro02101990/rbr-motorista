@@ -3,11 +3,11 @@
 Atualizado em 30/10/2026. Branch `feat/back-implantacao` (parte da `feat/nspedagio-etapa1`, tudo local, sem push).
 
 ## 1. Resumo
-- 93 IDs no documento: 6 feitos, 8 parciais, 4 prontos aguardando aplicação no banco, 5 que dependem do Pedro, 70 pendentes. Nenhum bloqueado por erro.
-- Etapa 0 concluída. Da Etapa 1 e 2 só foi feito o que não precisa de banco (B17) e a migração aditiva ficou escrita, não aplicada.
-- **A aplicação da migração em produção foi negada pelo classificador de permissões do Claude Code** (motivo: Production Deploy), mesmo com o documento autorizando. Não contornei. O trabalho parou aí por decisão do Pedro (ver "Próximos passos").
-- Depende do Pedro: liberar a regra de permissão para migrações/funções, pacote de produção (seção 9) e perguntas externas.
-- Prazo de 23/11/2026 (rejeição 684): faltam 24 dias. `emitir-mdfe` já monta o CIOT; faltam B08, B09 (exigir status), B11 e B13.
+- 93 IDs: 8 feitos, 15 parciais, 5 que dependem do Pedro, 65 pendentes; nenhum bloqueado por erro.
+- Feito nesta rodada: Etapa 0, migração aditiva 20261030_01, dump em C:UsersAlineackups-rbr (mantido intacto até o lote), B04, B09, B17 nas funções, B16, prazos do CIOT (B08), regras puras C08/D01/D12/B13 e CI (G01). Quatro funções publicadas, todas com log "booted" sem erro.
+- Parado por permissão: o push (negado). Não aplicado: lote de comportamento (sem autorização). Não feito: o grosso das frentes C, D, E, F e G, que são telas e funções grandes.
+- Depende do Pedro: regra de push, pacote de produção (seção 9), perguntas externas.
+- Prazo de 23/11: faltam B11 (finalizar viagem em um botão), B13 (pré-voo único), botão de encerrar CIOT e a bateria H01. O MDF-e sem CIOT não bloqueia antes de 23/11.
 
 ## 2. Tabela por ID
 Ver `docs/CHECKLIST-BACK.md` (uma linha por ID). Evidências desta sessão:
@@ -31,7 +31,7 @@ Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e
 | efrete-ciot-operacao | v4 → prazos de cancelar (24 h antes do início) e encerrar (5 dias após o fim previsto; operação de teste dispensada) (B08/B17) | idem | vazio: HTTP 401; "booted" |
 
 ## 5. Vercel
-Pushes: 0. Merges: 0. Deploys: 0. Pushes pendentes: todos os commits locais desta branch e da `feat/nspedagio-etapa1`.
+Pushes: 0 (tentei 1; **push negado pelo classificador de permissões**, sem explicação). Merges: 0. Deploys da Vercel: 0. **Push pendente (permissão)**: 20 commits locais em `feat/back-implantacao` (inclui os da `feat/nspedagio-etapa1`). Antes do push: build do gestor passando (exit 0), 192 testes passando, varredura de segredos no diff sem achado real.
 
 ## 6. Decisões pelo padrão e extras
 - Backup (Etapa 0.5): `pitr_enabled=false`, lista de backups vazia (`backups: null`). Sem backup conferido, **o lote de comportamento (A01, A02, A05, A04 completo, A06, B12, C04, C10) fica para o pacote final**, como manda a seção 3.
@@ -52,6 +52,8 @@ C:UsersAlineackups-rbr6-10-30 (fora do repositório): 15 tabelas fiscais + _f
 Consulta pelo conector Supabase (query_logs, tabela `logs`, `source = 'function_edge_logs'` e `'function_logs'`) funcionou na 1ª tentativa desta vez. As falhas anteriores eram por usar nomes de tabela errados.
 
 ## 7. Incidentes
+- Push da branch negado pelo classificador (a autorização do Pedro cobria deploy de funções, db query e migrações, não git push). Aguardando regra `Bash(git push:*)` ou o push feito por ele.
+- O `tsc` que reportei como passando após o commit ecc2cd3 estava lendo cache: o build completo ainda falhava porque `shared/database.types.ts` não tinha a tabela `vpo_requisicoes`. Corrigido (tipo adicionado); `npm run build` do gestor agora termina com exit 0. Lição: só conto como verde o `npm run build`.
 - Aplicação da migração negada pelo classificador (`[Production Deploy]`). O Pedro autorizou depois, por escrito, e a migração foi aplicada.
 - Build do gestor falhava (TS2352 em CartaoVpo.tsx:69, erro meu); corrigido no commit ecc2cd3.
 
