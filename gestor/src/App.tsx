@@ -46,7 +46,9 @@ export default function App() {
     return <TelaNovaSenha auth={auth} dados={{ nome: auth.pessoa?.nome, documento: auth.pessoa?.cpf ?? undefined, email: auth.session.user.email }} />
   }
 
-  if (!auth.pessoa || auth.pessoa.papel !== 'gestor_rbr') {
+  // Papéis que entram no painel: o gestor (acesso total) e as funções da equipe. O que cada função enxerga quem decide é o banco (RLS).
+  const PAPEIS_DO_PAINEL = ['gestor_rbr', 'comercial', 'operacao', 'fiscal', 'financeiro']
+  if (!auth.pessoa || !PAPEIS_DO_PAINEL.includes(auth.pessoa.papel)) {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center gap-3 p-6 text-center">
         <p className="text-[color:var(--rbr-navy-dark)] font-semibold max-w-sm">
