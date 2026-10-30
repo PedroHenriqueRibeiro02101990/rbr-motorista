@@ -10,6 +10,7 @@ import { formatarDoc } from '@rbr/shared/documento'
 import { preencherVazios, soDigitos, type DadosCep, type DadosCnpj } from '@rbr/shared/consultaCadastro'
 import { buscarCep, buscarCnpj } from '../lib/consultaReceita'
 import Pendencias from '../components/cadastros/Pendencias'
+import EquipeCadastros from '../components/cadastros/EquipeCadastros'
 import GestaoContatos from '../components/cadastros/GestaoContatos'
 import RiscoComercial, { SeloProtestoLista } from '../components/cadastros/RiscoComercial'
 import { estadoDaConsulta, lerRegraProtesto, lerUltimasConsultas, type EstadoConsulta } from '../lib/protesto'
@@ -53,6 +54,7 @@ const TABS = [
   { value: 'fornecedores', label: 'Fornecedores' },
   { value: 'prestadores', label: 'Transportadoras parceiras' },
   { value: 'contatos', label: 'Gestão de contatos' },
+  { value: 'equipe', label: 'Equipe' },
 ] as const
 type TabValue = (typeof TABS)[number]['value']
 
@@ -1568,21 +1570,20 @@ export default function Cadastros() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Cadastros</h1>
+        <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Cadastros</h1>
       </div>
 
       <PainelPendencias modulo="cadastros" />
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1 flex-wrap p-1 rounded-xl self-start" style={{ background: '#e9ecf4' }}>
         {TABS.map((t) => (
           <button
             key={t.value}
             onClick={() => setTab(t.value)}
-            className="text-sm font-bold px-4 py-2 rounded-xl border"
+            className="text-[13px] font-bold px-4 py-2 rounded-lg"
             style={{
-              borderColor: 'var(--rbr-navy)',
-              background: tab === t.value ? 'var(--rbr-navy)' : 'transparent',
-              color: tab === t.value ? '#fff' : 'var(--rbr-navy)',
+              background: tab === t.value ? '#1c2559' : 'transparent',
+              color: tab === t.value ? '#fff' : '#4a5275',
             }}
           >
             {t.label}
@@ -1603,6 +1604,8 @@ export default function Cadastros() {
       {tab === 'pendencias' && <Pendencias onContagem={setQtdPendencias} />}
 
       {tab === 'contatos' && <GestaoContatos />}
+
+      {tab === 'equipe' && <EquipeCadastros />}
 
       {tab === 'clientes' && (
         <div className="flex flex-col gap-3">
