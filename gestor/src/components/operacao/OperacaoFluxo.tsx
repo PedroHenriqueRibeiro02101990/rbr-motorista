@@ -252,7 +252,7 @@ export default function OperacaoFluxo({
                   </span>
                   <span className="text-xs text-[color:var(--rbr-muted)]">Alternativa se a efrete estiver fora do ar</span>
                 </div>
-                <BotaoAcao rotulo="Dados para a Repom" fazer={() => navigator.clipboard.writeText(textoCopia(dadosMotoristaVeiculo(d))).then(() => 'Dados copiados.')} />
+                <BotaoAcao rotulo="Dados para o CIOT e o VPO" fazer={() => navigator.clipboard.writeText(textoCopia(dadosMotoristaVeiculo(d))).then(() => 'Dados copiados.')} />
                 {docEtapa('ciot').aberto}
               </div>
             </div>

@@ -83,3 +83,28 @@ test('G07/G04: disjuntor e auditor de dinheiro', () => {
   assert.deepEqual(r.divergenciasDeValor({ cotacao: 1000, cte: 1000, ciot: 1000, financeiro: 1000 }), [])
   assert.equal(r.divergenciasDeValor({ cotacao: 1000, cte: 1000, ciot: 900, financeiro: null }).length, 1)
 })
+
+test('B15: plano de cancelamento em ordem inversa, um passo por vez', () => {
+  const ok = { existe: true, dentroDoPrazo: true }
+  const plano = r.planoDeCancelamentoOperacao({ mdfe: ok, ciot: ok, vpo: { existe: false, dentroDoPrazo: true }, averbacao: ok, cte: ok })
+  assert.deepEqual(plano.map((p) => p.etapa), ['mdfe', 'ciot', 'vpo', 'averbacao', 'cte'])
+  assert.equal(plano[2].acao, 'pular')
+  assert.deepEqual(r.andamentoDoCancelamento(plano, {}), { feitos: [], paradoEm: null, proximo: 'mdfe' })
+  assert.equal(r.andamentoDoCancelamento(plano, { mdfe: 'feito' }).proximo, 'ciot')
+  const falha = r.andamentoDoCancelamento(plano, { mdfe: 'feito', ciot: 'falhou' })
+  assert.deepEqual(falha.feitos, ['mdfe']); assert.equal(falha.paradoEm, 'ciot')
+  const travado = r.planoDeCancelamentoOperacao({ mdfe: ok, ciot: { existe: true, dentroDoPrazo: false, motivoPrazo: 'Fora das 24 h' }, vpo: ok, averbacao: ok, cte: ok })
+  assert.equal(r.andamentoDoCancelamento(travado, { mdfe: 'feito' }).motivo, 'Fora das 24 h')
+  const completo = r.andamentoDoCancelamento(plano, { mdfe: 'feito', ciot: 'feito', averbacao: 'feito', cte: 'feito' })
+  assert.equal(completo.proximo, null); assert.equal(completo.paradoEm, null); assert.equal(completo.feitos.length, 4)
+})
+test('B14/B18: janela de emissão e idempotência', () => {
+  const coleta = Date.UTC(2026, 10, 10, 15, 0) // 10/11 12h Brasília
+  assert.equal(r.dentroDaJanelaDeEmissao(coleta, Date.UTC(2026, 10, 9, 20, 0)), true) // véspera 17h
+  assert.equal(r.dentroDaJanelaDeEmissao(coleta, Date.UTC(2026, 10, 10, 5, 0)), false) // no dia, 2h
+  assert.equal(r.deveConsultarSozinho(0, 10 * 60_000), false)
+  assert.equal(r.deveConsultarSozinho(0, 10 * 60_000 + 1), true)
+  assert.equal(r.podeReenviarAposTimeout(false, false), false)
+  assert.equal(r.podeReenviarAposTimeout(true, true), false)
+  assert.equal(r.podeReenviarAposTimeout(true, false), true)
+})

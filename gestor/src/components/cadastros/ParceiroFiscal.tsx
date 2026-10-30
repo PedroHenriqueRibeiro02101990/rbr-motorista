@@ -10,7 +10,7 @@ export const TIPO_PARCEIRO_LABEL: Record<TipoParceiro, string> = {
 }
 
 export const CLASSIFICACAO_LABEL: Record<ClassificacaoCiot, { texto: string; detalhe: string; bg: string; cor: string }> = {
-  tac: { texto: 'TAC', detalhe: 'A RBR gera o CIOT (Repom).', bg: '#EEF1F8', cor: 'var(--rbr-navy)' },
+  tac: { texto: 'TAC', detalhe: 'A RBR gera o CIOT (efrete).', bg: '#EEF1F8', cor: 'var(--rbr-navy)' },
   etc_equiparada_tac: { texto: 'ETC equiparada a TAC', detalhe: 'Até 3 veículos no RNTRC: a RBR gera o CIOT.', bg: '#EEF1F8', cor: 'var(--rbr-navy)' },
   etc_ciot_proprio: { texto: 'ETC: gera o próprio CIOT', detalhe: 'Mais de 3 veículos no RNTRC: o gestor digita o número do CIOT do parceiro.', bg: '#E7F5EC', cor: 'var(--rbr-positive)' },
   etc_frota_nao_informada: { texto: 'ETC: frota não informada', detalhe: 'Informe quantos veículos a ETC tem no RNTRC.', bg: '#FDF1DC', cor: '#8A5A00' },

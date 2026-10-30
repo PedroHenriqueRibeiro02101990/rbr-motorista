@@ -380,7 +380,7 @@ export function montarMdfe(
   const ciotNum = ciotDeHomologacao ? "" : digitos(ciotVpo?.ciot);
   if (ehTac && ciotNum.length !== 12) {
     const msgCiot =
-      "CIOT não informado (12 dígitos) — gere no portal da Repom e preencha aqui. Obrigatório quando o veículo é de transportador autônomo (TAC).";
+      "CIOT não informado (12 dígitos) — emita o CIOT pela efrete (ou preencha aqui o do portal do emissor). Obrigatório quando o veículo é de transportador autônomo (TAC).";
     if (teste) {
       // Dispensa de teste (decisão do Pedro por causa da trava da Repom), não regra regulatória: a ANTT exige
       // CIOT do TAC (Portaria SUROC 6/2026) em operação real.
@@ -394,9 +394,9 @@ export function montarMdfe(
   const idvpo = digitos(ciotVpo?.vpo_idvpo);
   const vpoValor = ciotVpo?.vpo_valor != null ? Number(ciotVpo.vpo_valor) : null;
   if (d.cotacao.pedagio > 0) {
-    if (!idvpo) bloqueio("antt", "Vale-Pedágio (IDVPO) não informado — a rota tem pedágio e o VPO é obrigatório (Lei 10.209/2001). Compre na Repom e preencha o IDVPO.");
+    if (!idvpo) bloqueio("antt", "Vale-Pedágio (IDVPO) não informado — a rota tem pedágio e o VPO é obrigatório (Lei 10.209/2001). Compre o vale-pedágio (NSPEDÁGIO) e preencha o IDVPO.");
     if (idvpo && !vpoValor) bloqueio("sefaz", "Valor do Vale-Pedágio não informado.");
-    if (idvpo && !ciotVpo?.vpo_cnpj_fornecedora) bloqueio("sefaz", "CNPJ da empresa fornecedora do Vale-Pedágio (Repom) não informado.");
+    if (idvpo && !ciotVpo?.vpo_cnpj_fornecedora) bloqueio("sefaz", "CNPJ da empresa fornecedora do Vale-Pedágio não informado.");
   }
   const eixosCombinacao = (v?.quantidade_eixos ?? 0) + d.reboques.reduce((s, r) => s + (r.quantidade_eixos ?? 0), 0) || null;
 

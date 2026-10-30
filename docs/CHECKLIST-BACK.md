@@ -13,7 +13,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | A07 | pendente | Carteira individual de clientes `[M]` |
 | A08 | parcial (colunas e histórico criados; falta usar nas telas) | Campos novos em operacoes `[M]` · mesma migração 20261030_01 |
 | A09 | parcial (tabela criada; falta gravar os eventos) | Trilha de auditoria geral `[M]` · tabela trilha_auditoria na migração 20261030_01 |
-| A10 | pendente | Limpar Repom · 14 arquivos citam Repom |
+| A10 | parcial | Limpar Repom · textos visíveis trocados (efrete, NSPEDÁGIO); o valor legado rbr_repom do banco e as funções vpoProvedor/repom ficam: mexer na restrição é lote |
 | B01 | feito | Testar token do NSPEDÁGIO `[X]` · token e leituras do PC e pela função publicada, 29/10 (docs-privado) |
 | B02 | feito | Função nspedagio_segredo `[M]` · migração 20261029_01 aplicada |
 | B03 | feito | Número numérico da operação e vpo_requisicoes `[M]` · migrações 20261029_01 e _02 aplicadas |
@@ -27,11 +27,11 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B11 | parcial | Finalizar viagem · Finalizar viagem encerra MDF-e e CIOT e refaz só o que faltou (finalizacao.ts, 2 testes, build ok); estado finalizando e aviso ao fiscal dependem do lote A04; não testado no navegador |
 | B12 | pendente | Remover o encerramento automático `[M]` |
 | B13 | parcial | Pré-voo único e esteira · esteira com não se aplica e motivo ligada ao detalhe da operação (teste); falta pré-voo único e botão por etapa |
-| B14 | pendente | Janela de emissão |
-| B15 | pendente | Cancelar a operação inteira `[$]` |
+| B14 | parcial | Janela de emissão · dentroDaJanelaDeEmissao (até a véspera, Brasília) testada; falta ligar ao botão de emitir |
+| B15 | parcial | Cancelar a operação inteira · planoDeCancelamentoOperacao/andamentoDoCancelamento testados e tabela operacao_cancelamento_passos criada; falta a função que executa e a tela (quadro 56) |
 | B16 | pendente | Cancelar MDF-e com conferência |
 | B17 | parcial | prazos.ts ligado em cancelar-documento-fiscal e efrete-ciot-operacao; falta VPO e telas
-| B18 | pendente | Idempotência geral |
+| B18 | parcial | Idempotência geral · deveConsultarSozinho e podeReenviarAposTimeout testadas; efrete e NSPEDÁGIO já consultam antes de recomprar; falta o robô de 10 min |
 | C01 | pendente | Averbação automática e confiável `[X]` |
 | C02 | parcial | Troca de motorista · planoDeTroca (motorista M0 a M3) codificado e testado; falta tela e execução (depende do lote C04 e respostas NSTech) |
 | C03 | pendente | Inclusão de condutor completa |
@@ -46,10 +46,10 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | C12 | parcial | Rejeição e contingência · contingenciaMdfeVencida (168 h) e proximaRef testadas; falta ligar |
 | C13 | pendente | Vários municípios e UFs no MDF-e `[X]` |
 | D01 | feito | Fila por urgência · lista de Operações ordenada pela coleta mais próxima, selo Urgente (menos de 24 h); espera 2 h/4 h em ordenarFila; não testado no navegador |
-| D02 | pendente | Assumir a operação |
+| D02 | parcial | Assumir a operação · colunas assumida_por e assumida_em criadas; falta o botão Assumir e o bloqueio |
 | D03 | parcial | Completar e enviar ao fiscal · checklistCompletar (11 itens) testado; falta ligar ao botão Enviar ao fiscal |
 | D04 | parcial | Alterações níveis A a D · nivelDaAlteracao A a D testado; a tabela operacao_alteracoes já existe; falta ligar às edições |
-| D05 | pendente | Devolvida pelo fiscal |
+| D05 | parcial | Devolvida pelo fiscal · tabela operacao_devolucoes_fiscal criada; falta a tela e o aviso a quem errou |
 | D06 | pendente | Gestor libera a ordem de coleta |
 | D07 | pendente | Liberar o caminhão |
 | D08 | pendente | Registrar a entrega |
@@ -70,24 +70,24 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | E01 | parcial | Funil e cotação (verificar o que existe) · cotação, pré-cotação, envio e conversão já existem; conferir lacunas |
 | E02 | parcial | Margem e níveis do vendedor · faixaDeMargem e sugereAfrouxar testadas; falta a tela e os níveis do vendedor (depende dos papéis, lote A01) |
 | E03 | pendente | Envio por e-mail e WhatsApp `[X]` |
-| E04 | pendente | Link público de aceite `[M]` |
-| E05 | pendente | Aceite com registro `[M]` |
+| E04 | parcial | Link público de aceite · tabela propostas_publicas criada (código, expiração, aberturas); falta a rota /p/código e a Edge Function pública |
+| E05 | parcial | Aceite com registro · colunas de aceite (nome, cargo, data, IP) em propostas_publicas; falta gravar pelo link |
 | E06 | pendente | PDF da proposta |
 | E07 | pendente | Prazos e valores da cotação |
-| E08 | pendente | Aviso de disponibilidade |
+| E08 | parcial | Aviso de disponibilidade · tabela avisos_disponibilidade criada; falta a tela e o texto na proposta |
 | E09 | pendente | Equipe e convites |
 | E10 | pendente | Quem recebe a carga |
 | E11 | pendente | Relatório comercial e celular do vendedor |
 | E12 | parcial | Cotação vencida e pré-cotação · aviso fixo da pré-cotação existe; diasVencida testada; falta o aviso de cotação vencida na tela |
 | G01 | parcial | Bateria de testes de regra no CI · CI roda a bateria completa (mais de 200 testes) a cada push; falta a matriz completa de cenários de cte.ts e mdfe.ts |
-| G02 | pendente | Sentinela de prontidão (15 min) |
-| G03 | pendente | Reconciliador (30 min e virada do dia) |
+| G02 | parcial | Sentinela de prontidão (15 min) · avaliarSaudeFiscal cobre a prontidão de documentos; CNH, RNTRC, apólice e certificado ainda não; sem agendamento |
+| G03 | parcial | Reconciliador (30 min e virada do dia) · função saude-fiscal publicada (documento pendente, CT-e sem averbação, MDF-e aberto, CIOT perto de 5 dias, VPO em operação cancelada); comparação com Focus, efrete e NSPEDÁGIO e agendamento pg_cron não feitos |
 | G04 | parcial | Auditor de dinheiro · divergenciasDeValor testada; falta o robô agendado |
-| G05 | pendente | Auditor de segregação e trilha |
+| G05 | parcial | Auditor de segregação e trilha · a estrutura de ator existe (A03) e trilha_auditoria foi criada; o auditor ainda não |
 | G06 | pendente | Simulador noturno `[X]` |
 | G07 | parcial | Disjuntor · disjuntorAberto testado; falta persistir o estado e bloquear emissão |
 | G08 | pendente | Vigia regulatório |
-| G09 | pendente | Tela Saúde fiscal |
+| G09 | parcial | Tela Saúde fiscal · tabela saude_fiscal_achados e a função saude-fiscal existem; falta a tela (quadro 46) |
 | H01 | pendente | Bateria de homologação com evidência |
 | H02 | aguarda o Pedro | Piloto real `[P,$]` · pacote de produção |
 | H03 | aguarda o Pedro | Migrações de segurança do PR #15 `[M,P]` · pacote de produção |

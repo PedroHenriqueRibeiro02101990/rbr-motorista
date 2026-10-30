@@ -19,6 +19,7 @@ Ver `docs/CHECKLIST-BACK.md` (uma linha por ID). Evidências desta sessão:
 | Nome | Hora | Tipo | Rollback | Advisors |
 |---|---|---|---|---|
 | `20261030_01_trilha_campos_metas` | 30/10/2026, após autorização expressa do Pedro | aditiva (em transação) | `docs/rollbacks/20261030-0001-trilha-campos-metas.sql` | segurança: sem alerta novo (6 INFO, 1, 1, 90, 1 = base anterior). Desempenho: só 6 INFO nas tabelas novas (3 FKs sem índice em ator_id/pessoa_id, 3 índices ainda sem uso), nenhum WARN |
+| `20261030_02_estruturas_fluxo` | 30/10/2026 (autorizada) | aditiva (em transação) | `docs/rollbacks/20261030-0002-estruturas-fluxo.sql` | segurança: sem alerta novo (6 INFO, 1, 1, 90, 1 = base); desempenho não relido (as 6 tabelas novas seguem o mesmo padrão da 01) |
 
 Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e `eventos_fiscais_operacao`), A08 (13 colunas anuláveis em `operacoes` + tabela `operacao_alteracoes`), A09 (`trilha_auditoria`), F06 (`metas`). Sem DROP, DELETE ou UPDATE no SQL de aplicação.
 
@@ -29,9 +30,10 @@ Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e
 | cancelar-documento-fiscal | anterior → prazos CT-e 7 dias e MDF-e 24 h/viagem iniciada antes de chamar a Focus (B16/B17) | idem | vazio: HTTP 400; "booted" |
 | nspedagio-vpo | v5 → grava idVpoAntt em operacao_ciot_vpo (origem api) na compra real; limpa no cancelamento com sucesso (B04) | idem | vazio: HTTP 401; "booted". Compra real não repetida nesta rodada |
 | efrete-ciot-operacao | v4 → prazos de cancelar (24 h antes do início) e encerrar (5 dias após o fim previsto; operação de teste dispensada) (B08/B17) | idem | vazio: HTTP 401; "booted" |
+| saude-fiscal | nova (v1) | 30/10/2026 | sem agendamento; chamada com chave anon: HTTP 401 (função sobe e exige gestor). Logs ainda não mostravam a chamada (atraso do conector); a prova de que subiu é a resposta 401 da própria função. Não rodou com gestor logado |
 
 ## 5. Vercel
-Pushes: 0 (tentei 1; **push negado pelo classificador de permissões**, sem explicação). Merges: 0. Deploys da Vercel: 0. **Push pendente (permissão)**: 20 commits locais em `feat/back-implantacao` (inclui os da `feat/nspedagio-etapa1`). Antes do push: build do gestor passando (exit 0), 192 testes passando, varredura de segredos no diff sem achado real.
+Pushes: 1 feito (autorizado pelo Pedro, só a branch `feat/back-implantacao`; o primeiro tinha sido negado pelo classificador). Merges: 0. Deploys da Vercel: não verifiquei se a branch gerou preview (o `ignoreCommand` pula quando só docs/functions mudam). Antes do push: build do gestor passando (exit 0), 192 testes passando, varredura de segredos no diff sem achado real.
 
 ## 6. Decisões pelo padrão e extras
 - Backup (Etapa 0.5): `pitr_enabled=false`, lista de backups vazia (`backups: null`). Sem backup conferido, **o lote de comportamento (A01, A02, A05, A04 completo, A06, B12, C04, C10) fica para o pacote final**, como manda a seção 3.

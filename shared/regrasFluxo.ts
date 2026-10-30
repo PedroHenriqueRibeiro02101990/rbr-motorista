@@ -159,3 +159,47 @@ export function divergenciasDeValor(v: { cotacao: number; cte: number | null; ci
   if (dif(v.financeiro, v.cotacao)) d.push('Valor do financeiro diferente da cotação.')
   return d
 }
+
+// B15: cancelar a operação inteira. Ordem inversa (MDF-e, CIOT, VPO, averbação, CT-e), um passo por vez; só segue se o anterior deu certo.
+// O chamador informa o que existe e se o prazo de cada etapa ainda permite cancelar (ver supabase/functions/_shared/prazos.ts).
+export type EtapaCancelamento = 'mdfe' | 'ciot' | 'vpo' | 'averbacao' | 'cte'
+export type EstadoEtapaCancelamento = { existe: boolean; jaCancelada?: boolean; dentroDoPrazo: boolean; motivoPrazo?: string }
+export type PassoCancelamento = { etapa: EtapaCancelamento; acao: 'cancelar' | 'pular' | 'travar'; motivo?: string }
+const ORDEM_CANCELAMENTO: EtapaCancelamento[] = ['mdfe', 'ciot', 'vpo', 'averbacao', 'cte']
+export function planoDeCancelamentoOperacao(estado: Record<EtapaCancelamento, EstadoEtapaCancelamento>): PassoCancelamento[] {
+  return ORDEM_CANCELAMENTO.map((etapa) => {
+    const e = estado[etapa]
+    if (!e.existe || e.jaCancelada) return { etapa, acao: 'pular' as const, motivo: e.jaCancelada ? 'Já cancelado.' : 'Não existe nesta operação.' }
+    if (!e.dentroDoPrazo) return { etapa, acao: 'travar' as const, motivo: e.motivoPrazo ?? 'Fora do prazo para cancelar.' }
+    return { etapa, acao: 'cancelar' as const }
+  })
+}
+// Executa o plano até o primeiro passo que trava ou falha; devolve o que já foi desfeito e onde parou.
+export function andamentoDoCancelamento(plano: PassoCancelamento[], resultados: Partial<Record<EtapaCancelamento, 'feito' | 'falhou'>>): { feitos: EtapaCancelamento[]; paradoEm: EtapaCancelamento | null; motivo?: string; proximo: EtapaCancelamento | null } {
+  const feitos: EtapaCancelamento[] = []
+  for (const p of plano) {
+    if (p.acao === 'pular') continue
+    if (p.acao === 'travar') return { feitos, paradoEm: p.etapa, motivo: p.motivo, proximo: null }
+    const r = resultados[p.etapa]
+    if (r === 'feito') { feitos.push(p.etapa); continue }
+    if (r === 'falhou') return { feitos, paradoEm: p.etapa, motivo: 'A tentativa de cancelar falhou.', proximo: null }
+    return { feitos, paradoEm: null, proximo: p.etapa }
+  }
+  return { feitos, paradoEm: null, proximo: null }
+}
+
+// B14: emitir até a véspera da coleta (emissão ANTES da chegada do caminhão). Datas em ms; "véspera" = até o fim do dia anterior (Brasília, UTC-3).
+export function dentroDaJanelaDeEmissao(coletaEm: number, agora: number): boolean {
+  const BR = 3 * H
+  const diaColeta = Math.floor((coletaEm - BR) / (24 * H))
+  const diaAgora = Math.floor((agora - BR) / (24 * H))
+  return diaAgora < diaColeta
+}
+
+// B18: documento pendente há mais de 10 min é consultado sozinho; timeout nunca reenvia sem consultar.
+export function deveConsultarSozinho(pendenteDesde: number, agora: number): boolean {
+  return agora - pendenteDesde > 10 * 60_000
+}
+export function podeReenviarAposTimeout(jaConsultou: boolean, existeNoProvedor: boolean | null): boolean {
+  return jaConsultou && existeNoProvedor === false
+}

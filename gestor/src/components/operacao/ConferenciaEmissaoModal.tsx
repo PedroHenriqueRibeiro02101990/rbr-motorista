@@ -437,7 +437,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
   return (
     <div className="rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
       <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] border-b" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)' }}>
-        Preencher agora — CIOT, Vale-Pedágio (portal Repom) e averbação
+        Preencher agora — CIOT, Vale-Pedágio (portal do emissor) e averbação
       </div>
       <div className="p-3 grid gap-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
@@ -453,7 +453,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
           <input className={campo} style={estilo} value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
-          CNPJ da credenciada (Repom)
+          CNPJ da fornecedora do vale-pedágio
           <input className={campo} style={estilo} value={cnpjForn} onChange={(e) => setCnpjForn(e.target.value)} inputMode="numeric" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
