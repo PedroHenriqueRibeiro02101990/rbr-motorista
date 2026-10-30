@@ -131,3 +131,24 @@ B14: aviso amarelo no modal de conferência quando a coleta prevista é hoje ou 
 ## 6p. Devolução do fiscal (D05), alerta do CIOT (D12) e trilha geral (A09)
 
 Migrações aditivas `20261030_10_devolucao_fiscal.sql` e `20261030_11_trilha_status.sql` (aplicadas; rollbacks em `docs/rollbacks/`). D05: `devolver_pelo_fiscal` (teste: item curto recusado; devolução muda o status e avisa 3 pessoas) e botão no painel. D12: o alerta do CIOT passou a usar o fim previsto real. A09: gatilhos AFTER que só inserem na trilha (status da operação; documento emitido ou cancelado); teste em transação descartada gravou 1 registro de status (mudança sem efeito não grava) e 1 de documento. Build ok.
+
+## 6q. Conferência final da fase autônoma (30/10/2026)
+
+- Migração `20261030_12_revoga_trilha_rpc.sql` (aplicada): os advisors mostraram as duas funções de gatilho da trilha chamáveis por `anon` via RPC; revoguei o acesso e confirmei que o gatilho segue gravando (teste como gestor).
+- Advisors de segurança: 6 INFO, 1 WARN (extensão), 1 WARN anon (pré-existente; as 2 novas saíram), 103 WARN de função definer para logados (eram 90: +13 das RPCs novas, todas com checagem interna de papel) e 1 de senha vazada (pré-existente, é configuração do painel).
+- Papéis (gestores, comercial, operação, fiscal, financeiro): sem mudança em relação ao teste do lote.
+- Builds: gestor, motorista e agenciador passam (instalei as dependências dos dois últimos). Testes: 218 passam.
+- Varredura de segredos no que ainda não foi enviado: nada encontrado. Nenhum push feito nesta fase (9 commits locais depois de `9599e2e`).
+
+## 7. Resumo final da implantação
+
+1. **Feito (30 itens):** lote de papéis aplicado e verificado; estado finalizando com aviso; sino e central de avisos; busca com "ocultos pela função"; Início por função; cancelar a operação inteira; link público de aceite; assumir; devolução do fiscal; trilha geral; auditores de segregação e dinheiro agendados (30 min); disjuntor persistido; pré-voo único com botão por etapa; avisos de janela, validade e prazo do CIOT.
+2. **Parcial (39):** regras prontas e testadas mas sem tela ou sem execução (troca de motorista e veículo, carta de correção, níveis A a D das alterações, checklist de completar, ocorrência em rota, metas, margem do vendedor), e itens em que falta só uma peça (por exemplo bloquear a emissão com o disjuntor aberto).
+3. **Pendente (20):** itens grandes ou que mexem na emissão: Averba automática, vários municípios no MDF-e, várias NF-e no CIOT, pedágio estimado na cotação, PDF da proposta, e-mail do envio, equipe e convites, relatório comercial, simulador noturno, vigia regulatório.
+4. **Depende de você:** merge na main (precisa de um push, e o limite diário de 4 já foi usado hoje); H02, H03, H04, H08 e H09 (produção, PR #15, texto da Allianz, reunião da NSTech); respostas do Alan, da NSTech, do Antonio (NSPEDÁGIO), da Focus e da corretora; decidir se a janela de emissão e o disjuntor passam a bloquear a emissão no servidor.
+5. **Depende de você (dados):** os 272 coeficientes oficiais da Portaria SUROC 22/2026 (C10); abrir a tela do gestor a outros papéis (hoje só entra quem é gestor, em `App.tsx`); cadastrar quem tem a função fiscal (hoje os avisos vão só aos 3 gestores).
+6. **Depende de você (agendamento):** agendar o robô TypeScript `saude-fiscal` exige publicá-lo sem JWT e usar o segredo do Vault (mesmo padrão do sincronizador de documentos); deixei só leitura manual pela tela.
+7. **Não testado no navegador:** todas as telas novas (build e regras testados, mas nenhuma foi aberta).
+8. **Nada real foi emitido, cancelado ou pago** nesta fase; os testes de banco rodaram em transações descartadas.
+9. **Rollbacks:** cada migração tem o seu em `docs/rollbacks/`; a ordem inversa desfaz tudo (12 até 01).
+10. **Prazo:** o CIOT vira obrigatório no MDF-e em 23/11/2026; antes disso o `emitir-mdfe` só avisa.
