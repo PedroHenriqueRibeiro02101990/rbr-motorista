@@ -174,3 +174,12 @@ Migrações aditivas `20261030_10_devolucao_fiscal.sql` e `20261030_11_trilha_st
 - **Parcial (37):** regra pronta e testada, falta tela, execução ou uma peça: troca de motorista e veículo, carta de correção, níveis A a D, completar e enviar ao fiscal, margem do vendedor, metas atingidas, escalonamento de avisos, robô agendado do `saude-fiscal`, bloqueio de emissão com disjuntor, janela e apólice.
 - **Pendente (20):** itens grandes ou que mexem na emissão (Averba automática, vários municípios no MDF-e, várias NF-e no CIOT, pedágio estimado, PDF da proposta, e-mail do envio, equipe e convites, simulador noturno, vigia regulatório).
 - **Depende do Pedro (5 aguardando):** H02, H03, H04, H08 e H09; respostas externas (Alan, NSTech, Antonio, Focus, corretora); os 272 coeficientes da Portaria SUROC 22/2026; decidir se janela, apólice e disjuntor passam a bloquear a emissão no servidor; testar as telas novas no navegador com as contas de teste.
+
+## 11. Front aprovado (branch feat/front-aprovado)
+
+Aplicação dos visuais de `docs/visuais-aprovados` no gestor, só apresentação (lógica e dados reais intactos). Financeiro não foi redesenhado (sem visual); só herda as cores e a fonte novas.
+
+- Feito: paleta e fonte (Plus Jakarta Sans), menu lateral (Início, Serviços, Financeiro, Cadastros, Mais), barra superior com busca (Ctrl K), sino e avatar, Início (saudação, números, mapa, painel Agora), Serviços (lista com filtros e funil), seletor Cotação/Operação/Fiscal, Central de avisos, Busca, botões primários em azul-marinho.
+- Não feito de propósito: selo "Homologação · nenhum documento real" (seria falso: operação de teste emite documento real na SEFAZ); coluna de margem por vendedor, metas da equipe e IA na busca (não há dado/regra ligada).
+- Telas profundas de Operações, Fiscal, Equipe e Cadastros mantêm o desenho antigo por dentro, com a paleta nova. Detalhes na lista final entregue ao Pedro.
+- Nada foi testado no navegador; só `npm run build` (exit 0) e os testes unitários.

@@ -59,7 +59,7 @@ export default function NavegacaoServico({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <nav aria-label="Seções deste serviço" className="flex items-center gap-1 flex-wrap">
+      <nav aria-label="Seções deste serviço" className="flex items-center gap-1 flex-wrap p-1 rounded-xl self-start" style={{ background: '#e9ecf4' }}>
         {destinos.map((d) => {
           const desligado = !d.atual && !d.url && d.escolhas.length === 0
           return (
@@ -70,11 +70,11 @@ export default function NavegacaoServico({
               disabled={desligado}
               title={desligado && d.motivo ? d.motivo : undefined}
               onClick={() => aoClicar(d)}
-              className="text-xs font-bold px-3.5 py-1.5 rounded-lg border disabled:opacity-45 disabled:cursor-not-allowed"
+              className="text-[13px] font-bold px-4 py-1.5 rounded-lg disabled:opacity-45 disabled:cursor-not-allowed"
               style={
                 d.atual
-                  ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' }
-                  : { borderColor: 'var(--rbr-border)', color: 'var(--rbr-navy)' }
+                  ? { background: '#1c2559', color: '#fff' }
+                  : { color: '#4a5275' }
               }
             >
               {d.rotulo}
