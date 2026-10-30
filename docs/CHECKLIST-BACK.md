@@ -12,7 +12,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | A06 | feito | Reemissão com versões · LOTE APLICADO: versões por gatilho em documentacao_operacao_versoes; UNIQUE mantido de propósito (as funções de emissão fazem upsert por operacao_id,tipo) |
 | A07 | feito | Carteira individual de clientes · LOTE APLICADO em 30/10 e testado por papel: clientes.vendedor_id, políticas da carteira do comercial, RPC transferir_carteira com motivo |
 | A08 | parcial (colunas e histórico criados; falta usar nas telas) | Campos novos em operacoes `[M]` · mesma migração 20261030_01 |
-| A09 | parcial (tabela criada; falta gravar os eventos) | Trilha de auditoria geral `[M]` · tabela trilha_auditoria na migração 20261030_01 |
+| A09 | feito | Trilha de auditoria geral · gatilhos gravam em trilha_auditoria toda mudança de status de operação e todo documento fiscal emitido ou cancelado (quem, papel, origem, antes e depois); testado em transação descartada |
 | A10 | parcial | Limpar Repom · textos visíveis trocados (efrete, NSPEDÁGIO); o valor legado rbr_repom do banco e as funções vpoProvedor/repom ficam: mexer na restrição é lote |
 | B01 | feito | Testar token do NSPEDÁGIO `[X]` · token e leituras do PC e pela função publicada, 29/10 (docs-privado) |
 | B02 | feito | Função nspedagio_segredo `[M]` · migração 20261029_01 aplicada |
@@ -30,7 +30,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B14 | parcial | Janela de emissão · aviso amarelo no modal Conferir antes de emitir quando a coleta prevista é hoje ou já passou (AvisoJanelaEmissao); é aviso e não trava; falta decidir com você se vira bloqueio |
 | B15 | parcial | Cancelar a operação inteira · modal Cancelar a operação inteira (quadro 56) ligado ao aviso de documento emitido em Operações: MDF-e, CIOT, vale-pedágio, averbação (trava e manda cancelar na seguradora), CT-e e por fim a operação; para no primeiro que trava ou falha e grava cada passo em operacao_cancelamento_passos; prazos conferidos pelo servidor em cada passo; build ok; NÃO executado (cancelamento real só com confirmação); não testado no navegador |
 | B16 | pendente | Cancelar MDF-e com conferência |
-| B17 | parcial | prazos.ts ligado em cancelar-documento-fiscal e efrete-ciot-operacao; falta VPO e telas
+| B17 | feito | Tabela única de prazos · prazos.ts ligado em cancelar-documento-fiscal e efrete-ciot-operacao; vigência máxima de 15 dias do vale-pedágio já validada em validarCompra (nspedagioClient, com teste); telas mostram o aviso que o servidor devolve |
 | B18 | parcial | Idempotência geral · deveConsultarSozinho e podeReenviarAposTimeout testadas; efrete e NSPEDÁGIO já consultam antes de recomprar; falta o robô de 10 min |
 | C01 | pendente | Averbação automática e confiável `[X]` |
 | C02 | parcial | Troca de motorista · planoDeTroca (motorista M0 a M3) codificado e testado; falta tela e execução (depende do lote C04 e respostas NSTech) |
@@ -49,18 +49,18 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | D02 | feito | Assumir a operação · RPCs assumir_operacao e largar_operacao (tomar de outra pessoa exige motivo e vai para a trilha; testado por papel em transação descartada) e botão Assumir/Tomar/Largar no painel da operação; não testado no navegador |
 | D03 | parcial | Completar e enviar ao fiscal · checklistCompletar (11 itens) testado; falta ligar ao botão Enviar ao fiscal |
 | D04 | parcial | Alterações níveis A a D · nivelDaAlteracao A a D testado; a tabela operacao_alteracoes já existe; falta ligar às edições |
-| D05 | parcial | Devolvida pelo fiscal · tabela operacao_devolucoes_fiscal criada; falta a tela e o aviso a quem errou |
+| D05 | feito | Devolvida pelo fiscal · RPC devolver_pelo_fiscal (item e motivo obrigatórios; só enquanto aguarda a liberação do fiscal; grava em operacao_devolucoes_fiscal; aviso vai a quem alocou, senão a quem gerou, e aos gestores) e botão Devolver no painel da operação; testada em transação descartada; não testado no navegador |
 | D06 | pendente | Gestor libera a ordem de coleta |
 | D07 | pendente | Liberar o caminhão |
 | D08 | pendente | Registrar a entrega |
 | D09 | pendente | Finalizar a operação |
 | D10 | parcial | Ocorrência em rota · fluxoDaOcorrencia testado; incidentes_carga já existe; falta tela quadro 49 |
 | D11 | parcial | Lote de viagens · lote por grupo_saida_id e sequencia já existe na lista de Operações |
-| D12 | parcial | Alertas de prazo da viagem · alertas de entrega vencida e de MDF-e perto de 30 dias no painel da operação; falta o do CIOT (fim previsto não vem no detalhe) |
+| D12 | feito | Alertas de prazo da viagem · painel da operação alerta entrega vencida, CIOT perto de 5 dias do fim previsto e MDF-e perto de 30 dias (agora com o fim previsto do CIOT lido de operacao_ciot_vpo); não testado no navegador |
 | D13 | feito | Operação vê o valor ao cliente · não há restrição de valor ao cliente para gestor/operação hoje; nada a construir |
 | F01 | parcial | Sino e central de avisos · sino com contagem de não lidos no menu (atualiza a cada minuto) e página Avisos; hoje só o aviso de finalização gera item; não testado no navegador |
 | F02 | parcial | Todo aviso tem botão que resolve · central de avisos (/avisos) com marcar como lido e link para a operação; RPC marcar_aviso_lido aplicada; falta filtros e outros tipos de aviso |
-| F03 | parcial | Aviso vai a quem errou · destinoDoAviso e escalonamento (2 h gestor; 4 h e-mail desligado) testados; falta ligar ao sino |
+| F03 | parcial | Aviso vai a quem errou · a devolução do fiscal já avisa quem errou (destinoDoAviso) além dos gestores, e o disjuntor avisa os gestores; falta o escalonamento de 2 h e 4 h (robô agendado) |
 | F04 | parcial | Busca com IA · página Busca (/busca) em clientes, cotações e operações pelas políticas da própria pessoa, com "N resultados ocultos pela sua função" (RPC busca_contagens devolve só números; testada: comercial vê 0 de 2); a interpretação de frase livre por IA NÃO foi feita; não testada no navegador |
 | F05 | parcial | Início por função com mapa · Início com seletor Ver como (Geral, Comercial, Operação, Fiscal, Financeiro): mostra mapa, caixa e comercial conforme a função e atalhos; a função vem de funcoes_pessoa; a tela do gestor segue só para o papel gestor (App.tsx), então os outros papéis ainda não entram nela; não testado no navegador |
 | F06 | parcial | Metas · estrutura de metas criada no banco (vendas ligadas; Operação e Fiscal desligadas, com indicadores de exemplo); falta tela |

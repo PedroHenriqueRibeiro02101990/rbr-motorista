@@ -127,3 +127,7 @@ Migração aditiva `20261030_08_auditores.sql` (aplicada; rollback em `docs/roll
 ## 6o. Avisos de janela e validade (B14, E12) e Assumir (D02)
 
 B14: aviso amarelo no modal de conferência quando a coleta prevista é hoje ou passou (não trava). E12: aviso "Validade vencida há N dias" na lista de Cotação. D02: migração aditiva `20261030_09_assumir.sql` (aplicada; rollback em `docs/rollbacks/20261030-0009-assumir.sql`) com `assumir_operacao` e `largar_operacao`; teste por papel em transação descartada: assumiu, tomar sem motivo foi recusado, tomar com motivo funcionou. Botão no painel da operação. Build ok; nada testado no navegador.
+
+## 6p. Devolução do fiscal (D05), alerta do CIOT (D12) e trilha geral (A09)
+
+Migrações aditivas `20261030_10_devolucao_fiscal.sql` e `20261030_11_trilha_status.sql` (aplicadas; rollbacks em `docs/rollbacks/`). D05: `devolver_pelo_fiscal` (teste: item curto recusado; devolução muda o status e avisa 3 pessoas) e botão no painel. D12: o alerta do CIOT passou a usar o fim previsto real. A09: gatilhos AFTER que só inserem na trilha (status da operação; documento emitido ou cancelado); teste em transação descartada gravou 1 registro de status (mudança sem efeito não grava) e 1 de documento. Build ok.
