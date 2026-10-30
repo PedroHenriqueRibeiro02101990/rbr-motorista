@@ -9187,6 +9187,36 @@ export type Database = {
         }
         Relationships: []
       }
+      saude_fiscal_achados: {
+        Row: {
+          criado_em: string
+          gravidade: string
+          id: string
+          mensagem: string
+          operacao_id: string | null
+          resolvido_em: string | null
+          robo: string
+        }
+        Insert: {
+          criado_em?: string
+          gravidade: string
+          id?: string
+          mensagem: string
+          operacao_id?: string | null
+          resolvido_em?: string | null
+          robo: string
+        }
+        Update: {
+          criado_em?: string
+          gravidade?: string
+          id?: string
+          mensagem?: string
+          operacao_id?: string | null
+          resolvido_em?: string | null
+          robo?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       pontuacao_saldo: {

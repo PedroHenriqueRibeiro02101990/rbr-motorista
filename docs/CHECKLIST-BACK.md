@@ -4,13 +4,13 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 
 | ID | Status | Nota |
 |---|---|---|
-| A01 | pendente | Papéis por login `[M]` |
-| A02 | pendente | Segregação de funções |
+| A01 | pendente | Papéis por login · LOTE PRONTO E NÃO APLICADO (aplicação negada pelo classificador): enum com comercial/operacao/fiscal/financeiro, tabela funcoes_pessoa, tem_funcao(); validado em transação descartada com rollback idêntico ao estado anterior |
+| A02 | pendente | Segregação de funções · LOTE PRONTO E NÃO APLICADO: gatilho de segregação (quem gerou ou alocou não emite; gestor é exceção) e colunas gerada_por/alocada_por |
 | A03 | parcial (colunas criadas; falta gravar nas funções) | Ator em tudo `[M]` · supabase-migrations/20261030_01_trilha_campos_metas.sql (aplicação negada pelo classificador) |
-| A04 | parcial | Status novos da operação `[M]` · alocando_motorista e aguardando_liberacao_fiscal já existem no banco; faltam os demais |
-| A05 | pendente | Operação avança em nome do motorista `[M]` |
-| A06 | parcial | Reemissão com versões · proximaRef (rbr-mdfe-op-v2) em shared/regrasFluxo.ts; o UNIQUE e a tabela de versões ficam no lote de comportamento |
-| A07 | pendente | Carteira individual de clientes `[M]` |
+| A04 | pendente | Status novos da operação · LOTE PRONTO E NÃO APLICADO: 10 status novos no enum (finalizando, em_viagem, finalizada, etc.) |
+| A05 | pendente | Operação avança em nome do motorista · LOTE PRONTO E NÃO APLICADO: RPC avancar_em_nome_do_motorista com trilha |
+| A06 | pendente | Reemissão com versões · LOTE PRONTO E NÃO APLICADO: versões por gatilho em documentacao_operacao_versoes; UNIQUE mantido de propósito (as funções de emissão fazem upsert por operacao_id,tipo) |
+| A07 | pendente | Carteira individual de clientes · LOTE PRONTO E NÃO APLICADO: clientes.vendedor_id, políticas da carteira do comercial, RPC transferir_carteira com motivo |
 | A08 | parcial (colunas e histórico criados; falta usar nas telas) | Campos novos em operacoes `[M]` · mesma migração 20261030_01 |
 | A09 | parcial (tabela criada; falta gravar os eventos) | Trilha de auditoria geral `[M]` · tabela trilha_auditoria na migração 20261030_01 |
 | A10 | parcial | Limpar Repom · textos visíveis trocados (efrete, NSPEDÁGIO); o valor legado rbr_repom do banco e as funções vpoProvedor/repom ficam: mexer na restrição é lote |
@@ -25,7 +25,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B09 | feito | ciotEfreteSemValidade em mdfe.ts: CIOT da efrete só vale com status emitido (bloqueia em produção real); 20 testes; emitir-mdfe publicada. Falta checar VPO ativo
 | B10 | pendente | CIOT com várias NF-e |
 | B11 | parcial | Finalizar viagem · Finalizar viagem encerra MDF-e e CIOT e refaz só o que faltou (finalizacao.ts, 2 testes, build ok); estado finalizando e aviso ao fiscal dependem do lote A04; não testado no navegador |
-| B12 | pendente | Remover o encerramento automático `[M]` |
+| B12 | pendente | Remover o encerramento automático · LOTE PRONTO E NÃO APLICADO: drop do gatilho trg_encerrar_mdfe_na_entrega (rollback o recria) |
 | B13 | parcial | Pré-voo único e esteira · esteira com não se aplica e motivo ligada ao detalhe da operação (teste); falta pré-voo único e botão por etapa |
 | B14 | parcial | Janela de emissão · dentroDaJanelaDeEmissao (até a véspera, Brasília) testada; falta ligar ao botão de emitir |
 | B15 | parcial | Cancelar a operação inteira · planoDeCancelamentoOperacao/andamentoDoCancelamento testados e tabela operacao_cancelamento_passos criada; falta a função que executa e a tela (quadro 56) |
@@ -35,7 +35,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | C01 | pendente | Averbação automática e confiável `[X]` |
 | C02 | parcial | Troca de motorista · planoDeTroca (motorista M0 a M3) codificado e testado; falta tela e execução (depende do lote C04 e respostas NSTech) |
 | C03 | pendente | Inclusão de condutor completa |
-| C04 | parcial | Troca de veículo · planoDeTroca (veículo M0 a M3, eixos diferentes = nível A) codificado e testado; troca de gatilhos fica no lote |
+| C04 | pendente | Troca de veículo · LOTE PRONTO E NÃO APLICADO: trocar só a carreta manda refazer o CIOT; o plano de troca já está testado em regrasFluxo.ts |
 | C05 | parcial | Correções de documentos · cartaCorrecaoPermitida (20 cartas; sem valores, partes, datas) testada; falta tela e chamada Focus |
 | C06 | parcial | Mesma NF-e em duas operações · RPC nfes_em_outra_operacao já existe no banco; falta confirmar com o Alan a remessa parcial |
 | C07 | parcial | Várias NF-e na mesma operação · várias NF-e já somam peso e valor no pré-voo e no CIOT; conferido por leitura do código |
@@ -87,7 +87,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | G06 | pendente | Simulador noturno `[X]` |
 | G07 | parcial | Disjuntor · disjuntorAberto testado; falta persistir o estado e bloquear emissão |
 | G08 | pendente | Vigia regulatório |
-| G09 | parcial | Tela Saúde fiscal · tabela saude_fiscal_achados e a função saude-fiscal existem; falta a tela (quadro 46) |
+| G09 | parcial | Tela Saúde fiscal · página Saúde fiscal criada (menu + /saude-fiscal): lista os achados em aberto, cor geral e botão Verificar agora (chama saude-fiscal); build ok; não testada no navegador |
 | H01 | parcial | Bateria de homologação com evidência · rodado em 30/10 em homologação: VPO ciclo completo (compra, timeout, recibo, cancelamento com sucesso explícito); CIOT emitir, consultar, PDF e cancelar em 29/10. O resto da bateria (troca de motorista e veículo, carta de correção, várias NF-e, 2 notas no CIOT, timeouts simulados) não foi rodado |
 | H02 | aguarda o Pedro | Piloto real `[P,$]` · pacote de produção |
 | H03 | aguarda o Pedro | Migrações de segurança do PR #15 `[M,P]` · pacote de produção |

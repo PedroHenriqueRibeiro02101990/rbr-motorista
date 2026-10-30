@@ -57,6 +57,15 @@ Consulta pelo conector Supabase (query_logs, tabela `logs`, `source = 'function_
 ## 6e. Para a pergunta ao Antonio (NSPEDÁGIO)
 Em 30/10 o cancelamento deu **sucesso explícito** (`SUCESSO_CANCELAR_VIAGEM`) na 1ª tentativa, depois de a viagem já estar confirmada no recibo. Em 29/10 a 1ª tentativa (17:47) deu `FALHA_CANCELAMENTO_VIAGEM` logo após a compra lenta. Hipótese a confirmar com ele: cancelar enquanto a compra ainda está sendo processada falha; depois de confirmada, cancela.
 
+## 6f. Lote de comportamento (autorizado em 30/10, NÃO aplicado)
+- Arquivos: `supabase-migrations/20261030_03_lote_comportamento.sql` e rollback `docs/rollbacks/20261030-0003-lote-comportamento.sql`.
+- Teste ANTES (set local role, transação descartada): os 3 gestores (Pedro, José Carlos, José Eduardo) enxergam 100% de 13 tabelas (operacoes 8/8, clientes 7/7, cotacoes 15/15, documentacao_operacao 48/48, lancamentos 72/72, vpo_requisicoes 16/16 etc.); usuário comum enxerga 0.
+- Rollback testado: lote + rollback numa transação descartada devolveram exatamente o estado anterior (colunas 2024, funções 253, políticas 210, gatilhos 131, tabelas 145).
+- Risco evitado na revisão: a política nova de operacoes lia clientes e uma política existente de clientes lê operacoes (recursão de políticas); troquei por função auxiliar.
+- Desvio do documento (A06): o UNIQUE de documentacao_operacao foi mantido porque 4 funções de emissão usam upsert onConflict por operacao_id,tipo; o histórico vai por gatilho.
+- C10 (dados da Portaria SUROC 22/2026) fora do lote: faltam os 272 coeficientes oficiais.
+- **Aplicação negada pelo classificador ([Production Deploy])**, mesmo com a autorização escrita pelo Pedro. Nada do lote está no banco. Falta: aplicar, repetir o teste de papéis (script scratchpad/teste-papeis.cjs post), advisors, fumaça nas funções e só então o merge.
+
 ## 7. Incidentes
 - Push da branch negado pelo classificador (a autorização do Pedro cobria deploy de funções, db query e migrações, não git push). Aguardando regra `Bash(git push:*)` ou o push feito por ele.
 - O `tsc` que reportei como passando após o commit ecc2cd3 estava lendo cache: o build completo ainda falhava porque `shared/database.types.ts` não tinha a tabela `vpo_requisicoes`. Corrigido (tipo adicionado); `npm run build` do gestor agora termina com exit 0. Lição: só conto como verde o `npm run build`.
