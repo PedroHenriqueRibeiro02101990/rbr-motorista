@@ -18,7 +18,7 @@ type CiotRow = {
 }
 type AlertaCiot = { codigo: string; gravidade: 'bloqueia' | 'atencao'; limite: string | null; mensagem: string }
 
-export const ORIGEM_LABEL: Record<OrigemCiot, string> = { rbr_repom: 'RBR gera na Repom', parceiro: 'CIOT do parceiro (ETC)', efrete: 'RBR gera na efrete' }
+export const ORIGEM_LABEL: Record<OrigemCiot, string> = { rbr_repom: 'RBR gera (preenchido à mão)', parceiro: 'CIOT do parceiro (ETC)', efrete: 'RBR gera na efrete' }
 export const STATUS_CIOT_LABEL: Record<string, string> = {
   pendente: 'Pendente',
   emitido: 'Emitido',

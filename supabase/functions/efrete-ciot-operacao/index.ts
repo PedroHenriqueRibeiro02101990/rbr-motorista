@@ -11,6 +11,7 @@
 // Trava: nesta fase só roda na homologação (dev.efrete.com.br).
 // Trava da operação: com a efrete em homologação, só operação marcada como teste (eh_teste) chama a efrete (travaEfreteOperacao).
 
+import { podeCancelarCiot, podeEncerrarCiot } from "../_shared/prazos.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { carregarConfigDoVault, criarClienteEfrete, type ConfigEfrete } from "../_shared/efreteClient.ts";
@@ -321,7 +322,7 @@ function repositorio(operacaoId: string, previa: PreviaCiot, ator: Ator, confirm
     },
     async marcarEmitido(ref, e, resumo) {
       const agora = new Date().toISOString();
-      const c = separarCiot(e.ciot);
+      const c = separarCiot(e.ciot, AMBIENTE);
       if (!c) throw new Error(`CIOT em formato inesperado: ${e.ciot}`);
       const { data: atual } = await admin.from("efrete_ciot_pedidos").select("id, protocolo, resumo_retorno, data_inicio_viagem, data_fim_viagem").eq("id_operacao_cliente", ref).single();
       const protocolo = atual?.protocolo ?? e.protocolo;

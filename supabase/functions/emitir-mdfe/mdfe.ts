@@ -15,6 +15,8 @@
 //   dispensa de teste; em homologacao, aviso. "relaxar" deixou de existir (teste e homologacao sao separados).
 
 // deno-lint-ignore no-explicit-any
+import { ciotObrigatorioNoMdfe } from "../_shared/prazos.ts";
+
 type Linha = Record<string, any>;
 
 // Origem de cada regra (C1, 2026-10-15). Bloqueia só o que é regra real:
@@ -97,6 +99,19 @@ export function cepCarregamentoDe(
   if (daNota.length === 8) return daNota;
   const remetenteEhRbr = digitos(remetenteCnpj).length === 14 && digitos(remetenteCnpj) === digitos(emitenteCnpj);
   return remetenteEhRbr && digitos(cepRbr).length === 8 ? digitos(cepRbr) : daNota || null;
+}
+
+// B09: CIOT emitido pela efrete só vale no MDF-e enquanto estiver 'emitido' (cancelado, encerrado ou com erro não vale).
+// CIOT sem origem efrete (registro manual) não é avaliado aqui.
+export function ciotEfreteSemValidade(origem: unknown, status: unknown): string | null {
+  if (origem !== "efrete") return null;
+  const st = String(status ?? "");
+  return st === "emitido" ? null : `O CIOT da efrete está '${st || "sem status"}': só vale no MDF-e com status 'emitido'.`;
+}
+
+// CIOT ausente só bloqueia o MDF-e real depois de 23/11/2026 (rejeição 684); antes disso vira aviso.
+export function ciotAusenteBloqueia(agora: number, teste: boolean, homologacao: boolean): boolean {
+  return !teste && !homologacao && ciotObrigatorioNoMdfe(agora);
 }
 
 export function digitos(v: unknown): string {
@@ -365,7 +380,7 @@ export function montarMdfe(
   const ciotNum = ciotDeHomologacao ? "" : digitos(ciotVpo?.ciot);
   if (ehTac && ciotNum.length !== 12) {
     const msgCiot =
-      "CIOT não informado (12 dígitos) — gere no portal da Repom e preencha aqui. Obrigatório quando o veículo é de transportador autônomo (TAC).";
+      "CIOT não informado (12 dígitos) — emita o CIOT pela efrete (ou preencha aqui o do portal do emissor). Obrigatório quando o veículo é de transportador autônomo (TAC).";
     if (teste) {
       // Dispensa de teste (decisão do Pedro por causa da trava da Repom), não regra regulatória: a ANTT exige
       // CIOT do TAC (Portaria SUROC 6/2026) em operação real.
@@ -379,9 +394,9 @@ export function montarMdfe(
   const idvpo = digitos(ciotVpo?.vpo_idvpo);
   const vpoValor = ciotVpo?.vpo_valor != null ? Number(ciotVpo.vpo_valor) : null;
   if (d.cotacao.pedagio > 0) {
-    if (!idvpo) bloqueio("antt", "Vale-Pedágio (IDVPO) não informado — a rota tem pedágio e o VPO é obrigatório (Lei 10.209/2001). Compre na Repom e preencha o IDVPO.");
+    if (!idvpo) bloqueio("antt", "Vale-Pedágio (IDVPO) não informado — a rota tem pedágio e o VPO é obrigatório (Lei 10.209/2001). Compre o vale-pedágio (NSPEDÁGIO) e preencha o IDVPO.");
     if (idvpo && !vpoValor) bloqueio("sefaz", "Valor do Vale-Pedágio não informado.");
-    if (idvpo && !ciotVpo?.vpo_cnpj_fornecedora) bloqueio("sefaz", "CNPJ da empresa fornecedora do Vale-Pedágio (Repom) não informado.");
+    if (idvpo && !ciotVpo?.vpo_cnpj_fornecedora) bloqueio("sefaz", "CNPJ da empresa fornecedora do Vale-Pedágio não informado.");
   }
   const eixosCombinacao = (v?.quantidade_eixos ?? 0) + d.reboques.reduce((s, r) => s + (r.quantidade_eixos ?? 0), 0) || null;
 

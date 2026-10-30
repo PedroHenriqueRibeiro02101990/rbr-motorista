@@ -6,6 +6,7 @@ import { formatMoney, formatDate, STATUS_OPERACAO_LABEL } from '@rbr/shared/form
 import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../components/financeiro/ui'
+import CancelarOperacaoInteira from '../components/operacao/CancelarOperacaoInteira'
 import { useConfirmacao } from '../components/Confirmacao'
 import PainelPendencias from '../components/PainelPendencias'
 import OperacaoFluxo from '../components/operacao/OperacaoFluxo'
@@ -15,6 +16,7 @@ import MotoristasSugeridos, { AvisoCargasAguardando, carregarCargasAguardando, t
 import type { AssessoriaContato } from '../lib/operacaoDetalhe'
 import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
+import { ordenarFila } from '@rbr/shared/regrasOperacao'
 import NavegacaoServico from '../components/NavegacaoServico'
 import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
 import { FILTROS_VAZIOS, SEM_MOTORISTA, passaFiltrosLista, temFiltro, type FiltrosLista } from '../lib/listaOperacoes'
@@ -165,6 +167,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [extras, setExtras] = useState<Record<string, { sequencia: number | null; grupo: string | null; total: number | null }>>({})
   const [cancelFeito, setCancelFeito] = useState(false)
   const [cancelando, setCancelando] = useState<OperacaoEnriquecida | null>(null)
+  const [cancelarTudoOp, setCancelarTudoOp] = useState<string | null>(null)
   const [bloqueioCancel, setBloqueioCancel] = useState<{ documentos: { tipo: string; status: string; numero: string | null }[]; ordem: string } | null>(null)
   const { confirmacao: confCancel, rodar: rodarCancel, ocupado: ocupadoCancel } = useConfirmacao()
   const { confirmacao: confIndicacao, rodar: rodarIndicacao, ocupado: ocupadoIndicacao } = useConfirmacao()
@@ -624,6 +627,9 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       const placa = op.veiculo_id ? placaDe.get(op.veiculo_id) : null
       return casaBusca(busca, { texto, placas: placa ? [placa] : [], nfes: nfesPorOp[op.id] ?? [] })
     })
+    // D01: coleta mais próxima primeiro (operação sem data de coleta vai para o fim); a ordenação é estável.
+    const ordemFila = new Map(ordenarFila(filtradas.map((op) => ({ id: op.id, coletaEm: op.coleta_prevista ? Date.parse(op.coleta_prevista) : null, esperandoDesde: Date.parse(op.updated_at) })), Date.now()).map((i, n) => [i.id, n]))
+    filtradas.sort((a, b) => (ordemFila.get(a.id) ?? 0) - (ordemFila.get(b.id) ?? 0))
     // Operações da mesma saída conjunta ficam juntas (na posição da primeira).
     const grupos = new Map<string, OperacaoEnriquecida[]>()
     for (const op of filtradas) {
@@ -865,6 +871,9 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 </span>
                 <span className="text-[11px] font-mono text-[color:var(--rbr-muted)] flex-shrink-0">{codigoCurto(op.id)}</span>
                 <span className="text-sm font-bold truncate md:w-[190px] flex-shrink-0">{op.clienteNome ?? 'Cliente a confirmar'}</span>
+                {op.coleta_prevista && !['cancelada', 'fechada', 'entregue'].includes(op.status) && Date.parse(op.coleta_prevista) - Date.now() < 24 * 3_600_000 && (
+                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }} title="Coleta em menos de 24 horas">Urgente</span>
+                )}
                 <span className="text-xs text-[color:var(--rbr-muted)] truncate flex-1 min-w-[140px]">
                   {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
                 </span>
@@ -1407,9 +1416,24 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 <Link to="/fiscal" className="underline font-bold">
                   Ir para Fiscal
                 </Link>
+                {cancelando && (
+                  <button type="button" className="ml-3 underline font-bold" onClick={() => setCancelarTudoOp(cancelando.id)}>
+                    Cancelar tudo na ordem
+                  </button>
+                )}
               </Aviso>
             )}
             {confCancel}
+            {cancelarTudoOp && (
+              <CancelarOperacaoInteira
+                operacaoId={cancelarTudoOp}
+                onFechar={() => setCancelarTudoOp(null)}
+                onFeito={() => {
+                  setCancelFeito(true)
+                  void load()
+                }}
+              />
+            )}
             <div className="flex justify-end gap-2">
               <Botao variante="secundario" onClick={() => setCancelando(null)} disabled={ocupadoCancel}>
                 {cancelFeito ? 'Fechar' : 'Voltar'}

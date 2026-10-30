@@ -6,6 +6,7 @@ import FrotaMap, { type FrotaMapLinha, type FrotaMapPonto } from '@rbr/shared/Fr
 import { COR_SINAL, type CargaMapa, type MotoristaMapa } from '../components/mapa/MapaOperacional'
 import { DetalheMotorista, DetalheViagem } from '../components/inicio/DetalheViagem'
 import { haQuanto, previsaoChegada } from '../components/inicio/util'
+import { blocosDaFuncao, FUNCOES_INICIO, funcaoInicial, type FuncaoInicio } from '../lib/inicioPorFuncao'
 
 // Início = dashboard do dia ao vivo: mapa da frota, coluna "Hoje" e números pequenos de caixa e comercial.
 // As pendências (alocação, fiscal, a pagar, radar) ficam nas telas de cada área, não aqui.
@@ -65,6 +66,40 @@ function Mini({ titulo, para, itens }: { titulo: string; para: string; itens: { 
 
 export default function Inicio() {
   const [painel, setPainel] = useState<Painel | null>(null)
+  // F05: visão por função. Começa pela função da pessoa (se tiver uma só) ou pela última escolha guardada neste navegador.
+  const [visao, setVisao] = useState<FuncaoInicio>(() => {
+    try {
+      return funcaoInicial([], localStorage.getItem('rbr.inicio.visao'))
+    } catch {
+      return 'geral'
+    }
+  })
+  useEffect(() => {
+    let vivo = true
+    void (async () => {
+      try {
+        if (localStorage.getItem('rbr.inicio.visao')) return
+      } catch {
+        /* sem armazenamento: segue */
+      }
+      const { data: eu } = await supabase.rpc('current_pessoa_id')
+      if (!eu) return
+      const { data } = await supabase.from('funcoes_pessoa' as never).select('funcao').eq('pessoa_id', eu).eq('ativo', true)
+      if (vivo) setVisao(funcaoInicial(((data ?? []) as unknown as { funcao: string }[]).map((x) => x.funcao), null))
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [])
+  const blocos = blocosDaFuncao(visao)
+  function escolherVisao(v: FuncaoInicio) {
+    setVisao(v)
+    try {
+      localStorage.setItem('rbr.inicio.visao', v)
+    } catch {
+      /* sem armazenamento: vale só nesta sessão */
+    }
+  }
   const [cargas, setCargas] = useState<CargaMapa[]>([])
   const [motoristas, setMotoristas] = useState<MotoristaMapa[]>([])
   const [carregado, setCarregado] = useState(false)
@@ -204,6 +239,32 @@ export default function Inicio() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Visão por função (F05) */}
+      <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Ver o Início como">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Ver como</span>
+        {FUNCOES_INICIO.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => escolherVisao(f.id)}
+            aria-pressed={visao === f.id}
+            className="text-xs font-bold px-3 py-1.5 rounded-full border"
+            style={visao === f.id ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' } : { background: '#fff', color: 'var(--rbr-navy)', borderColor: 'var(--rbr-border)' }}
+          >
+            {f.rotulo}
+          </button>
+        ))}
+      </div>
+      {blocos.atalhos.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {blocos.atalhos.map((a) => (
+            <Link key={a.para} to={a.para} className="text-sm font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--rbr-navy-tint)', color: 'var(--rbr-navy-dark)' }}>
+              {a.rotulo}
+            </Link>
+          ))}
+        </div>
+      )}
+
       {/* Cabeçalho */}
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
@@ -255,8 +316,8 @@ export default function Inicio() {
       {erro && <div className="text-xs text-[color:var(--rbr-danger)]">Não foi possível atualizar: {erro}</div>}
 
       {/* Mapa + Hoje */}
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5">
-        <section className="relative rounded-[24px] overflow-hidden h-[400px] lg:h-[620px] border" style={{ background: '#F7F8FB', borderColor: 'var(--rbr-border)', boxShadow: '0 12px 40px rgba(30,39,97,0.10)' }}>
+      <div className={blocos.mapa ? 'grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5' : 'grid gap-5'}>
+        <section hidden={!blocos.mapa} className="relative rounded-[24px] overflow-hidden h-[400px] lg:h-[620px] border" style={{ background: '#F7F8FB', borderColor: 'var(--rbr-border)', boxShadow: '0 12px 40px rgba(30,39,97,0.10)' }}>
           <FrotaMap
             pontos={pontos}
             tema="claro"
@@ -392,22 +453,22 @@ export default function Inicio() {
 
       {/* Caixa e Comercial, pequenos */}
       <div className="grid md:grid-cols-2 gap-5">
-        <Mini
+        {blocos.caixa && <Mini
           titulo="Caixa"
           para="/financeiro"
           itens={[
             { rotulo: 'saldo nas contas', valor: caixa ? formatMoney(saldo) : '—', tom: minimo != null && minimo > 0 && saldo < minimo ? 'ruim' : undefined },
             { rotulo: 'previsão em 30 dias', valor: caixa ? formatMoney(projecao30) : '—', tom: projecao30 < 0 ? 'ruim' : undefined },
           ]}
-        />
-        <Mini
+        />}
+        {blocos.comercial && <Mini
           titulo="Comercial"
           para="/cotacao"
           itens={[
             { rotulo: 'cotações no mês', valor: com ? String(n(com.cotacoes_mes)) : '—' },
             { rotulo: 'viraram carga', valor: conversao == null ? '—' : `${conversao}%` },
           ]}
-        />
+        />}
       </div>
     </div>
   )

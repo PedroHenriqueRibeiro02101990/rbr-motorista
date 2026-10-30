@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
 import PreVoo from './PreVoo'
+import AvisoJanelaEmissao from './AvisoJanelaEmissao'
 import { mensagemClara } from '../../lib/mensagemClara'
 
 // Card de conferência que abre ANTES de emitir CT-e ou MDF-e. Pede às próprias funções de emissão o
@@ -310,6 +311,7 @@ export default function ConferenciaEmissaoModal({
 
         <div className="px-5 py-3 overflow-y-auto flex flex-col gap-3">
           <PreVoo operacaoId={operacaoId} tipo={tipo} />
+          <AvisoJanelaEmissao operacaoId={operacaoId} />
           {carregando && <div className="text-xs text-[color:var(--rbr-muted)]">Montando a conferência…</div>}
           {erroCarga && (
             <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
@@ -437,7 +439,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
   return (
     <div className="rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>
       <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] border-b" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-muted-bg)' }}>
-        Preencher agora — CIOT, Vale-Pedágio (portal Repom) e averbação
+        Preencher agora — CIOT, Vale-Pedágio (portal do emissor) e averbação
       </div>
       <div className="p-3 grid gap-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
@@ -453,7 +455,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
           <input className={campo} style={estilo} value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
-          CNPJ da credenciada (Repom)
+          CNPJ da fornecedora do vale-pedágio
           <input className={campo} style={estilo} value={cnpjForn} onChange={(e) => setCnpjForn(e.target.value)} inputMode="numeric" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">

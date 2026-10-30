@@ -103,12 +103,15 @@ export type PropsCartao = {
   onPdf: () => void
   onTransacoes: () => void
   onCancelar: (motivo: string) => Promise<boolean>
+  // B08: encerra o CIOT na efrete (peso total das NF-e). Só aparece com o CIOT emitido.
+  onEncerrar?: () => Promise<boolean>
   onEmitirNovamente: () => void
 }
 
 export default function CartaoCiot(p: PropsCartao) {
   const [confirmando, setConfirmando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
+  const [encerrando, setEncerrando] = useState(false)
   const [reemitindo, setReemitindo] = useState(false)
   const [motivo, setMotivo] = useState('')
   const ped = p.pedido
@@ -301,6 +304,11 @@ export default function CartaoCiot(p: PropsCartao) {
                 Cancelar CIOT
               </button>
             )}
+            {ped.status === 'emitido' && p.onEncerrar && (
+              <button type="button" disabled={ocupado} onClick={() => setEncerrando(true)} className={`${botao} border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>
+                Encerrar CIOT
+              </button>
+            )}
           </div>
           {p.naoCancela && ped.status === 'emitido' && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FDF1DC', color: '#8A5A00' }}>{p.naoCancela}</div>}
           {ped.status === 'emitido' && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#EEF2FF', color: 'var(--rbr-navy)' }}>Próximo passo: <b>MDF-e</b>. É o último documento e leva o CIOT.</div>}
@@ -350,6 +358,17 @@ export default function CartaoCiot(p: PropsCartao) {
         </Modal>
       )}
 
+      {encerrando && (
+        <Modal titulo={`Encerrar CIOT ${ped?.ciot ?? ''}`} onFechar={() => setEncerrando(false)}>
+          <div className="text-xs text-[color:var(--rbr-muted)]">Encerra o CIOT na efrete com o peso total das NF-e da operação. Depois de encerrado, o CIOT não pode mais ser cancelado. Para encerrar a viagem inteira (MDF-e e CIOT) use "Finalizar viagem".</div>
+          <div className="flex justify-end gap-2">
+            <button type="button" disabled={ocupado} onClick={() => setEncerrando(false)} className={`${botao} border`} style={borda}>Voltar</button>
+            <button type="button" disabled={ocupado} onClick={async () => { if (p.onEncerrar && (await p.onEncerrar())) setEncerrando(false) }} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+              {p.ocupado === 'encerrar' ? 'Encerrando…' : 'Confirmar encerramento'}
+            </button>
+          </div>
+        </Modal>
+      )}
       {cancelando && (
         <Modal titulo={`Cancelar CIOT ${ped?.ciot ?? ''}`} onFechar={() => setCancelando(false)}>
           <div className="text-xs text-[color:var(--rbr-muted)]">O cancelamento não pode ser desfeito. Conte o motivo (mínimo 15 caracteres).</div>

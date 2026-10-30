@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { cepCarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const RBR = "69115969000104";
 const CHAVE_CTE = "35261069115969000104570010000000011211536013";
@@ -304,4 +304,21 @@ test("Passo 4: CIOT da homologação da efrete não libera MDF-e em produção (
   const prod = montarMdfe({ ...comum, ciotVpo: { ciot: "560000596706", ciot_ambiente: "producao", numero_averbacao: "AVB-123" } });
   assert.ok(!prod.bloqueios.some((x) => /CIOT/.test(x)));
   assert.equal(prod.payload.modal_rodoviario.ciot[0].ciot, "560000596706");
+});
+
+test("B09: CIOT da efrete só vale com status emitido", () => {
+  assert.equal(ciotEfreteSemValidade("efrete", "emitido"), null);
+  assert.match(String(ciotEfreteSemValidade("efrete", "cancelado")), /cancelado/);
+  assert.match(String(ciotEfreteSemValidade("efrete", "encerrado")), /encerrado/);
+  assert.match(String(ciotEfreteSemValidade("efrete", null)), /sem status/);
+  assert.equal(ciotEfreteSemValidade("rbr_repom", "pendente"), null);
+  assert.equal(ciotEfreteSemValidade(null, null), null);
+});
+
+test("CIOT ausente: aviso antes de 23/11/2026, bloqueio depois (só em produção real)", () => {
+  const antes = Date.UTC(2026, 10, 20), depois = Date.UTC(2026, 10, 24);
+  assert.equal(ciotAusenteBloqueia(antes, false, false), false);
+  assert.equal(ciotAusenteBloqueia(depois, false, false), true);
+  assert.equal(ciotAusenteBloqueia(depois, true, false), false);
+  assert.equal(ciotAusenteBloqueia(depois, false, true), false);
 });

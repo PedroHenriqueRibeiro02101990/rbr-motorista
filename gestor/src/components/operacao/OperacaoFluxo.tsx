@@ -20,12 +20,15 @@ import CiotOperacao from './CiotOperacao'
 import DatasPrevistas from './DatasPrevistas'
 import NfesCliente from './NfesCliente'
 import CiotEfrete from './CiotEfrete'
+import CartaoVpo from './CartaoVpo'
 import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 import RetencaoInss from './RetencaoInss'
 import OrdemColeta from './OrdemColeta'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
 import PreVoo from './PreVoo'
+import AssumirOperacao from './AssumirOperacao'
+import DevolverOperacao from './DevolverOperacao'
 import HistoricoOperacao from './HistoricoOperacao'
 import { abaDaEtapa, sinaisDasAbas, type IdAba, type SinalAba } from '../../lib/abasOperacao'
 import BotaoAcao from './BotaoAcao'
@@ -55,6 +58,8 @@ import {
   type IdEtapa,
 } from '../../lib/etapasOperacao'
 import { mostrarAvisoMudancaDocumento } from '../../lib/avisos'
+import { alertasDePrazo } from '@rbr/shared/regrasOperacao'
+import { etapasNaoSeAplicam } from '../../lib/etapasOperacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 // Detalhe da operação — painel enxuto (2026-10-16): uma linha "Próximo passo", uma linha do tempo só com as etapas que
@@ -145,6 +150,24 @@ export default function OperacaoFluxo({
   const [d, setD] = useState<DetalheOperacao | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [ok, setOk] = useMensagemTemporaria<string>()
+  // D12: fim previsto e situação do CIOT da efrete, para o alerta de prazo de encerramento.
+  const [ciotPrazo, setCiotPrazo] = useState<{ fim: number | null; encerrado: boolean } | null>(null)
+  useEffect(() => {
+    let vivo = true
+    void supabase
+      .from('operacao_ciot_vpo')
+      .select('ciot_origem, ciot_status, ciot_fim_previsto')
+      .eq('operacao_id', operacaoId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!vivo) return
+        const efrete = data?.ciot_origem === 'efrete'
+        setCiotPrazo(efrete && data?.ciot_fim_previsto ? { fim: Date.parse(data.ciot_fim_previsto), encerrado: data.ciot_status !== 'emitido' } : null)
+      })
+    return () => {
+      vivo = false
+    }
+  }, [operacaoId])
   const [salvando, setSalvando] = useState(false)
   const [pedido, setPedido] = useState<PedidoConformidade>(null)
   const [fichaAberta, setFichaAberta] = useState(false)
@@ -249,7 +272,7 @@ export default function OperacaoFluxo({
                   </span>
                   <span className="text-xs text-[color:var(--rbr-muted)]">Alternativa se a efrete estiver fora do ar</span>
                 </div>
-                <BotaoAcao rotulo="Dados para a Repom" fazer={() => navigator.clipboard.writeText(textoCopia(dadosMotoristaVeiculo(d))).then(() => 'Dados copiados.')} />
+                <BotaoAcao rotulo="Dados para o CIOT e o VPO" fazer={() => navigator.clipboard.writeText(textoCopia(dadosMotoristaVeiculo(d))).then(() => 'Dados copiados.')} />
                 {docEtapa('ciot').aberto}
               </div>
             </div>
@@ -354,6 +377,33 @@ export default function OperacaoFluxo({
           A origem ou o destino mudou em {formatDateTime(o.tipo_documento_mudou_em)} e o documento ao cliente foi recalculado. Confira antes de emitir.
         </div>
       )}
+      {(() => {
+        // D12: passou da entrega prevista sem finalizar; CIOT perto dos 5 dias; MDF-e perto dos 30 dias.
+        const mdfe = d.documentos.find((x) => x.tipo === 'mdfe' && x.status === 'emitido')
+        const alertas = alertasDePrazo(
+          {
+            entregaPrevista: o.entrega_prevista ? Date.parse(o.entrega_prevista) : null,
+            finalizada: ['entregue', 'fechada', 'cancelada'].includes(o.status),
+            ciotFimPrevisto: ciotPrazo?.fim ?? null,
+            ciotEncerrado: ciotPrazo?.encerrado ?? true,
+            mdfeEmitidoEm: mdfe?.emitido_em ? Date.parse(mdfe.emitido_em) : null,
+            mdfeEncerrado: !!mdfe?.encerrado_em,
+          },
+          Date.now(),
+        )
+        return alertas.map((txt) => (
+          <div key={txt} className="text-xs rounded-xl px-3 py-2 font-semibold" style={{ background: '#FDF1DC', color: '#8A5A00' }} role="status">
+            {txt}
+          </div>
+        ))
+      })()}
+      <AssumirOperacao operacaoId={o.id} />
+      {o.status === 'aguardando_liberacao_fiscal' && <DevolverOperacao operacaoId={o.id} onDevolvida={onChanged} />}
+      {etapasNaoSeAplicam(d).length > 0 && (
+        <div className="text-[11px] text-[color:var(--rbr-muted)]">
+          Não se aplica: {etapasNaoSeAplicam(d).map((e) => e.motivo.replace(/.$/, '')).join(' · ')}.
+        </div>
+      )}
       {corrigindo && <CorrigirStatus d={d} salvando={salvando} executar={executar} />}
 
       <ConformidadeOperacao
@@ -410,7 +460,7 @@ export default function OperacaoFluxo({
           <ol className="flex flex-col list-none m-0 p-0" aria-label="Motorista e veículo">
             {daAba('motorista').map((e, i, l) => linha(e, i, l))}
           </ol>
-          <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'cte'} />
+          <PreVoo operacaoId={o.id} tipo={o.tipo_documento_cliente === 'nfse' ? 'nfse' : 'todos'} onIr={onAba} />
         </>
       )}
 
@@ -1279,6 +1329,7 @@ function EtapaCiot({ d, salvando, executar, onMudou }: { d: DetalheOperacao; sal
         <div className="text-xs text-[color:var(--rbr-muted)]">CIOT pela efrete ainda não liberado (conta de produção pendente). Emita o CIOT na Repom e registre o número e o documento abaixo.</div>
       )}
       {ciotAplicavel(d) && <CiotEfrete operacaoId={d.operacao.id} ehTeste={d.operacao.eh_teste === true} docs={d.documentos} placa={d.veiculo?.placa} onMudou={onMudou} />}
+      {d.operacao.eh_teste === true && <CartaoVpo operacaoId={d.operacao.id} ehTeste placa={d.veiculo?.placa} />}
       {ciotAplicavel(d) && <CiotOperacao d={d} salvando={salvando} executar={executar} />}
       {vpoAplicavel(d) && (
         <div className="text-xs">

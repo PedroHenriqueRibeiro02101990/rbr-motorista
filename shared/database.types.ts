@@ -9133,6 +9133,90 @@ export type Database = {
           },
         ]
       }
+      vpo_requisicoes: {
+        Row: {
+          acao: string
+          ambiente: string
+          criado_em: string
+          criado_por: string | null
+          erro: string | null
+          http_status: number | null
+          id: string
+          id_recibo: string | null
+          id_vpo_antt: string | null
+          idempotency_key: string
+          numero_viagem: string | null
+          operacao_id: string
+          request_json: Json | null
+          response_json: Json | null
+          total_viagem: number | null
+        }
+        Insert: {
+          acao: string
+          ambiente: string
+          criado_em?: string
+          criado_por?: string | null
+          erro?: string | null
+          http_status?: number | null
+          id?: string
+          id_recibo?: string | null
+          id_vpo_antt?: string | null
+          idempotency_key: string
+          numero_viagem?: string | null
+          operacao_id: string
+          request_json?: Json | null
+          response_json?: Json | null
+          total_viagem?: number | null
+        }
+        Update: {
+          acao?: string
+          ambiente?: string
+          criado_em?: string
+          criado_por?: string | null
+          erro?: string | null
+          http_status?: number | null
+          id?: string
+          id_recibo?: string | null
+          id_vpo_antt?: string | null
+          idempotency_key?: string
+          numero_viagem?: string | null
+          operacao_id?: string
+          request_json?: Json | null
+          response_json?: Json | null
+          total_viagem?: number | null
+        }
+        Relationships: []
+      }
+      saude_fiscal_achados: {
+        Row: {
+          criado_em: string
+          gravidade: string
+          id: string
+          mensagem: string
+          operacao_id: string | null
+          resolvido_em: string | null
+          robo: string
+        }
+        Insert: {
+          criado_em?: string
+          gravidade: string
+          id?: string
+          mensagem: string
+          operacao_id?: string | null
+          resolvido_em?: string | null
+          robo: string
+        }
+        Update: {
+          criado_em?: string
+          gravidade?: string
+          id?: string
+          mensagem?: string
+          operacao_id?: string | null
+          resolvido_em?: string | null
+          robo?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       pontuacao_saldo: {

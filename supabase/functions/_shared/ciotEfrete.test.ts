@@ -216,6 +216,17 @@ test('dados fictícios: CPF, CNH e RENAVAM com dígitos verificadores válidos; 
   assert.ok(!/[IOQ]/.test(ch))
 })
 
+test('verificador XXXX: aceito só em homologação; em produção (ou sem informar o ambiente) continua exigindo 4 dígitos', () => {
+  assert.deepEqual(separarCiot('013312910027/XXXX', 'homologacao'), { numero: '013312910027', verificador: 'XXXX' })
+  assert.equal(separarCiot('013312910027/XXXX', 'producao'), null)
+  assert.equal(separarCiot('013312910027/XXXX'), null)
+  // homologação continua aceitando o formato normal e recusando lixo
+  assert.deepEqual(separarCiot('013312910027/4165', 'homologacao'), { numero: '013312910027', verificador: '4165' })
+  assert.equal(separarCiot('013312910027/XXX', 'homologacao'), null)
+  assert.equal(separarCiot('013312910027/xxxx', 'homologacao'), null)
+  assert.equal(juntarCiot('013312910027', 'XXXX'), '013312910027/XXXX')
+})
+
 test('CIOT da efrete: 12 dígitos + "/" + verificador de 4 (formato real) separado e remontado', () => {
   assert.deepEqual(separarCiot('560000596706/4165'), { numero: '560000596706', verificador: '4165' })
   assert.deepEqual(separarCiot('560000596706'), { numero: '560000596706', verificador: null })
@@ -354,4 +365,10 @@ test('"emitir novamente" nunca pula a anti-duplicidade: referência nova já emi
   )
   assert.equal(r.ok && r.jaExistia, true)
   assert.equal(emitiu, 0)
+})
+
+test('C10: Tabela B com 2 ou 3 eixos orienta a usar a Tabela A', () => {
+  const r = calcularPisoAntt([], { eixos: 3, distanciaKm: 100, altoDesempenho: false, composicao: false, tipoCarga: 'Carga Geral', hoje: '2026-10-30' } as never)
+  assert.equal(r.ok, false)
+  assert.match(String((r as { motivo: string }).motivo), /Use a Tabela A/)
 })

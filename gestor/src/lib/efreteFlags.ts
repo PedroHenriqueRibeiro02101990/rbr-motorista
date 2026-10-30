@@ -2,3 +2,7 @@
 // Para ligar, defina VITE_EFRETE_CIOT_HABILITADO=true no ambiente de build (só depois da conta de produção).
 // O ?. deixa os testes (node, sem Vite) importarem este arquivo: lá não há import.meta.env e a flag fica desligada.
 export const CIOT_EFRETE_HABILITADO = import.meta.env?.VITE_EFRETE_CIOT_HABILITADO === 'true'
+
+// Vale-pedágio pelo NSPEDAGIO (cartão "Vale-Pedágio (VPO)" na aba Fiscal). Padrão desligado; produção fica desligada.
+// Para ligar na homologação, defina VITE_NSPEDAGIO_HABILITADO=true no ambiente de build.
+export const NSPEDAGIO_HABILITADO = import.meta.env?.VITE_NSPEDAGIO_HABILITADO === 'true'

@@ -1,3 +1,4 @@
+import BotaoLinkAceite from '../components/cotacao/BotaoLinkAceite'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -6,6 +7,7 @@ import NavegacaoServico from '../components/NavegacaoServico'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database, Json } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_COTACAO_LABEL, MOTIVO_PERDA_LABEL } from '@rbr/shared/format'
+import { diasVencida } from '@rbr/shared/regrasFluxo'
 import { IconQuote, IconChevronRight, IconCheck } from '@rbr/shared/icons'
 import { Obrig } from '@rbr/shared/camposObrigatorios'
 import { parseNFeXml, type EnderecoNFe } from '@rbr/shared/nfeParser'
@@ -4791,6 +4793,16 @@ export default function Cotacao() {
                 <div className="text-xs text-[color:var(--rbr-muted)]">
                   {c.clienteNome ?? 'Cliente a confirmar'} · criada em {formatDateTime(c.created_at)}
                 </div>
+                {(c.status === 'rascunho' || c.status === 'enviada') &&
+                  (() => {
+                    // E12: proposta aberta passou da validade (criada + validade_dias).
+                    const venceu = diasVencida(new Date(c.created_at).getTime() + Number(c.validade_dias ?? 5) * 86_400_000, Date.now())
+                    return venceu > 0 ? (
+                      <div className="text-xs font-bold mt-1" style={{ color: '#8A5A00' }}>
+                        Validade vencida há {venceu} {venceu === 1 ? 'dia' : 'dias'}: confirme o preço antes de enviar de novo.
+                      </div>
+                    ) : null
+                  })()}
                 {c.valor_frete_motorista != null && (
                   <div className="text-xs text-[color:var(--rbr-muted)] mt-1 tabular-nums">
                     Motorista {formatMoney(c.valor_total_motorista ?? c.valor_frete_motorista)} · pedágio {formatMoney(c.pedagio ?? 0)}
@@ -4804,7 +4816,8 @@ export default function Cotacao() {
                     {c.motivo_perda_detalhe ? ` — ${c.motivo_perda_detalhe}` : ''}
                   </div>
                 )}
-                <div className="mt-2.5 pt-2.5 border-t flex justify-end" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="mt-2.5 pt-2.5 border-t flex justify-end items-center gap-2 flex-wrap" style={{ borderColor: 'var(--rbr-border)' }}>
+                  {c.status !== 'perdida' && <BotaoLinkAceite cotacaoId={c.id} />}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

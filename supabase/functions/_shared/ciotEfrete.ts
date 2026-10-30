@@ -206,8 +206,9 @@ export function traduzirErroEfrete(mensagem: string): string {
 
 // CodigoIdentificacaoOperacao chega como "NNNNNNNNNNNN/VVVV" (CIOT de 12 dígitos + código verificador de 4); o manual
 // não descreve o formato. Guardamos os dois separados e remontamos para as chamadas seguintes.
-export function separarCiot(codigo: string): { numero: string; verificador: string | null } | null {
-  const m = /^\s*(\d{12})(?:\s*\/\s*(\d{4}))?\s*$/.exec(codigo ?? '')
+// Verificador: 4 dígitos. Só na HOMOLOGAÇÃO a efrete devolve o texto fixo XXXX (visto em 29/10/2026); em produção continua exigindo 4 dígitos.
+export function separarCiot(codigo: string, ambiente: 'homologacao' | 'producao' = 'producao'): { numero: string; verificador: string | null } | null {
+  const m = (ambiente === 'homologacao' ? /^\s*(\d{12})(?:\s*\/\s*(\d{4}|XXXX))?\s*$/ : /^\s*(\d{12})(?:\s*\/\s*(\d{4}))?\s*$/).exec(codigo ?? '')
   return m ? { numero: m[1], verificador: m[2] ?? null } : null
 }
 export const juntarCiot = (numero: string, verificador: string | null | undefined) => (verificador ? `${numero}/${verificador}` : numero)
@@ -367,6 +368,8 @@ export function calcularPisoAntt(coefs: CoeficientePiso[], e: EntradaPiso): Resu
     .filter((c) => c.tabela === tabela && normal(c.tipo_carga) === tipo && Number(c.eixos) === e.eixos && c.data_vigencia <= e.hoje)
     .sort((a, b) => (a.data_vigencia < b.data_vigencia ? 1 : -1))
   const c = candidatos[0]
+  // C10: Tabela B só existe a partir de 4 eixos; com 2 ou 3 eixos orienta em vez de dar erro seco.
+  if (!c && tabela === 'B' && (e.eixos === 2 || e.eixos === 3)) return { ok: false, motivo: 'Essa combinação não existe na Tabela B (veículo sem composição com 2 ou 3 eixos). Use a Tabela A ou revise os eixos.' }
   if (!c) return { ok: false, motivo: `Sem coeficiente da ANTT para tabela ${tabela}, "${e.tipoCarga ?? 'Carga Geral'}", ${e.eixos} eixos.` }
   const piso = dinheiro(Number(c.cc_fixo) + Number(c.ccd_por_km) * e.distanciaKm)
   return { ok: true, piso, tabela, tipoCarga: c.tipo_carga, eixos: e.eixos, distanciaKm: e.distanciaKm, ccFixo: Number(c.cc_fixo), ccdPorKm: Number(c.ccd_por_km), vigencia: c.data_vigencia, fonte: c.fonte ?? null }
