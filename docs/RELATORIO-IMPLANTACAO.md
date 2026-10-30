@@ -152,3 +152,25 @@ Migrações aditivas `20261030_10_devolucao_fiscal.sql` e `20261030_11_trilha_st
 8. **Nada real foi emitido, cancelado ou pago** nesta fase; os testes de banco rodaram em transações descartadas.
 9. **Rollbacks:** cada migração tem o seu em `docs/rollbacks/`; a ordem inversa desfaz tudo (12 até 01).
 10. **Prazo:** o CIOT vira obrigatório no MDF-e em 23/11/2026; antes disso o `emitir-mdfe` só avisa.
+
+## 8. Merge na main, produção e contas de teste (30/10/2026)
+
+- **Merge:** `feat/back-implantacao` entrou na main com um único push (`c90f1d5`). Antes, a prévia da branch foi testada por você e a tela do gestor passou a aceitar os papéis comercial, operação, fiscal e financeiro.
+- **Vercel:** gestor, motorista e agenciador ficaram **READY** em produção (commit `c90f1d5`). `gestor.rbrcargo.com.br` abre (200) e o pacote publicado já contém as telas novas (busca, avisos, Saúde fiscal, finalização, link de aceite). Nenhum rollback foi necessário.
+- **Menu por função** (branch `feat/menu-por-funcao`, só local, sem push): cada função vê só o que usa (`lib/menuPorPapel.ts`, 3 testes, build ok). É conforto: o que cada uma lê continua decidido pelo banco.
+- **Contas de teste:** criadas `operacao`, `fiscal`, `comercial` e `financeiro` (nomes "TESTE …", e-mails `teste.<papel>@rbrcargo.invalid`, função cadastrada em `funcoes_pessoa`). As senhas são aleatórias e estão só em `docs-privado/contas-teste.txt` (fora do git). Login real e leitura pela API: operação e fiscal veem 8 operações, 8 clientes, 15 cotações e 48 documentos, sem lançamentos; financeiro vê 8 operações, 8 clientes e 72 lançamentos, sem cotações nem documentos; comercial sem carteira vê 0 de tudo. Igual à matriz do lote. **Apagar as contas quando acabar o teste** (rollback: apagar de `funcoes_pessoa`, `pessoas` e `auth.users` onde o e-mail termina em `@rbrcargo.invalid`).
+- **Ainda não feito:** nenhuma tela foi aberta no navegador com essas contas; eu só testei login e API.
+
+## 9. Retomada após reinicialização (30/10/2026)
+
+- **Conferência:** árvore limpa; `feat/menu-por-funcao` está no remoto no mesmo commit do local (`f212048`), então o push foi feito. Produção segue READY nos três projetos (commit `c90f1d5`). A prévia do gestor da branch do menu está READY; as prévias de motorista e agenciador aparecem como canceladas porque esses apps não mudaram (regra `ignoreCommand`), o que é esperado.
+- **Nesta fase (branch local `feat/back-fase2`, sem push, sem merge):** componente de ocorrência em rota (D10) e página Metas (F06). O que falta no checklist são itens de tela sem navegador para conferir, regras que mexem na emissão, ou decisões suas.
+
+## 10. Merge da fase 2 e resumo final (30/10/2026)
+
+- **Merge:** `feat/back-fase2` (que já inclui o menu por função, a ocorrência em rota e a página Metas) entrou na main com um único push. A conferência dos três deploys na Vercel e do endereço `gestor.rbrcargo.com.br` foi feita logo depois e está registrada na resposta ao Pedro; se algo tivesse falhado, o plano era promover o deploy anterior.
+- **Contas de teste mantidas** (operação, fiscal, comercial e financeiro; senhas só em `docs-privado/contas-teste.txt`). Apagar quando acabar o teste.
+- **Feito (32 itens):** papéis por login e lote de comportamento, finalizar viagem com estado finalizando e aviso, esteira e pré-voo único com botão por etapa, cancelar a operação inteira, link público de aceite, assumir, devolução do fiscal, trilha geral, auditores agendados e disjuntor, sino e central de avisos, busca com ocultos, Início por função e menu por função, ocorrência em rota, avisos de janela, validade e prazo do CIOT, prazos centralizados.
+- **Parcial (37):** regra pronta e testada, falta tela, execução ou uma peça: troca de motorista e veículo, carta de correção, níveis A a D, completar e enviar ao fiscal, margem do vendedor, metas atingidas, escalonamento de avisos, robô agendado do `saude-fiscal`, bloqueio de emissão com disjuntor, janela e apólice.
+- **Pendente (20):** itens grandes ou que mexem na emissão (Averba automática, vários municípios no MDF-e, várias NF-e no CIOT, pedágio estimado, PDF da proposta, e-mail do envio, equipe e convites, simulador noturno, vigia regulatório).
+- **Depende do Pedro (5 aguardando):** H02, H03, H04, H08 e H09; respostas externas (Alan, NSTech, Antonio, Focus, corretora); os 272 coeficientes da Portaria SUROC 22/2026; decidir se janela, apólice e disjuntor passam a bloquear a emissão no servidor; testar as telas novas no navegador com as contas de teste.
