@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { mensagemClara } from '../lib/mensagemClara'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
@@ -680,7 +681,12 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Operações</h1>
+        <div>
+          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Operações</h1>
+          <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>
+            {contagem[FILAS[0].id] != null ? <><b style={{ color: 'var(--rbr-navy-dark)' }}>{contagem[FILAS[0].id]} em “{FILAS[0].rotulo}”.</b> Escolha uma fila abaixo para trabalhar.</> : null}
+          </div>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input
             placeholder="Buscar cliente, cidade, placa, NF-e, código…"
@@ -847,7 +853,16 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         </div>
       )}
 
-      <div className="flex flex-col gap-1.5">
+      <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }} hidden={loading || lista.length === 0}>
+        <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
+          <span className="w-[150px] flex-shrink-0">Situação</span>
+          <span className="w-[190px] flex-shrink-0">Cliente</span>
+          <span className="flex-1">Rota</span>
+          <span className="w-[170px] flex-shrink-0">Motorista e veículo</span>
+          <span className="w-[64px] flex-shrink-0">NF-e</span>
+          <span className="w-[100px] text-right flex-shrink-0">Valor</span>
+          <span className="w-[56px] flex-shrink-0" />
+        </div>
         {!loading &&
           lista.map((op) => {
             const motorista = motoristas.find((m) => m.id === op.pessoa_alocada_id)
@@ -860,8 +875,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 id={`op-${op.id}`}
                 type="button"
                 onClick={() => abrirOperacao(op)}
-                className="w-full text-left bg-white border rounded-xl px-3.5 py-2.5 flex items-center gap-x-3 gap-y-1 flex-wrap md:flex-nowrap hover:bg-[color:var(--rbr-muted-bg)]"
-                style={ex?.grupo ? { ...cardStyle, borderLeft: '4px solid var(--rbr-gold)' } : cardStyle}
+                className="w-full text-left px-4 py-3 flex items-center gap-x-3 gap-y-1 flex-wrap md:flex-nowrap hover:bg-[#f7f8fc]"
+                style={{ borderTop: '1px solid #eef0f5', ...(ex?.grupo ? { borderLeft: '4px solid var(--rbr-gold)' } : {}), ...(op.coleta_prevista && !['cancelada', 'fechada', 'entregue'].includes(op.status) && Date.parse(op.coleta_prevista) - Date.now() < 24 * 3_600_000 ? { background: '#fff7f6' } : {}) }}
               >
                 <span
                   className="text-[10px] font-bold uppercase tracking-wide text-white px-2 py-1 rounded-full whitespace-nowrap text-center md:w-[150px] flex-shrink-0"
@@ -897,6 +912,22 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                   {op.bloqueio_fiscal && (
                     <span className="flex items-center" style={{ color: 'var(--rbr-danger)' }} title="Bloqueio fiscal">
                       <IconAlertTriangle width={14} height={14} />
+                    </span>
+                  )}
+                  {(op.status as string) === 'aguardando_assumir' && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="text-[12px] font-bold px-3.5 py-1.5 rounded-[10px] text-white"
+                      style={{ background: '#1c2559' }}
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        const { error } = await (supabase.rpc as unknown as (fn: string, a: Record<string, unknown>) => Promise<{ error: { message: string } | null }>).call(supabase, 'assumir_operacao', { p_operacao: op.id })
+                        if (error) window.alert(mensagemClara(error, 'Não consegui assumir agora.'))
+                        else void load()
+                      }}
+                    >
+                      Assumir
                     </span>
                   )}
                   <IconChevronRight width={16} height={16} style={{ color: 'var(--rbr-muted)' }} />
