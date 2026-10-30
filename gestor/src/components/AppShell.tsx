@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom'
 import type { Database } from '@rbr/shared/database.types'
 import { IconHome, IconBox, IconWallet, IconMapPin, IconLogOut, IconQuote, IconUsers } from '@rbr/shared/icons'
 import { initials } from '@rbr/shared/format'
-import { IconMenu, IconX, IconFileText, IconAlertTriangle, IconClipboard, IconCopy } from '../icons-local'
+import { IconMenu, IconX, IconFileText, IconAlertTriangle, IconClipboard, IconCopy, IconSearch } from '../icons-local'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 
@@ -19,6 +19,7 @@ const NAV = [
   { to: '/financeiro', label: 'Financeiro', Icon: IconWallet, end: false },
   { to: '/mapa', label: 'Mapa', Icon: IconMapPin, end: false },
   { to: '/fiscal', label: 'Fiscal', Icon: IconFileText, end: false },
+  { to: '/busca', label: 'Busca', Icon: IconSearch, end: false },
   { to: '/avisos', label: 'Avisos', Icon: IconAlertTriangle, end: false },
   { to: '/saude-fiscal', label: 'Saúde fiscal', Icon: IconAlertTriangle, end: false },
   { to: '/notas-parceiros', label: 'Notas parceiros', Icon: IconFileText, end: false },

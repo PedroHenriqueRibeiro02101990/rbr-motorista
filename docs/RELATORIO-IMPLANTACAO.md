@@ -111,3 +111,7 @@ Pré-voo: cada pendência ganhou o botão "Ir para Fiscal/Motorista/Financeiro" 
 ## 6k. Cancelar a operação inteira (B15)
 
 Novo `CancelarOperacaoInteira.tsx`, aberto pelo link "Cancelar tudo na ordem" que aparece em Operações quando há documento fiscal emitido. Mostra o plano (MDF-e, CIOT, vale-pedágio, averbação, CT-e), exige motivo de 15 a 255 letras e a caixa "Entendo", executa passo a passo chamando as funções que já conferem os prazos no servidor, grava cada passo em `operacao_cancelamento_passos` e só cancela a operação se tudo deu certo. Averbação não tem função de cancelamento: o plano trava e orienta fazer na seguradora. **Não executei nenhum cancelamento** (efeito fiscal e financeiro real). Build ok, não testado no navegador.
+
+## 6l. Início por função (F05) e Busca (F04)
+
+Início: seletor "Ver como" (`lib/inicioPorFuncao.ts`, 3 testes). Busca: página `/busca` e migração aditiva `20261030_06_busca_contagens.sql` (aplicada; rollback em `docs/rollbacks/20261030-0006-busca-contagens.sql`), função que devolve só contagens de clientes e cotações. Teste em transação descartada: o gestor vê 2 de 2 cotações; um usuário comercial sem carteira vê 0 de 2 e a tela diz "2 resultados ocultos pela sua função". **Decisão:** a interpretação de frase livre por IA não foi feita (exigiria uma função nova com chave de IA e custo por consulta); a busca casa nome, CNPJ e cidade. **Aviso:** a tela do gestor só aceita o papel gestor (`App.tsx`); abrir para comercial, operação, fiscal e financeiro entrarem é decisão de acesso e fica para depois.

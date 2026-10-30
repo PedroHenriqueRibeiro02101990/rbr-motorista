@@ -61,8 +61,8 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | F01 | parcial | Sino e central de avisos · sino com contagem de não lidos no menu (atualiza a cada minuto) e página Avisos; hoje só o aviso de finalização gera item; não testado no navegador |
 | F02 | parcial | Todo aviso tem botão que resolve · central de avisos (/avisos) com marcar como lido e link para a operação; RPC marcar_aviso_lido aplicada; falta filtros e outros tipos de aviso |
 | F03 | parcial | Aviso vai a quem errou · destinoDoAviso e escalonamento (2 h gestor; 4 h e-mail desligado) testados; falta ligar ao sino |
-| F04 | pendente | Busca com IA `[P]` |
-| F05 | pendente | Início por função com mapa |
+| F04 | parcial | Busca com IA · página Busca (/busca) em clientes, cotações e operações pelas políticas da própria pessoa, com "N resultados ocultos pela sua função" (RPC busca_contagens devolve só números; testada: comercial vê 0 de 2); a interpretação de frase livre por IA NÃO foi feita; não testada no navegador |
+| F05 | parcial | Início por função com mapa · Início com seletor Ver como (Geral, Comercial, Operação, Fiscal, Financeiro): mostra mapa, caixa e comercial conforme a função e atalhos; a função vem de funcoes_pessoa; a tela do gestor segue só para o papel gestor (App.tsx), então os outros papéis ainda não entram nela; não testado no navegador |
 | F06 | parcial | Metas · estrutura de metas criada no banco (vendas ligadas; Operação e Fiscal desligadas, com indicadores de exemplo); falta tela |
 | F07 | parcial | 'O que fazer agora' por módulo · PainelPendencias já existe; conferir módulos |
 | F08 | parcial | Confirmação visível e janela de edição · componente único useConfirmacao (✓/✗, evita clique duplo) e Modal sobre fundo escurecido já existem e são usados em várias telas; falta conferir as telas que ainda não usam |
