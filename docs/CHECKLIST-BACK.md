@@ -24,7 +24,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B08 | parcial | CIOT · botão Encerrar CIOT no cartão + prazo no servidor; falta desembarque por nota (pergunta NSTech); não testado no navegador |
 | B09 | feito | ciotEfreteSemValidade em mdfe.ts: CIOT da efrete só vale com status emitido (bloqueia em produção real); 20 testes; emitir-mdfe publicada. Falta checar VPO ativo
 | B10 | pendente | CIOT com várias NF-e |
-| B11 | parcial | Finalizar viagem · Finalizar viagem encerra MDF-e e CIOT e refaz só o que faltou (finalizacao.ts, 2 testes, build ok); estado finalizando e aviso ao fiscal dependem do lote A04; não testado no navegador |
+| B11 | feito | Finalizar viagem · Finalizar viagem marca a operação como finalizando e avisa fiscal e gestores (tabela notificacoes), encerra MDF-e e CIOT, refaz só o que faltou e termina em finalizada (ou volta a entregue se falhar); RPCs iniciar_finalizacao/terminar_finalizacao testadas em transação descartada; não testado no navegador |
 | B12 | feito | Remover o encerramento automático · LOTE APLICADO: gatilho trg_encerrar_mdfe_na_entrega removido (conferido: 0 no banco); quem encerra o MDF-e é o botão Finalizar viagem |
 | B13 | parcial | Pré-voo único e esteira · esteira com não se aplica e pré-voo único (CT-e, MDF-e, risco e gerais numa lista) no detalhe da operação; falta o botão por etapa; não testado no navegador |
 | B14 | parcial | Janela de emissão · dentroDaJanelaDeEmissao (até a véspera, Brasília) testada; falta ligar ao botão de emitir |

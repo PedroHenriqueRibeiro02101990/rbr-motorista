@@ -10,7 +10,7 @@ import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 
 // "Finalizar viagem" (B11) = encerrar o MDF-e e o CIOT da efrete num botão só. Manual: o gestor confere os
 // dados já preenchidos e confirma. Se um dos dois falhar, mostra qual; ao tentar de novo só o que faltou é refeito.
-// Não muda o status da operação (entregue/fechada). O estado 'finalizando' e o aviso ao fiscal dependem do lote de status (A04).
+// Estado 'finalizando' (A04): marca a operação e avisa o fiscal antes de encerrar; ao fim vira 'finalizada', ou volta a 'entregue' se algo falhou.
 // Usado no card da operação (Operações) e no bloco fiscal da operação (Fiscal).
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
@@ -114,7 +114,9 @@ export default function FinalizarViagem({
   if (mdfe === undefined) return null
 
   const autorizado = mdfe?.status === 'emitido'
-  const entregue = statusOperacao === 'entregue' || statusOperacao === 'fechada'
+  const st: string = statusOperacao
+  const entregue = st === 'entregue' || st === 'fechada' || st === 'finalizando' || st === 'finalizada'
+  const usaEstadoFinalizando = st === 'entregue' || st === 'em_viagem' || st === 'finalizando'
   const mdfeEncerrado = !!mdfe?.encerrado_em
   const faltaCiot = ciotStatus === 'emitido'
   const encerrado = mdfeEncerrado && !faltaCiot
@@ -219,6 +221,7 @@ export default function FinalizarViagem({
           mdfe={mdfe}
           ciotStatus={ciotStatus}
           entregueEm={entregueEm}
+          usaEstadoFinalizando={usaEstadoFinalizando}
           onFechar={() => setAberto(false)}
           onTentou={depoisDeTentar}
         />
@@ -232,6 +235,7 @@ function ConfirmarFinalizacao({
   mdfe,
   ciotStatus,
   entregueEm,
+  usaEstadoFinalizando,
   onFechar,
   onTentou,
 }: {
@@ -239,6 +243,7 @@ function ConfirmarFinalizacao({
   mdfe: DocMdfe
   ciotStatus: string | null
   entregueEm: string | null
+  usaEstadoFinalizando: boolean
   onFechar: () => void
   onTentou: (ok: boolean, mensagem?: string) => Promise<void>
 }) {
@@ -282,6 +287,11 @@ function ConfirmarFinalizacao({
       body.nome_municipio = municipio.trim()
     }
     try {
+      const rpcFin = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
+      if (usaEstadoFinalizando) {
+        const ini = await rpcFin.call(supabase, 'iniciar_finalizacao', { p_operacao: operacaoId })
+        if (ini.error) throw new Error(ini.error.message)
+      }
       const passos = passosPendentes({ mdfeAutorizado: mdfe.status === 'emitido', mdfeEncerrado: !!mdfe.encerrado_em, ciotStatus })
       const resultados: ResultadoPasso[] = []
       for (const passo of passos) {
@@ -296,6 +306,7 @@ function ConfirmarFinalizacao({
         }
       }
       const resumo = resumoFinalizacao(resultados)
+      if (usaEstadoFinalizando) await rpcFin.call(supabase, 'terminar_finalizacao', { p_operacao: operacaoId, p_ok: resumo.tudoCerto })
       if (!resumo.tudoCerto) setErro(resumo.mensagem)
       await onTentou(resumo.tudoCerto, resumo.mensagem)
     } catch (e) {
