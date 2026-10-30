@@ -7,10 +7,11 @@ import { initials } from '@rbr/shared/format'
 import { IconMenu, IconX, IconFileText, IconAlertTriangle, IconClipboard, IconCopy, IconSearch } from '../icons-local'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
+import { podeVerNoMenu } from '../lib/menuPorPapel'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 
-const NAV = [
+const NAV_TODOS = [
   { to: '/', label: 'Início', Icon: IconHome, end: true },
   { to: '/fila-do-dia', label: 'Fila do dia', Icon: IconUsers, end: false },
   { to: '/cotacao', label: 'Cotação', Icon: IconQuote, end: false },
@@ -64,6 +65,7 @@ export default function AppShell({
 }) {
   const [menuAberto, setMenuAberto] = useState(false)
   const avisos = useAvisosNaoLidos()
+  const NAV = NAV_TODOS.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row bg-white">

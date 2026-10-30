@@ -152,3 +152,11 @@ Migrações aditivas `20261030_10_devolucao_fiscal.sql` e `20261030_11_trilha_st
 8. **Nada real foi emitido, cancelado ou pago** nesta fase; os testes de banco rodaram em transações descartadas.
 9. **Rollbacks:** cada migração tem o seu em `docs/rollbacks/`; a ordem inversa desfaz tudo (12 até 01).
 10. **Prazo:** o CIOT vira obrigatório no MDF-e em 23/11/2026; antes disso o `emitir-mdfe` só avisa.
+
+## 8. Merge na main, produção e contas de teste (30/10/2026)
+
+- **Merge:** `feat/back-implantacao` entrou na main com um único push (`c90f1d5`). Antes, a prévia da branch foi testada por você e a tela do gestor passou a aceitar os papéis comercial, operação, fiscal e financeiro.
+- **Vercel:** gestor, motorista e agenciador ficaram **READY** em produção (commit `c90f1d5`). `gestor.rbrcargo.com.br` abre (200) e o pacote publicado já contém as telas novas (busca, avisos, Saúde fiscal, finalização, link de aceite). Nenhum rollback foi necessário.
+- **Menu por função** (branch `feat/menu-por-funcao`, só local, sem push): cada função vê só o que usa (`lib/menuPorPapel.ts`, 3 testes, build ok). É conforto: o que cada uma lê continua decidido pelo banco.
+- **Contas de teste:** criadas `operacao`, `fiscal`, `comercial` e `financeiro` (nomes "TESTE …", e-mails `teste.<papel>@rbrcargo.invalid`, função cadastrada em `funcoes_pessoa`). As senhas são aleatórias e estão só em `docs-privado/contas-teste.txt` (fora do git). Login real e leitura pela API: operação e fiscal veem 8 operações, 8 clientes, 15 cotações e 48 documentos, sem lançamentos; financeiro vê 8 operações, 8 clientes e 72 lançamentos, sem cotações nem documentos; comercial sem carteira vê 0 de tudo. Igual à matriz do lote. **Apagar as contas quando acabar o teste** (rollback: apagar de `funcoes_pessoa`, `pessoas` e `auth.users` onde o e-mail termina em `@rbrcargo.invalid`).
+- **Ainda não feito:** nenhuma tela foi aberta no navegador com essas contas; eu só testei login e API.

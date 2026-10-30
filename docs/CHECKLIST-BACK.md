@@ -4,7 +4,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 
 | ID | Status | Nota |
 |---|---|---|
-| A01 | feito | Papéis por login · LOTE APLICADO em 30/10 e testado por papel: enum com comercial/operacao/fiscal/financeiro, funcoes_pessoa, tem_funcao(); gestores seguem com acesso total; a tela do gestor ainda só aceita o papel gestor (App.tsx), então os outros papéis ainda não entram nela |
+| A01 | feito | Papéis por login · LOTE APLICADO em 30/10 e testado por papel; a tela do gestor aceita gestor, comercial, operação, fiscal e financeiro; login real e leitura pela API testados nas 4 contas de teste |
 | A02 | feito | Segregação de funções · LOTE APLICADO em 30/10 e testado por papel: gatilho de segregação (quem gerou ou alocou não emite; gestor é exceção) e colunas gerada_por/alocada_por |
 | A03 | parcial (colunas criadas; falta gravar nas funções) | Ator em tudo `[M]` · supabase-migrations/20261030_01_trilha_campos_metas.sql (aplicação negada pelo classificador) |
 | A04 | feito | Status novos da operação · LOTE APLICADO em 30/10 e testado por papel: 10 status novos no enum (finalizando, em_viagem, finalizada, etc.) |
@@ -62,7 +62,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | F02 | parcial | Todo aviso tem botão que resolve · central de avisos (/avisos) com marcar como lido e link para a operação; RPC marcar_aviso_lido aplicada; falta filtros e outros tipos de aviso |
 | F03 | parcial | Aviso vai a quem errou · a devolução do fiscal já avisa quem errou (destinoDoAviso) além dos gestores, e o disjuntor avisa os gestores; falta o escalonamento de 2 h e 4 h (robô agendado) |
 | F04 | parcial | Busca com IA · página Busca (/busca) em clientes, cotações e operações pelas políticas da própria pessoa, com "N resultados ocultos pela sua função" (RPC busca_contagens devolve só números; testada: comercial vê 0 de 2); a interpretação de frase livre por IA NÃO foi feita; não testada no navegador |
-| F05 | parcial | Início por função com mapa · Início com seletor Ver como (Geral, Comercial, Operação, Fiscal, Financeiro): mostra mapa, caixa e comercial conforme a função e atalhos; a função vem de funcoes_pessoa; a tela do gestor segue só para o papel gestor (App.tsx), então os outros papéis ainda não entram nela; não testado no navegador |
+| F05 | feito | Início por função com mapa · Início com seletor Ver como (Geral, Comercial, Operação, Fiscal, Financeiro) e menu filtrado por papel (menuPorPapel, 3 testes); a tela do gestor agora aceita os quatro papéis; login real testado com contas de teste; telas não abertas no navegador |
 | F06 | parcial | Metas · estrutura de metas criada no banco (vendas ligadas; Operação e Fiscal desligadas, com indicadores de exemplo); falta tela |
 | F07 | parcial | 'O que fazer agora' por módulo · PainelPendencias já existe; conferir módulos |
 | F08 | parcial | Confirmação visível e janela de edição · componente único useConfirmacao (✓/✗, evita clique duplo) e Modal sobre fundo escurecido já existem e são usados em várias telas; falta conferir as telas que ainda não usam |
