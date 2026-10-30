@@ -3,11 +3,11 @@
 Atualizado em 30/10/2026. Branch `feat/back-implantacao` (parte da `feat/nspedagio-etapa1`, tudo local, sem push).
 
 ## 1. Resumo
-- 93 IDs: 8 feitos, 15 parciais, 5 que dependem do Pedro, 65 pendentes; nenhum bloqueado por erro.
-- Feito nesta rodada: Etapa 0, migração aditiva 20261030_01, dump em C:UsersAlineackups-rbr (mantido intacto até o lote), B04, B09, B17 nas funções, B16, prazos do CIOT (B08), regras puras C08/D01/D12/B13 e CI (G01). Quatro funções publicadas, todas com log "booted" sem erro.
-- Parado por permissão: o push (negado). Não aplicado: lote de comportamento (sem autorização). Não feito: o grosso das frentes C, D, E, F e G, que são telas e funções grandes.
-- Depende do Pedro: regra de push, pacote de produção (seção 9), perguntas externas.
-- Prazo de 23/11: faltam B11 (finalizar viagem em um botão), B13 (pré-voo único), botão de encerrar CIOT e a bateria H01. O MDF-e sem CIOT não bloqueia antes de 23/11.
+- 94 linhas no checklist (93 IDs do documento + cabeçalho): **12 feitos, 48 parciais, 5 dependem do Pedro, 29 pendentes**. Nenhum bloqueado por erro.
+- "Parcial" quer dizer: a regra ou a estrutura existe e está testada, mas falta tela, agendamento ou execução. Só D01, D13, B04, E07, H05, H07 e poucos mais estão realmente fechados. Quase nada foi testado no navegador.
+- Feito: Etapa 0; duas migrações aditivas aplicadas (advisors sem alerta novo); dump em backups-rbr (intacto); B04 provado em homologação; B09 e CIOT ausente só bloqueia depois de 23/11; prazos (B17) nas funções; Finalizar viagem encerra MDF-e e CIOT (B11); botão Encerrar CIOT (B08); C08, D01, D12, B13 e C09 ligados às telas; função saude-fiscal publicada; 212 testes e build do gestor verdes; 3 pushes da branch (limite 4), 0 merges.
+- Não feito: lote de comportamento (sem autorização: A01, A02, A04 completo, A05, A06, A07, B12, C04, C10 dados); as telas grandes (sino, busca com IA, Início por função, Saúde fiscal, link público de aceite, cancelar operação inteira); os robôs agendados; o restante da bateria H01; a Vercel (H06).
+- Prazo de 23/11: MDF-e sem CIOT não bloqueia antes da data. Para a data faltam: pré-voo único e botão por etapa (B13), 'finalizando' e aviso ao fiscal (lote A04), remover o encerramento automático do MDF-e (B12, lote) e o resto da bateria de homologação.
 
 ## 2. Tabela por ID
 Ver `docs/CHECKLIST-BACK.md` (uma linha por ID). Evidências desta sessão:
@@ -70,6 +70,8 @@ Não houve (nenhum dos 6 critérios do documento).
 Nada executado. Preparado para a confirmação única: credenciais e saldo efrete/NSPEDÁGIO (H04), troca do CIOT para produção, remover `NSPEDAGIO_TESTE_CHAMADA_INTERNA`, travar `COMPRA_LIBERADA`, lote de comportamento (sem backup, exige dump antes), migrações do PR #15 (3h–5h), piloto de valor baixo (H02), perguntas externas (NSTech, NSPEDÁGIO/Antonio sobre o 1º cancelamento, Averba, Focus, Alan, corretora).
 
 ## 10. Próximos passos
-1. Pedro libera permissão (regra de Bash/MCP para `supabase db query`/`apply_migration` e `functions deploy`) ou aplica a migração `20261030_01`; depois eu rodo advisors e sigo da Etapa 1 (A04, A07) e Etapa 2 (B04, B08, B09, B11, B13).
-2. Gerar um dump lógico das tabelas fiscais antes do lote de comportamento.
-3. Primeiro push (limite 4/dia) após as etapas 2–3, com `npm run build` e testes locais.
+1. Pedro decide o lote de comportamento (A01, A02, A04, A05, A06, A07, B12, C04, C10): backup lógico pronto em C:\Users\Aline\backups-rbr\2026-10-30; falta o teste de papéis com set local role antes e depois e a janela de 3h às 5h.
+2. Telas que faltam ligar: Assumir (D02), Devolver ao fiscal (D05), checklist de 11 itens (D03), níveis A a D (D04), ocorrência (D10), cotação vencida (E12), sino e central (F01/F02).
+3. Agendar o saude-fiscal (pg_cron) e criar a tela Saúde fiscal (G09).
+4. Perguntas externas: NSPEDÁGIO (ver 6e), NSTech, Averba, Focus, Alan, corretora.
+5. Merge na main só com autorização expressa do Pedro.
