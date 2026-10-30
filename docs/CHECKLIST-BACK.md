@@ -6,13 +6,13 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 |---|---|---|
 | A01 | pendente | Papéis por login `[M]` |
 | A02 | pendente | Segregação de funções |
-| A03 | pronto, aguardando aplicação | Ator em tudo `[M]` · supabase-migrations/20261030_01_trilha_campos_metas.sql (aplicação negada pelo classificador) |
+| A03 | parcial (colunas criadas; falta gravar nas funções) | Ator em tudo `[M]` · supabase-migrations/20261030_01_trilha_campos_metas.sql (aplicação negada pelo classificador) |
 | A04 | parcial | Status novos da operação `[M]` · alocando_motorista e aguardando_liberacao_fiscal já existem no banco; faltam os demais |
 | A05 | pendente | Operação avança em nome do motorista `[M]` |
 | A06 | pendente | Reemissão com versões `[M,X]` |
 | A07 | pendente | Carteira individual de clientes `[M]` |
-| A08 | pronto, aguardando aplicação | Campos novos em operacoes `[M]` · mesma migração 20261030_01 |
-| A09 | pronto, aguardando aplicação | Trilha de auditoria geral `[M]` · tabela trilha_auditoria na migração 20261030_01 |
+| A08 | parcial (colunas e histórico criados; falta usar nas telas) | Campos novos em operacoes `[M]` · mesma migração 20261030_01 |
+| A09 | parcial (tabela criada; falta gravar os eventos) | Trilha de auditoria geral `[M]` · tabela trilha_auditoria na migração 20261030_01 |
 | A10 | pendente | Limpar Repom · 14 arquivos citam Repom |
 | B01 | feito | Testar token do NSPEDÁGIO `[X]` · token e leituras do PC e pela função publicada, 29/10 (docs-privado) |
 | B02 | feito | Função nspedagio_segredo `[M]` · migração 20261029_01 aplicada |
@@ -63,7 +63,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | F03 | pendente | Aviso vai a quem errou `[P]` |
 | F04 | pendente | Busca com IA `[P]` |
 | F05 | pendente | Início por função com mapa |
-| F06 | pronto, aguardando aplicação | Metas `[M,P]` · tabela metas, vendas ativas e Operação/Fiscal desligadas, na migração 20261030_01 |
+| F06 | parcial (estrutura criada; falta tela) | Metas `[M,P]` · tabela metas, vendas ativas e Operação/Fiscal desligadas, na migração 20261030_01 |
 | F07 | pendente | 'O que fazer agora' por módulo |
 | F08 | pendente | Confirmação visível e janela de edição |
 | F09 | parcial | Banner de homologação · FaixaTeste existe; conferir texto |

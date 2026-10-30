@@ -18,7 +18,7 @@ Ver `docs/CHECKLIST-BACK.md` (uma linha por ID). Evidências desta sessão:
 ## 3. Migrações
 | Nome | Hora | Tipo | Rollback | Advisors |
 |---|---|---|---|---|
-| `20261030_01_trilha_campos_metas` | não aplicada | aditiva | `docs/rollbacks/20261030-0001-trilha-campos-metas.sql` | não rodados (depende da aplicação) |
+| `20261030_01_trilha_campos_metas` | 30/10/2026, após autorização expressa do Pedro | aditiva (em transação) | `docs/rollbacks/20261030-0001-trilha-campos-metas.sql` | segurança: sem alerta novo (6 INFO, 1, 1, 90, 1 = base anterior). Desempenho: só 6 INFO nas tabelas novas (3 FKs sem índice em ator_id/pessoa_id, 3 índices ainda sem uso), nenhum WARN |
 
 Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e `eventos_fiscais_operacao`), A08 (13 colunas anuláveis em `operacoes` + tabela `operacao_alteracoes`), A09 (`trilha_auditoria`), F06 (`metas`). Sem DROP, DELETE ou UPDATE no SQL de aplicação.
 
@@ -36,7 +36,8 @@ Pushes: 0. Merges: 0. Deploys: 0. Pushes pendentes: todos os commits locais dest
 - Extra: B04 ainda não grava `idVpoAntt` em `operacao_ciot_vpo`.
 
 ## 7. Incidentes
-- Aplicação da migração negada pelo classificador (`Permission ... denied ... [Production Deploy]`). Nada foi alterado no banco.
+- Aplicação da migração negada pelo classificador (`[Production Deploy]`). O Pedro autorizou depois, por escrito, e a migração foi aplicada.
+- Build do gestor falhava (TS2352 em CartaoVpo.tsx:69, erro meu); corrigido no commit ecc2cd3.
 
 ## 8. PAUSA GRAVE
 Não houve (nenhum dos 6 critérios do documento).
