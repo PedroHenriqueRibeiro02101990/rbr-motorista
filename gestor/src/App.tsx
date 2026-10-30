@@ -19,6 +19,7 @@ import DemoCiot from './pages/DemoCiot'
 import SaudeFiscal from './pages/SaudeFiscal'
 import Avisos from './pages/Avisos'
 import Busca from './pages/Busca'
+import PropostaPublica from './pages/PropostaPublica'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
 const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
@@ -26,6 +27,10 @@ const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
 export default function App() {
   const auth = useAuth()
   if (DEMO_CIOT && window.location.pathname === '/demo-ciot') return <DemoCiot />
+
+  // E04: link público de aceite (/p/<código>), antes do login; o cliente não tem conta.
+  const mProposta = window.location.pathname.match(/^\/p\/([0-9a-z]{1,64})\/?$/)
+  if (mProposta) return <PropostaPublica codigo={mProposta[1]} />
 
   if (auth.loading) {
     return (

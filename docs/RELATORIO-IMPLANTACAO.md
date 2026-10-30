@@ -115,3 +115,7 @@ Novo `CancelarOperacaoInteira.tsx`, aberto pelo link "Cancelar tudo na ordem" qu
 ## 6l. Início por função (F05) e Busca (F04)
 
 Início: seletor "Ver como" (`lib/inicioPorFuncao.ts`, 3 testes). Busca: página `/busca` e migração aditiva `20261030_06_busca_contagens.sql` (aplicada; rollback em `docs/rollbacks/20261030-0006-busca-contagens.sql`), função que devolve só contagens de clientes e cotações. Teste em transação descartada: o gestor vê 2 de 2 cotações; um usuário comercial sem carteira vê 0 de 2 e a tela diz "2 resultados ocultos pela sua função". **Decisão:** a interpretação de frase livre por IA não foi feita (exigiria uma função nova com chave de IA e custo por consulta); a busca casa nome, CNPJ e cidade. **Aviso:** a tela do gestor só aceita o papel gestor (`App.tsx`); abrir para comercial, operação, fiscal e financeiro entrarem é decisão de acesso e fica para depois.
+
+## 6m. Link público de aceite (E04/E05)
+
+Migração aditiva `20261030_07_link_proposta.sql` (aplicada; rollback em `docs/rollbacks/20261030-0007-link-proposta.sql`) e função `proposta-publica` publicada. Smoke test real: sem chave 401; código inválido ou inexistente 404 com a mesma mensagem; ação desconhecida 400; link válido devolve só origem, destino, carga, valor e validade; aceite sem nome 400. Linha de teste removida. O aceite real não foi disparado (avisaria os gestores). Gerador testado por papel: gestor gera e reaproveita; comercial é recusado. Não testado no navegador.

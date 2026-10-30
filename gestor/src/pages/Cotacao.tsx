@@ -1,3 +1,4 @@
+import BotaoLinkAceite from '../components/cotacao/BotaoLinkAceite'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -4804,7 +4805,8 @@ export default function Cotacao() {
                     {c.motivo_perda_detalhe ? ` — ${c.motivo_perda_detalhe}` : ''}
                   </div>
                 )}
-                <div className="mt-2.5 pt-2.5 border-t flex justify-end" style={{ borderColor: 'var(--rbr-border)' }}>
+                <div className="mt-2.5 pt-2.5 border-t flex justify-end items-center gap-2 flex-wrap" style={{ borderColor: 'var(--rbr-border)' }}>
+                  {c.status !== 'perdida' && <BotaoLinkAceite cotacaoId={c.id} />}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

@@ -70,8 +70,8 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | E01 | parcial | Funil e cotação (verificar o que existe) · cotação, pré-cotação, envio e conversão já existem; conferir lacunas |
 | E02 | parcial | Margem e níveis do vendedor · faixaDeMargem e sugereAfrouxar testadas; falta a tela e os níveis do vendedor (depende dos papéis, lote A01) |
 | E03 | pendente | Envio por e-mail e WhatsApp `[X]` |
-| E04 | parcial | Link público de aceite · tabela propostas_publicas criada (código, expiração, aberturas); falta a rota /p/código e a Edge Function pública |
-| E05 | parcial | Aceite com registro · colunas de aceite (nome, cargo, data, IP) em propostas_publicas; falta gravar pelo link |
+| E04 | feito | Link público de aceite · Edge Function proposta-publica publicada (código de 32 hex, limite por IP, resposta igual para link inválido, só origem/destino/valor/validade) e página pública /p/<código>; RPC gerar_link_proposta (só gestor, reaproveita link válido) e botão Copiar link de aceite na lista de Cotação; testes das regras e de papel; smoke test real ok; página não testada no navegador |
+| E05 | feito | Aceite com registro · aceite grava nome, cargo, data e IP uma vez só (atualização condicional) e avisa os gestores no sino; aberturas contadas; falta aparelhos_distintos |
 | E06 | pendente | PDF da proposta |
 | E07 | feito | Prazos e valores da cotação · não há acréscimo fixo de 3% na tela de envio nem no PDF (busca no código sem ocorrência); vale o prazo e valor da cotação |
 | E08 | parcial | Aviso de disponibilidade · tabela avisos_disponibilidade criada; falta a tela e o texto na proposta |
