@@ -29,6 +29,7 @@ Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e
 | emitir-mdfe | anterior → B09 → CIOT ausente só bloqueia a partir de 23/11 | 30/10/2026 (~9h40 Brasília) | vazio com anon: HTTP 400; log "booted" sem erro |
 | cancelar-documento-fiscal | anterior → prazos CT-e 7 dias e MDF-e 24 h/viagem iniciada antes de chamar a Focus (B16/B17) | idem | vazio: HTTP 400; "booted" |
 | nspedagio-vpo | v5 → grava idVpoAntt em operacao_ciot_vpo (origem api) na compra real; limpa no cancelamento com sucesso (B04) | idem | vazio: HTTP 401; "booted". Compra real não repetida nesta rodada |
+| nspedagio-vpo (2ª publicação) | grava o ID também pelo recibo/status | 30/10/2026 ~10h30 Brasília | ciclo real em homologação: consultar-tag HTTP 200; comprar estourou 60 s (HTTP 502 com a mensagem de reemitir recibo); recibo seguinte HTTP 200 com idVpoAntt 17065780674919915931 (viagem 529194, R$ 140,64) e gravou em operacao_ciot_vpo; cancelar HTTP 200 SUCESSO_CANCELAR_VIAGEM; recibo "não localizado"; vpo_idvpo voltou a nulo |
 | efrete-ciot-operacao | v4 → prazos de cancelar (24 h antes do início) e encerrar (5 dias após o fim previsto; operação de teste dispensada) (B08/B17) | idem | vazio: HTTP 401; "booted" |
 | saude-fiscal | nova (v1) | 30/10/2026 | sem agendamento; chamada com chave anon: HTTP 401 (função sobe e exige gestor). Logs ainda não mostravam a chamada (atraso do conector); a prova de que subiu é a resposta 401 da própria função. Não rodou com gestor logado |
 
@@ -52,6 +53,9 @@ C:UsersAlineackups-rbr6-10-30 (fora do repositório): 15 tabelas fiscais + _f
 
 ## 6d. Logs das funções
 Consulta pelo conector Supabase (query_logs, tabela `logs`, `source = 'function_edge_logs'` e `'function_logs'`) funcionou na 1ª tentativa desta vez. As falhas anteriores eram por usar nomes de tabela errados.
+
+## 6e. Para a pergunta ao Antonio (NSPEDÁGIO)
+Em 30/10 o cancelamento deu **sucesso explícito** (`SUCESSO_CANCELAR_VIAGEM`) na 1ª tentativa, depois de a viagem já estar confirmada no recibo. Em 29/10 a 1ª tentativa (17:47) deu `FALHA_CANCELAMENTO_VIAGEM` logo após a compra lenta. Hipótese a confirmar com ele: cancelar enquanto a compra ainda está sendo processada falha; depois de confirmada, cancela.
 
 ## 7. Incidentes
 - Push da branch negado pelo classificador (a autorização do Pedro cobria deploy de funções, db query e migrações, não git push). Aguardando regra `Bash(git push:*)` ou o push feito por ele.

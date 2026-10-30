@@ -17,7 +17,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B01 | feito | Testar token do NSPEDÁGIO `[X]` · token e leituras do PC e pela função publicada, 29/10 (docs-privado) |
 | B02 | feito | Função nspedagio_segredo `[M]` · migração 20261029_01 aplicada |
 | B03 | feito | Número numérico da operação e vpo_requisicoes `[M]` · migrações 20261029_01 e _02 aplicadas |
-| B04 | feito | nspedagio-vpo grava idVpoAntt em operacao_ciot_vpo (origem api) na compra real e limpa no cancelamento; falta provar com nova compra em dia útil; cancelamento sem sucesso explícito segue pendente da NSTech
+| B04 | feito | Cliente e funções do NSPEDÁGIO · provado em homologação (30/10): compra estourou os 60 s, o recibo gravou o idVpoAntt em operacao_ciot_vpo (origem api), o cancelamento deu SUCESSO_CANCELAR_VIAGEM, o recibo seguinte "não localizado" e o vpo_idvpo voltou a nulo |
 | B05 | feito | Cartão do VPO na aba Fiscal · CartaoVpo (commit 5721e80); não testado no navegador |
 | B06 | pendente | Proxy da Vercel para o NSPEDÁGIO `[X]` · depende do limite de deploys da Vercel |
 | B07 | pendente | Pedágio estimado na cotação |
@@ -65,7 +65,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | F05 | pendente | Início por função com mapa |
 | F06 | parcial | Metas · estrutura de metas criada no banco (vendas ligadas; Operação e Fiscal desligadas, com indicadores de exemplo); falta tela |
 | F07 | parcial | 'O que fazer agora' por módulo · PainelPendencias já existe; conferir módulos |
-| F08 | pendente | Confirmação visível e janela de edição |
+| F08 | parcial | Confirmação visível e janela de edição · componente único useConfirmacao (✓/✗, evita clique duplo) e Modal sobre fundo escurecido já existem e são usados em várias telas; falta conferir as telas que ainda não usam |
 | F09 | parcial | Banner de homologação · FaixaTeste e FaixaFixa (HOMOLOGAÇÃO) já existem; texto exato do item não conferido no navegador |
 | E01 | parcial | Funil e cotação (verificar o que existe) · cotação, pré-cotação, envio e conversão já existem; conferir lacunas |
 | E02 | parcial | Margem e níveis do vendedor · faixaDeMargem e sugereAfrouxar testadas; falta a tela e os níveis do vendedor (depende dos papéis, lote A01) |
@@ -73,7 +73,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | E04 | parcial | Link público de aceite · tabela propostas_publicas criada (código, expiração, aberturas); falta a rota /p/código e a Edge Function pública |
 | E05 | parcial | Aceite com registro · colunas de aceite (nome, cargo, data, IP) em propostas_publicas; falta gravar pelo link |
 | E06 | pendente | PDF da proposta |
-| E07 | pendente | Prazos e valores da cotação |
+| E07 | feito | Prazos e valores da cotação · não há acréscimo fixo de 3% na tela de envio nem no PDF (busca no código sem ocorrência); vale o prazo e valor da cotação |
 | E08 | parcial | Aviso de disponibilidade · tabela avisos_disponibilidade criada; falta a tela e o texto na proposta |
 | E09 | pendente | Equipe e convites |
 | E10 | pendente | Quem recebe a carga |
@@ -88,7 +88,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | G07 | parcial | Disjuntor · disjuntorAberto testado; falta persistir o estado e bloquear emissão |
 | G08 | pendente | Vigia regulatório |
 | G09 | parcial | Tela Saúde fiscal · tabela saude_fiscal_achados e a função saude-fiscal existem; falta a tela (quadro 46) |
-| H01 | pendente | Bateria de homologação com evidência |
+| H01 | parcial | Bateria de homologação com evidência · rodado em 30/10 em homologação: VPO ciclo completo (compra, timeout, recibo, cancelamento com sucesso explícito); CIOT emitir, consultar, PDF e cancelar em 29/10. O resto da bateria (troca de motorista e veículo, carta de correção, várias NF-e, 2 notas no CIOT, timeouts simulados) não foi rodado |
 | H02 | aguarda o Pedro | Piloto real `[P,$]` · pacote de produção |
 | H03 | aguarda o Pedro | Migrações de segurança do PR #15 `[M,P]` · pacote de produção |
 | H04 | aguarda o Pedro | Produção · pacote de produção |

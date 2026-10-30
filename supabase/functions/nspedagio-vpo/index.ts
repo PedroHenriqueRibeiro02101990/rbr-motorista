@@ -166,7 +166,8 @@ Deno.serve(async (req) => {
     // B04: o ID do vale (idVpoAntt) vai para operacao_ciot_vpo, de onde o emitir-mdfe lê o IDVPO (origem 'api').
     // Só compra real; o CNPJ da fornecedora não vem na resposta e continua a ser preenchido à parte.
     if (!prov.simulado) {
-      if (acao === "comprar" && compra?.idVpoAntt) {
+      // A compra pode estourar o limite de 60 s e concluir depois no NSPEDAGIO: o recibo (viagem existente) grava o mesmo ID.
+      if ((acao === "comprar" || acao === "recibo" || acao === "status") && compra?.idVpoAntt) {
         const campos = { vpo_idvpo: compra.idVpoAntt, vpo_valor: compra.totalViagem ?? null };
         const { data: existe } = await admin.from("operacao_ciot_vpo").select("id").eq("operacao_id", operacaoId).maybeSingle();
         if (existe) await admin.from("operacao_ciot_vpo").update(campos).eq("id", existe.id);
