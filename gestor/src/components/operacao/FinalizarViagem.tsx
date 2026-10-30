@@ -5,9 +5,12 @@ import { formatDateTime } from '@rbr/shared/format'
 import { Aviso, Campo, inputClass, inputStyle, Modal } from '../financeiro/ui'
 import { extrairErro } from './EventoFiscalModal'
 import { mensagemClara } from '../../lib/mensagemClara'
+import { passosPendentes, resumoFinalizacao, type ResultadoPasso } from '../../lib/finalizacao'
+import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 
-// "Finalizar viagem" = encerrar o MDF-e da operação. Por enquanto é SÓ manual: o gestor confere os
-// dados já preenchidos e confirma. Não muda o status da operação (entregue/fechada), só o MDF-e.
+// "Finalizar viagem" (B11) = encerrar o MDF-e e o CIOT da efrete num botão só. Manual: o gestor confere os
+// dados já preenchidos e confirma. Se um dos dois falhar, mostra qual; ao tentar de novo só o que faltou é refeito.
+// Não muda o status da operação (entregue/fechada). O estado 'finalizando' e o aviso ao fiscal dependem do lote de status (A04).
 // Usado no card da operação (Operações) e no bloco fiscal da operação (Fiscal).
 
 type StatusOperacao = Database['public']['Enums']['status_operacao']
@@ -56,8 +59,18 @@ export default function FinalizarViagem({
   const [sucesso, setSucesso] = useState<string | null>(null)
   const [eventos, setEventos] = useState<EventoFiscal[] | null>(null)
   const [verEventos, setVerEventos] = useState(false)
+  const [ciotStatus, setCiotStatus] = useState<string | null>(null)
 
   useEffect(() => setMdfe(mdfeInicial), [mdfeInicial])
+
+  const carregarCiot = useCallback(async () => {
+    if (!CIOT_EFRETE_HABILITADO) return
+    const { data } = await supabase.from('operacao_ciot_vpo').select('ciot_origem, ciot_status').eq('operacao_id', operacaoId).maybeSingle()
+    setCiotStatus(data?.ciot_origem === 'efrete' ? (data.ciot_status ?? null) : null)
+  }, [operacaoId])
+  useEffect(() => {
+    void carregarCiot()
+  }, [carregarCiot])
 
   const carregarMdfe = useCallback(async () => {
     const { data } = await supabase
@@ -90,9 +103,9 @@ export default function FinalizarViagem({
   }, [verEventos, carregarEventos])
 
   async function depoisDeTentar(ok: boolean, mensagem?: string) {
-    await Promise.all([carregarMdfe(), verEventos ? carregarEventos() : Promise.resolve()])
+    await Promise.all([carregarMdfe(), carregarCiot(), verEventos ? carregarEventos() : Promise.resolve()])
     if (ok) {
-      setSucesso(mensagem ?? 'Viagem finalizada. O MDF-e foi encerrado.')
+      setSucesso(mensagem ?? 'Viagem finalizada.')
       setAberto(false)
       onAtualizado?.()
     }
@@ -102,7 +115,9 @@ export default function FinalizarViagem({
 
   const autorizado = mdfe?.status === 'emitido'
   const entregue = statusOperacao === 'entregue' || statusOperacao === 'fechada'
-  const encerrado = !!mdfe?.encerrado_em
+  const mdfeEncerrado = !!mdfe?.encerrado_em
+  const faltaCiot = ciotStatus === 'emitido'
+  const encerrado = mdfeEncerrado && !faltaCiot
 
   // Prazo legal: 30 dias a partir da autorização.
   let prazo: { tipo: 'atencao' | 'erro'; texto: string } | null = null
@@ -113,7 +128,7 @@ export default function FinalizarViagem({
     else if (faltam <= AVISAR_COM_DIAS) prazo = { tipo: 'atencao', texto: `Encerre o MDF-e até ${dataCurta(limite)} (prazo de ${PRAZO_DIAS} dias).` }
   }
 
-  const motivoDesativado = !autorizado ? 'Sem MDF-e autorizado. Emita o MDF-e primeiro.' : !entregue ? 'Aguardando a entrega da carga.' : null
+  const motivoDesativado = !autorizado && !faltaCiot ? 'Sem MDF-e autorizado. Emita o MDF-e primeiro.' : !entregue ? 'Aguardando a entrega da carga.' : null
 
   return (
     <div className="bg-white border rounded-2xl p-4 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
@@ -121,7 +136,7 @@ export default function FinalizarViagem({
         <div className="min-w-0">
           <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Finalizar viagem</div>
           <div className="text-xs text-[color:var(--rbr-muted)]">
-            {mdfe?.numero_documento ? `MDF-e nº ${mdfe.numero_documento}` : 'Encerra o MDF-e da operação'}
+            {mdfe?.numero_documento ? `MDF-e nº ${mdfe.numero_documento}` : 'Encerra o MDF-e da operação'}{faltaCiot ? ' e o CIOT' : ''}
             {autorizado && mdfe?.emitido_em ? ` · autorizado em ${formatDateTime(mdfe.emitido_em)}` : ''}
           </div>
         </div>
@@ -141,7 +156,7 @@ export default function FinalizarViagem({
               className="text-sm font-bold px-4 py-2.5 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ background: 'var(--rbr-navy)', color: '#fff' }}
             >
-              Finalizar viagem
+              {mdfeEncerrado && faltaCiot ? 'Encerrar o CIOT que faltou' : 'Finalizar viagem'}
             </button>
             {motivoDesativado && <div className="text-xs text-[color:var(--rbr-muted)]">{motivoDesativado}</div>}
           </div>
@@ -202,6 +217,7 @@ export default function FinalizarViagem({
         <ConfirmarFinalizacao
           operacaoId={operacaoId}
           mdfe={mdfe}
+          ciotStatus={ciotStatus}
           entregueEm={entregueEm}
           onFechar={() => setAberto(false)}
           onTentou={depoisDeTentar}
@@ -214,12 +230,14 @@ export default function FinalizarViagem({
 function ConfirmarFinalizacao({
   operacaoId,
   mdfe,
+  ciotStatus,
   entregueEm,
   onFechar,
   onTentou,
 }: {
   operacaoId: string
   mdfe: DocMdfe
+  ciotStatus: string | null
   entregueEm: string | null
   onFechar: () => void
   onTentou: (ok: boolean, mensagem?: string) => Promise<void>
@@ -264,13 +282,22 @@ function ConfirmarFinalizacao({
       body.nome_municipio = municipio.trim()
     }
     try {
-      const { data: resp, error } = await supabase.functions.invoke('eventos-fiscais', { body })
-      if (error || resp?.sucesso === false) {
-        setErro(error ? await extrairErro(error) : (resp?.erro ?? 'Não foi possível finalizar a viagem.'))
-        await onTentou(false)
-        return
+      const passos = passosPendentes({ mdfeAutorizado: mdfe.status === 'emitido', mdfeEncerrado: !!mdfe.encerrado_em, ciotStatus })
+      const resultados: ResultadoPasso[] = []
+      for (const passo of passos) {
+        if (passo.id === 'mdfe') {
+          const { data: resp, error } = await supabase.functions.invoke('eventos-fiscais', { body })
+          if (error || resp?.sucesso === false) resultados.push({ id: 'mdfe', ok: false, erro: error ? await extrairErro(error) : (resp?.erro ?? 'sem detalhe') })
+          else resultados.push({ id: 'mdfe', ok: true })
+        } else {
+          const { data: resp, error } = await supabase.functions.invoke('efrete-ciot-operacao', { body: { acao: 'encerrar', operacao_id: operacaoId } })
+          if (error || resp?.ok === false) resultados.push({ id: 'ciot', ok: false, erro: error ? await extrairErro(error) : (resp?.motivo ?? 'sem detalhe') })
+          else resultados.push({ id: 'ciot', ok: true })
+        }
       }
-      await onTentou(true, resp?.ja_encerrado ? 'Esse MDF-e já estava encerrado.' : 'Viagem finalizada. O MDF-e foi encerrado.')
+      const resumo = resumoFinalizacao(resultados)
+      if (!resumo.tudoCerto) setErro(resumo.mensagem)
+      await onTentou(resumo.tudoCerto, resumo.mensagem)
     } catch (e) {
       setErro(mensagemClara(e, 'Não foi possível finalizar a viagem.'))
     } finally {
@@ -313,7 +340,7 @@ function ConfirmarFinalizacao({
         </Campo>
       </div>
 
-      <Aviso tipo="atencao">Depois de finalizar, o MDF-e não pode mais ser cancelado.</Aviso>
+      <Aviso tipo="atencao">Depois de finalizar, o MDF-e{ciotStatus === 'emitido' ? ' e o CIOT' : ''} não podem mais ser cancelados.</Aviso>
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
       <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">

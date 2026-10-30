@@ -140,6 +140,10 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
           const r = await acao('transacoes', { acao: 'transacoes' })
           if (r?.ok) setTransacoes((r.transacoes as Record<string, unknown>[]) ?? [])
         }}
+        onEncerrar={async () => {
+          const r = await acao('encerrar', { acao: 'encerrar' }, (x) => `CIOT encerrado (protocolo ${String(x.protocolo ?? '—')}).`)
+          return !!r?.ok
+        }}
         onCancelar={async (motivo) => {
           const r = await acao('cancelar', { acao: 'cancelar', motivo }, (x) => `CIOT cancelado (protocolo ${String(x.protocolo ?? '—')}).`)
           return !!r?.ok
