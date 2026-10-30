@@ -24,3 +24,9 @@ test('todo mundo tem Início, Busca e Avisos; papel desconhecido só isso', () =
   }
   assert.equal(podeVerNoMenu('outro', '/operacoes'), false)
 })
+
+test('Serviços aparece para quem usa cotação, operações ou fiscal', () => {
+  for (const p of ['comercial', 'operacao', 'fiscal', 'gestor_rbr']) assert.equal(podeVerNoMenu(p, '/servicos'), true)
+  assert.equal(podeVerNoMenu('financeiro', '/servicos'), true) // financeiro vê operações
+  assert.equal(podeVerNoMenu('outro', '/servicos'), false)
+})

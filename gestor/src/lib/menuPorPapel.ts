@@ -9,7 +9,11 @@ const POR_PAPEL: Record<string, string[]> = {
   financeiro: [...BASICO, '/financeiro', '/notas-parceiros', '/operacoes'],
 }
 
+// Serviços reúne Cotação, Operações e Fiscal: aparece para quem usa qualquer um dos três.
+const DENTRO_DE_SERVICOS = ['/cotacao', '/operacoes', '/fiscal']
+
 export function podeVerNoMenu(papel: string | null | undefined, rota: string): boolean {
   if (papel === 'gestor_rbr') return true
+  if (rota === '/servicos') return DENTRO_DE_SERVICOS.some((r) => (POR_PAPEL[papel ?? ''] ?? BASICO).includes(r))
   return (POR_PAPEL[papel ?? ''] ?? BASICO).includes(rota)
 }

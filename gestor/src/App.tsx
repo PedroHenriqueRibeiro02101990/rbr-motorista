@@ -20,6 +20,7 @@ import SaudeFiscal from './pages/SaudeFiscal'
 import Avisos from './pages/Avisos'
 import Busca from './pages/Busca'
 import Metas from './pages/Metas'
+import Servicos from './pages/Servicos'
 import PropostaPublica from './pages/PropostaPublica'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/avisos" element={<Avisos />} />
           <Route path="/busca" element={<Busca />} />
           <Route path="/metas" element={<Metas />} />
+          <Route path="/servicos" element={<Servicos />} />
           <Route path="/risco" element={<Risco />} />
           <Route path="/cadastros" element={<Cadastros />} />
           <Route path="*" element={<Navigate to="/" replace />} />
