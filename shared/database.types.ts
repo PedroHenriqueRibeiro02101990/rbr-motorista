@@ -9133,6 +9133,60 @@ export type Database = {
           },
         ]
       }
+      vpo_requisicoes: {
+        Row: {
+          acao: string
+          ambiente: string
+          criado_em: string
+          criado_por: string | null
+          erro: string | null
+          http_status: number | null
+          id: string
+          id_recibo: string | null
+          id_vpo_antt: string | null
+          idempotency_key: string
+          numero_viagem: string | null
+          operacao_id: string
+          request_json: Json | null
+          response_json: Json | null
+          total_viagem: number | null
+        }
+        Insert: {
+          acao: string
+          ambiente: string
+          criado_em?: string
+          criado_por?: string | null
+          erro?: string | null
+          http_status?: number | null
+          id?: string
+          id_recibo?: string | null
+          id_vpo_antt?: string | null
+          idempotency_key: string
+          numero_viagem?: string | null
+          operacao_id: string
+          request_json?: Json | null
+          response_json?: Json | null
+          total_viagem?: number | null
+        }
+        Update: {
+          acao?: string
+          ambiente?: string
+          criado_em?: string
+          criado_por?: string | null
+          erro?: string | null
+          http_status?: number | null
+          id?: string
+          id_recibo?: string | null
+          id_vpo_antt?: string | null
+          idempotency_key?: string
+          numero_viagem?: string | null
+          operacao_id?: string
+          request_json?: Json | null
+          response_json?: Json | null
+          total_viagem?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       pontuacao_saldo: {
