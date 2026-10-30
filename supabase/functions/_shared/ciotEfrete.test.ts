@@ -366,3 +366,9 @@ test('"emitir novamente" nunca pula a anti-duplicidade: referência nova já emi
   assert.equal(r.ok && r.jaExistia, true)
   assert.equal(emitiu, 0)
 })
+
+test('C10: Tabela B com 2 ou 3 eixos orienta a usar a Tabela A', () => {
+  const r = calcularPisoAntt([], { eixos: 3, distanciaKm: 100, altoDesempenho: false, composicao: false, tipoCarga: 'Carga Geral', hoje: '2026-10-30' } as never)
+  assert.equal(r.ok, false)
+  assert.match(String((r as { motivo: string }).motivo), /Use a Tabela A/)
+})

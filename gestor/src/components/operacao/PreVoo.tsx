@@ -13,6 +13,8 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
   const [nfes, setNfes] = useState<{ quantidade: number; valor_total: number } | null>(null)
   // C08: limite da apólice RCTR-C lido do cadastro (nunca fixo no código).
   const [teto, setTeto] = useState<number | null>(null)
+  // C09: vários destinatários no mesmo caminhão (multi-CT-e) está adiado; só avisa.
+  const [destinatarios, setDestinatarios] = useState(0)
 
   useEffect(() => {
     let vivo = true
@@ -25,6 +27,14 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
     return () => {
       vivo = false
     }
+  }, [operacaoId])
+
+  useEffect(() => {
+    supabase
+      .from('operacao_nfes')
+      .select('destinatario_cnpj')
+      .eq('operacao_id', operacaoId)
+      .then(({ data }) => setDestinatarios(new Set((data ?? []).map((n) => n.destinatario_cnpj).filter(Boolean)).size))
   }, [operacaoId])
 
   useEffect(() => {
@@ -50,6 +60,11 @@ export default function PreVoo({ operacaoId, tipo }: { operacaoId: string; tipo:
     <div className="rounded-lg px-3 py-2 text-xs" style={{ background: faltam.length ? '#FDF1DC' : '#E7F5EC', color: faltam.length ? '#8A5A00' : 'var(--rbr-positive)' }}>
       <div className="font-bold mb-1">{faltam.length ? `Pré-voo: ${faltam.length} pendência(s) antes de emitir` : '✓ Pré-voo completo: nada pendente'}</div>
       {nfes && tipo !== 'nfse' && <div className="mb-1 tabular-nums">{resumoNfes(Number(nfes.quantidade), Number(nfes.valor_total))}</div>}
+      {destinatarios > 1 && tipo !== 'nfse' && (
+        <div className="mb-1 font-bold" style={{ color: '#8A5A00' }}>
+          Atenção: as notas têm {destinatarios} destinatários diferentes. Vários destinatários no mesmo caminhão (multi-CT-e) ainda não é suportado: confira antes de emitir.
+        </div>
+      )}
       {apolice && apolice.nivel !== 'ok' && tipo !== 'nfse' && (
         <div className="mb-1 font-bold" style={{ color: apolice.nivel === 'travado' ? 'var(--rbr-danger)' : '#8A5A00' }}>
           Apólice: {apolice.percentual.toFixed(0)}% do limite. {apolice.motivo}
