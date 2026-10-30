@@ -66,7 +66,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
       .eq('operacao_id', operacaoId)
       .order('criado_em', { ascending: true })
     if (error) setErro(`Não consegui ler o registro do vale-pedágio. ${mensagemClara(error, '')}`.trim())
-    setReqs(error ? [] : ((data ?? []) as RequisicaoVpo[]))
+    setReqs(error ? [] : ((data ?? []) as unknown as RequisicaoVpo[]))
   }, [operacaoId])
   useEffect(() => {
     void carregar()
