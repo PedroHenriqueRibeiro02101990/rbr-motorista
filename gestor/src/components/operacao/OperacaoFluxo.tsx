@@ -56,6 +56,8 @@ import {
   type IdEtapa,
 } from '../../lib/etapasOperacao'
 import { mostrarAvisoMudancaDocumento } from '../../lib/avisos'
+import { alertasDePrazo } from '@rbr/shared/regrasOperacao'
+import { etapasNaoSeAplicam } from '../../lib/etapasOperacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
 // Detalhe da operação — painel enxuto (2026-10-16): uma linha "Próximo passo", uma linha do tempo só com as etapas que
@@ -353,6 +355,29 @@ export default function OperacaoFluxo({
       {mostrarAvisoMudancaDocumento(o.tipo_documento_mudou_em, o.status, d.documentos) && (
         <div className="text-xs rounded-xl px-3 py-2 font-semibold" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>
           A origem ou o destino mudou em {formatDateTime(o.tipo_documento_mudou_em)} e o documento ao cliente foi recalculado. Confira antes de emitir.
+        </div>
+      )}
+      {(() => {
+        // D12: passou da entrega prevista sem finalizar; MDF-e perto dos 30 dias. (O prazo do CIOT entra quando o fim previsto vier no detalhe.)
+        const mdfe = d.documentos.find((x) => x.tipo === 'mdfe' && x.status === 'emitido')
+        const alertas = alertasDePrazo(
+          {
+            entregaPrevista: o.entrega_prevista ? Date.parse(o.entrega_prevista) : null,
+            finalizada: ['entregue', 'fechada', 'cancelada'].includes(o.status),
+            mdfeEmitidoEm: mdfe?.emitido_em ? Date.parse(mdfe.emitido_em) : null,
+            mdfeEncerrado: !!mdfe?.encerrado_em,
+          },
+          Date.now(),
+        )
+        return alertas.map((txt) => (
+          <div key={txt} className="text-xs rounded-xl px-3 py-2 font-semibold" style={{ background: '#FDF1DC', color: '#8A5A00' }} role="status">
+            {txt}
+          </div>
+        ))
+      })()}
+      {etapasNaoSeAplicam(d).length > 0 && (
+        <div className="text-[11px] text-[color:var(--rbr-muted)]">
+          Não se aplica: {etapasNaoSeAplicam(d).map((e) => e.motivo.replace(/.$/, '')).join(' · ')}.
         </div>
       )}
       {corrigindo && <CorrigirStatus d={d} salvando={salvando} executar={executar} />}

@@ -4,7 +4,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { etapasDaOperacao, pendenciasLiberacao, proximoPasso } from '../src/lib/etapasOperacao.ts'
+import { etapasDaOperacao, etapasNaoSeAplicam, pendenciasLiberacao, proximoPasso } from '../src/lib/etapasOperacao.ts'
 import type { DetalheOperacao } from '../src/lib/operacaoDetalhe'
 
 type DocParcial = { tipo: string; status: string; exigido: boolean; dispensa_motivo?: string | null; conferencia_status?: string; referencia?: string | null; chave_acesso?: string | null; numero_documento?: string | null; arquivo_path?: string | null; ambiente?: string | null }
@@ -141,4 +141,11 @@ test('MDF-e emitido sem resultado da Sompo: processando; erro vira problema e pa
 test('sem motorista: primeiro passo é alocar', () => {
   const o = op({ alocado: false, condicao: false, status: 'alocando_motorista', docs: [] })
   assert.equal(proximoPasso(o).texto, 'Alocar motorista e veículo')
+})
+
+test('B13: etapas que não se aplicam trazem o motivo', () => {
+  const sem = etapasNaoSeAplicam(op({ docs: [], pedagio: 0, frotaPropria: true }))
+  assert.deepEqual(sem.map((e) => e.etapa), ['vpo', 'ciot'])
+  assert.match(sem[0].motivo, /Sem pedágio/)
+  assert.deepEqual(etapasNaoSeAplicam(op({ docs: [], pedagio: 50, frotaPropria: false })), [])
 })

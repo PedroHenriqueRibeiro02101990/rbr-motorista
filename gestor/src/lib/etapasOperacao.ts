@@ -1,6 +1,7 @@
 import type { DetalheOperacao, Documento } from './operacaoDetalhe'
 import { estadoSompo } from './averbacaoSompo.ts'
 import { CIOT_EFRETE_HABILITADO } from './efreteFlags.ts'
+import { esteiraDaOperacao } from '../../../shared/regrasOperacao.ts'
 
 // Linha do tempo da operação (painel enxuto, 2026-10-16). Só decide QUAIS etapas aparecem e em que estado; não cria
 // regra nova. De onde vem cada regra:
@@ -320,4 +321,11 @@ export function proximoPassoPorStatus(status: string, temMotorista: boolean): st
   if (status === 'carregando' || status === 'em_transito') return 'Em viagem'
   if (status === 'entregue') return 'Fechar a operação'
   return ''
+}
+
+// B13: etapas da esteira que NÃO se aplicam a esta operação, com o motivo (sem pedágio: sem VPO; frota própria: sem CIOT).
+export function etapasNaoSeAplicam(d: DetalheOperacao): { etapa: string; motivo: string }[] {
+  return esteiraDaOperacao({ temPedagio: Number(d.cotacao?.pedagio ?? 0) > 0, frotaPropria: frotaPropria(d) })
+    .filter((e) => !e.aplica)
+    .map((e) => ({ etapa: e.etapa, motivo: e.motivo ?? '' }))
 }
