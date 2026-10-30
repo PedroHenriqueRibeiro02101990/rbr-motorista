@@ -112,3 +112,125 @@ export function PassosCotacao({ status }: { status: string }) {
     </div>
   )
 }
+
+// Validade da proposta (visual "Cotacao-Historico"): dias que faltam, data de expiração e barra. Renovar ainda não existe no sistema.
+export function ValidadeCard({ criadaEm, validadeDias }: { criadaEm: string | null; validadeDias: number | null }) {
+  if (!criadaEm || !validadeDias) return null
+  const expira = new Date(new Date(criadaEm).getTime() + validadeDias * 86_400_000)
+  const restam = Math.ceil((expira.getTime() - Date.now()) / 86_400_000)
+  const pct = Math.max(0, Math.min(100, (restam / validadeDias) * 100))
+  const vencida = restam < 0
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+        VALIDADE
+      </div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-[26px] font-extrabold" style={{ color: vencida ? '#b42318' : 'var(--rbr-navy-dark)' }}>
+          {vencida ? 'Vencida' : restam === 1 ? '1 dia' : `${restam} dias`}
+        </span>
+        <span className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
+          {vencida ? 'venceu' : 'expira'} em {expira.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full" style={{ background: '#e9ecf4' }}>
+        <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, background: restam <= 2 ? '#d64545' : '#e0a21c' }} />
+      </div>
+      <button type="button" disabled title="Ainda não disponível" className="self-start text-[12px] font-bold px-3.5 py-1.5 rounded-[10px] border opacity-50 cursor-not-allowed mt-1" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>
+        Renovar por 7 dias · ainda não disponível
+      </button>
+    </div>
+  )
+}
+
+export type EventoLinha = { titulo: string; detalhe: string; tom: 'verde' | 'amarelo' | 'azul' }
+
+// Linha do tempo (visual "Cotacao-Historico"), montada só com datas que existem na cotação.
+export function HistoricoCard({ eventos }: { eventos: EventoLinha[] }) {
+  const cor = { verde: '#1a9b57', amarelo: '#e0a21c', azul: '#1c2559' }
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+        HISTÓRICO DA COTAÇÃO
+      </div>
+      <div className="flex flex-col">
+        {eventos.map((e, i) => (
+          <div key={e.titulo + i} className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <span className="w-3 h-3 rounded-full mt-1" style={{ background: cor[e.tom] }} />
+              {i < eventos.length - 1 && <span className="w-0.5 flex-1 min-h-[22px]" style={{ background: '#d5d9e6' }} />}
+            </div>
+            <div className="pb-3">
+              <div className="text-[14px] font-extrabold text-[color:var(--rbr-navy-dark)]">{e.titulo}</div>
+              <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
+                {e.detalhe}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[12px] rounded-xl px-3 py-2.5" style={{ background: '#f3f5f9', color: 'var(--rbr-muted)' }}>
+        Versões da proposta ainda não são guardadas: aqui aparecem só as datas da cotação.
+      </div>
+    </div>
+  )
+}
+
+export type ItemPronto = { titulo: string; detalhe: string; ok: boolean }
+
+// "Para enviar a cotação" (visual "Cotacao-Recebedor"): o que já está pronto e o que falta, tirado dos dados da cotação.
+export function ProntoParaEnviarCard({ itens }: { itens: ItemPronto[] }) {
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+        PARA ENVIAR A COTAÇÃO
+      </div>
+      {itens.map((i) => (
+        <div key={i.titulo} className="flex items-start gap-3">
+          <span className="w-6 h-6 rounded-full inline-flex items-center justify-center text-white text-[12px] font-extrabold flex-shrink-0" style={{ background: i.ok ? '#1a9b57' : '#e0a21c' }}>
+            {i.ok ? '✓' : '!'}
+          </span>
+          <div>
+            <div className="text-[14px] font-extrabold text-[color:var(--rbr-navy-dark)]">{i.titulo}</div>
+            <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
+              {i.detalhe}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export type CampoRecebedor = { rotulo: string; valor: string | null; doXml?: boolean }
+
+// "Quem recebe a carga" (visual "Cotacao-Recebedor"): dados do destinatário que vieram do XML da NF-e. Campo vazio aparece desativado.
+export function RecebedorCard({ campos, avisar }: { campos: CampoRecebedor[]; avisar: CampoRecebedor[] }) {
+  const caixa = (c: CampoRecebedor) => (
+    <div key={c.rotulo} className="rounded-xl border px-3 py-2 min-w-0" style={{ borderColor: 'var(--rbr-border)', background: c.valor ? '#fff' : '#f7f8fc', opacity: c.valor ? 1 : 0.7 }}>
+      <div className="flex items-center justify-between gap-2 text-[10px]" style={{ color: 'var(--rbr-muted)' }}>
+        <span>{c.rotulo}</span>
+        {c.doXml && c.valor && <span className="font-extrabold" style={{ color: '#1a6b3c' }}>✓ DO XML</span>}
+      </div>
+      <div className="text-[14px] font-extrabold truncate text-[color:var(--rbr-navy-dark)]">{c.valor ?? 'não informado'}</div>
+    </div>
+  )
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+        QUEM RECEBE A CARGA
+      </div>
+      <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
+        O XML da NF-e já traz os dados da empresa. Você só completa o contato de quem vai receber o aviso.
+      </div>
+      <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">{campos.map(caixa)}</div>
+      <div className="text-[11px] font-extrabold tracking-[0.08em] pt-1" style={{ color: 'var(--rbr-muted)' }}>
+        QUEM AVISAR NA ENTREGA
+      </div>
+      <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">{avisar.map(caixa)}</div>
+      <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
+        O contato de aviso na entrega ainda não é guardado na cotação: os campos ficam desativados até existir esse dado.
+      </div>
+    </div>
+  )
+}

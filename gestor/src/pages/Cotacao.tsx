@@ -28,7 +28,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { tituloRota } from '../lib/tituloRota'
-import { PrecoCard, PassosCotacao } from '../components/cotacao/PrecoVisual'
+import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, type EventoLinha } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -2568,6 +2568,7 @@ export default function Cotacao() {
                 {tituloRota({ ...form, tipo_cotacao: tipoCotacao }) || 'Informe origem e destino abaixo.'}
               </div>
             </div>
+            <div className="flex flex-col gap-3 min-w-0">
             <PrecoCard
               linhas={[
                 { rotulo: 'Frete do motorista', valor: composicao?.frete ?? null },
@@ -2579,6 +2580,43 @@ export default function Cotacao() {
               margem={composicao?.margem ?? null}
               piso={margemMin}
             />
+            {editingId && (() => {
+              const c = (cotacoes ?? []).find((x) => x.id === editingId)
+              if (!c) return null
+              const quando = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+              const eventos: EventoLinha[] = [{ titulo: 'Cotação criada', detalhe: quando(c.created_at), tom: 'verde' }]
+              if (c.updated_at && c.updated_at !== c.created_at) eventos.push({ titulo: 'Última alteração', detalhe: quando(c.updated_at), tom: 'amarelo' })
+              if (c.status === 'enviada') eventos.push({ titulo: 'Enviada ao cliente', detalhe: 'aguardando resposta', tom: 'azul' })
+              if (c.status === 'convertida') eventos.push({ titulo: 'Aprovada', detalhe: 'virou operação', tom: 'verde' })
+              if (c.status === 'perdida') eventos.push({ titulo: 'Perdida', detalhe: c.motivo_perda ? String(c.motivo_perda) : 'sem motivo registrado', tom: 'amarelo' })
+              return (
+                <>
+                  <ProntoParaEnviarCard
+                    itens={[
+                      { titulo: 'Cliente e carga', detalhe: c.cliente_id ? (c.nf_chave_acesso ? 'Lido do XML' : 'Cliente escolhido') : 'Falta escolher o cliente', ok: !!c.cliente_id },
+                      { titulo: 'Preço dentro da faixa', detalhe: composicao?.margem != null ? `Margem ${(composicao.margem * 100).toFixed(1)}%` : 'Sem preço calculado', ok: composicao?.margem != null && composicao.margem >= margemMin },
+                      { titulo: 'Dados de quem recebe', detalhe: 'CNPJ, IE e endereço', ok: !!(c.nf_destinatario_cnpj && c.nf_destinatario_ie && c.nf_destinatario_endereco) },
+                      { titulo: 'Contato de quem recebe', detalhe: 'Ainda não é guardado na cotação', ok: false },
+                    ]}
+                  />
+                  <RecebedorCard
+                    campos={[
+                      { rotulo: 'CNPJ', valor: c.nf_destinatario_cnpj, doXml: true },
+                      { rotulo: 'Razão social', valor: c.nf_destinatario_razao_social, doXml: true },
+                      { rotulo: 'Inscrição estadual', valor: c.nf_destinatario_ie, doXml: true },
+                    ]}
+                    avisar={[
+                      { rotulo: 'Nome', valor: null },
+                      { rotulo: 'E-mail', valor: null },
+                      { rotulo: 'WhatsApp', valor: null },
+                    ]}
+                  />
+                  {(c.status === 'rascunho' || c.status === 'enviada') && <ValidadeCard criadaEm={c.created_at} validadeDias={c.validade_dias ?? 5} />}
+                  <HistoricoCard eventos={eventos} />
+                </>
+              )
+            })()}
+            </div>
           </div>
           {successMsg && (
             <div
