@@ -163,6 +163,19 @@ Deno.serve(async (req) => {
       })
       .eq("id", linha.id);
 
+    // B04: o ID do vale (idVpoAntt) vai para operacao_ciot_vpo, de onde o emitir-mdfe lê o IDVPO (origem 'api').
+    // Só compra real; o CNPJ da fornecedora não vem na resposta e continua a ser preenchido à parte.
+    if (!prov.simulado) {
+      if (acao === "comprar" && compra?.idVpoAntt) {
+        const campos = { vpo_idvpo: compra.idVpoAntt, vpo_valor: compra.totalViagem ?? null };
+        const { data: existe } = await admin.from("operacao_ciot_vpo").select("id").eq("operacao_id", operacaoId).maybeSingle();
+        if (existe) await admin.from("operacao_ciot_vpo").update(campos).eq("id", existe.id);
+        else await admin.from("operacao_ciot_vpo").insert({ operacao_id: operacaoId, origem: "api", ...campos });
+      } else if (acao === "cancelar" && r.ok) {
+        await admin.from("operacao_ciot_vpo").update({ vpo_idvpo: null, vpo_valor: null }).eq("operacao_id", operacaoId);
+      }
+    }
+
     return json({ ok: r.ok, simulado: prov.simulado, ambiente: AMBIENTE, ...(r.ok ? { dados: r.dados } : { erro: r.erro }) }, r.ok ? 200 : r.http >= 400 && r.http < 600 ? 502 : 422);
   } catch (e) {
     return json({ ok: false, erro: e instanceof Error ? e.message : "Erro inesperado." }, 500);

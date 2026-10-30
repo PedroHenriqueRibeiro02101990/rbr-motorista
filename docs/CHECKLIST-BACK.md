@@ -17,11 +17,11 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B01 | feito | Testar token do NSPEDÁGIO `[X]` · token e leituras do PC e pela função publicada, 29/10 (docs-privado) |
 | B02 | feito | Função nspedagio_segredo `[M]` · migração 20261029_01 aplicada |
 | B03 | feito | Número numérico da operação e vpo_requisicoes `[M]` · migrações 20261029_01 e _02 aplicadas |
-| B04 | parcial | Cliente e funções do NSPEDÁGIO `[X]` · nspedagio-vpo v5 com simular, comprar, cancelar, recibo, trocar placa, tag, status; falta gravar idVpoAntt em operacao_ciot_vpo e cancelamento com sucesso explícito (pergunta ao Antonio) |
+| B04 | feito | nspedagio-vpo grava idVpoAntt em operacao_ciot_vpo (origem api) na compra real e limpa no cancelamento; falta provar com nova compra em dia útil; cancelamento sem sucesso explícito segue pendente da NSTech
 | B05 | feito | Cartão do VPO na aba Fiscal · CartaoVpo (commit 5721e80); não testado no navegador |
 | B06 | pendente | Proxy da Vercel para o NSPEDÁGIO `[X]` · depende do limite de deploys da Vercel |
 | B07 | pendente | Pedágio estimado na cotação |
-| B08 | parcial | CIOT · efreteClient já tem EncerrarOperacaoTransporte; falta botão e desembarque |
+| B08 | parcial | encerrar existe na função com peso total das NF-e e agora com prazo; falta botão no cartão e desembarque (pergunta NSTech)
 | B09 | feito | ciotEfreteSemValidade em mdfe.ts: CIOT da efrete só vale com status emitido (bloqueia em produção real); 20 testes; emitir-mdfe publicada. Falta checar VPO ativo
 | B10 | pendente | CIOT com várias NF-e |
 | B11 | pendente | Finalizar viagem |
@@ -30,7 +30,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B14 | pendente | Janela de emissão |
 | B15 | pendente | Cancelar a operação inteira `[$]` |
 | B16 | pendente | Cancelar MDF-e com conferência |
-| B17 | parcial | Tabela única de prazos · supabase/functions/_shared/prazos.ts + 6 testes verdes; falta ligar nas telas e funções |
+| B17 | parcial | prazos.ts ligado em cancelar-documento-fiscal e efrete-ciot-operacao; falta VPO e telas
 | B18 | pendente | Idempotência geral |
 | C01 | pendente | Averbação automática e confiável `[X]` |
 | C02 | pendente | Troca de motorista `[X]` |

@@ -11,6 +11,7 @@
 // Trava: nesta fase só roda na homologação (dev.efrete.com.br).
 // Trava da operação: com a efrete em homologação, só operação marcada como teste (eh_teste) chama a efrete (travaEfreteOperacao).
 
+import { podeCancelarCiot, podeEncerrarCiot } from "../_shared/prazos.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { carregarConfigDoVault, criarClienteEfrete, type ConfigEfrete } from "../_shared/efreteClient.ts";

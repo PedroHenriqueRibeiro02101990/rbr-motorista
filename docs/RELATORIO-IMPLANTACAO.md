@@ -25,7 +25,10 @@ Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e
 ## 4. Funções publicadas
 | Função | Versão antes → depois | Hora | Teste de fumaça |
 |---|---|---|---|
-| emitir-mdfe | anterior → nova (B09) | 30/10/2026 manhã | payload vazio com chave anon: HTTP 400 (a função sobe e valida). Logs não lidos: a consulta de logs falhou 3 vezes (nome das tabelas), então não verifiquei erro de execução. Não emiti MDF-e. |
+| emitir-mdfe | anterior → B09 → CIOT ausente só bloqueia a partir de 23/11 | 30/10/2026 (~9h40 Brasília) | vazio com anon: HTTP 400; log "booted" sem erro |
+| cancelar-documento-fiscal | anterior → prazos CT-e 7 dias e MDF-e 24 h/viagem iniciada antes de chamar a Focus (B16/B17) | idem | vazio: HTTP 400; "booted" |
+| nspedagio-vpo | v5 → grava idVpoAntt em operacao_ciot_vpo (origem api) na compra real; limpa no cancelamento com sucesso (B04) | idem | vazio: HTTP 401; "booted". Compra real não repetida nesta rodada |
+| efrete-ciot-operacao | v4 → prazos de cancelar (24 h antes do início) e encerrar (5 dias após o fim previsto; operação de teste dispensada) (B08/B17) | idem | vazio: HTTP 401; "booted" |
 
 ## 5. Vercel
 Pushes: 0. Merges: 0. Deploys: 0. Pushes pendentes: todos os commits locais desta branch e da `feat/nspedagio-etapa1`.
@@ -39,6 +42,14 @@ Pushes: 0. Merges: 0. Deploys: 0. Pushes pendentes: todos os commits locais dest
 
 ## 6b. Dump antes do lote
 C:UsersAlineackups-rbr6-10-30 (fora do repositório): 15 tabelas fiscais + _funcoes, _gatilhos, _politicas em JSON; piso ANTT com 272 linhas. Backup lógico de dados e definições, não um PITR.
+
+## 6c. Confirmação pedida pelo Pedro: emitir-mdfe NÃO bloqueia operação sem CIOT da efrete
+- Achado: o código antigo já bloqueava TAC sem CIOT de 12 dígitos em produção real, mesmo antes de 23/11. Isso contrariava a regra do Pedro; **corrigido**: `ciotAusenteBloqueia(agora, teste, homologacao)` só bloqueia a partir de 23/11/2026 (00h Brasília) e só em produção real; antes disso vira aviso "ainda não é obrigatório no MDF-e".
+- B09: a checagem de status só roda quando há CIOT de 12 dígitos com origem 'efrete' (`ciotEfreteSemValidade`); operação sem CIOT, ou com CIOT de outra origem, não é afetada.
+- Evidência: 21 testes de `emitir-mdfe/mdfe.test.ts` (inclui antes/depois de 23/11, teste e homologação). Função republicada. Não emiti MDF-e para provar em campo.
+
+## 6d. Logs das funções
+Consulta pelo conector Supabase (query_logs, tabela `logs`, `source = 'function_edge_logs'` e `'function_logs'`) funcionou na 1ª tentativa desta vez. As falhas anteriores eram por usar nomes de tabela errados.
 
 ## 7. Incidentes
 - Aplicação da migração negada pelo classificador (`[Production Deploy]`). O Pedro autorizou depois, por escrito, e a migração foi aplicada.

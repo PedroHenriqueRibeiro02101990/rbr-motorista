@@ -15,6 +15,8 @@
 //   dispensa de teste; em homologacao, aviso. "relaxar" deixou de existir (teste e homologacao sao separados).
 
 // deno-lint-ignore no-explicit-any
+import { ciotObrigatorioNoMdfe } from "../_shared/prazos.ts";
+
 type Linha = Record<string, any>;
 
 // Origem de cada regra (C1, 2026-10-15). Bloqueia só o que é regra real:
@@ -105,6 +107,11 @@ export function ciotEfreteSemValidade(origem: unknown, status: unknown): string 
   if (origem !== "efrete") return null;
   const st = String(status ?? "");
   return st === "emitido" ? null : `O CIOT da efrete está '${st || "sem status"}': só vale no MDF-e com status 'emitido'.`;
+}
+
+// CIOT ausente só bloqueia o MDF-e real depois de 23/11/2026 (rejeição 684); antes disso vira aviso.
+export function ciotAusenteBloqueia(agora: number, teste: boolean, homologacao: boolean): boolean {
+  return !teste && !homologacao && ciotObrigatorioNoMdfe(agora);
 }
 
 export function digitos(v: unknown): string {

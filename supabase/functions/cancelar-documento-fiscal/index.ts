@@ -10,6 +10,7 @@
 // NF-e: só a de teste (ref rbr-nfe-teste-<cotacao_id> em homologação ou rbr-nfe-prod-<cotacao_id> em produção); ao cancelar, limpa a chave na cotação. Prazo NF-e: 24 h (alguns estados mais).
 // O prazo legal (CT-e: 7 dias) é decidido pela SEFAZ; a rejeição volta em mensagem_sefaz e o documento segue emitido.
 
+import { podeCancelarCte, podeCancelarMdfe } from "../_shared/prazos.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -134,7 +135,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: docs } = await supabaseAdmin
       .from("documentacao_operacao")
-      .select("tipo, status, referencia, ambiente, chave_acesso, payload_resposta")
+      .select("tipo, status, referencia, ambiente, chave_acesso, payload_resposta, emitido_em")
       .eq("operacao_id", operacao_id)
       .in("tipo", ["cte", "mdfe"]);
     const doc = (docs ?? []).find((d) => d.tipo === tipo);
