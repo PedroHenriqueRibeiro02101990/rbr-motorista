@@ -119,3 +119,7 @@ Início: seletor "Ver como" (`lib/inicioPorFuncao.ts`, 3 testes). Busca: página
 ## 6m. Link público de aceite (E04/E05)
 
 Migração aditiva `20261030_07_link_proposta.sql` (aplicada; rollback em `docs/rollbacks/20261030-0007-link-proposta.sql`) e função `proposta-publica` publicada. Smoke test real: sem chave 401; código inválido ou inexistente 404 com a mesma mensagem; ação desconhecida 400; link válido devolve só origem, destino, carga, valor e validade; aceite sem nome 400. Linha de teste removida. O aceite real não foi disparado (avisaria os gestores). Gerador testado por papel: gestor gera e reaproveita; comercial é recusado. Não testado no navegador.
+
+## 6n. Auditores agendados e disjuntor (G04, G05, G07)
+
+Migração aditiva `20261030_08_auditores.sql` (aplicada; rollback em `docs/rollbacks/20261030-0008-auditores.sql`): `auditar_segregacao`, `auditar_dinheiro`, `atualizar_disjuntor` e `reabrir_disjuntor`, com dois jobs no pg_cron a cada 30 minutos (`auditor-segregacao-30min` e `auditor-dinheiro-30min`). Só leem e gravam achados; nada emite, cancela ou mexe em dinheiro. Teste em transação descartada: sem ocorrência hoje (0 achados, disjuntor fechado); com um caso forçado, 1 achado vermelho e o disjuntor abriu. A tela Saúde fiscal mostra o disjuntor e deixa o gestor reabrir com motivo. **Ainda falta:** as funções de emissão recusarem emitir com o disjuntor aberto (mexe no fluxo central de emissão; deixei para você decidir) e o agendamento do robô TypeScript saude-fiscal (precisa publicar sem JWT e usar o segredo do Vault; ver "depende de você").

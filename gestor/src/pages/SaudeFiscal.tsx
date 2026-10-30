@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatDateTime } from '@rbr/shared/format'
-import { Aviso, Botao, Card, Carregando, Vazio } from '../components/financeiro/ui'
+import { Aviso, Botao, Card, Carregando, Vazio, inputClass, inputStyle } from '../components/financeiro/ui'
 import { codigoCurto } from '../lib/painelOperacao'
 import { mensagemClara } from '../lib/mensagemClara'
 
@@ -25,7 +25,25 @@ export function gravidadeGeral(achados: { gravidade: Gravidade }[]): Gravidade {
   return ORDEM.find((g) => achados.some((a) => a.gravidade === g)) ?? 'verde'
 }
 
+type Disjuntor = { aberto: boolean; motivo: string | null; aberto_em: string | null }
+type ChamaRpc = (fn: string, args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
+
 export default function SaudeFiscal() {
+  // G07: disjuntor fiscal. Aberto = há achado grave de segregação de funções; só o gestor reabre, com motivo.
+  const [disjuntor, setDisjuntor] = useState<Disjuntor | null>(null)
+  const [motivoReabrir, setMotivoReabrir] = useState('')
+  const lerDisjuntor = useCallback(async () => {
+    const tabela = supabase.from as unknown as (t: string) => { select: (c: string) => { eq: (c: string, v: boolean) => { maybeSingle: () => Promise<{ data: Disjuntor | null }> } } }
+    const { data } = await tabela.call(supabase, 'disjuntor_fiscal').select('aberto, motivo, aberto_em').eq('id', true).maybeSingle()
+    setDisjuntor(data)
+  }, [])
+  async function reabrir() {
+    const rpc = supabase.rpc as unknown as ChamaRpc
+    const { error } = await rpc.call(supabase, 'reabrir_disjuntor', { p_motivo: motivoReabrir })
+    if (error) setErro(`Não consegui reabrir. ${mensagemClara(error, '')}`.trim())
+    setMotivoReabrir('')
+    await lerDisjuntor()
+  }
   const [achados, setAchados] = useState<Achado[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [verificando, setVerificando] = useState(false)
@@ -44,7 +62,8 @@ export default function SaudeFiscal() {
 
   useEffect(() => {
     void carregar()
-  }, [carregar])
+    void lerDisjuntor()
+  }, [carregar, lerDisjuntor])
 
   async function verificarAgora() {
     setVerificando(true)
@@ -73,6 +92,16 @@ export default function SaudeFiscal() {
       </div>
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      {disjuntor?.aberto && (
+        <Aviso tipo="erro">
+          <div className="font-bold">Disjuntor fiscal aberto</div>
+          <div>{disjuntor.motivo}</div>
+          <div className="mt-2 flex gap-2 flex-wrap items-center">
+            <input value={motivoReabrir} onChange={(e) => setMotivoReabrir(e.target.value)} className={inputClass} style={{ ...inputStyle, flex: '1 1 220px' }} placeholder="Motivo para reabrir (mín. 10 letras)" aria-label="Motivo para reabrir" />
+            <Botao onClick={() => void reabrir()} disabled={motivoReabrir.trim().length < 10}>Reabrir</Botao>
+          </div>
+        </Aviso>
+      )}
       {achados === null ? (
         <Carregando />
       ) : (

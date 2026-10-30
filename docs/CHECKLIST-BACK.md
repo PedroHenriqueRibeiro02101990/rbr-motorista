@@ -4,7 +4,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 
 | ID | Status | Nota |
 |---|---|---|
-| A01 | pendente | Papéis por login · LOTE PRONTO E NÃO APLICADO (aplicação negada pelo classificador): enum com comercial/operacao/fiscal/financeiro, tabela funcoes_pessoa, tem_funcao(); validado em transação descartada com rollback idêntico ao estado anterior |
+| A01 | feito | Papéis por login · LOTE APLICADO em 30/10 e testado por papel: enum com comercial/operacao/fiscal/financeiro, funcoes_pessoa, tem_funcao(); gestores seguem com acesso total; a tela do gestor ainda só aceita o papel gestor (App.tsx), então os outros papéis ainda não entram nela |
 | A02 | feito | Segregação de funções · LOTE APLICADO em 30/10 e testado por papel: gatilho de segregação (quem gerou ou alocou não emite; gestor é exceção) e colunas gerada_por/alocada_por |
 | A03 | parcial (colunas criadas; falta gravar nas funções) | Ator em tudo `[M]` · supabase-migrations/20261030_01_trilha_campos_metas.sql (aplicação negada pelo classificador) |
 | A04 | feito | Status novos da operação · LOTE APLICADO em 30/10 e testado por papel: 10 status novos no enum (finalizando, em_viagem, finalizada, etc.) |
@@ -82,10 +82,10 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | G01 | parcial | Bateria de testes de regra no CI · CI roda a bateria completa (mais de 200 testes) a cada push; falta a matriz completa de cenários de cte.ts e mdfe.ts |
 | G02 | parcial | Sentinela de prontidão (15 min) · avaliarSaudeFiscal cobre a prontidão de documentos; CNH, RNTRC, apólice e certificado ainda não; sem agendamento |
 | G03 | parcial | Reconciliador (30 min e virada do dia) · função saude-fiscal publicada (documento pendente, CT-e sem averbação, MDF-e aberto, CIOT perto de 5 dias, VPO em operação cancelada); comparação com Focus, efrete e NSPEDÁGIO e agendamento pg_cron não feitos |
-| G04 | parcial | Auditor de dinheiro · divergenciasDeValor testada; falta o robô agendado |
-| G05 | parcial | Auditor de segregação e trilha · a estrutura de ator existe (A03) e trilha_auditoria foi criada; o auditor ainda não |
+| G04 | parcial | Auditor de dinheiro · auditar_dinheiro() em SQL agendada a cada 30 min (pg_cron): soma o que o financeiro vai receber por cotação e compara com o valor da cotação; grava aviso amarelo em saude_fiscal_achados; testada em transação descartada (0 achados hoje); falta comparar com o valor do CT-e e do CIOT |
+| G05 | parcial | Auditor de segregação e trilha · auditar_segregacao() em SQL agendada a cada 30 min: acha documento emitido por quem gerou ou alocou a operação (gestor é exceção); testada com caso forçado em transação descartada (1 achado vermelho e disjuntor aberto); falta auditar a trilha de ator em todas as ações |
 | G06 | pendente | Simulador noturno `[X]` |
-| G07 | parcial | Disjuntor · disjuntorAberto testado; falta persistir o estado e bloquear emissão |
+| G07 | parcial | Disjuntor · disjuntor persistido (disjuntor_fiscal): abre sozinho com achado grave de segregação, avisa os gestores no sino, aparece na tela Saúde fiscal e só o gestor reabre, com motivo gravado na trilha (reabrir_disjuntor); falta o servidor de emissão recusar emitir com o disjuntor aberto |
 | G08 | pendente | Vigia regulatório |
 | G09 | parcial | Tela Saúde fiscal · página Saúde fiscal criada (menu + /saude-fiscal): lista os achados em aberto, cor geral e botão Verificar agora (chama saude-fiscal); build ok; não testada no navegador |
 | H01 | parcial | Bateria de homologação com evidência · bateria de 14 cenários do fluxo de emissão, finalização e cancelamento (gestor/test/fluxoEmissaoFinalizacao.test.ts) roda no CI; homologação real: VPO ciclo completo 30/10, CIOT 29/10; falta rodar em homologação troca de motorista/veículo, carta de correção, várias NF-e, timeouts simulados |
