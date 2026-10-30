@@ -26,7 +26,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B10 | pendente | CIOT com várias NF-e |
 | B11 | pendente | Finalizar viagem |
 | B12 | pendente | Remover o encerramento automático `[M]` |
-| B13 | pendente | Pré-voo único e esteira |
+| B13 | parcial | esteiraDaOperacao (não se aplica + motivo) + testes; falta pré-voo único e tela
 | B14 | pendente | Janela de emissão |
 | B15 | pendente | Cancelar a operação inteira `[$]` |
 | B16 | pendente | Cancelar MDF-e com conferência |
@@ -45,7 +45,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | C11 | pendente | GR a cada troca |
 | C12 | pendente | Rejeição e contingência |
 | C13 | pendente | Vários municípios e UFs no MDF-e `[X]` |
-| D01 | pendente | Fila por urgência |
+| D01 | parcial | ordenarFila (coleta, urgente < 24 h, espera 2 h/4 h) + testes; falta ligar na lista
 | D02 | pendente | Assumir a operação |
 | D03 | pendente | Completar e enviar ao fiscal |
 | D04 | pendente | Alterações níveis A a D |
@@ -56,7 +56,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | D09 | pendente | Finalizar a operação |
 | D10 | pendente | Ocorrência em rota |
 | D11 | pendente | Lote de viagens |
-| D12 | pendente | Alertas de prazo da viagem |
+| D12 | parcial | alertasDePrazo + testes; falta ligar na central de avisos
 | D13 | pendente | Operação vê o valor ao cliente |
 | F01 | pendente | Sino e central de avisos |
 | F02 | pendente | Todo aviso tem botão que resolve |
@@ -79,7 +79,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | E10 | pendente | Quem recebe a carga |
 | E11 | pendente | Relatório comercial e celular do vendedor |
 | E12 | parcial | Cotação vencida e pré-cotação · aviso fixo da pré-cotação existe (AVISO_PRE_COTACAO); falta aviso de cotação vencida |
-| G01 | pendente | Bateria de testes de regra no CI |
+| G01 | parcial | .github/workflows/testes.yml roda os 192 testes a cada push/PR; falta a matriz completa de cenários (cte.ts/mdfe.ts) e não rodou ainda no GitHub
 | G02 | pendente | Sentinela de prontidão (15 min) |
 | G03 | pendente | Reconciliador (30 min e virada do dia) |
 | G04 | pendente | Auditor de dinheiro |
