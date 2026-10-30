@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '@rbr/shared/supabaseClient'
 import { NavLink } from 'react-router-dom'
 import type { Database } from '@rbr/shared/database.types'
 import { IconHome, IconBox, IconWallet, IconMapPin, IconLogOut, IconQuote, IconUsers } from '@rbr/shared/icons'
@@ -18,12 +19,38 @@ const NAV = [
   { to: '/financeiro', label: 'Financeiro', Icon: IconWallet, end: false },
   { to: '/mapa', label: 'Mapa', Icon: IconMapPin, end: false },
   { to: '/fiscal', label: 'Fiscal', Icon: IconFileText, end: false },
+  { to: '/avisos', label: 'Avisos', Icon: IconAlertTriangle, end: false },
   { to: '/saude-fiscal', label: 'Saúde fiscal', Icon: IconAlertTriangle, end: false },
   { to: '/notas-parceiros', label: 'Notas parceiros', Icon: IconFileText, end: false },
   { to: '/risco', label: 'Risco', Icon: IconAlertTriangle, end: false },
   { to: '/conformidade', label: 'Conformidade', Icon: IconClipboard, end: false },
   { to: '/cadastros', label: 'Cadastros', Icon: IconClipboard, end: false },
 ]
+
+// F01: sino do menu. Conta os avisos não lidos desta pessoa; atualiza a cada minuto e quando a central marca algo como lido.
+function useAvisosNaoLidos() {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    let vivo = true
+    const ler = () =>
+      supabase
+        .from('notificacoes')
+        .select('id', { count: 'exact', head: true })
+        .neq('status_entrega', 'confirmado_lido')
+        .then(({ count }) => {
+          if (vivo) setN(count ?? 0)
+        })
+    void ler()
+    const t = window.setInterval(() => void ler(), 60000)
+    window.addEventListener('avisos-atualizados', ler)
+    return () => {
+      vivo = false
+      window.clearInterval(t)
+      window.removeEventListener('avisos-atualizados', ler)
+    }
+  }, [])
+  return n
+}
 
 export default function AppShell({
   pessoa,
@@ -35,6 +62,7 @@ export default function AppShell({
   children: React.ReactNode
 }) {
   const [menuAberto, setMenuAberto] = useState(false)
+  const avisos = useAvisosNaoLidos()
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row bg-white">
@@ -79,6 +107,11 @@ export default function AppShell({
                     <Icon width={17} height={17} style={{ color: isActive ? 'var(--rbr-navy)' : '#9CA3AF' }} />
                   </span>
                   <span style={{ color: isActive ? 'var(--rbr-navy-dark)' : '#6B7280' }}>{label}</span>
+                  {to === '/avisos' && avisos > 0 && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--rbr-danger)', color: '#fff' }}>
+                      {avisos}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
@@ -125,6 +158,11 @@ export default function AppShell({
                     <Icon width={17} height={17} style={{ color: isActive ? 'var(--rbr-navy)' : '#9CA3AF' }} />
                   </span>
                   <span style={{ color: isActive ? 'var(--rbr-navy-dark)' : '#6B7280' }}>{label}</span>
+                  {to === '/avisos' && avisos > 0 && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--rbr-danger)', color: '#fff' }}>
+                      {avisos}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>

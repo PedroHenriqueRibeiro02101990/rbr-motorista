@@ -17,6 +17,7 @@ import Risco from './pages/Risco'
 import Cadastros from './pages/Cadastros'
 import DemoCiot from './pages/DemoCiot'
 import SaudeFiscal from './pages/SaudeFiscal'
+import Avisos from './pages/Avisos'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
 const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="/mapa" element={<Mapa />} />
           <Route path="/fiscal" element={<Fiscal />} />
           <Route path="/saude-fiscal" element={<SaudeFiscal />} />
+          <Route path="/avisos" element={<Avisos />} />
           <Route path="/risco" element={<Risco />} />
           <Route path="/cadastros" element={<Cadastros />} />
           <Route path="*" element={<Navigate to="/" replace />} />

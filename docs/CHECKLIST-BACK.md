@@ -58,8 +58,8 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | D11 | parcial | Lote de viagens · lote por grupo_saida_id e sequencia já existe na lista de Operações |
 | D12 | parcial | Alertas de prazo da viagem · alertas de entrega vencida e de MDF-e perto de 30 dias no painel da operação; falta o do CIOT (fim previsto não vem no detalhe) |
 | D13 | feito | Operação vê o valor ao cliente · não há restrição de valor ao cliente para gestor/operação hoje; nada a construir |
-| F01 | pendente | Sino e central de avisos |
-| F02 | pendente | Todo aviso tem botão que resolve |
+| F01 | parcial | Sino e central de avisos · sino com contagem de não lidos no menu (atualiza a cada minuto) e página Avisos; hoje só o aviso de finalização gera item; não testado no navegador |
+| F02 | parcial | Todo aviso tem botão que resolve · central de avisos (/avisos) com marcar como lido e link para a operação; RPC marcar_aviso_lido aplicada; falta filtros e outros tipos de aviso |
 | F03 | parcial | Aviso vai a quem errou · destinoDoAviso e escalonamento (2 h gestor; 4 h e-mail desligado) testados; falta ligar ao sino |
 | F04 | pendente | Busca com IA `[P]` |
 | F05 | pendente | Início por função com mapa |

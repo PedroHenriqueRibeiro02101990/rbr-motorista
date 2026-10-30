@@ -99,3 +99,7 @@ Aplicado pelo usuário (`supabase db query -f 20261030_03_lote_comportamento.sql
 ## 6h. Estado "finalizando" e aviso ao fiscal (30/10/2026)
 
 Migração aditiva `20261030_04_finalizando.sql` aplicada (rollback em `docs/rollbacks/20261030-0004-finalizando.sql`): funções `iniciar_finalizacao` (só gestor; entregue ou em_viagem vira `finalizando` e grava aviso em `notificacoes` para quem tem a função fiscal e para os gestores) e `terminar_finalizacao` (`finalizada` se MDF-e e CIOT foram encerrados; senão volta a `entregue`). O botão Finalizar viagem chama as duas. Teste em transação descartada como gestor: status `finalizando` com 3 avisos, depois `entregue` ao simular falha. O teste achou e corrigiu um erro de tipo do enum `canal_notificacao` antes de qualquer uso real. Não testado no navegador.
+
+## 6i. Sino e central de avisos (30/10/2026)
+
+Migração aditiva `20261030_05_avisos_lidos.sql` aplicada (rollback em `docs/rollbacks/20261030-0005-avisos-lidos.sql`): função `marcar_aviso_lido` (cada pessoa só marca os próprios avisos). Gestor: página `/avisos` e item no menu com contador de não lidos. Build ok. Não testado no navegador.
