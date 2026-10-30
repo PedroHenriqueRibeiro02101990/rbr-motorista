@@ -123,3 +123,7 @@ Migração aditiva `20261030_07_link_proposta.sql` (aplicada; rollback em `docs/
 ## 6n. Auditores agendados e disjuntor (G04, G05, G07)
 
 Migração aditiva `20261030_08_auditores.sql` (aplicada; rollback em `docs/rollbacks/20261030-0008-auditores.sql`): `auditar_segregacao`, `auditar_dinheiro`, `atualizar_disjuntor` e `reabrir_disjuntor`, com dois jobs no pg_cron a cada 30 minutos (`auditor-segregacao-30min` e `auditor-dinheiro-30min`). Só leem e gravam achados; nada emite, cancela ou mexe em dinheiro. Teste em transação descartada: sem ocorrência hoje (0 achados, disjuntor fechado); com um caso forçado, 1 achado vermelho e o disjuntor abriu. A tela Saúde fiscal mostra o disjuntor e deixa o gestor reabrir com motivo. **Ainda falta:** as funções de emissão recusarem emitir com o disjuntor aberto (mexe no fluxo central de emissão; deixei para você decidir) e o agendamento do robô TypeScript saude-fiscal (precisa publicar sem JWT e usar o segredo do Vault; ver "depende de você").
+
+## 6o. Avisos de janela e validade (B14, E12) e Assumir (D02)
+
+B14: aviso amarelo no modal de conferência quando a coleta prevista é hoje ou passou (não trava). E12: aviso "Validade vencida há N dias" na lista de Cotação. D02: migração aditiva `20261030_09_assumir.sql` (aplicada; rollback em `docs/rollbacks/20261030-0009-assumir.sql`) com `assumir_operacao` e `largar_operacao`; teste por papel em transação descartada: assumiu, tomar sem motivo foi recusado, tomar com motivo funcionou. Botão no painel da operação. Build ok; nada testado no navegador.

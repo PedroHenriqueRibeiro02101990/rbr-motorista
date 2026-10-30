@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
 import PreVoo from './PreVoo'
+import AvisoJanelaEmissao from './AvisoJanelaEmissao'
 import { mensagemClara } from '../../lib/mensagemClara'
 
 // Card de conferência que abre ANTES de emitir CT-e ou MDF-e. Pede às próprias funções de emissão o
@@ -310,6 +311,7 @@ export default function ConferenciaEmissaoModal({
 
         <div className="px-5 py-3 overflow-y-auto flex flex-col gap-3">
           <PreVoo operacaoId={operacaoId} tipo={tipo} />
+          <AvisoJanelaEmissao operacaoId={operacaoId} />
           {carregando && <div className="text-xs text-[color:var(--rbr-muted)]">Montando a conferência…</div>}
           {erroCarga && (
             <div className="text-xs rounded-lg px-3 py-2.5" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>

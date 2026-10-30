@@ -27,6 +27,7 @@ import OrdemColeta from './OrdemColeta'
 import ConformidadeOperacao, { type PedidoConformidade } from './ConformidadeOperacao'
 import BaixarDocumentoFiscal from './BaixarDocumentoFiscal'
 import PreVoo from './PreVoo'
+import AssumirOperacao from './AssumirOperacao'
 import HistoricoOperacao from './HistoricoOperacao'
 import { abaDaEtapa, sinaisDasAbas, type IdAba, type SinalAba } from '../../lib/abasOperacao'
 import BotaoAcao from './BotaoAcao'
@@ -375,6 +376,7 @@ export default function OperacaoFluxo({
           </div>
         ))
       })()}
+      <AssumirOperacao operacaoId={o.id} />
       {etapasNaoSeAplicam(d).length > 0 && (
         <div className="text-[11px] text-[color:var(--rbr-muted)]">
           Não se aplica: {etapasNaoSeAplicam(d).map((e) => e.motivo.replace(/.$/, '')).join(' · ')}.

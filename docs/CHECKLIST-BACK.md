@@ -27,7 +27,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B11 | feito | Finalizar viagem · Finalizar viagem marca a operação como finalizando e avisa fiscal e gestores (tabela notificacoes), encerra MDF-e e CIOT, refaz só o que faltou e termina em finalizada (ou volta a entregue se falhar); RPCs iniciar_finalizacao/terminar_finalizacao testadas em transação descartada; não testado no navegador |
 | B12 | feito | Remover o encerramento automático · LOTE APLICADO: gatilho trg_encerrar_mdfe_na_entrega removido (conferido: 0 no banco); quem encerra o MDF-e é o botão Finalizar viagem |
 | B13 | feito | Pré-voo único e esteira · esteira com não se aplica, pré-voo único e botão por pendência que abre a aba certa (preVooEtapas, 4 testes, build ok); não testado no navegador |
-| B14 | parcial | Janela de emissão · dentroDaJanelaDeEmissao (até a véspera, Brasília) testada; falta ligar ao botão de emitir |
+| B14 | parcial | Janela de emissão · aviso amarelo no modal Conferir antes de emitir quando a coleta prevista é hoje ou já passou (AvisoJanelaEmissao); é aviso e não trava; falta decidir com você se vira bloqueio |
 | B15 | parcial | Cancelar a operação inteira · modal Cancelar a operação inteira (quadro 56) ligado ao aviso de documento emitido em Operações: MDF-e, CIOT, vale-pedágio, averbação (trava e manda cancelar na seguradora), CT-e e por fim a operação; para no primeiro que trava ou falha e grava cada passo em operacao_cancelamento_passos; prazos conferidos pelo servidor em cada passo; build ok; NÃO executado (cancelamento real só com confirmação); não testado no navegador |
 | B16 | pendente | Cancelar MDF-e com conferência |
 | B17 | parcial | prazos.ts ligado em cancelar-documento-fiscal e efrete-ciot-operacao; falta VPO e telas
@@ -46,7 +46,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | C12 | parcial | Rejeição e contingência · contingenciaMdfeVencida (168 h) e proximaRef testadas; falta ligar |
 | C13 | pendente | Vários municípios e UFs no MDF-e `[X]` |
 | D01 | feito | Fila por urgência · lista de Operações ordenada pela coleta mais próxima, selo Urgente (menos de 24 h); espera 2 h/4 h em ordenarFila; não testado no navegador |
-| D02 | parcial | Assumir a operação · colunas assumida_por e assumida_em criadas; falta o botão Assumir e o bloqueio |
+| D02 | feito | Assumir a operação · RPCs assumir_operacao e largar_operacao (tomar de outra pessoa exige motivo e vai para a trilha; testado por papel em transação descartada) e botão Assumir/Tomar/Largar no painel da operação; não testado no navegador |
 | D03 | parcial | Completar e enviar ao fiscal · checklistCompletar (11 itens) testado; falta ligar ao botão Enviar ao fiscal |
 | D04 | parcial | Alterações níveis A a D · nivelDaAlteracao A a D testado; a tabela operacao_alteracoes já existe; falta ligar às edições |
 | D05 | parcial | Devolvida pelo fiscal · tabela operacao_devolucoes_fiscal criada; falta a tela e o aviso a quem errou |
@@ -78,7 +78,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | E09 | pendente | Equipe e convites |
 | E10 | pendente | Quem recebe a carga |
 | E11 | pendente | Relatório comercial e celular do vendedor |
-| E12 | parcial | Cotação vencida e pré-cotação · aviso fixo da pré-cotação existe; diasVencida testada; falta o aviso de cotação vencida na tela |
+| E12 | feito | Cotação vencida e pré-cotação · lista de Cotação mostra "Validade vencida há N dias" para proposta aberta (criada + validade_dias), com a regra diasVencida; não testado no navegador |
 | G01 | parcial | Bateria de testes de regra no CI · CI roda a bateria completa (mais de 200 testes) a cada push; falta a matriz completa de cenários de cte.ts e mdfe.ts |
 | G02 | parcial | Sentinela de prontidão (15 min) · avaliarSaudeFiscal cobre a prontidão de documentos; CNH, RNTRC, apólice e certificado ainda não; sem agendamento |
 | G03 | parcial | Reconciliador (30 min e virada do dia) · função saude-fiscal publicada (documento pendente, CT-e sem averbação, MDF-e aberto, CIOT perto de 5 dias, VPO em operação cancelada); comparação com Focus, efrete e NSPEDÁGIO e agendamento pg_cron não feitos |
