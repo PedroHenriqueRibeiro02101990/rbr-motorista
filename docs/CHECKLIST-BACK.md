@@ -22,7 +22,7 @@ Uma linha por ID de `docs/IMPLANTACAO-BACK.md`. Atualizado em 30/10/2026.
 | B06 | pendente | Proxy da Vercel para o NSPEDÁGIO `[X]` · depende do limite de deploys da Vercel |
 | B07 | pendente | Pedágio estimado na cotação |
 | B08 | parcial | CIOT · efreteClient já tem EncerrarOperacaoTransporte; falta botão e desembarque |
-| B09 | parcial | Ligar CIOT e VPO ao emitir-mdfe · emitir-mdfe já monta infCIOT e vpo_idvpo e bloqueia CIOT de homologação em produção; falta exigir ciot_status=emitido e VPO ativo |
+| B09 | feito | ciotEfreteSemValidade em mdfe.ts: CIOT da efrete só vale com status emitido (bloqueia em produção real); 20 testes; emitir-mdfe publicada. Falta checar VPO ativo
 | B10 | pendente | CIOT com várias NF-e |
 | B11 | pendente | Finalizar viagem |
 | B12 | pendente | Remover o encerramento automático `[M]` |

@@ -23,7 +23,9 @@ Ver `docs/CHECKLIST-BACK.md` (uma linha por ID). Evidências desta sessão:
 Conteúdo: A03 (colunas de ator/origem/hora do fato em `documentacao_operacao` e `eventos_fiscais_operacao`), A08 (13 colunas anuláveis em `operacoes` + tabela `operacao_alteracoes`), A09 (`trilha_auditoria`), F06 (`metas`). Sem DROP, DELETE ou UPDATE no SQL de aplicação.
 
 ## 4. Funções publicadas
-Nenhuma nesta sessão.
+| Função | Versão antes → depois | Hora | Teste de fumaça |
+|---|---|---|---|
+| emitir-mdfe | anterior → nova (B09) | 30/10/2026 manhã | payload vazio com chave anon: HTTP 400 (a função sobe e valida). Logs não lidos: a consulta de logs falhou 3 vezes (nome das tabelas), então não verifiquei erro de execução. Não emiti MDF-e. |
 
 ## 5. Vercel
 Pushes: 0. Merges: 0. Deploys: 0. Pushes pendentes: todos os commits locais desta branch e da `feat/nspedagio-etapa1`.
@@ -34,6 +36,9 @@ Pushes: 0. Merges: 0. Deploys: 0. Pushes pendentes: todos os commits locais dest
 - `operacoes.status` é texto livre com gatilho de transição; `trg_encerrar_mdfe_na_entrega` e `trg_averbar_automatico_ao_emitir` existem (B12 e C01).
 - `documentacao_operacao` tem `UNIQUE (operacao_id, tipo)` (A06).
 - Extra: B04 ainda não grava `idVpoAntt` em `operacao_ciot_vpo`.
+
+## 6b. Dump antes do lote
+C:UsersAlineackups-rbr6-10-30 (fora do repositório): 15 tabelas fiscais + _funcoes, _gatilhos, _politicas em JSON; piso ANTT com 272 linhas. Backup lógico de dados e definições, não um PITR.
 
 ## 7. Incidentes
 - Aplicação da migração negada pelo classificador (`[Production Deploy]`). O Pedro autorizou depois, por escrito, e a migração foi aplicada.

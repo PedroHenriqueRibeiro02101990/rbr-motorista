@@ -99,6 +99,14 @@ export function cepCarregamentoDe(
   return remetenteEhRbr && digitos(cepRbr).length === 8 ? digitos(cepRbr) : daNota || null;
 }
 
+// B09: CIOT emitido pela efrete só vale no MDF-e enquanto estiver 'emitido' (cancelado, encerrado ou com erro não vale).
+// CIOT sem origem efrete (registro manual) não é avaliado aqui.
+export function ciotEfreteSemValidade(origem: unknown, status: unknown): string | null {
+  if (origem !== "efrete") return null;
+  const st = String(status ?? "");
+  return st === "emitido" ? null : `O CIOT da efrete está '${st || "sem status"}': só vale no MDF-e com status 'emitido'.`;
+}
+
 export function digitos(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "");
 }
