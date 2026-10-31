@@ -7,6 +7,7 @@ import { formatMoney, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import NavegacaoServico from '../components/NavegacaoServico'
 import PassosServico from '../components/operacao/PassosServico'
+import EsteiraEmissao from '../components/operacao/EsteiraEmissao'
 import { codigoCurto } from '../lib/painelOperacao'
 import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
@@ -1605,7 +1606,10 @@ export default function Fiscal() {
           onFechar={fecharPainelFiscal}
           largura={880}
         >
-          <Fragment key={opAberta.id}>{renderCard(opAberta)}</Fragment>
+          <Fragment key={opAberta.id}>
+            <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
+            {renderCard(opAberta)}
+          </Fragment>
         </PainelSobreposto>
       )}
     </div>
