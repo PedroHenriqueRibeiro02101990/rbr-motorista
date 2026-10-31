@@ -6,6 +6,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import NavegacaoServico from '../components/NavegacaoServico'
+import PassosServico from '../components/operacao/PassosServico'
 import { codigoCurto } from '../lib/painelOperacao'
 import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
@@ -1589,7 +1590,10 @@ export default function Fiscal() {
           }
           fixo={
             <>
-              <div className="text-[15px] font-bold leading-tight">{opAberta.clienteNome ?? 'Cliente a confirmar'}</div>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="text-[26px] leading-tight font-extrabold">{opAberta.clienteNome ?? 'Cliente a confirmar'}</div>
+                <PassosServico status={opAberta.status as string} />
+              </div>
               <NavegacaoServico
                 atual="fiscal"
                 cotacaoId={opAberta.cotacao_id}

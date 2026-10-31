@@ -323,6 +323,14 @@ function ConfirmarFinalizacao({
     <Modal titulo="Finalizar viagem" onFechar={enviando ? () => {} : onFechar} largura="max-w-md">
       <div className="text-xs text-[color:var(--rbr-muted)]">Confira os dados. Eles já vêm preenchidos; mude só se a viagem terminou em outro lugar ou outro dia.</div>
 
+      <div className="rounded-xl px-3.5 py-3 flex flex-col gap-1 text-xs" style={{ background: '#f3f5f9' }}>
+        <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>AO FINALIZAR O SISTEMA FAZ</div>
+        {['1. Encerra o MDF-e (município, UF e hora reais)', '2. Encerra o CIOT', '3. Saldo do motorista vai ao Financeiro', '4. Operação finalizada, sai da fila'].map((x) => (
+          <div key={x} className="font-semibold text-[color:var(--rbr-navy-dark)]">✓ {x}</div>
+        ))}
+        <div className="mt-1 rounded-lg px-2.5 py-2" style={{ background: '#fff4d9', color: '#7a5200' }}>Se o encerramento falhar, a operação fica “finalizando” e o fiscal é avisado.</div>
+      </div>
+
       <div className="rounded-xl px-3.5 py-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs" style={{ background: 'var(--rbr-muted-bg)' }}>
         <div className="text-[color:var(--rbr-muted)]">MDF-e</div>
         <div className="font-bold text-[color:var(--rbr-navy-dark)] text-right">{mdfe.numero_documento ? `nº ${mdfe.numero_documento}` : '—'}</div>

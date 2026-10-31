@@ -19,6 +19,7 @@ import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import { ordenarFila } from '@rbr/shared/regrasOperacao'
 import NavegacaoServico from '../components/NavegacaoServico'
+import PassosServico, { FaixaResumo } from '../components/operacao/PassosServico'
 import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
 import { FILTROS_VAZIOS, SEM_MOTORISTA, passaFiltrosLista, temFiltro, type FiltrosLista } from '../lib/listaOperacoes'
 import { ABAS, abaValida, type IdAba, type SinalAba } from '../lib/abasOperacao'
@@ -205,7 +206,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     const { data, error } = await supabase
       .from('operacoes')
       .select(
-        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), cotacoes(valor_total, valor_total_motorista, valor_frete_motorista, cidade_origem, uf_origem, cidade_destino, uf_destino, ncms_produtos, natureza_operacao, nf_remetente_razao_social, nf_remetente_cnpj, nf_destinatario_razao_social, nf_destinatario_cnpj)',
+        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), cotacoes(valor_total, valor_total_motorista, valor_frete_motorista, pedagio, cidade_origem, uf_origem, cidade_destino, uf_destino, ncms_produtos, natureza_operacao, nf_remetente_razao_social, nf_remetente_cnpj, nf_destinatario_razao_social, nf_destinatario_cnpj)',
       )
       .order('updated_at', { ascending: false })
       .limit(300)
@@ -950,7 +951,13 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
             }
             fixo={
               <>
-                <div className="text-[15px] font-bold leading-tight">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold" style={{ color: 'var(--rbr-muted)' }}>Serviços / {op.clienteNome ?? 'Cliente'}</div>
+                    <div className="text-[26px] leading-tight font-extrabold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+                  </div>
+                  <PassosServico status={op.status as string} />
+                </div>
                 <div className="text-xs text-[color:var(--rbr-muted)]">
                   {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
                 </div>
@@ -959,6 +966,13 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                   cotacaoId={op.cotacao_id}
                   operacaoId={op.id}
                   confirmarSaida={() => !edicaoPendente || window.confirm('Há campos preenchidos e não salvos nesta operação. Sair mesmo assim?')}
+                />
+                <FaixaResumo
+                  itens={[
+                    { rotulo: 'Valor ao cliente', valor: op.valorCliente != null ? formatMoney(op.valorCliente) : null },
+                    { rotulo: 'Frete do motorista', valor: (op.cotacaoDetalhe as any)?.valor_frete_motorista != null ? formatMoney((op.cotacaoDetalhe as any).valor_frete_motorista) : null },
+                    { rotulo: 'Pedágio', valor: (op.cotacaoDetalhe as any)?.pedagio != null ? formatMoney((op.cotacaoDetalhe as any).pedagio) : null },
+                  ]}
                 />
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
                   <ResumoItem rotulo="Motorista" valor={motoristas.find((m) => m.id === op.pessoa_alocada_id)?.nome ?? 'sem motorista'} />
