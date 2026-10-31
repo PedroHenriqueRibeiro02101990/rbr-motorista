@@ -234,3 +234,55 @@ export function RecebedorCard({ campos, avisar }: { campos: CampoRecebedor[]; av
     </div>
   )
 }
+
+// Aprovação de preço (visual "Aprovacao-Preco"): o vendedor explica, o gestor decide. O pedido ainda não existe no sistema:
+// aparece só quando a margem está no vermelho, com os campos e botões desativados.
+export function AprovacaoPrecoCard({ preco, sugerido, margem }: { preco: number | null; sugerido: number | null; margem: number | null }) {
+  const f = faixaDaMargem(margem)
+  if (f.nome !== 'vermelho') return null
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-3" style={{ borderColor: '#f2c4c0' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>PREÇO NO VERMELHO · ENVIAR AO GESTOR</div>
+      <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: '#fdeceb' }}>
+        <div>
+          <div className="text-[11px]" style={{ color: '#b42318' }}>Seu preço</div>
+          <div className="text-[24px] font-extrabold" style={{ color: '#7d1a12' }}>{formatMoney(preco)}</div>
+        </div>
+        <div className="text-right text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
+          margem {margem != null ? (margem * 100).toFixed(1).replace('.', ',') : '—'}%<br />
+          {sugerido != null && <>sugerido {formatMoney(sugerido)}</>}
+        </div>
+      </div>
+      <div className="rounded-xl border px-3 py-2 bg-[#f7f8fc] opacity-70 cursor-not-allowed">
+        <div className="text-[10px] font-extrabold" style={{ color: 'var(--rbr-muted)' }}>OBSERVAÇÃO (OBRIGATÓRIA)</div>
+        <div className="text-[13px]" style={{ color: '#8a91ad' }}>Explique o motivo para o gestor aprovar.</div>
+      </div>
+      <div className="flex gap-2">
+        <button type="button" disabled className="flex-1 text-[13px] font-extrabold px-4 py-2.5 rounded-xl text-white cursor-not-allowed opacity-50" style={{ background: '#1c2559' }}>Enviar ao gestor</button>
+        <button type="button" disabled className="text-[13px] font-extrabold px-4 py-2.5 rounded-xl border cursor-not-allowed opacity-50" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>Aprovar</button>
+        <button type="button" disabled className="text-[13px] font-extrabold px-4 py-2.5 rounded-xl border cursor-not-allowed opacity-50" style={{ borderColor: '#f2c4c0', color: '#b42318' }}>Recusar</button>
+      </div>
+      <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>Ainda não disponível: o pedido de aprovação e a conversa com o gestor não existem no sistema. A cotação continua podendo ser salva e enviada como hoje.</div>
+    </div>
+  )
+}
+
+// Enviar proposta (visual "Enviar-Proposta"): o envio por e-mail próprio ainda não existe; o formulário aparece desativado,
+// com o texto montado a partir da cotação. O envio por WhatsApp/cópia de texto continua nos botões de sempre.
+export function EnviarPropostaCard({ para, rota, valor }: { para: string | null; rota: string; valor: number | null }) {
+  const off = 'rounded-xl border px-3 py-2 bg-[#f7f8fc] opacity-70 cursor-not-allowed'
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>ENVIAR PROPOSTA POR E-MAIL</div>
+      <div className={off}><div className="text-[10px]">De</div><div className="text-[13px] font-extrabold" style={{ color: '#8a91ad' }}>seu e-mail da empresa (não conectado)</div></div>
+      <div className={off}><div className="text-[10px]">Para</div><div className="text-[13px] font-extrabold" style={{ color: '#8a91ad' }}>{para ?? 'e-mail do cliente'}</div></div>
+      <div className={off}><div className="text-[10px]">Assunto</div><div className="text-[13px] font-extrabold" style={{ color: '#8a91ad' }}>Proposta de frete {rota} · RBR Cargo</div></div>
+      <div className={off + ' text-[12px]'} style={{ color: '#8a91ad' }}>Segue a proposta para o transporte {rota}, {formatMoney(valor)}. Para aceitar, é só clicar no botão do e-mail.</div>
+      <div className="flex gap-2 flex-wrap">
+        <button type="button" disabled className="text-[12px] font-extrabold px-4 py-2 rounded-[10px] text-white cursor-not-allowed opacity-50" style={{ background: '#1c2559' }}>Enviar por e-mail</button>
+        <button type="button" disabled className="text-[12px] font-extrabold px-4 py-2 rounded-[10px] border cursor-not-allowed opacity-50" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>Baixar PDF da proposta</button>
+      </div>
+      <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>Ainda não disponível: e-mail próprio e PDF da proposta. Use o link de aceite e o envio por WhatsApp.</div>
+    </div>
+  )
+}

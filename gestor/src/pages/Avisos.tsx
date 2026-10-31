@@ -13,6 +13,16 @@ const ROTULO: Record<string, string> = { finalizando: 'Finalização' }
 
 type ChamaRpc = (fn: string, args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
 
+const REGRAS: [string, string, string][] = [
+  ['Dado do motorista ou veículo', 'Quem alocou', 'Cadastro do motorista, no campo que falta'],
+  ['NF-e, datas, contatos', 'Quem montou a operação', 'Aba Operação, no item devolvido'],
+  ['Valor, rota ou eixos diferentes', 'Comercial que cotou', 'Nova versão da proposta'],
+  ['GR não liberada', 'Quem alocou', 'Etapa de GR da operação'],
+  ['Frete abaixo do piso ANTT', 'Comercial que cotou', 'Cotação, campo do valor'],
+  ['Seguradora ou provedor fora do ar', 'Fiscal (robô tenta de novo)', 'Etapa no Fiscal, com “tentar de novo”'],
+  ['Emissão fora da janela', 'Operação e Fiscal', 'Operação, data da coleta'],
+]
+
 export default function Avisos() {
   const [itens, setItens] = useState<Item[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -103,6 +113,26 @@ export default function Avisos() {
           })}
         </div>
       )}
+      <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+        <div className="px-4 py-3 text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)', background: '#f7f8fc' }}>
+          QUEM ERROU RECEBE O AVISO · REGRA PROPOSTA
+        </div>
+        <div className="hidden md:grid grid-cols-[1.2fr_1fr_1.6fr] gap-3 px-4 py-2 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ color: 'var(--rbr-muted)' }}>
+          <span>Causa</span>
+          <span>Vai para</span>
+          <span>Botão leva a</span>
+        </div>
+        {REGRAS.map(([causa, vai, leva]) => (
+          <div key={causa} className="grid md:grid-cols-[1.2fr_1fr_1.6fr] gap-1 md:gap-3 px-4 py-3 text-[13px]" style={{ borderTop: '1px solid #eef0f5' }}>
+            <b>{causa}</b>
+            <span style={{ color: '#4a5275' }}>{vai}</span>
+            <span style={{ color: '#4a5275' }}>{leva}</span>
+          </div>
+        ))}
+        <div className="px-4 py-3 text-[11px]" style={{ color: 'var(--rbr-muted)', borderTop: '1px solid #eef0f5' }}>
+          Hoje só o aviso de devolução do fiscal segue esse caminho (vai a quem alocou, senão a quem gerou, e aos gestores). Os demais ainda não estão ligados.
+        </div>
+      </div>
     </div>
   )
 }

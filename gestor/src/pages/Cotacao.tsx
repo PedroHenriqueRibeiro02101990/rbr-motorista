@@ -28,7 +28,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { tituloRota } from '../lib/tituloRota'
-import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, type EventoLinha } from '../components/cotacao/PrecoVisual'
+import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, type EventoLinha } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -2599,6 +2599,8 @@ export default function Cotacao() {
                       { titulo: 'Contato de quem recebe', detalhe: 'Ainda não é guardado na cotação', ok: false },
                     ]}
                   />
+                  <AprovacaoPrecoCard preco={composicao?.valorFinal ?? null} sugerido={null} margem={composicao?.margem ?? null} />
+                  <EnviarPropostaCard para={null} rota={`${c.cidade_origem ?? c.origem} → ${c.cidade_destino ?? '—'}`} valor={composicao?.valorFinal ?? null} />
                   <RecebedorCard
                     campos={[
                       { rotulo: 'CNPJ', valor: c.nf_destinatario_cnpj, doXml: true },
