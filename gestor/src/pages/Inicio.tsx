@@ -6,6 +6,7 @@ import FrotaMap, { type FrotaMapLinha, type FrotaMapPonto } from '@rbr/shared/Fr
 import { COR_SINAL, type CargaMapa, type MotoristaMapa } from '../components/mapa/MapaOperacional'
 import { DetalheMotorista, DetalheViagem } from '../components/inicio/DetalheViagem'
 import { haQuanto, previsaoChegada } from '../components/inicio/util'
+import InicioFuncao from './InicioFuncao'
 import { blocosDaFuncao, FUNCOES_INICIO, funcaoInicial, type FuncaoInicio } from '../lib/inicioPorFuncao'
 
 // Início = dashboard do dia ao vivo: mapa da frota, coluna "Hoje" e números pequenos de caixa e comercial.
@@ -55,7 +56,7 @@ function Mini({ titulo, para, itens }: { titulo: string; para: string; itens: { 
   )
 }
 
-export default function Inicio({ nome }: { nome?: string }) {
+export default function Inicio({ nome, papel }: { nome?: string; papel?: string }) {
   const [painel, setPainel] = useState<Painel | null>(null)
   const [naoLidos, setNaoLidos] = useState(0)
   useEffect(() => {
@@ -90,7 +91,9 @@ export default function Inicio({ nome }: { nome?: string }) {
       vivo = false
     }
   }, [])
-  const blocos = blocosDaFuncao(visao)
+  // Quem não é gestor vê sempre o Início da própria função; o gestor escolhe em "Ver como".
+  const funcaoFixa = papel === 'operacao' || papel === 'fiscal' || papel === 'comercial' ? papel : null
+  const blocos = blocosDaFuncao(funcaoFixa ?? visao)
   function escolherVisao(v: FuncaoInicio) {
     setVisao(v)
     try {
@@ -263,6 +266,33 @@ export default function Inicio({ nome }: { nome?: string }) {
     </div>
   )
 
+  const seletorVisao = (
+    <div className="flex items-center gap-1.5" role="group" aria-label="Ver o Início como">
+      {FUNCOES_INICIO.map((f) => (
+        <button
+          key={f.id}
+          type="button"
+          onClick={() => escolherVisao(f.id)}
+          aria-pressed={visao === f.id}
+          className="text-[12px] font-bold px-3 py-1.5 rounded-full border"
+          style={visao === f.id ? { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)', boxShadow: '0 1px 3px rgba(28,37,89,0.12)' } : { background: 'transparent', color: 'var(--rbr-muted)', borderColor: 'transparent' }}
+        >
+          {f.rotulo}
+        </button>
+      ))}
+    </div>
+  )
+
+  const funcaoTela = funcaoFixa ?? (visao === 'operacao' || visao === 'fiscal' || visao === 'comercial' ? visao : null)
+  if (funcaoTela) {
+    return (
+      <div className="flex flex-col gap-3">
+        {papel === 'gestor_rbr' && seletorVisao}
+        <InicioFuncao funcao={funcaoTela} nome={nome} />
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Cabeçalho */}
@@ -284,20 +314,7 @@ export default function Inicio({ nome }: { nome?: string }) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5" role="group" aria-label="Ver o Início como">
-            {FUNCOES_INICIO.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => escolherVisao(f.id)}
-                aria-pressed={visao === f.id}
-                className="text-[12px] font-bold px-3 py-1.5 rounded-full border"
-                style={visao === f.id ? { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)', boxShadow: '0 1px 3px rgba(28,37,89,0.12)' } : { background: 'transparent', color: 'var(--rbr-muted)', borderColor: 'transparent' }}
-              >
-                {f.rotulo}
-              </button>
-            ))}
-          </div>
+          {papel === 'gestor_rbr' && seletorVisao}
           <button onClick={gerarResumo} disabled={gerandoResumo} className="text-xs font-bold px-4 py-2 rounded-xl border disabled:opacity-60 inline-flex items-center gap-2" style={{ borderColor: 'var(--rbr-border)', color: 'var(--rbr-navy)', background: '#fff' }}>
             <span style={{ color: 'var(--rbr-gold)' }}>✦</span>
             {gerandoResumo ? 'Escrevendo…' : 'Resumo do dia com IA'}

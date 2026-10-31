@@ -71,7 +71,7 @@ export default function App() {
     <BrowserRouter>
       <AppShell pessoa={auth.pessoa} onSignOut={auth.signOut}>
         <Routes>
-          <Route path="/" element={<Inicio nome={auth.pessoa.nome} />} />
+          <Route path="/" element={<Inicio nome={auth.pessoa.nome} papel={auth.pessoa.papel} />} />
           <Route path="/cotacao" element={<Cotacao />} />
           <Route path="/fila-do-dia" element={<FilaDoDia />} />
           <Route path="/pre-cotacao" element={<PreCotacao />} />
