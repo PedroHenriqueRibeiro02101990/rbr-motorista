@@ -28,7 +28,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { tituloRota } from '../lib/tituloRota'
-import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, type EventoLinha } from '../components/cotacao/PrecoVisual'
+import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, QualidadePrecoCard, type EventoLinha } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -600,6 +600,11 @@ export default function Cotacao() {
   const [form, setForm] = useState<CotacaoFormState | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState<StatusCotacao>('rascunho')
+  const [papelUsuario, setPapelUsuario] = useState<string | null>(null)
+  useEffect(() => {
+    void supabase.rpc('current_papel').then(({ data }) => setPapelUsuario((data as unknown as string) ?? null))
+  }, [])
+  const ehGestor = papelUsuario === 'gestor_rbr'
   // Operação de teste (cotacoes.eh_teste): liga/desliga direto no banco; o banco preenche RBR nos dois lados.
   const [editingTeste, setEditingTeste] = useState(false)
   const [trocandoTeste, setTrocandoTeste] = useState(false)
@@ -2569,6 +2574,9 @@ export default function Cotacao() {
               </div>
             </div>
             <div className="flex flex-col gap-3 min-w-0">
+            {!ehGestor ? (
+              <QualidadePrecoCard valor={composicao?.valorFinal ?? null} margem={composicao?.margem ?? null} />
+            ) : (
             <PrecoCard
               linhas={[
                 { rotulo: 'Frete do motorista', valor: composicao?.frete ?? null },
@@ -2580,6 +2588,7 @@ export default function Cotacao() {
               margem={composicao?.margem ?? null}
               piso={margemMin}
             />
+            )}
             {editingId && (() => {
               const c = (cotacoes ?? []).find((x) => x.id === editingId)
               if (!c) return null

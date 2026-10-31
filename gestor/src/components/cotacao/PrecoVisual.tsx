@@ -249,7 +249,7 @@ export function AprovacaoPrecoCard({ preco, sugerido, margem }: { preco: number 
           <div className="text-[24px] font-extrabold" style={{ color: '#7d1a12' }}>{formatMoney(preco)}</div>
         </div>
         <div className="text-right text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
-          margem {margem != null ? (margem * 100).toFixed(1).replace('.', ',') : '—'}%<br />
+          preço no limite<br />
           {sugerido != null && <>sugerido {formatMoney(sugerido)}</>}
         </div>
       </div>
@@ -283,6 +283,31 @@ export function EnviarPropostaCard({ para, rota, valor }: { para: string | null;
         <button type="button" disabled className="text-[12px] font-extrabold px-4 py-2 rounded-[10px] border cursor-not-allowed opacity-50" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>Baixar PDF da proposta</button>
       </div>
       <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>Ainda não disponível: e-mail próprio e PDF da proposta. Use o link de aceite e o envio por WhatsApp.</div>
+    </div>
+  )
+}
+
+// Visão do vendedor (visual "Vendedor-Cotacao"): só o valor e a qualidade do preço; custos, lucro e margem em número ficam só para o gestor.
+export function QualidadePrecoCard({ valor, margem }: { valor: number | null; margem: number | null }) {
+  const f = faixaDaMargem(margem)
+  const rotulo = f.nome === 'verde' ? 'Bom' : f.nome === 'amarelo' ? 'Médio' : f.nome === 'vermelho' ? 'No limite' : '—'
+  const pos = margem == null ? null : Math.max(0, Math.min(0.5, margem)) / 0.5
+  return (
+    <div className="bg-white border rounded-2xl p-5 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>PREÇO PARA O CLIENTE</div>
+      <div className="rounded-xl px-4 py-3 text-center text-[30px] font-extrabold tabular-nums" style={{ background: '#eef0fa', color: '#1c2559' }}>{formatMoney(valor)}</div>
+      <div className="flex items-center justify-between text-[13px]">
+        <span style={{ color: '#4a5275' }}>Qualidade do preço</span>
+        <span className="text-[12px] font-extrabold rounded-full px-3 py-1" style={{ background: f.fundo, color: f.cor }}>● {rotulo}</span>
+      </div>
+      <div className="relative h-2.5 rounded-full flex" aria-hidden>
+        <span style={{ width: '58%', background: '#f4b9b4' }} className="rounded-l-full" />
+        <span style={{ width: '6%', background: '#f3d388' }} />
+        <span style={{ flex: 1, background: '#a9dcbc' }} className="rounded-r-full" />
+        {pos != null && <span className="absolute top-1/2 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ left: `${pos * 100}%`, transform: 'translate(-50%, -50%)', background: f.cor }} />}
+      </div>
+      <div className="flex justify-between text-[10px]" style={{ color: '#8a91ad' }}><span>No limite</span><span>Médio</span><span>Bom</span></div>
+      <div className="text-[12px] rounded-xl px-3 py-2.5" style={{ background: '#f3f5f9', color: '#4a5275' }}>Custos e margem ficam só para o gestor.</div>
     </div>
   )
 }
