@@ -45,6 +45,7 @@ const NAV_MAIS = [
   { to: '/operacoes', label: 'Operações', end: false },
   { to: '/fiscal', label: 'Fiscal', end: false },
   { to: '/mapa', label: 'Mapa', end: false },
+  { to: '/jornada', label: 'Jornada da operação', end: false },
   { to: '/alteracoes', label: 'Alterações', end: false },
   { to: '/relatorio-comercial', label: 'Relatório comercial', end: false },
   { to: '/metas', label: 'Metas', end: false },
@@ -81,6 +82,46 @@ function useAvisosNaoLidos() {
   return n
 }
 
+type AvisoMini = { id: string; tipo: string; referencia_id: string | null; conteudo: string | null; criado_em: string }
+function PainelSino({ onFechar }: { onFechar: () => void }) {
+  const [itens, setItens] = useState<AvisoMini[] | null>(null)
+  const nav = useNavigate()
+  useEffect(() => {
+    void supabase
+      .from('notificacoes')
+      .select('id, tipo, referencia_id, conteudo, criado_em')
+      .neq('status_entrega', 'confirmado_lido')
+      .order('criado_em', { ascending: false })
+      .limit(4)
+      .then(({ data }) => setItens((data ?? []) as AvisoMini[]))
+  }, [])
+  return (
+    <div className="absolute right-0 top-12 w-[400px] max-w-[92vw] bg-white border rounded-2xl z-40 overflow-hidden" style={{ borderColor: 'var(--rbr-border)', boxShadow: '0 12px 40px rgba(28,37,89,0.18)' }} role="dialog" aria-label="Central de avisos">
+      <div className="flex items-center justify-between px-4 py-3 text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>
+        <span>CENTRAL DE AVISOS</span>
+        <button type="button" onClick={() => { onFechar(); nav('/avisos') }} className="font-extrabold" style={{ color: '#1c2559' }}>Ver tudo →</button>
+      </div>
+      {itens === null ? (
+        <div className="px-4 py-6 text-[13px]" style={{ color: 'var(--rbr-muted)' }}>Carregando…</div>
+      ) : itens.length === 0 ? (
+        <div className="px-4 py-6 text-[13px]" style={{ color: 'var(--rbr-muted)', borderTop: '1px solid #eef0f5' }}>Nenhum aviso pendente.</div>
+      ) : (
+        itens.map((i) => (
+          <div key={i.id} className="px-4 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid #eef0f5' }}>
+            <div className="text-[13px] font-extrabold">{i.conteudo}</div>
+            <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>{new Date(i.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+            {i.referencia_id && (
+              <button type="button" onClick={() => { onFechar(); nav('/operacoes?op=' + i.referencia_id) }} className="self-start text-[12px] font-extrabold px-3.5 py-1.5 rounded-[10px] text-white" style={{ background: '#1c2559' }}>
+                Abrir operação →
+              </button>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
 const ROTULO_PAPEL: Record<string, string> = { gestor_rbr: 'Gestor', comercial: 'Comercial', operacao: 'Operação', fiscal: 'Fiscal', financeiro: 'Financeiro' }
 
 function Avatar({ nome, tam }: { nome: string; tam: number }) {
@@ -104,6 +145,7 @@ export default function AppShell({
   children: React.ReactNode
 }) {
   const [menuAberto, setMenuAberto] = useState(false)
+  const [sinoAberto, setSinoAberto] = useState(false)
   const avisos = useAvisosNaoLidos()
   const nav = useNavigate()
   const { pathname } = useLocation()
@@ -255,10 +297,11 @@ export default function AppShell({
               </span>
             </span>
           </button>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3 relative">
+            {sinoAberto && <PainelSino onFechar={() => setSinoAberto(false)} />}
             <button
               type="button"
-              onClick={() => nav('/avisos')}
+              onClick={() => setSinoAberto((v) => !v)}
               className="relative w-10 h-10 rounded-xl bg-white border flex items-center justify-center"
               style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}
               aria-label={avisos > 0 ? `Avisos: ${avisos} não lidos` : 'Avisos'}
