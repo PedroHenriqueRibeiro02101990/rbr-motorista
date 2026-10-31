@@ -179,6 +179,47 @@ function Funil({ gestor }: { gestor: boolean }) {
   )
 }
 
+// Novos pedidos (visual "Novos-Pedidos"): caixa de entrada de pedidos de fora (site, WhatsApp, telefone, Google Ads).
+// O sistema ainda não registra pedidos por canal: a lista fica vazia e as ações desativadas, no formato aprovado.
+function NovosPedidos() {
+  const canais = ['Google Ads', 'WhatsApp', 'Telefone', 'Site', 'Indicação']
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+      <div className="flex flex-col gap-3 min-w-0">
+        <div className="text-[13px]" style={{ color: '#4a5275' }}>
+          <b style={{ color: 'var(--rbr-navy-dark)' }}>Nenhum pedido esperando alguém assumir.</b> Ainda não disponível: o sistema não registra pedidos por canal.
+        </div>
+        <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+          <div className="flex items-center gap-3 px-4 py-4 opacity-60">
+            <span className="text-[11px] font-extrabold rounded-full px-3 py-1.5 w-[96px] text-center" style={{ background: '#dfe3f5', color: '#1c2559' }}>
+              Canal
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[15px] font-extrabold">Exemplo de pedido</span>
+              <span className="block text-[12px]" style={{ color: 'var(--rbr-muted)' }}>origem → destino · veículo</span>
+            </span>
+            <button type="button" disabled className="text-[12px] font-extrabold px-4 py-2 rounded-[10px] text-white cursor-not-allowed" style={{ background: '#1c2559' }}>Assumir</button>
+            <button type="button" disabled className="text-[12px] font-extrabold px-4 py-2 rounded-[10px] border cursor-not-allowed" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>Atribuir ▾</button>
+          </div>
+        </div>
+        <div className="bg-white border rounded-2xl px-4 py-3 text-[12px]" style={{ borderColor: 'var(--rbr-border)', color: '#4a5275' }}>
+          <b style={{ color: 'var(--rbr-navy-dark)' }}>Como o pedido chegará:</b> formulário do site e da landing page entrariam sozinhos; WhatsApp e telefone seriam registrados pelo vendedor. Quem assume vira dono do cliente e da cotação. Nada disso está ligado ainda.
+        </div>
+      </div>
+      <aside className="bg-white border rounded-2xl p-5 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }}>
+        <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>DE ONDE VÊM OS PEDIDOS</div>
+        {canais.map((c) => (
+          <div key={c} className="flex flex-col gap-1">
+            <div className="flex justify-between text-[13px] font-semibold"><span>{c}</span><span style={{ color: '#8a91ad' }}>—</span></div>
+            <div className="h-1.5 rounded-full" style={{ background: '#e9ecf4' }} />
+          </div>
+        ))}
+        <div className="text-[11px]" style={{ color: '#8a91ad' }}>Sem dados: o canal de cada pedido ainda não é guardado.</div>
+      </aside>
+    </div>
+  )
+}
+
 function ParaOndeVai({ l, onAbrir }: { l: Linha; onAbrir: () => void }) {
   const k = l.cot
   const total = Number(k?.valor_total ?? 0)
@@ -268,7 +309,7 @@ export default function Servicos() {
   const [busca, setBusca] = useState('')
   const [testes, setTestes] = useState(false)
   const [pagina, setPagina] = useState(0)
-  const [visao, setVisao] = useState<'lista' | 'funil'>('lista')
+  const [visao, setVisao] = useState<'lista' | 'funil' | 'pedidos'>('lista')
   const [papel, setPapel] = useState<string | null>(null)
   const [sel, setSel] = useState<string | null>(null)
   const gestor = papel === 'gestor_rbr'
@@ -393,9 +434,9 @@ export default function Servicos() {
         <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Serviços</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex p-1 rounded-xl" style={{ background: '#e9ecf4' }} role="group" aria-label="Forma de ver">
-            {(['lista', 'funil'] as const).map((v) => (
+            {(['pedidos', 'lista', 'funil'] as const).map((v) => (
               <button key={v} type="button" onClick={() => setVisao(v)} aria-pressed={visao === v} className="text-[13px] font-bold px-4 py-1.5 rounded-lg" style={visao === v ? { background: '#1c2559', color: '#fff' } : { color: '#4a5275' }}>
-                {v === 'lista' ? 'Lista' : 'Funil'}
+                {v === 'lista' ? 'Lista' : v === 'funil' ? 'Funil' : 'Novos pedidos · 0'}
               </button>
             ))}
           </div>
@@ -416,7 +457,9 @@ export default function Servicos() {
         </div>
       </div>
 
-      {visao === 'funil' ? (
+      {visao === 'pedidos' ? (
+        <NovosPedidos />
+      ) : visao === 'funil' ? (
         <Funil gestor={gestor} />
       ) : (
         <>
