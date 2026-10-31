@@ -1424,7 +1424,9 @@ export default function Fiscal() {
 
       <PainelPendencias modulo="fiscal" />
 
-      <ParametrosFiscaisPanel />
+      <div id="parametros-fiscais" ref={(el) => { if (el && params.get('parametros')) el.scrollIntoView({ block: 'start' }) }}>
+        <ParametrosFiscaisPanel />
+      </div>
       {evento && (
         <EventoFiscalModal
           operacaoId={evento.op.id}

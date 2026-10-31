@@ -18,6 +18,26 @@ const NAV_PRINCIPAL = [
   { to: '/financeiro', label: 'Financeiro', end: false },
   { to: '/cadastros', label: 'Cadastros', end: false },
 ]
+// Menu enxuto de cada função (visuais Operacao-Fila, Fiscal-Fila, Vendedor-Inicio): só o que ela usa, com o nome do desenho.
+const MENU_FUNCAO: Record<string, { to: string; label: string; end: boolean }[]> = {
+  operacao: [
+    { to: '/', label: 'Início', end: true },
+    { to: '/servicos', label: 'Serviços', end: false },
+    { to: '/cadastros?aba=motoristas', label: 'Motoristas e veículos', end: false },
+  ],
+  fiscal: [
+    { to: '/', label: 'Início', end: true },
+    { to: '/servicos', label: 'Serviços', end: false },
+    { to: '/fiscal?parametros=1', label: 'Parâmetros fiscais', end: false },
+  ],
+  comercial: [
+    { to: '/', label: 'Início', end: true },
+    { to: '/servicos', label: 'Serviços', end: false },
+    { to: '/cadastros?aba=clientes', label: 'Meus clientes', end: false },
+  ],
+}
+const SUBTITULO: Record<string, string> = { gestor_rbr: 'Painel do gestor', operacao: 'Painel da operação', fiscal: 'Painel fiscal', comercial: 'Painel comercial', financeiro: 'Painel financeiro' }
+
 const NAV_MAIS = [
   { to: '/fila-do-dia', label: 'Fila do dia', end: false },
   { to: '/cotacao', label: 'Cotação', end: false },
@@ -85,8 +105,9 @@ export default function AppShell({
   const avisos = useAvisosNaoLidos()
   const nav = useNavigate()
   const { pathname } = useLocation()
-  const principal = NAV_PRINCIPAL.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
-  const mais = NAV_MAIS.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
+  const enxuto = MENU_FUNCAO[pessoa.papel]
+  const principal = enxuto ?? NAV_PRINCIPAL.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
+  const mais = enxuto ? [] : NAV_MAIS.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
   // "Mais" abre sozinho quando a tela atual é uma das que moram nele.
   const [maisAberto, setMaisAberto] = useState(false)
   const dentroDeMais = mais.some((i) => pathname.startsWith(i.to))
@@ -184,7 +205,7 @@ export default function AppShell({
             RBR Cargo
           </div>
           <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
-            Painel do gestor
+            {SUBTITULO[pessoa.papel] ?? 'Painel da equipe'}
           </div>
         </div>
         <nav className="flex flex-col gap-1.5 overflow-y-auto min-h-0">{lista()}</nav>
