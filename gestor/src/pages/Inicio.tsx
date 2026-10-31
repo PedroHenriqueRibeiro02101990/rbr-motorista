@@ -59,6 +59,27 @@ function Mini({ titulo, para, itens }: { titulo: string; para: string; itens: { 
 export default function Inicio({ nome, papel }: { nome?: string; papel?: string }) {
   const [painel, setPainel] = useState<Painel | null>(null)
   const [naoLidos, setNaoLidos] = useState(0)
+  const [paraLiberar, setParaLiberar] = useState<{ id: string; cliente: string; rota: string }[]>([])
+  useEffect(() => {
+    let vivo = true
+    void (async () => {
+      const { data } = await supabase.from('operacoes').select('id, cotacao_id, cliente_id').eq('status', 'aguardando_liberacao_gestor' as never).eq('eh_teste', false).is('deleted_at', null).limit(10)
+      const ops = (data ?? []) as unknown as { id: string; cotacao_id: string | null; cliente_id: string | null }[]
+      if (!ops.length) return
+      const cotIds = ops.map((o) => o.cotacao_id).filter((x): x is string => !!x)
+      const cliIds = ops.map((o) => o.cliente_id).filter((x): x is string => !!x)
+      const [c, k] = await Promise.all([
+        cotIds.length ? supabase.from('cotacoes').select('id, cidade_origem, cidade_destino').in('id', cotIds) : Promise.resolve({ data: [] }),
+        cliIds.length ? supabase.from('clientes').select('id, razao_social, nome_fantasia').in('id', cliIds) : Promise.resolve({ data: [] }),
+      ])
+      const cots = new Map(((c.data ?? []) as unknown as { id: string; cidade_origem: string | null; cidade_destino: string | null }[]).map((x) => [x.id, x]))
+      const clis = new Map(((k.data ?? []) as unknown as { id: string; razao_social: string | null; nome_fantasia: string | null }[]).map((x) => [x.id, x.nome_fantasia || x.razao_social || 'Cliente']))
+      if (vivo) setParaLiberar(ops.map((o) => ({ id: o.id, cliente: clis.get(o.cliente_id ?? '') ?? 'Cliente', rota: `${cots.get(o.cotacao_id ?? '')?.cidade_origem ?? '?'} → ${cots.get(o.cotacao_id ?? '')?.cidade_destino ?? '?'}` })))
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [])
   useEffect(() => {
     void supabase
       .from('notificacoes')
@@ -330,6 +351,24 @@ export default function Inicio({ nome, papel }: { nome?: string; papel?: string 
             </Link>
           ))}
         </div>
+      )}
+
+      {paraLiberar.length > 0 && (
+        <section className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>PRONTAS PARA LIBERAR A ORDEM · {paraLiberar.length}</span>
+            <span className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>fiscal concluído</span>
+          </div>
+          {paraLiberar.map((x) => (
+            <div key={x.id} className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderTop: '1px solid #eef0f5' }}>
+              <div className="min-w-0">
+                <div className="text-[15px] font-extrabold truncate">{x.cliente}</div>
+                <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>{x.rota}</div>
+              </div>
+              <Link to={`/operacoes?op=${x.id}`} className="text-[12px] font-extrabold px-4 py-2 rounded-[10px] text-white" style={{ background: '#1c2559' }}>Rever e liberar</Link>
+            </div>
+          ))}
+        </section>
       )}
 
       {(resumo || erroResumo) && (

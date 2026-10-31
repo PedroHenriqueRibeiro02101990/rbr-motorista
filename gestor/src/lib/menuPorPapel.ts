@@ -4,7 +4,7 @@ const BASICO = ['/', '/busca', '/avisos']
 
 const POR_PAPEL: Record<string, string[]> = {
   comercial: [...BASICO, '/cotacao', '/pre-cotacao', '/cadastros', '/meus-clientes'],
-  operacao: [...BASICO, '/fila-do-dia', '/operacoes', '/mapa', '/cadastros'],
+  operacao: [...BASICO, '/fila-do-dia', '/operacoes', '/mapa', '/cadastros', '/alteracoes'],
   fiscal: [...BASICO, '/operacoes', '/fiscal', '/saude-fiscal'],
   financeiro: [...BASICO, '/financeiro', '/notas-parceiros', '/operacoes'],
 }

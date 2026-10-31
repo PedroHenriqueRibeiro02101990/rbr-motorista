@@ -45,6 +45,7 @@ const NAV_MAIS = [
   { to: '/operacoes', label: 'Operações', end: false },
   { to: '/fiscal', label: 'Fiscal', end: false },
   { to: '/mapa', label: 'Mapa', end: false },
+  { to: '/alteracoes', label: 'Alterações', end: false },
   { to: '/metas', label: 'Metas', end: false },
   { to: '/busca', label: 'Busca', end: false },
   { to: '/avisos', label: 'Avisos', end: false },
