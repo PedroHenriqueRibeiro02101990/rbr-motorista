@@ -273,8 +273,24 @@ export default function AppShell({
             <Avatar nome={pessoa.nome} tam={38} />
           </div>
         </div>
-        <main className="flex-1 w-full px-4 py-5 md:px-7 md:pt-1.5 md:pb-6">{children}</main>
+        <main className={`flex-1 w-full px-4 py-5 md:px-7 md:pt-1.5 md:pb-6 ${pessoa.papel === 'comercial' ? 'pb-24 md:pb-6' : ''}`}>{children}</main>
       </div>
+
+      {/* Celular do vendedor (visual "Celular-Vendedor"): barra de baixo com Início, Serviços, Clientes e + Cotar */}
+      {pessoa.papel === 'comercial' && (
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t grid grid-cols-4 text-[12px] font-bold" style={{ borderColor: 'var(--rbr-border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          {[
+            ['/', 'Início', true],
+            ['/servicos', 'Serviços', false],
+            ['/meus-clientes', 'Clientes', false],
+            ['/cotacao', '+ Cotar', false],
+          ].map(([to, rotulo, end]) => (
+            <NavLink key={to as string} to={to as string} end={end as boolean} className="py-3 text-center" style={({ isActive }) => ({ color: isActive ? '#1c2559' : '#8a91ad' })}>
+              {rotulo as string}
+            </NavLink>
+          ))}
+        </nav>
+      )}
 
       <AjudaFlutuante app="gestor" />
     </div>
