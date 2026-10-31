@@ -13,6 +13,39 @@ const ETAPAS: { tipo: string; rotulo: string; vazio: string }[] = [
   { tipo: 'mdfe', rotulo: 'MDF-e', vazio: 'Libera quando CIOT e VPO (se houver) estiverem emitidos' },
 ]
 
+// Desfazer e prazos (visual "Fiscal-Desfazer"): consulta de quanto tempo cada etapa ainda pode ser desfeita. Texto de referência do desenho
+// aprovado; os prazos legais devem ser conferidos antes de virarem trava (anotado em PENDENCIAS-PEDRO.md). Não cancela nada por si.
+const PRAZOS: { etapa: string; prazo: string; tom: 'verde' | 'amarelo' | 'vermelho'; faz: string; quem: string }[] = [
+  { etapa: 'MDF-e', prazo: 'até 24h', tom: 'verde', faz: 'Cancelar, se a viagem não começou. Com viagem em curso: encerrar e emitir outro.', quem: 'Fiscal' },
+  { etapa: 'CIOT', prazo: '24h antes da saída', tom: 'amarelo', faz: 'Cancelar antes do início. Depois só encerrar (até 5 dias). Troca de veículo vira novo CIOT.', quem: 'Fiscal' },
+  { etapa: 'Vale-pedágio', prazo: '15 dias', tom: 'amarelo', faz: 'Cancelar conforme a regra da operadora. Se a compra falhar, chamar o gestor.', quem: 'Fiscal + gestor' },
+  { etapa: 'Averbação', prazo: 'com o documento', tom: 'verde', faz: 'Cancela junto com o CT-e. Falha ao cancelar: chamar o gestor.', quem: 'Fiscal' },
+  { etapa: 'CT-e', prazo: 'até 7 dias', tom: 'verde', faz: 'Cancelar se não há MDF-e ativo. Passou de 7 dias: substituição ou complemento.', quem: 'Fiscal' },
+  { etapa: 'CT-e fora do prazo', prazo: 'após 7 dias', tom: 'vermelho', faz: 'Não cancela. Gestor decide com a contabilidade (substituição, até 60 dias).', quem: 'Só gestor' },
+]
+const TOM = { verde: { bg: '#d6ecdf', fg: '#1a6b3c' }, amarelo: { bg: '#fff0d6', fg: '#7a5200' }, vermelho: { bg: '#fbe3e1', fg: '#b42318' } }
+
+export function DesfazerEPrazos() {
+  return (
+    <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="px-4 py-3 text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)', background: '#f7f8fc' }}>
+        DESFAZER E PRAZOS · CADA ETAPA MOSTRA SE AINDA DÁ PARA DESFAZER
+      </div>
+      {PRAZOS.map((x) => (
+        <div key={x.etapa} className="grid md:grid-cols-[1fr_1.1fr_3fr_1fr] gap-1 md:gap-3 px-4 py-3 items-center text-[13px]" style={{ borderTop: '1px solid #eef0f5' }}>
+          <b>{x.etapa}</b>
+          <span><span className="text-[11px] font-extrabold rounded-full px-2.5 py-1 whitespace-nowrap" style={{ background: TOM[x.tom].bg, color: TOM[x.tom].fg }}>{x.prazo}</span></span>
+          <span style={{ color: '#4a5275' }}>{x.faz}</span>
+          <span><span className="text-[11px] font-extrabold rounded-full px-2.5 py-1" style={{ background: x.quem === 'Só gestor' ? '#fbe3e1' : x.quem === 'Fiscal' ? '#eef0fa' : '#fff0d6', color: x.quem === 'Só gestor' ? '#b42318' : x.quem === 'Fiscal' ? '#1c2559' : '#7a5200' }}>{x.quem}</span></span>
+        </div>
+      ))}
+      <div className="px-4 py-3 text-[12px] rounded-b-2xl" style={{ background: '#fbe3e1', color: '#7d1a12' }}>
+        <b>Seguradora.</b> Cancelar ou trocar algo depois da averbação precisa ser comunicado (cláusulas 23 e 24). Hoje o aviso à seguradora é feito pelo gestor.
+      </div>
+    </div>
+  )
+}
+
 export default function EsteiraEmissao({ operacaoId, status, docs, onDevolvida }: { operacaoId: string; status: string; docs: Doc[]; onDevolvida: () => void }) {
   const estado = (tipo: string) => docs.find((d) => d.tipo === tipo)
   const feitas = ETAPAS.filter((e) => estado(e.tipo)?.status === 'emitido').length
