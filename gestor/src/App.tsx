@@ -21,6 +21,7 @@ import Avisos from './pages/Avisos'
 import Busca from './pages/Busca'
 import Metas from './pages/Metas'
 import Servicos from './pages/Servicos'
+import RelatorioComercial from './pages/RelatorioComercial'
 import Alteracoes from './pages/Alteracoes'
 import MeusClientes from './pages/MeusClientes'
 import PropostaPublica from './pages/PropostaPublica'
@@ -89,6 +90,7 @@ export default function App() {
           <Route path="/busca" element={<Busca />} />
           <Route path="/metas" element={<Metas />} />
           <Route path="/servicos" element={<Servicos />} />
+          <Route path="/relatorio-comercial" element={<RelatorioComercial />} />
           <Route path="/alteracoes" element={<Alteracoes />} />
           <Route path="/meus-clientes" element={<MeusClientes />} />
           <Route path="/risco" element={<Risco />} />

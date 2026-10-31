@@ -99,6 +99,10 @@ export default function InicioFuncao({ funcao, nome }: { funcao: 'operacao' | 'f
   const [clis, setClis] = useState<Map<string, string>>(new Map())
   const [metas, setMetas] = useState<Meta[]>([])
   const [cargas, setCargas] = useState<CargaMapa[]>([])
+  const [paraFinalizar, setParaFinalizar] = useState(0)
+  useEffect(() => {
+    void supabase.from('operacoes').select('id', { count: 'exact', head: true }).eq('status', 'entregue').eq('eh_teste', false).is('deleted_at', null).then(({ count }) => setParaFinalizar(count ?? 0))
+  }, [])
 
   useEffect(() => {
     let vivo = true
@@ -191,6 +195,8 @@ export default function InicioFuncao({ funcao, nome }: { funcao: 'operacao' | 'f
     const semSinal = cargas.filter((c) => c.sinal === 'alerta')
     const incompletas = porUrgencia(lista.filter((x) => !x.pessoa_alocada_id && !['aguardando_assumir'].includes(x.status)))
     const prox = maisProxima(paraAssumir)
+    const contar = (...st: string[]) => lista.filter((x) => st.includes(x.status)).length
+    const coletaViagem = lista.filter((x) => ['liberada_coleta', 'carregando', 'em_transito', 'em_viagem', 'finalizando'].includes(x.status))
     return (
       <div className="flex flex-col gap-3.5">
         {cab(
@@ -199,15 +205,32 @@ export default function InicioFuncao({ funcao, nome }: { funcao: 'operacao' | 'f
           </>,
           botaoPrincipal('Assumir a mais urgente', '/operacoes?fila=para_assumir'),
         )}
+        {devolvidas[0] && (
+          <div className="rounded-xl px-4 py-2.5 text-[13px] flex items-center justify-between gap-3" style={{ background: '#fbe3e1', color: '#7d1a12', border: '1px solid #f2c4c0' }}>
+            <span><b>Devolvida pelo fiscal:</b> {clis.get(devolvidas[0].cliente_id ?? '') ?? 'Cliente'}. O motivo está no aviso.</span>
+            <Link to={`/operacoes?op=${devolvidas[0].id}`} className="font-extrabold">Corrigir →</Link>
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-4">
           <Kpi rotulo="Para assumir" valor={paraAssumir.length} cor="#7a5200" nota={prox ? `coleta mais próxima: ${quando(prox.coleta_prevista)}` : 'nada esperando'} />
           <Kpi rotulo="Devolvidas" valor={devolvidas.length} cor="#b42318" nota="corrigir e reenviar" />
           <Kpi rotulo="Em viagem" valor={emViagem.length} nota={semSinal.length ? `${semSinal.length} sem sinal` : 'sem atrasos de sinal'} />
-          <Metas metas={metas} funcao="operacao" />
+          <Kpi rotulo="Para finalizar" valor={paraFinalizar} cor="#1a6b3c" nota="entregues, esperando finalizar" />
         </div>
         <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
           <div className="flex flex-col gap-3.5 min-w-0">
             <Mapa cargas={cargas} rotuloPonto={(c) => `${c.origem} → ${c.destino}`} />
+            <div className={`${card} overflow-hidden`} style={borda}>
+              {cabLista(`COLETA E VIAGEM · ${coletaViagem.length}`, 'carregando e finalizados primeiro')}
+              {coletaViagem.length === 0 ? (
+                <div className="px-4 py-5 text-[13px]" style={{ color: 'var(--rbr-muted)', borderTop: '1px solid #eef0f5' }}>Nenhuma coleta ou viagem agora.</div>
+              ) : (
+                coletaViagem.slice(0, 6).map((x) => {
+                  const k = x.cotacao_id ? porCot.get(x.cotacao_id) : undefined
+                  return linhaLista(clis.get(x.cliente_id ?? '') ?? 'Cliente', `${rota(k)} · ${STATUS_OPERACAO_LABEL[x.status] ?? x.status}`, btn(x.status === 'finalizando' ? 'Ver' : 'Abrir', `/operacoes?op=${x.id}`, x.status === 'carregando'))
+                })
+              )}
+            </div>
             <div className={`${card} overflow-hidden`} style={borda}>
               {cabLista(`PARA COMPLETAR · ${incompletas.length}`, 'mais urgentes primeiro')}
               {incompletas.length === 0 ? (
@@ -234,6 +257,16 @@ export default function InicioFuncao({ funcao, nome }: { funcao: 'operacao' | 'f
             <div className="px-4 py-3 text-[11px] font-bold" style={{ color: '#1c2559', borderTop: '1px solid #eef0f5' }}>
               Só o gestor vê o ranking da equipe
             </div>
+          </div>
+          <div className={`${card} p-4 flex flex-col gap-2`} style={borda}>
+            <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>COM OUTRAS PESSOAS</div>
+            {[
+              ['No fiscal', contar('aguardando_liberacao_fiscal', 'em_emissao')],
+              ['Esperando o gestor liberar a ordem', contar('aguardando_liberacao_gestor')],
+              ['Pausada por alteração', contar('pausada_por_alteracao')],
+            ].map(([r, n]) => (
+              <div key={r as string} className="flex justify-between text-[13px]"><span>{r}</span><b>{n}</b></div>
+            ))}
           </div>
         </div>
       </div>
