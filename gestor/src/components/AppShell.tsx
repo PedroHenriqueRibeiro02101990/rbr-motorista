@@ -33,7 +33,7 @@ const MENU_FUNCAO: Record<string, { to: string; label: string; end: boolean }[]>
   comercial: [
     { to: '/', label: 'Início', end: true },
     { to: '/servicos', label: 'Serviços', end: false },
-    { to: '/cadastros?aba=clientes', label: 'Meus clientes', end: false },
+    { to: '/meus-clientes', label: 'Meus clientes', end: false },
   ],
 }
 const SUBTITULO: Record<string, string> = { gestor_rbr: 'Painel do gestor', operacao: 'Painel da operação', fiscal: 'Painel fiscal', comercial: 'Painel comercial', financeiro: 'Painel financeiro' }
