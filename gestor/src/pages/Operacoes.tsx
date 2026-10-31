@@ -967,6 +967,11 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                   operacaoId={op.id}
                   confirmarSaida={() => !edicaoPendente || window.confirm('Há campos preenchidos e não salvos nesta operação. Sair mesmo assim?')}
                 />
+                {(op.status as string) === 'devolvida_pelo_fiscal' && (
+                  <div className="rounded-xl px-4 py-2.5 text-[13px]" style={{ background: '#fbe3e1', color: '#7d1a12', border: '1px solid #f2c4c0' }}>
+                    <b>Devolvida pelo fiscal.</b> O motivo e o item a corrigir estão no aviso enviado a quem alocou. Corrija o item e reenvie ao fiscal.
+                  </div>
+                )}
                 <FaixaResumo
                   itens={[
                     { rotulo: 'Valor ao cliente', valor: op.valorCliente != null ? formatMoney(op.valorCliente) : null },
