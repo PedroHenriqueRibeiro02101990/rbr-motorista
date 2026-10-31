@@ -13,6 +13,7 @@ const TIPOS: { id: TipoOcorrencia; rotulo: string }[] = [
   { id: 'recusa', rotulo: 'Recusa na entrega' },
   { id: 'roubo', rotulo: 'Roubo' },
 ]
+const CONSEQUENCIA: Record<string, string> = { atraso: 'só avisa', avaria: 'seguradora', quebra: 'troca de veículo', acidente: 'seguradora e gestor', recusa: 'gestor e cliente', roubo: 'gerenciadora e polícia' }
 type Incidente = { id: string; descricao: string; status: string; registrado_em: string }
 type ChamaRpc = (fn: string, args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
 
@@ -77,13 +78,14 @@ export default function OcorrenciaRota({ operacaoId }: { operacaoId: string }) {
         </button>
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoOcorrencia)} className={caixa} style={{ borderColor: 'var(--rbr-border)' }} aria-label="Tipo da ocorrência" disabled={ocupado}>
+          <div className="w-full flex flex-col gap-1.5" role="group" aria-label="Tipo da ocorrência">
             {TIPOS.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.rotulo}
-              </option>
+              <button key={t.id} type="button" disabled={ocupado} onClick={() => setTipo(t.id)} aria-pressed={tipo === t.id} className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left" style={tipo === t.id ? { borderColor: '#1c2559', background: '#eef0fa' } : { borderColor: 'var(--rbr-border)', background: '#fff' }}>
+                <b className="text-[13px]">{t.rotulo}</b>
+                <span className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>{CONSEQUENCIA[t.id]}</span>
+              </button>
             ))}
-          </select>
+          </div>
           <input value={texto} onChange={(e) => setTexto(e.target.value)} className={caixa} style={{ borderColor: 'var(--rbr-border)', flex: '1 1 220px' }} placeholder="O que aconteceu (mín. 5 letras)" aria-label="Descrição da ocorrência" disabled={ocupado} />
           <button type="button" onClick={() => void registrar()} disabled={ocupado || texto.trim().length < 5} className="font-bold underline disabled:opacity-50 text-[color:var(--rbr-navy)]">
             {ocupado ? 'Registrando…' : 'Registrar'}

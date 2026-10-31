@@ -94,7 +94,8 @@ export default function Busca() {
   const COR_OP = { bg: '#eef0fa', fg: '#1c2559' }
 
   return (
-    <div className="flex flex-col gap-4 max-w-[760px]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,760px)_300px] items-start">
+    <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Busca</h1>
         <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>
@@ -132,6 +133,26 @@ export default function Busca() {
           )}
         </div>
       )}
+      <div className="rounded-2xl px-4 py-3 text-[12px]" style={{ background: '#eef0fa', color: '#1c2559', border: '1px solid #d5d9e6' }}>
+        <b>O que a busca faz:</b> acha e leva até a tela. Ainda não interpreta frase livre nem responde com IA. Toda a visibilidade é a do banco: a busca não abre brecha.
+      </div>
+    </div>
+    <aside className="bg-white border rounded-2xl p-5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>NÍVEIS DE BUSCA</div>
+      {[
+        ['Gestor', 'tudo, inclusive financeiro e margem'],
+        ['Comercial', 'suas cotações e seus clientes'],
+        ['Operação', 'operações, motoristas, veículos; sem valores ao cliente nem financeiro'],
+        ['Fiscal', 'operações e documentos fiscais'],
+        ['Financeiro', 'títulos e pagamentos'],
+      ].map(([r, d]) => (
+        <div key={r} className="flex justify-between gap-3 text-[12px] py-1.5" style={{ borderTop: '1px solid #eef0f5' }}>
+          <span style={{ color: 'var(--rbr-muted)' }}>{r}</span>
+          <b className="text-right">{d}</b>
+        </div>
+      ))}
+      <div className="text-[11px]" style={{ color: '#8a91ad' }}>A regra de visibilidade é a mesma do banco.</div>
+    </aside>
     </div>
   )
 }

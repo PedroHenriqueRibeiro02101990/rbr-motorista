@@ -7,7 +7,7 @@ import { formatMoney, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import NavegacaoServico from '../components/NavegacaoServico'
 import PassosServico from '../components/operacao/PassosServico'
-import EsteiraEmissao, { DesfazerEPrazos } from '../components/operacao/EsteiraEmissao'
+import EsteiraEmissao, { DesfazerEPrazos, TrocaMotoristaVeiculo } from '../components/operacao/EsteiraEmissao'
 import { codigoCurto } from '../lib/painelOperacao'
 import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
@@ -1609,6 +1609,7 @@ export default function Fiscal() {
           <Fragment key={opAberta.id}>
             <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
             <DesfazerEPrazos />
+            <TrocaMotoristaVeiculo />
             {renderCard(opAberta)}
           </Fragment>
         </PainelSobreposto>

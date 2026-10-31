@@ -46,6 +46,50 @@ export function DesfazerEPrazos() {
   )
 }
 
+// Troca de motorista e veículo (visual "Fiscal-Troca"): consulta do que o fiscal refaz em cada situação. Só texto de referência.
+const TROCA_MOTORISTA = [
+  { q: 'ANTES DA SAÍDA', tom: 'verde', t: 'Sem documentos emitidos', d: 'Operação troca. Nada a desfazer.' },
+  { q: 'ANTES DA SAÍDA', tom: 'amarelo', t: 'Com documentos emitidos', d: 'Novo GR do motorista. CIOT: cancelar e emitir outro (TAC). MDF-e: cancelar e emitir outro. Aviso à seguradora.' },
+  { q: 'EM VIAGEM', tom: 'amarelo', t: 'Mesmo veículo', d: 'Evento de inclusão de condutor no MDF-e. CIOT novo para o novo motorista. GR e seguradora antes.' },
+  { q: 'TRANSBORDO', tom: 'vermelho', t: 'Outro veículo', d: 'Encerrar MDF-e e CIOT atuais, emitir novos. Só o gestor autoriza.' },
+]
+const TROCA_VEICULO = [
+  { q: 'ANTES DA SAÍDA', tom: 'verde', t: 'Mesmo tipo e eixos', d: 'Operação troca. Atualiza MDF-e (novo), CIOT (novo) e RC-V (placa). Nível B.' },
+  { q: 'ANTES DA SAÍDA', tom: 'vermelho', t: 'Tipo ou eixos diferentes', d: 'Muda piso e valor: nível A. Nova proposta e novo aceite.' },
+  { q: 'CARRETA', tom: 'amarelo', t: 'Troca só da carreta', d: 'Gatilho hoje só avisa. Passa a refazer MDF-e, CIOT e RC-V.' },
+  { q: 'EM VIAGEM', tom: 'vermelho', t: 'Quebra de veículo', d: 'Encerrar MDF-e e CIOT da viagem e emitir novos. Fiscal e gestor juntos.' },
+]
+const TOM_T = { verde: { bg: '#d6ecdf', fg: '#1a6b3c' }, amarelo: { bg: '#fff0d6', fg: '#7a5200' }, vermelho: { bg: '#fbe3e1', fg: '#b42318' } } as const
+
+export function TrocaMotoristaVeiculo() {
+  const lista = (titulo: string, itens: typeof TROCA_MOTORISTA) => (
+    <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="px-4 py-3 text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)', background: '#f7f8fc' }}>{titulo}</div>
+      {itens.map((x) => (
+        <div key={x.t} className="flex gap-3 px-4 py-3" style={{ borderTop: '1px solid #eef0f5' }}>
+          <span className="text-[10px] font-extrabold rounded-lg px-2.5 py-1.5 h-fit w-[84px] text-center flex-shrink-0" style={{ background: TOM_T[x.tom as 'verde'].bg, color: TOM_T[x.tom as 'verde'].fg }}>{x.q}</span>
+          <div className="text-[12px]" style={{ color: '#4a5275' }}>
+            <div className="text-[14px] font-extrabold text-[color:var(--rbr-navy-dark)]">{x.t}</div>
+            {x.d}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>TROCA DE MOTORISTA E VEÍCULO · O QUE O FISCAL REFAZ (REFERÊNCIA)</div>
+      <div className="grid gap-3 lg:grid-cols-2 items-start">
+        {lista('TROCA DE MOTORISTA', TROCA_MOTORISTA)}
+        {lista('TROCA DE VEÍCULO', TROCA_VEICULO)}
+      </div>
+      <div className="bg-white border rounded-2xl px-4 py-3 text-[12px]" style={{ borderColor: 'var(--rbr-border)', color: '#4a5275' }}>
+        <b>Regras para qualquer troca:</b> quem pede e quem aprova fica na trilha · GR do novo motorista ou veículo antes de seguir · aviso à seguradora · documento antigo nunca é apagado, só cancelado ou encerrado · placa no MDF-e averbado (exigência do RC-V).
+      </div>
+    </div>
+  )
+}
+
 export default function EsteiraEmissao({ operacaoId, status, docs, onDevolvida }: { operacaoId: string; status: string; docs: Doc[]; onDevolvida: () => void }) {
   const estado = (tipo: string) => docs.find((d) => d.tipo === tipo)
   const feitas = ETAPAS.filter((e) => estado(e.tipo)?.status === 'emitido').length
