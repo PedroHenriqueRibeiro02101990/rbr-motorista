@@ -961,6 +961,11 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 <div className="text-xs text-[color:var(--rbr-muted)]">
                   {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
                 </div>
+                {(extras[op.id]?.total ?? 1) > 1 && op.cotacao_id && (
+                  <Link to={`/operacoes/lote/${op.cotacao_id}`} className="text-[12px] font-extrabold underline" style={{ color: "#1c2559" }}>
+                    Ver o lote de viagens ({extras[op.id]?.total})
+                  </Link>
+                )}
                 <NavegacaoServico
                   atual="operacao"
                   cotacaoId={op.cotacao_id}

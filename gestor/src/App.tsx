@@ -22,6 +22,7 @@ import Busca from './pages/Busca'
 import Metas from './pages/Metas'
 import Servicos from './pages/Servicos'
 import Jornada from './pages/Jornada'
+import Lote from './pages/Lote'
 import RelatorioComercial from './pages/RelatorioComercial'
 import Alteracoes from './pages/Alteracoes'
 import MeusClientes from './pages/MeusClientes'
@@ -92,6 +93,7 @@ export default function App() {
           <Route path="/metas" element={<Metas />} />
           <Route path="/servicos" element={<Servicos />} />
           <Route path="/jornada" element={<Jornada />} />
+          <Route path="/operacoes/lote/:cotacaoId" element={<Lote />} />
           <Route path="/relatorio-comercial" element={<RelatorioComercial />} />
           <Route path="/alteracoes" element={<Alteracoes />} />
           <Route path="/meus-clientes" element={<MeusClientes />} />
