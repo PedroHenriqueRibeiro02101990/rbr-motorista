@@ -4944,6 +4944,20 @@ export default function Cotacao() {
           tipo={tipoEfetivo}
           qtdVeiculos={qtdVeiculos}
           cargasTotal={cargasTotalForm}
+          mostrarMargem={ehGestor}
+          checklist={(() => {
+            const c = (cotacoes ?? []).find((x) => x.id === editingId)
+            return [
+              { rotulo: 'Contato na coleta', obrigatorio: true, ok: false, nota: 'ainda não disponível: a cotação não guarda o contato' },
+              { rotulo: 'Quem recebe (nome, e-mail, WhatsApp)', obrigatorio: true, ok: false, nota: 'ainda não disponível: a cotação não guarda o contato' },
+              { rotulo: 'Janela de coleta', obrigatorio: true, ok: false, nota: 'ainda não disponível' },
+              { rotulo: 'Janela de entrega', obrigatorio: true, ok: !!c?.prazo_entrega },
+              { rotulo: 'NF-e (XML)', obrigatorio: true, ok: !!c?.nf_chave_acesso },
+              { rotulo: 'Aceite do cliente', obrigatorio: true, ok: false, nota: 'ainda não disponível: o aceite pelo link não é guardado na cotação' },
+              { rotulo: 'Exigências marcadas', obrigatorio: false, ok: false, nota: 'ainda não disponível' },
+              { rotulo: 'Agendamento no destino', obrigatorio: false, ok: false, nota: 'ainda não disponível' },
+            ]
+          })()}
           onConfirmar={converter}
           onFechar={() => setConfirmarConv(false)}
         />
