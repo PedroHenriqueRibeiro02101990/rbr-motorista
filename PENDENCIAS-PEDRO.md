@@ -26,3 +26,6 @@ Nao refeitas por dentro: Operacao-Servico (cartoes Motorista e veiculo / GR e ac
 
 ### Decisoes que dependem de voce
 Ver a lista acima, mais: (1) quer criar as tabelas de pedido de aprovacao de preco, pedidos por canal e vendedor da cotacao? (2) confirmar os prazos de desfazer antes de virarem trava; (3) a margem em numero ainda aparece no formulario antigo da cotacao para qualquer funcao; so o cartao novo respeita a visao do vendedor (RLS do banco continua sendo a regra de dados).
+
+### Verificacao do deploy (Vercel)
+Ultimo deploy do gestor com codigo novo: commit e37e24e, estado READY (rbr-gestor-ez79fr5jv-rbr4.vercel.app). O commit 54bdd39 so mudou documentacao, entao a Vercel nao gerou deploy novo para ele (CANCELED e esperado). O deploy 864e49d deu ERROR (tipo do papel comercial) e foi corrigido em e3c13fa, que ficou READY. Link da branch: https://rbr-gestor-git-feat-front-aprovado-rbr4.vercel.app (pede login da Vercel).
