@@ -28,7 +28,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { tituloRota } from '../lib/tituloRota'
-import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, QualidadePrecoCard, type EventoLinha } from '../components/cotacao/PrecoVisual'
+import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, QualidadePrecoCard, faixaDaMargem, type EventoLinha } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -526,6 +526,13 @@ function margemBadge(margem: number | null, min: number, max: number): { bg: str
   if (margem < min - tol) return { bg: '#FBE9E9', color: 'var(--rbr-danger)', label }
   if (margem > max + tol) return { bg: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)', label }
   return { bg: '#E7F5EC', color: 'var(--rbr-positive)', label }
+}
+
+// Visão do vendedor: só a qualidade do preço, nunca o número da margem.
+function qualidadeBadge(margem: number | null): { bg: string; color: string; label: string } {
+  const f = faixaDaMargem(margem)
+  const label = f.nome === 'verde' ? 'Bom' : f.nome === 'amarelo' ? 'Médio' : f.nome === 'vermelho' ? 'No limite' : '—'
+  return { bg: f.fundo, color: f.cor, label }
 }
 
 const CHAVE_RASCUNHO_NOVA = 'cotacao:nova'
@@ -2603,12 +2610,12 @@ export default function Cotacao() {
                   <ProntoParaEnviarCard
                     itens={[
                       { titulo: 'Cliente e carga', detalhe: c.cliente_id ? (c.nf_chave_acesso ? 'Lido do XML' : 'Cliente escolhido') : 'Falta escolher o cliente', ok: !!c.cliente_id },
-                      { titulo: 'Preço dentro da faixa', detalhe: composicao?.margem != null ? `Margem ${(composicao.margem * 100).toFixed(1)}%` : 'Sem preço calculado', ok: composicao?.margem != null && composicao.margem >= margemMin },
+                      { titulo: 'Preço dentro da faixa', detalhe: composicao?.margem != null ? (ehGestor ? `Margem ${(composicao.margem * 100).toFixed(1)}%` : `Qualidade do preço: ${qualidadeBadge(composicao.margem).label}`) : 'Sem preço calculado', ok: composicao?.margem != null && composicao.margem >= margemMin },
                       { titulo: 'Dados de quem recebe', detalhe: 'CNPJ, IE e endereço', ok: !!(c.nf_destinatario_cnpj && c.nf_destinatario_ie && c.nf_destinatario_endereco) },
                       { titulo: 'Contato de quem recebe', detalhe: 'Ainda não é guardado na cotação', ok: false },
                     ]}
                   />
-                  <AprovacaoPrecoCard preco={composicao?.valorFinal ?? null} sugerido={null} margem={composicao?.margem ?? null} />
+                  <AprovacaoPrecoCard preco={composicao?.valorFinal ?? null} sugerido={null} margem={ehGestor ? (composicao?.margem ?? null) : null} />
                   <EnviarPropostaCard para={null} rota={`${c.cidade_origem ?? c.origem} → ${c.cidade_destino ?? '—'}`} valor={composicao?.valorFinal ?? null} />
                   <RecebedorCard
                     campos={[
@@ -3562,6 +3569,7 @@ export default function Cotacao() {
                           </div>
                         )}
                       </div>
+                      {ehGestor && (
                       <div>
                         <label className={labelClass}>Margem (%)</label>
                         <input
@@ -3573,6 +3581,7 @@ export default function Cotacao() {
                           style={inputStyle}
                         />
                       </div>
+                      )}
                     </div>
 
                     {custoDestino.erro && (
@@ -3582,6 +3591,7 @@ export default function Cotacao() {
                     )}
 
                     <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t" style={{ borderColor: 'var(--rbr-border)' }}>
+                      {ehGestor ? (
                       <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
                         <span>
                           Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(custoDestino.custo)}</strong>
@@ -3592,6 +3602,9 @@ export default function Cotacao() {
                           </span>
                         )}
                       </div>
+                      ) : (
+                        <span />
+                      )}
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
                           {custoDestino.valorFinal != null ? formatMoney(custoDestino.valorFinal) : '—'}
@@ -4011,6 +4024,7 @@ export default function Cotacao() {
                   </div>
                 ) : null}
               </div>
+              {ehGestor && (
               <div>
                 <label className={labelClass}>Lucro RBR — Margem (% sobre o custo com imposto)</label>
                 <div className="relative" style={{ maxWidth: 160 }}>
@@ -4033,6 +4047,7 @@ export default function Cotacao() {
                   Padrão {formatPct(lucroPadrao, 0)} — somado depois de frete + pedágio + TAG + imposto.
                 </div>
               </div>
+              )}
 
               {pracasPedagio.length > 0 && (
                 <div className="col-span-1 md:col-span-2 rounded-lg border p-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
@@ -4203,7 +4218,7 @@ export default function Cotacao() {
                     />
                   </div>
                 </div>
-                {composicao?.giro ? (
+                {!ehGestor && composicao?.giro ? null : composicao?.giro ? (
                   <div className="text-xs text-[color:var(--rbr-muted)] flex flex-col gap-0.5">
                     <span>
                       Aporte {formatMoney(composicao.giro.aporte)} · relógio médio {composicao.giro.diasMedios} dias (saída do veículo até o
@@ -4229,6 +4244,7 @@ export default function Cotacao() {
                 Vários destinos), detalhamento completo logo abaixo. */}
             <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
               <div className="flex items-center justify-between gap-3 flex-wrap pb-2 mb-1 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+                {ehGestor ? (
                 <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
                   <span>
                     Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao?.custoComImposto ?? null)}</strong>
@@ -4239,10 +4255,14 @@ export default function Cotacao() {
                     </span>
                   )}
                 </div>
+                ) : (
+                  <span className="text-[11px] text-[color:var(--rbr-muted)]">Preço para o cliente</span>
+                )}
                 <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
                   {composicao?.valorFinal != null ? formatMoney(composicao.valorFinal) : '—'}
                 </span>
               </div>
+              {ehGestor && (<>
               {[
                 { label: 'Frete do motorista', valor: composicao?.frete ?? null },
                 { label: 'Pedágio', valor: composicao?.frete != null ? composicao.pedagio : null },
@@ -4281,6 +4301,7 @@ export default function Cotacao() {
                   {formatMoney(composicao?.lucro ?? null)}
                 </span>
               </div>
+              </>)}
               <div
                 className="flex justify-between items-center text-sm font-bold border-t pt-2 mt-0.5 text-[color:var(--rbr-navy-dark)]"
                 style={{ borderColor: 'var(--rbr-border)' }}
@@ -4288,6 +4309,7 @@ export default function Cotacao() {
                 <span>Valor final ao cliente</span>
                 <span className="tabular-nums text-base">{formatMoney(composicao?.valorFinal ?? null)}</span>
               </div>
+              {ehGestor && (<>
               {composicao?.totalMotorista != null && (
                 <div className="flex justify-between text-[11px] text-[color:var(--rbr-muted)] pt-1">
                   <span>
@@ -4309,6 +4331,15 @@ export default function Cotacao() {
                   permitida, mas fica registrada no log de auditoria)
                 </span>
               </div>
+              </>)}
+              {!ehGestor && (
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="text-[11px] font-semibold text-[color:var(--rbr-navy-dark)]">Qualidade do preço:</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ background: qualidadeBadge(composicao?.margem ?? null).bg, color: qualidadeBadge(composicao?.margem ?? null).color }}>
+                    {qualidadeBadge(composicao?.margem ?? null).label}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           )}
@@ -4822,7 +4853,7 @@ export default function Cotacao() {
       <div className="flex flex-col gap-3">
         {!loading &&
           lista.map((c) => {
-            const margemC = margemBadge(c.margem_ajustada, margemMin, margemMax)
+            const margemC = ehGestor ? margemBadge(c.margem_ajustada, margemMin, margemMax) : qualidadeBadge(c.margem_ajustada)
             const temWhatsapp = Boolean(clienteWhatsappPorId.get(c.cliente_id ?? ''))
             const enviandoEsta = pendingWhatsAppId === c.id
             return (
@@ -4852,7 +4883,7 @@ export default function Cotacao() {
                       className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
                       style={{ background: margemC.bg, color: margemC.color }}
                     >
-                      margem {margemC.label}
+                      {ehGestor ? 'margem ' : 'preço '}{margemC.label}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
