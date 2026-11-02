@@ -29,3 +29,26 @@ Ver a lista acima, mais: (1) quer criar as tabelas de pedido de aprovacao de pre
 
 ### Verificacao do deploy (Vercel)
 Ultimo deploy do gestor com codigo novo: commit e37e24e, estado READY (rbr-gestor-ez79fr5jv-rbr4.vercel.app). O commit 54bdd39 so mudou documentacao, entao a Vercel nao gerou deploy novo para ele (CANCELED e esperado). O deploy 864e49d deu ERROR (tipo do papel comercial) e foi corrigido em e3c13fa, que ficou READY. Link da branch: https://rbr-gestor-git-feat-front-aprovado-rbr4.vercel.app (pede login da Vercel).
+
+## Rodada 3 (passos 1 a 4)
+
+### Feito
+- Passo 1: o vendedor nao ve custo, lucro nem margem em numero no formulario da cotacao (frete, imposto, giro, resumo, margem por destino, lista, "pronto para enviar", janela de converter). Ele ve so a qualidade do preco (Bom, Medio, No limite). Gestor continua vendo tudo.
+- Passo 2: cartoes da operacao (Motorista e veiculo, GR e aceites, Carga) e Gerar operacao com o painel "Antes de gerar" (8 itens). O painel so informa: a conversao nao trava por ele.
+- Passo 3: Cancelar operacao em passos (mesma logica, nova apresentacao), Escolher motorista com "Escolher" e "Enviar frete ao motorista" (usa o mesmo aviso por WhatsApp de antes), painel "Equipe no mes", Lote de viagens (/operacoes/lote/:cotacaoId, com link no detalhe da operacao).
+- Ultimo deploy do gestor: commit 3a51d00, READY (rbr-gestor-gn7swz5in-rbr4.vercel.app). Link da branch: https://rbr-gestor-git-feat-front-aprovado-rbr4.vercel.app (pede login da Vercel).
+
+### Travou (Passo 4, prints com playwright)
+- Playwright e Chromium foram instalados fora do repositorio (pasta temporaria) e o app local subiu. Para entrar com as contas teste.papel@rbrcargo.invalid era preciso ler o arquivo docs-privado/contas-teste.txt, e o sistema de permissoes negou essa leitura. Nao contornei. Nenhum print foi tirado e nenhuma tela foi comparada com os PNGs no navegador.
+- Para destravar: voce libera a leitura desse arquivo para o comando de teste, ou roda `! npx playwright test` com as senhas por variavel de ambiente (sem gravar em arquivo).
+
+### Ainda desativado (falta dado)
+- Gerar operacao: contato na coleta, quem recebe, janela de coleta, aceite do cliente, exigencias e agendamento no destino nao sao guardados na cotacao. Aparecem como pendentes "ainda nao disponivel".
+- Cartao da operacao: botao Trocar (a troca fica no painel do Fiscal) e aceite do contrato por operacao.
+- Equipe no mes: valor, margem e meta por vendedor, e Transferir cotacao (a cotacao nao guarda o vendedor).
+- Lote: "Alocar varios motoristas" e "Assumir o lote" (hoje cada viagem e assumida na sua operacao).
+- Escolher motorista: filtros Disponiveis, Perto da coleta e Com rastreador, "Cadastrar motorista agora" e "Convidar por link".
+
+### Decisoes suas
+- Quer que o checklist "Antes de gerar" passe a travar o botao pelos itens obrigatorios (como no desenho)? Isso exige guardar contatos, janelas e aceite na cotacao (mudanca no banco, so com sua ordem).
+- Progresso do Lote: hoje conta documentos exigidos ja cumpridos. Confirmar se e essa a regra do "11 itens".
