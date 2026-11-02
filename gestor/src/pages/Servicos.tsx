@@ -301,6 +301,33 @@ function ParaOndeVai({ l, onAbrir }: { l: Linha; onAbrir: () => void }) {
   )
 }
 
+// Painel "Equipe no mês" (visual Gestor-Equipe). A cotação ainda não guarda quem é o vendedor, então a divisão por pessoa,
+// as barras de meta e a transferência ficam desativadas. "Pedem atenção" usa só o que já existe: cotações paradas.
+function EquipeNoMes({ linhas }: { linhas: Linha[] }) {
+  const agora = Date.now()
+  const paradas = linhas.filter((l) => l.etapa === 'cotacao' && l.cot?.updated_at && agora - Date.parse(l.cot.updated_at) > 5 * 86400000).length
+  const vermelhas = linhas.filter((l) => l.cot?.margem_ajustada != null && Number(l.cot.margem_ajustada) < 0.29).length
+  return (
+    <aside className="bg-white border rounded-2xl p-4 flex flex-col gap-3" style={{ borderColor: 'var(--rbr-border)' }} aria-label="Equipe no mês">
+      <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>EQUIPE NO MÊS</div>
+      <div className="text-[12px] rounded-xl px-3 py-2.5 opacity-70" style={{ background: '#f3f5f9', color: '#4a5275' }}>
+        Ainda não disponível: a cotação não guarda quem é o vendedor, então não dá para somar valor e margem por pessoa nem mostrar a meta de cada um.
+      </div>
+      <div className="text-[11px] font-extrabold tracking-[0.08em] pt-1" style={{ color: 'var(--rbr-muted)' }}>PEDEM ATENÇÃO</div>
+      <div className="text-[12px] rounded-xl px-3 py-2.5" style={{ background: '#fbe3e1', color: '#7d1a12' }}>
+        <b>{vermelhas}</b> {vermelhas === 1 ? 'serviço está' : 'serviços estão'} na faixa vermelha (margem abaixo de 29%).
+      </div>
+      <div className="text-[12px] rounded-xl px-3 py-2.5" style={{ background: '#fff4d9', color: '#7a5200' }}>
+        <b>{paradas}</b> {paradas === 1 ? 'cotação parada' : 'cotações paradas'} há mais de 5 dias.
+      </div>
+      <button type="button" disabled title="Ainda não disponível" className="text-[13px] font-bold px-4 py-2.5 rounded-xl border bg-white opacity-50 cursor-not-allowed" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>
+        Transferir cotação para outro vendedor
+      </button>
+      <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>Fica registrado quem transferiu, para quem e o motivo (quando existir).</div>
+    </aside>
+  )
+}
+
 export default function Servicos() {
   const nav = useNavigate()
   const [linhas, setLinhas] = useState<Linha[] | null>(null)
@@ -564,6 +591,7 @@ export default function Servicos() {
               </div>
             </div>
             {gestor && selecionada && <ParaOndeVai l={selecionada} onAbrir={() => nav(selecionada.para)} />}
+            {gestor && !selecionada && <EquipeNoMes linhas={linhas ?? []} />}
           </div>
         </>
       )}
