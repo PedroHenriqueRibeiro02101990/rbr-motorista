@@ -80,6 +80,10 @@ export default function MotoristasSugeridos({
   const [lista, setLista] = useState<Sugestao[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [avisandoId, setAvisandoId] = useState<string | null>(null)
+  // Visual Operacao-Alocar: primeiro "Escolher" (só marca), depois "Enviar frete ao motorista" (usa o mesmo aviso de antes).
+  const [escolhido, setEscolhido] = useState<string | null>(null)
+  const [busca, setBusca] = useState('')
+  const [soAprovados, setSoAprovados] = useState(true)
   // Avisados nesta tela agora (mostra "Avisado agora" em vez da data).
   const [avisadosAgora, setAvisadosAgora] = useState<Set<string>>(new Set())
   // Tarefa 5: frete do parceiro abaixo do piso mínimo da operação (aviso antes de mandar a proposta).
@@ -164,6 +168,17 @@ export default function MotoristasSugeridos({
           </Link>
         </div>
       ) : (
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+        <div className="flex flex-col gap-2 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou cidade" className="border rounded-xl px-3 py-2 text-[13px] bg-white flex-1 min-w-[160px]" style={{ borderColor: 'var(--rbr-border)' }} />
+          {([['Aprovados', true], ['Todos', false]] as const).map(([r, v]) => (
+            <button key={r} type="button" onClick={() => setSoAprovados(v)} aria-pressed={soAprovados === v} className="text-[12px] font-bold px-3.5 py-1.5 rounded-full border" style={soAprovados === v ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>{r}</button>
+          ))}
+          {['Disponíveis', 'Perto da coleta', 'Com rastreador'].map((r) => (
+            <button key={r} type="button" disabled title="Ainda não disponível" className="text-[12px] font-bold px-3.5 py-1.5 rounded-full border bg-white opacity-50 cursor-not-allowed" style={{ borderColor: 'var(--rbr-border)' }}>{r}</button>
+          ))}
+        </div>
         <div className="border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
           <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
             <span className="flex-1">Motorista</span>
@@ -171,7 +186,7 @@ export default function MotoristasSugeridos({
             <span className="w-[220px] flex-shrink-0">Situação</span>
             <span className="w-[170px] flex-shrink-0" />
           </div>
-          {lista.map((s, i) => {
+          {lista.filter((x) => (!soAprovados || x.apto) && (!busca.trim() || `${x.nome} ${x.cidade ?? ''}`.toLowerCase().includes(busca.trim().toLowerCase()))).map((s, i) => {
             const chave = `${s.pessoa_id}:${s.veiculo_id}`
             const alertas = s.alertas ?? []
             const avisado = !!s.ja_avisado_em
@@ -210,18 +225,60 @@ export default function MotoristasSugeridos({
                 <div className="md:w-[170px] flex-shrink-0 flex flex-col gap-1 items-stretch md:items-end">
                   <button
                     type="button"
-                    onClick={() => avisar(s)}
-                    disabled={!!motivo || !!avisandoId}
-                    className="text-[12px] font-bold px-3.5 py-2 rounded-[10px] disabled:cursor-not-allowed whitespace-nowrap"
-                    style={motivo || avisandoId ? { background: '#e9ecf4', color: '#8a91ad' } : { background: '#1c2559', color: '#fff' }}
+                    onClick={() => setEscolhido(chave)}
+                    disabled={!s.apto || !!avisandoId}
+                    className="text-[12px] font-bold px-3.5 py-2 rounded-[10px] disabled:cursor-not-allowed whitespace-nowrap border"
+                    style={!s.apto ? { background: '#e9ecf4', color: '#8a91ad', borderColor: '#e9ecf4' } : escolhido === chave ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}
                   >
-                    {avisando ? 'Abrindo…' : 'Avisar no WhatsApp'}
+                    {!s.apto ? 'Bloqueado' : escolhido === chave ? 'Escolhido' : 'Escolher'}
                   </button>
+                  {avisando && <div className="text-[11px] text-[color:var(--rbr-muted)] md:text-right">Abrindo…</div>}
                   {motivo && <div className="text-[11px] text-[color:var(--rbr-muted)] md:text-right">{motivo}</div>}
                 </div>
               </div>
             )
           })}
+        </div>
+        <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>O sistema só deixa escolher quem está aprovado. Quem tem bloqueio mostra o motivo.</div>
+        </div>
+        {(() => {
+          const e = lista.find((x) => `${x.pessoa_id}:${x.veiculo_id}` === escolhido)
+          return (
+            <aside className="bg-white border rounded-2xl p-4 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
+              <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>ESCOLHIDO</div>
+              {!e ? (
+                <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>Toque em “Escolher” em um motorista da lista.</div>
+              ) : (
+                <>
+                  <div className="text-[15px] font-extrabold text-[color:var(--rbr-navy-dark)]">{e.nome}</div>
+                  {[
+                    [e.apto, e.apto ? 'Aprovado, documentos em dia' : 'Não apto'],
+                    [e.perfil_confirmado, 'Perfil confirmado'],
+                    [e.online, 'Online agora'],
+                  ].map(([ok, txt]) => (
+                    <div key={String(txt)} className="flex items-center gap-2 text-[12px] font-bold">
+                      <span className="w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center" style={{ background: ok ? '#1f9d55' : '#d9a21b' }} aria-hidden>{ok ? '✓' : '!'}</span>
+                      {String(txt)}
+                    </div>
+                  ))}
+                  {(e.alertas ?? []).map((al) => (
+                    <div key={al} className="text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: '#fff0d6', color: '#7a5200' }}>{al}</div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => void avisar(e)}
+                    disabled={!e.apto || !!e.ja_avisado_em || !!avisandoId}
+                    className="text-[13px] font-extrabold px-4 py-2.5 rounded-xl disabled:cursor-not-allowed"
+                    style={!e.apto || e.ja_avisado_em || avisandoId ? { background: '#e9ecf4', color: '#8a91ad' } : { background: '#1c2559', color: '#fff' }}
+                  >
+                    {avisandoId ? 'Abrindo…' : e.ja_avisado_em ? 'Frete já enviado' : 'Enviar frete ao motorista'}
+                  </button>
+                  <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>Abre o WhatsApp com a rota, a janela e o frete. Nada é enviado até você tocar em “Enviar frete”.</div>
+                </>
+              )}
+            </aside>
+          )
+        })()}
         </div>
       )}
     </div>
