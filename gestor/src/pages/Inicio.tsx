@@ -270,6 +270,25 @@ export default function Inicio({ nome, papel }: { nome?: string; papel?: string 
   const destaque = semSinal[0] ? `A viagem para ${semSinal[0].destino} está sem sinal.` : null
 
   const botao = 'text-[12px] font-bold px-3.5 py-2 rounded-[10px] text-white self-start'
+  // Margem do mês: média ponderada pelo valor das cotações convertidas neste mês (só leitura).
+  const [margemMes, setMargemMes] = useState<number | null>(null)
+  useEffect(() => {
+    const ini = new Date()
+    ini.setDate(1)
+    ini.setHours(0, 0, 0, 0)
+    void supabase
+      .from('cotacoes')
+      .select('valor_total, margem_ajustada')
+      .eq('status', 'convertida')
+      .eq('eh_teste', false)
+      .gte('updated_at', ini.toISOString())
+      .then(({ data }) => {
+        const l = (data ?? []).filter((c) => c.margem_ajustada != null && Number(c.valor_total) > 0)
+        const total = l.reduce((a, c) => a + Number(c.valor_total), 0)
+        setMargemMes(total > 0 ? l.reduce((a, c) => a + Number(c.margem_ajustada) * Number(c.valor_total), 0) / total : null)
+      })
+  }, [])
+
   const kpi = (rotulo: string, valor: string | number, nota?: string, perigo?: boolean) => (
     <div className="bg-white border rounded-2xl px-3.5 py-2.5" style={{ borderColor: perigo ? '#f2c4c0' : 'var(--rbr-border)', background: perigo ? '#fdeceb' : '#fff' }}>
       <div className="text-[11px] font-semibold" style={{ color: perigo ? '#b42318' : 'var(--rbr-muted)' }}>
@@ -400,9 +419,17 @@ export default function Inicio({ nome, papel }: { nome?: string; papel?: string 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {kpi('Em andamento', op ? n(op.ativas) : '—', semSinal.length ? `${semSinal.length} sem sinal` : undefined)}
         {kpi('Motoristas online', op ? n(op.motoristas_online) : '—')}
-        {kpi('Coletas hoje', op ? n(op.coletas_hoje) : '—')}
-        {kpi('Entregas hoje', op ? n(op.entregas_hoje) : '—')}
-        {kpi('Precisam de você', carregado ? precisam : '—', undefined, precisam > 0)}
+        {kpi('Margem do mês', margemMes == null ? '—' : `${(margemMes * 100).toFixed(1).replace('.', ',')}%`, 'serviços convertidos no mês')}
+        <div className="bg-white border rounded-2xl px-3.5 py-2.5 flex flex-col gap-1 opacity-70" style={{ borderColor: 'var(--rbr-border)' }} title="Ainda não disponível">
+          <div className="text-[10px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>META DE VENDAS · MÊS</div>
+          <div className="h-1.5 rounded-full mt-2" style={{ background: '#e9ecf4' }} />
+          <div className="text-[10px]" style={{ color: '#8a91ad' }}>Ainda não disponível: sem meta nem faturado por vendedor.</div>
+        </div>
+        <div className="bg-white border rounded-2xl px-3.5 py-2.5 flex flex-col gap-1 opacity-70" style={{ borderColor: 'var(--rbr-border)' }} title="Ainda não disponível">
+          <div className="text-[10px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>META DA OPERAÇÃO</div>
+          <div className="h-1.5 rounded-full mt-2" style={{ background: '#e9ecf4' }} />
+          <div className="text-[10px]" style={{ color: '#8a91ad' }}>Ainda não disponível: a apuração das metas não existe.</div>
+        </div>
       </div>
 
       {/* Mapa + Agora */}
