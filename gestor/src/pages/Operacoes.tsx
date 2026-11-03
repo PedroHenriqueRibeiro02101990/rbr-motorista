@@ -753,6 +753,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       </details>
 
       {!recusando && confIndicacao}
+      <details className="text-xs"><summary className="cursor-pointer font-bold" style={{ color: 'var(--rbr-muted)' }}>O que fazer agora (pendências da operação)</summary>
+      <div className="mt-3">
       <PainelPendencias
         modulo="operacoes"
         recarregarKey={painelKey}
@@ -789,6 +791,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           ) : undefined
         }
       />
+      </div>
+      </details>
 
       <AvisoCargasAguardando
         cargas={cargasAguardando}
