@@ -1,4 +1,8 @@
-// Edge Function: emitir-cte (v22)
+// Edge Function: emitir-cte (v24)
+//
+// v24 (2026-11-03): CFOP 5932/6932 quando a prestação começa em UF diferente da UF da RBR; o 1º dígito segue
+// início x fim da prestação (mesma UF = 5932, UFs diferentes = 6932). Mudança só em cte.ts. (v23 usava a UF do tomador
+// e a SEFAZ recusou o 5932 em Brasília -> SP: rejeição 519.)
 //
 // v22 (2026-10-24, passo 4): NF-e do CLIENTE na operação (operacao_nfes). O CT-e cita todas as notas da operação e usa
 // a soma de valor (vai para a averbação pelo XML) e de peso. Sem nota na operação, em produção fora do modo teste,

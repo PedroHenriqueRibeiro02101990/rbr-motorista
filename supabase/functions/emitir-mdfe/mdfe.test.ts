@@ -322,3 +322,66 @@ test("CIOT ausente: aviso antes de 23/11/2026, bloqueio depois (só em produçã
   assert.equal(ciotAusenteBloqueia(depois, true, false), false);
   assert.equal(ciotAusenteBloqueia(depois, false, true), false);
 });
+
+// --- 03/11/2026: regras publicadas na v26 (percurso, pagamento sem VPO, CIOT de 12 dígitos) ---
+import { ufsPercurso } from "./mdfe.ts";
+
+test("ufsPercurso: UFs iguais ou limítrofes não precisam de percurso", () => {
+  assert.deepEqual(ufsPercurso("SP", "SP"), []);
+  assert.deepEqual(ufsPercurso("SP", "MG"), []);
+  assert.deepEqual(ufsPercurso("DF", "GO"), []);
+});
+
+test("ufsPercurso: DF para SP passa por GO ou MG (caminho mais curto) e respeita o percurso informado", () => {
+  const calculado = ufsPercurso("DF", "SP");
+  assert.equal(calculado.length, 1);
+  assert.ok(["GO", "MG"].includes(calculado[0]));
+  assert.deepEqual(ufsPercurso("DF", "SP", ["MG"]), ["MG"]);
+  assert.deepEqual(ufsPercurso("DF", "SP", ["GO", "MG"]), ["GO", "MG"]);
+  // GO não faz divisa com SP: ["GO"] sozinho não é cadeia válida e cai no caminho calculado
+  assert.deepEqual(ufsPercurso("DF", "SP", ["GO"]), ["MG"]);
+  // percurso informado que não forma cadeia de UFs limítrofes é ignorado e o caminho é calculado
+  const invalido = ufsPercurso("DF", "SP", ["BA", "RS"]);
+  assert.ok(["GO", "MG"].includes(invalido[0]) && invalido.length === 1);
+});
+
+test("MDF-e: UFs não limítrofes levam percursos[].uf_percurso; limítrofes não levam", () => {
+  const longe = montarMdfe(base({ op: { ...base().op, uf_origem: "DF", uf_destino: "SP" } }));
+  assert.equal(longe.payload.percursos.length, 1);
+  assert.ok(["GO", "MG"].includes(longe.payload.percursos[0].uf_percurso));
+  const perto = montarMdfe(base());
+  assert.deepEqual(perto.payload.percursos, []);
+});
+
+test("pagamento: parcelas + adiantamento = valor do contrato, com e sem VPO (o VPO não entra no contrato)", () => {
+  const semVpo = montarMdfe(base());
+  const comVpo = montarMdfe(
+    base({
+      cotacao: { ...base().cotacao!, pedagio: 300 },
+      ciotVpo: { numero_averbacao: "AVB-123", vpo_idvpo: "123456789", vpo_valor: 300, vpo_cnpj_fornecedora: "11222333000181" },
+    }),
+  );
+  for (const r of [semVpo, comVpo]) {
+    const p = r.payload.modal_rodoviario.pagamentos[0];
+    const contrato = Number(p.valor_total_contrato);
+    assert.equal(contrato, 1500);
+    const componentes = p.componentes.reduce((a: number, c: { valor: string | number }) => a + Number(c.valor), 0);
+    assert.equal(Math.round(componentes * 100) / 100, contrato);
+    assert.ok(!p.componentes.some((c: { tipo: string }) => c.tipo === "01"), "VPO não pode ser componente do contrato");
+    if (p.parcelas) {
+      const parcelas = p.parcelas.reduce((a: number, x: { valor: string | number }) => a + Number(x.valor), 0);
+      assert.equal(Math.round((parcelas + Number(p.valor_adiantamento ?? 0)) * 100) / 100, contrato);
+    }
+  }
+  const disp = comVpo.payload.modal_rodoviario.dispositivos_vale_pedagio;
+  assert.equal(disp.length, 1);
+  assert.equal(Number(disp[0].valor_vale_pedagio), 300);
+});
+
+test("CIOT: com 12 dígitos vai no MDF-e; sem ele, veículo de TAC em produção real bloqueia", () => {
+  const tac = { ...CARRETA, is_veiculo_proprio: false };
+  const comCiot = montarMdfe(base({ tracao: { ...CAVALO, is_veiculo_proprio: false }, reboques: [tac], ciotVpo: { ciot: "560000596706", ciot_ambiente: "producao", numero_averbacao: "AVB-123" } }));
+  assert.equal(comCiot.payload.modal_rodoviario.ciot[0].ciot, "560000596706");
+  const curto = montarMdfe(base({ tracao: { ...CAVALO, is_veiculo_proprio: false }, ciotVpo: { ciot: "12345", ciot_ambiente: "producao", numero_averbacao: "AVB-123" } }));
+  assert.equal(curto.payload.modal_rodoviario.ciot, undefined);
+});

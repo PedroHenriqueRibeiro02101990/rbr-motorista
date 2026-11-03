@@ -13,6 +13,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { mdfeAceitaCondutor, validarCondutor } from "./condutor.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -284,10 +285,10 @@ Deno.serve(async (req: Request) => {
 
     // ============================ INCLUIR CONDUTOR MDF-e ============================
     if (acao === "incluir_condutor_mdfe") {
-      const nome = String(body.nome ?? "").trim();
-      const cpf = somenteDigitos(String(body.cpf ?? ""));
-      if (nome.length < 2 || cpf.length !== 11) return await bloquear("mdfe", "inclusao_condutor", "Informe o nome e o CPF (11 dígitos) do condutor.");
-      if (!docMdfe?.referencia || docMdfe.status !== "emitido" || docMdfe.encerrado_em) {
+      const cond = validarCondutor(body.nome, body.cpf);
+      if (!cond.ok) return await bloquear("mdfe", "inclusao_condutor", cond.erro);
+      const { nome, cpf } = cond;
+      if (!mdfeAceitaCondutor(docMdfe)) {
         return await bloquear("mdfe", "inclusao_condutor", "O condutor só pode ser incluído em um MDF-e autorizado e ainda não encerrado.");
       }
       const corpo = { nome, cpf };

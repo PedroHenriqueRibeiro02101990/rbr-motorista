@@ -1,4 +1,6 @@
 // Regras e montagem do payload do MDF-e (Focus NFe /v2/mdfe), sem I/O.
+// v25 (2026-11-03): pagamento: o VPO nao entra mais no valor do contrato nem nos componentes (rejeicao 738: parcelas + adiantamento = valor do contrato). VPO segue no grupo proprio dispositivos_vale_pedagio.
+// v24 (2026-11-03): percursos[].uf_percurso (UFs de percurso) quando inicio e fim nao sao limitrofes (rejeicao 'Percurso informado invalido').
 // v18 (2026-10-16): tipo de carga vazio na cotacao assume "Carga geral" (05) e avisa (origem rbr), em vez de bloquear. Tipo preenchido e nao reconhecido continua bloqueando.
 // v17 (2026-10-16): tipo_transporte so vai no payload quando ha proprietario do veiculo de tracao (veiculo que nao e da frota da RBR). SEFAZ rejeita o campo sem proprietario.
 // v6: RNTRC do proprietario normalizado para 8 digitos; homologacao relaxa regras so do nosso sistema; data_emissao -03:00.
@@ -53,6 +55,51 @@ export interface VeiculoMdfe {
   } | null;
 }
 
+// v24 (2026-11-03): UFs de percurso (infPercurso/UFPer). Quando a UF de inicio e a de fim nao sao limitrofes, a SEFAZ
+// exige as UFs por onde o veiculo passa, em sequencia de UFs limitrofes (rejeicao "Percurso informado invalido").
+// Usa o percurso informado na operacao (documentacao_operacao vpo.payload_resposta.percurso_ufs) quando for uma
+// cadeia valida; senao calcula o caminho mais curto entre as UFs.
+const UF_LIMITROFES: Record<string, string[]> = {
+  AC: ["AM", "RO"], AL: ["BA", "PE", "SE"], AM: ["AC", "MT", "PA", "RO", "RR"], AP: ["PA"],
+  BA: ["AL", "ES", "GO", "MG", "PE", "PI", "SE", "TO"], CE: ["PB", "PE", "PI", "RN"], DF: ["GO", "MG"],
+  ES: ["BA", "MG", "RJ"], GO: ["BA", "DF", "MG", "MS", "MT", "TO"], MA: ["PA", "PI", "TO"],
+  MG: ["BA", "DF", "ES", "GO", "MS", "RJ", "SP"], MS: ["GO", "MG", "MT", "PR", "SP"],
+  MT: ["AM", "GO", "MS", "PA", "RO", "TO"], PA: ["AM", "AP", "MA", "MT", "RR", "TO"], PB: ["CE", "PE", "RN"],
+  PE: ["AL", "BA", "CE", "PB", "PI"], PI: ["BA", "CE", "MA", "PE", "TO"], PR: ["MS", "SC", "SP"],
+  RJ: ["ES", "MG", "SP"], RN: ["CE", "PB"], RO: ["AC", "AM", "MT"], RR: ["AM", "PA"], RS: ["SC"],
+  SC: ["PR", "RS"], SE: ["AL", "BA"], SP: ["MG", "MS", "PR", "RJ"], TO: ["BA", "GO", "MA", "MT", "PA", "PI"],
+};
+
+export function ufsPercurso(origem: unknown, destino: unknown, informado?: unknown): string[] {
+  const o = String(origem ?? "").trim().toUpperCase();
+  const d = String(destino ?? "").trim().toUpperCase();
+  if (!UF_LIMITROFES[o] || !UF_LIMITROFES[d] || o === d || UF_LIMITROFES[o].includes(d)) return [];
+  if (Array.isArray(informado) && informado.length > 0 && informado.length <= 25) {
+    const lista = informado.map((u) => String(u ?? "").trim().toUpperCase());
+    const cadeia = [o, ...lista, d];
+    const valida = lista.every((u) => UF_LIMITROFES[u]) && new Set(lista).size === lista.length &&
+      !lista.includes(o) && !lista.includes(d) &&
+      cadeia.every((u, k) => k === 0 || UF_LIMITROFES[cadeia[k - 1]].includes(u));
+    if (valida) return lista;
+  }
+  const anterior = new Map<string, string>([[o, ""]]);
+  const fila = [o];
+  while (fila.length) {
+    const atual = fila.shift()!;
+    if (atual === d) break;
+    for (const v of UF_LIMITROFES[atual]) {
+      if (!anterior.has(v)) {
+        anterior.set(v, atual);
+        fila.push(v);
+      }
+    }
+  }
+  if (!anterior.has(d)) return [];
+  const caminho: string[] = [];
+  for (let u = anterior.get(d)!; u && u !== o; u = anterior.get(u)!) caminho.unshift(u);
+  return caminho;
+}
+
 export interface DadosMdfe {
   op: Linha;
   pf: Linha | null;
@@ -77,6 +124,8 @@ export interface DadosMdfe {
   motorista: { pix: string | null; banco_codigo: string | null; banco_agencia: string | null } | null;
   cliente: { cnpj: string | null; cpf: string | null; razao_social: string | null } | null;
   ciotVpo: Linha | null;
+  // UFs por onde o veiculo passa (entre a de inicio e a de fim), quando a operacao informa o percurso real.
+  percursoInformado?: string[] | null;
   condicao: { valor_total_contrato: number | null; valor_adiantamento: number | null; saldo_prazo_dias: number | null } | null;
   agora: Date;
 }
@@ -407,8 +456,8 @@ export function montarMdfe(
   const aPrazo = adiant > 0 || prazoDias > 0;
   let pagamentos: Linha[] | undefined;
   if (valorContratoFrete && valorContratoFrete > 0) {
+    // v25: so o frete entra no contrato (rejeicao 738: parcelas + adiantamento = valor do contrato). O VPO tem grupo proprio.
     const componentesNum: { tipo: string; valor: number }[] = [{ tipo: "04", valor: valorContratoFrete }];
-    if (vpoValor && vpoValor > 0) componentesNum.unshift({ tipo: "01", valor: vpoValor });
     const totalContrato = Math.round(componentesNum.reduce((a, c) => a + c.valor, 0) * 100) / 100;
     const componentes = componentesNum.map((c) => ({ tipo: c.tipo, valor: dinheiro(c.valor) }));
     const saldo = Math.round((valorContratoFrete - adiant) * 100) / 100;
@@ -465,6 +514,7 @@ export function montarMdfe(
     tipo_transporte: propTracao ? (propTracao.doc.tipo === "cpf" ? "2" : "1") : undefined, // 1 = ETC, 2 = TAC
     uf_inicio: op.uf_origem,
     uf_fim: op.uf_destino,
+    percursos: ufsPercurso(op.uf_origem, op.uf_destino, d.percursoInformado).map((uf) => ({ uf_percurso: uf })),
 
     cnpj_emitente: cnpjEmitente,
     inscricao_estadual_emitente: op.emitente_ie,

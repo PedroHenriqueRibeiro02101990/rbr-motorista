@@ -417,7 +417,15 @@ export function montarCte(d: DadosCte): ResultadoCte {
   }
 
   const intraestadual = op.uf_origem && op.uf_destino && op.uf_origem === op.uf_destino;
-  const cfop = intraestadual ? "5353" : "6353";
+  let cfop = intraestadual ? "5353" : "6353";
+  // v24 (2026-11-03): prestação iniciada em UF diferente da UF da RBR (ex.: Brasília -> SP) usa 5932/6932 (a SEFAZ
+  // recusa 5353/6353: "CFOP inválido, informar 5932 ou 6932"). O 1º dígito segue início x fim da prestação:
+  // mesma UF = 5932; UFs diferentes = 6932 (a UF do tomador não decide: 5932 em Brasília -> SP deu rejeição 519).
+  const ufEmitente = String(pf?.endereco_uf ?? "SP").toUpperCase();
+  if (op.uf_origem && String(op.uf_origem).toUpperCase() !== ufEmitente) {
+    cfop = intraestadual ? "5932" : "6932";
+    aviso("info", `CFOP ${cfop}: prestação iniciada em ${op.uf_origem}, fora da UF da RBR (${ufEmitente}).`);
+  }
 
   const payload: Linha = {
     natureza_operacao: NATUREZA_OPERACAO_CTE,
