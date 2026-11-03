@@ -28,7 +28,31 @@ export function gravidadeGeral(achados: { gravidade: Gravidade }[]): Gravidade {
 type Disjuntor = { aberto: boolean; motivo: string | null; aberto_em: string | null }
 type ChamaRpc = (fn: string, args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>
 
+// Robôs do visual aprovado "Fiscal-Saude". O estado só é medido onde existe medição (disjuntor); os demais mostram o que são de verdade:
+// agendado (tem agendamento no banco), manual (só roda pelo botão) ou ainda não existe.
+type Robo = { nome: string; desc: string; roda: string; situacao: 'agendado' | 'manual' | 'inexistente' | 'disjuntor' }
+const ROBOS: Robo[] = [
+  { nome: 'Sentinela', desc: 'Operações paradas e prazos de MDF-e/CIOT', roda: 'ao tocar em Verificar agora', situacao: 'manual' },
+  { nome: 'Reconciliador', desc: 'Compara nosso banco com Focus e efrete', roda: '—', situacao: 'inexistente' },
+  { nome: 'Auditor de dinheiro', desc: 'Frete, saldo e CIOT batem com o Financeiro', roda: '30 min', situacao: 'agendado' },
+  { nome: 'Auditor de segregação', desc: 'Quem criou não emitiu; trilha completa', roda: '30 min', situacao: 'agendado' },
+  { nome: 'Simulador noturno', desc: 'Emite na homologação e guarda a prova', roda: '—', situacao: 'inexistente' },
+  { nome: 'Disjuntor', desc: 'Pausa emissão se um provedor cair', roda: 'contínuo', situacao: 'disjuntor' },
+  { nome: 'Vigia regulatório', desc: 'Avisa mudança de piso, NT e prazos', roda: '—', situacao: 'inexistente' },
+]
+
 export default function SaudeFiscal() {
+  const [emissoesHoje, setEmissoesHoje] = useState<number | null>(null)
+  useEffect(() => {
+    const ini = new Date()
+    ini.setHours(0, 0, 0, 0)
+    void supabase
+      .from('documentacao_operacao')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'emitido')
+      .gte('emitido_em', ini.toISOString())
+      .then(({ count }) => setEmissoesHoje(count ?? 0))
+  }, [])
   // G07: disjuntor fiscal. Aberto = há achado grave de segregação de funções; só o gestor reabre, com motivo.
   const [disjuntor, setDisjuntor] = useState<Disjuntor | null>(null)
   const [motivoReabrir, setMotivoReabrir] = useState('')
@@ -85,7 +109,10 @@ export default function SaudeFiscal() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Saúde fiscal</h1>
+        <div>
+          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Saúde fiscal</h1>
+          <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>Os robôs vigiam a esteira. Verde quer dizer que nada precisa de você.</div>
+        </div>
         <Botao onClick={() => void verificarAgora()} disabled={verificando}>
           {verificando ? 'Verificando…' : 'Verificar agora'}
         </Botao>
@@ -102,6 +129,48 @@ export default function SaudeFiscal() {
           </div>
         </Aviso>
       )}
+      <div className="grid gap-3 md:grid-cols-3">
+        {[
+          ['Robôs', String(ROBOS.length), `${ROBOS.filter((r) => r.situacao === 'agendado' || r.situacao === 'disjuntor').length} ativos, ${ROBOS.filter((r) => r.situacao === 'manual').length} manual, ${ROBOS.filter((r) => r.situacao === 'inexistente').length} ainda não existem`],
+          ['Emissões hoje', emissoesHoje == null ? '—' : String(emissoesHoje), 'documentos emitidos desde 00h'],
+          ['Itens em aberto', achados == null ? '—' : String(achados.length), 'achados do robô de conferência'],
+        ].map(([r, v, n]) => (
+          <div key={r} className="bg-white border rounded-2xl px-4 py-3" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="text-[11px] font-semibold" style={{ color: 'var(--rbr-muted)' }}>{r}</div>
+            <div className="text-[30px] leading-tight font-extrabold tabular-nums">{v}</div>
+            <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>{n}</div>
+          </div>
+        ))}
+      </div>
+      <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+        <div className="hidden md:grid grid-cols-[1.6fr_1fr_1fr] gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
+          <span>Robô</span>
+          <span>Roda</span>
+          <span>Estado</span>
+        </div>
+        {ROBOS.map((r) => {
+          const estado =
+            r.situacao === 'disjuntor'
+              ? disjuntor?.aberto
+                ? { t: 'Aberto', bg: '#fbe3e1', fg: '#b42318' }
+                : { t: 'Verde', bg: '#d6ecdf', fg: '#1a6b3c' }
+              : r.situacao === 'agendado'
+                ? { t: 'Agendado', bg: '#d6ecdf', fg: '#1a6b3c' }
+                : r.situacao === 'manual'
+                  ? { t: 'Manual', bg: '#fff0d6', fg: '#7a5200' }
+                  : { t: 'Ainda não existe', bg: '#eef0f5', fg: '#8a91ad' }
+          return (
+            <div key={r.nome} className="grid md:grid-cols-[1.6fr_1fr_1fr] gap-1 md:gap-3 px-4 py-3 items-center" style={{ borderTop: '1px solid #eef0f5', opacity: r.situacao === 'inexistente' ? 0.7 : 1 }}>
+              <div>
+                <div className="text-[15px] font-extrabold">{r.nome}</div>
+                <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>{r.desc}</div>
+              </div>
+              <div className="text-[13px]">{r.roda}</div>
+              <div><span className="text-[11px] font-extrabold rounded-full px-3 py-1" style={{ background: estado.bg, color: estado.fg }}>{estado.t}</span></div>
+            </div>
+          )
+        })}
+      </div>
       {achados === null ? (
         <Carregando />
       ) : (

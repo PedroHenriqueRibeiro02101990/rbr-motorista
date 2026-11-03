@@ -15,12 +15,47 @@ export type ResumoConversao = {
   margem: string
 }
 
+export type ItemChecklist = { rotulo: string; obrigatorio: boolean; ok: boolean; nota?: string }
+
+// Painel "Antes de gerar" (visual Checklist-Operacao): só informa. A conversão continua como está; o que o sistema
+// ainda não guarda na cotação aparece como pendente com a nota "ainda não disponível".
+function PainelChecklist({ itens }: { itens: ItemChecklist[] }) {
+  const prontos = itens.filter((i) => i.ok).length
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
+      <div className="text-[11px] font-extrabold tracking-[0.08em] text-[color:var(--rbr-muted)]">ANTES DE GERAR</div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-[24px] font-extrabold text-[color:var(--rbr-navy-dark)]">{prontos} de {itens.length}</span>
+        <span className="text-[11px] text-[color:var(--rbr-muted)]">itens prontos</span>
+      </div>
+      <div className="h-2 rounded-full overflow-hidden" style={{ background: '#e4e8f0' }}>
+        <div className="h-full rounded-full" style={{ width: `${(prontos / itens.length) * 100}%`, background: '#1f9d55' }} />
+      </div>
+      {itens.map((i) => (
+        <div key={i.rotulo} className="flex items-start gap-2 text-xs">
+          <span className="w-4 h-4 rounded-full text-white text-[10px] font-extrabold flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: i.ok ? '#1f9d55' : i.obrigatorio ? '#d92d20' : '#d9a21b' }} aria-hidden>
+            {i.ok ? '✓' : '!'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-[color:var(--rbr-navy-dark)]">{i.rotulo}</div>
+            {i.nota && !i.ok && <div className="text-[10px] text-[color:var(--rbr-muted)]">{i.nota}</div>}
+          </div>
+          <span className="text-[10px] text-[color:var(--rbr-muted)]">{i.obrigatorio ? 'obrigatório' : 'opcional'}</span>
+        </div>
+      ))}
+      <div className="text-[11px] text-[color:var(--rbr-muted)]">Hoje a conversão não trava por estes itens: o que faltar aparece para a operação como pendência.</div>
+    </div>
+  )
+}
+
 // 1) Janela de confirmação antes de converter (sempre).
 export function ConfirmarConversaoModal({
   resumo,
   tipo,
   qtdVeiculos,
   cargasTotal,
+  checklist,
+  mostrarMargem = true,
   onConfirmar,
   onFechar,
 }: {
@@ -28,6 +63,8 @@ export function ConfirmarConversaoModal({
   tipo: TipoCotacaoValor
   qtdVeiculos: number
   cargasTotal: number
+  checklist?: ItemChecklist[]
+  mostrarMargem?: boolean
   onConfirmar: () => Promise<void>
   onFechar: () => void
 }) {
@@ -37,11 +74,12 @@ export function ConfirmarConversaoModal({
     ['Rota', resumo.rota],
     ['Veículo', resumo.veiculo],
     ['Preço', brl(resumo.preco)],
-    ['Margem', resumo.margem],
+    ...(mostrarMargem ? ([['Margem', resumo.margem]] as [string, string][]) : []),
   ]
   return (
-    <Modal titulo="Converter em operação" onFechar={ocupado ? () => {} : onFechar} largura="max-w-lg">
-      <div className="flex flex-col gap-3">
+    <Modal titulo="Converter em operação" onFechar={ocupado ? () => {} : onFechar} largura={checklist ? 'max-w-3xl' : 'max-w-lg'}>
+      <div className={checklist ? 'grid gap-3 md:grid-cols-[minmax(0,1fr)_260px] items-start' : 'flex flex-col gap-3'}>
+      <div className="flex flex-col gap-3 min-w-0">
         <div className="border rounded-xl divide-y" style={{ borderColor: 'var(--rbr-border)' }}>
           {linhas.map(([k, v]) => (
             <div key={k} className="flex items-start justify-between gap-3 px-3 py-2 text-xs" style={{ borderColor: 'var(--rbr-border)' }}>
@@ -66,6 +104,8 @@ export function ConfirmarConversaoModal({
             {ocupado ? 'Convertendo…' : 'Converter em operação'}
           </Botao>
         </div>
+      </div>
+      {checklist && <PainelChecklist itens={checklist} />}
       </div>
     </Modal>
   )

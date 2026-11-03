@@ -1,4 +1,5 @@
-// Edge Function: emitir-mdfe (v21)
+// Edge Function: emitir-mdfe (v22)
+// v22 (2026-11-03): UFs de percurso (percursos[].uf_percurso) quando a UF de inicio e fim nao sao limitrofes (rejeicao 'Percurso informado invalido'). Le documentacao_operacao vpo.payload_resposta.percurso_ufs; ver mdfe.ts.
 // v21 (2026-10-24, passo 4): com NF-e do cliente na operacao (operacao_nfes), peso bruto, NCM e valor da carga vem das notas
 // (soma); sem notas, segue a cotacao. CIOT emitido na homologacao da efrete nunca libera MDF-e em producao (mdfe.ts).
 // v20 (2026-10-16): CEP de carregamento = cotacoes.origem_cep (coleta em outro local) quando tiver 8 digitos; senao, o da NF-e/RBR como antes.
@@ -187,6 +188,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const { data: ciotVpo } = await supabaseAdmin.from("operacao_ciot_vpo").select("*").eq("operacao_id", operacao_id).maybeSingle();
+    const { data: vpoDoc } = await supabaseAdmin.from("documentacao_operacao").select("payload_resposta").eq("operacao_id", operacao_id).eq("tipo", "vpo").maybeSingle();
+    const percursoInformado = Array.isArray(vpoDoc?.payload_resposta?.percurso_ufs) ? vpoDoc.payload_resposta.percurso_ufs : null;
     const { data: cond } = await supabaseAdmin
       .from("condicoes_pagamento_operacao")
       .select("valor_total_contrato, valor_adiantamento, saldo_prazo_dias")
@@ -230,6 +233,7 @@ Deno.serve(async (req: Request) => {
       motorista,
       cliente,
       ciotVpo,
+      percursoInformado,
       condicao: cond
         ? {
           valor_total_contrato: cond.valor_total_contrato != null ? Number(cond.valor_total_contrato) : null,

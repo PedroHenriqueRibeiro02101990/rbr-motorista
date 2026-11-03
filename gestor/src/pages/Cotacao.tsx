@@ -28,6 +28,7 @@ import { consultarCnpj, consultarCep, soDigitos, type DadosCnpj } from '@rbr/sha
 import { quandoFoiSalvo, removerRascunho, useRascunho } from '../lib/useRascunho'
 import { erroTipoCarga } from '../lib/cotacaoValidacao'
 import { tituloRota } from '../lib/tituloRota'
+import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, QualidadePrecoCard, faixaDaMargem, type EventoLinha } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -527,6 +528,13 @@ function margemBadge(margem: number | null, min: number, max: number): { bg: str
   return { bg: '#E7F5EC', color: 'var(--rbr-positive)', label }
 }
 
+// Visão do vendedor: só a qualidade do preço, nunca o número da margem.
+function qualidadeBadge(margem: number | null): { bg: string; color: string; label: string } {
+  const f = faixaDaMargem(margem)
+  const label = f.nome === 'verde' ? 'Bom' : f.nome === 'amarelo' ? 'Médio' : f.nome === 'vermelho' ? 'No limite' : '—'
+  return { bg: f.fundo, color: f.cor, label }
+}
+
 const CHAVE_RASCUNHO_NOVA = 'cotacao:nova'
 
 export default function Cotacao() {
@@ -599,6 +607,11 @@ export default function Cotacao() {
   const [form, setForm] = useState<CotacaoFormState | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState<StatusCotacao>('rascunho')
+  const [papelUsuario, setPapelUsuario] = useState<string | null>(null)
+  useEffect(() => {
+    void supabase.rpc('current_papel').then(({ data }) => setPapelUsuario((data as unknown as string) ?? null))
+  }, [])
+  const ehGestor = papelUsuario === 'gestor_rbr'
   // Operação de teste (cotacoes.eh_teste): liga/desliga direto no banco; o banco preenche RBR nos dois lados.
   const [editingTeste, setEditingTeste] = useState(false)
   const [trocandoTeste, setTrocandoTeste] = useState(false)
@@ -2465,7 +2478,7 @@ export default function Cotacao() {
           <button
             onClick={() => (form ? pedirParaFechar() : abrirNovaCotacao())}
             className="text-sm font-bold px-4 py-2 rounded-xl"
-            style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
           >
             {form ? 'Fechar formulário' : '+ Nova cotação'}
           </button>
@@ -2493,6 +2506,7 @@ export default function Cotacao() {
 
       {form && (
         <PainelSobreposto
+          pagina
           titulo={
             <>
               {editingId ? 'Editar cotação' : 'Nova cotação'}
@@ -2558,6 +2572,71 @@ export default function Cotacao() {
               {formError}
             </div>
           )}
+
+          {/* Visual aprovado: esteira do status e cartão de preço sempre à vista (só leitura; os campos de edição seguem abaixo) */}
+          <div className="grid gap-3 md:grid-cols-[1fr_minmax(0,380px)] items-start">
+            <div className="flex flex-col gap-2 min-w-0">
+              {editingId && <PassosCotacao status={editingStatus} />}
+              <div className="text-[13px]" style={{ color: '#4a5275' }}>
+                {tituloRota({ ...form, tipo_cotacao: tipoCotacao }) || 'Informe origem e destino abaixo.'}
+              </div>
+            </div>
+            <div className="flex flex-col gap-3 min-w-0">
+            {!ehGestor ? (
+              <QualidadePrecoCard valor={composicao?.valorFinal ?? null} margem={composicao?.margem ?? null} />
+            ) : (
+            <PrecoCard
+              linhas={[
+                { rotulo: 'Frete do motorista', valor: composicao?.frete ?? null },
+                { rotulo: 'Pedágio', dica: 'histórico da rota', valor: composicao?.pedagio ?? null },
+                { rotulo: `Imposto (${((composicao?.aliquota ?? 0) * 100).toFixed(0)}% sobre o valor final)`, valor: composicao?.imposto ?? null },
+                { rotulo: 'Lucro da RBR', valor: composicao?.lucro ?? null, verde: true },
+              ]}
+              valorCliente={composicao?.valorFinal ?? null}
+              margem={composicao?.margem ?? null}
+              piso={margemMin}
+            />
+            )}
+            {editingId && (() => {
+              const c = (cotacoes ?? []).find((x) => x.id === editingId)
+              if (!c) return null
+              const quando = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+              const eventos: EventoLinha[] = [{ titulo: 'Cotação criada', detalhe: quando(c.created_at), tom: 'verde' }]
+              if (c.updated_at && c.updated_at !== c.created_at) eventos.push({ titulo: 'Última alteração', detalhe: quando(c.updated_at), tom: 'amarelo' })
+              if (c.status === 'enviada') eventos.push({ titulo: 'Enviada ao cliente', detalhe: 'aguardando resposta', tom: 'azul' })
+              if (c.status === 'convertida') eventos.push({ titulo: 'Aprovada', detalhe: 'virou operação', tom: 'verde' })
+              if (c.status === 'perdida') eventos.push({ titulo: 'Perdida', detalhe: c.motivo_perda ? String(c.motivo_perda) : 'sem motivo registrado', tom: 'amarelo' })
+              return (
+                <>
+                  <ProntoParaEnviarCard
+                    itens={[
+                      { titulo: 'Cliente e carga', detalhe: c.cliente_id ? (c.nf_chave_acesso ? 'Lido do XML' : 'Cliente escolhido') : 'Falta escolher o cliente', ok: !!c.cliente_id },
+                      { titulo: 'Preço dentro da faixa', detalhe: composicao?.margem != null ? (ehGestor ? `Margem ${(composicao.margem * 100).toFixed(1)}%` : `Qualidade do preço: ${qualidadeBadge(composicao.margem).label}`) : 'Sem preço calculado', ok: composicao?.margem != null && composicao.margem >= margemMin },
+                      { titulo: 'Dados de quem recebe', detalhe: 'CNPJ, IE e endereço', ok: !!(c.nf_destinatario_cnpj && c.nf_destinatario_ie && c.nf_destinatario_endereco) },
+                      { titulo: 'Contato de quem recebe', detalhe: 'Ainda não é guardado na cotação', ok: false },
+                    ]}
+                  />
+                  <AprovacaoPrecoCard preco={composicao?.valorFinal ?? null} sugerido={null} margem={ehGestor ? (composicao?.margem ?? null) : null} />
+                  <EnviarPropostaCard para={null} rota={`${c.cidade_origem ?? c.origem} → ${c.cidade_destino ?? '—'}`} valor={composicao?.valorFinal ?? null} />
+                  <RecebedorCard
+                    campos={[
+                      { rotulo: 'CNPJ', valor: c.nf_destinatario_cnpj, doXml: true },
+                      { rotulo: 'Razão social', valor: c.nf_destinatario_razao_social, doXml: true },
+                      { rotulo: 'Inscrição estadual', valor: c.nf_destinatario_ie, doXml: true },
+                    ]}
+                    avisar={[
+                      { rotulo: 'Nome', valor: null },
+                      { rotulo: 'E-mail', valor: null },
+                      { rotulo: 'WhatsApp', valor: null },
+                    ]}
+                  />
+                  {(c.status === 'rascunho' || c.status === 'enviada') && <ValidadeCard criadaEm={c.created_at} validadeDias={c.validade_dias ?? 5} />}
+                  <HistoricoCard eventos={eventos} />
+                </>
+              )
+            })()}
+            </div>
+          </div>
           {successMsg && (
             <div
               className="text-xs rounded-xl px-3 py-2.5 flex items-center gap-2"
@@ -3491,6 +3570,7 @@ export default function Cotacao() {
                           </div>
                         )}
                       </div>
+                      {ehGestor && (
                       <div>
                         <label className={labelClass}>Margem (%)</label>
                         <input
@@ -3502,6 +3582,7 @@ export default function Cotacao() {
                           style={inputStyle}
                         />
                       </div>
+                      )}
                     </div>
 
                     {custoDestino.erro && (
@@ -3511,6 +3592,7 @@ export default function Cotacao() {
                     )}
 
                     <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t" style={{ borderColor: 'var(--rbr-border)' }}>
+                      {ehGestor ? (
                       <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
                         <span>
                           Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(custoDestino.custo)}</strong>
@@ -3521,6 +3603,9 @@ export default function Cotacao() {
                           </span>
                         )}
                       </div>
+                      ) : (
+                        <span />
+                      )}
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
                           {custoDestino.valorFinal != null ? formatMoney(custoDestino.valorFinal) : '—'}
@@ -3940,6 +4025,7 @@ export default function Cotacao() {
                   </div>
                 ) : null}
               </div>
+              {ehGestor && (
               <div>
                 <label className={labelClass}>Lucro RBR — Margem (% sobre o custo com imposto)</label>
                 <div className="relative" style={{ maxWidth: 160 }}>
@@ -3962,6 +4048,7 @@ export default function Cotacao() {
                   Padrão {formatPct(lucroPadrao, 0)} — somado depois de frete + pedágio + TAG + imposto.
                 </div>
               </div>
+              )}
 
               {pracasPedagio.length > 0 && (
                 <div className="col-span-1 md:col-span-2 rounded-lg border p-2.5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>
@@ -4132,7 +4219,7 @@ export default function Cotacao() {
                     />
                   </div>
                 </div>
-                {composicao?.giro ? (
+                {!ehGestor && composicao?.giro ? null : composicao?.giro ? (
                   <div className="text-xs text-[color:var(--rbr-muted)] flex flex-col gap-0.5">
                     <span>
                       Aporte {formatMoney(composicao.giro.aporte)} · relógio médio {composicao.giro.diasMedios} dias (saída do veículo até o
@@ -4158,6 +4245,7 @@ export default function Cotacao() {
                 Vários destinos), detalhamento completo logo abaixo. */}
             <div className="rounded-lg p-3.5 flex flex-col gap-1.5" style={{ background: 'var(--rbr-muted-bg)' }}>
               <div className="flex items-center justify-between gap-3 flex-wrap pb-2 mb-1 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+                {ehGestor ? (
                 <div className="flex items-center gap-4 text-[11px] text-[color:var(--rbr-muted)]">
                   <span>
                     Custo: <strong className="text-[color:var(--rbr-navy-dark)]">{formatMoney(composicao?.custoComImposto ?? null)}</strong>
@@ -4168,10 +4256,14 @@ export default function Cotacao() {
                     </span>
                   )}
                 </div>
+                ) : (
+                  <span className="text-[11px] text-[color:var(--rbr-muted)]">Preço para o cliente</span>
+                )}
                 <span className="text-sm font-extrabold tabular-nums text-[color:var(--rbr-navy-dark)]">
                   {composicao?.valorFinal != null ? formatMoney(composicao.valorFinal) : '—'}
                 </span>
               </div>
+              {ehGestor && (<>
               {[
                 { label: 'Frete do motorista', valor: composicao?.frete ?? null },
                 { label: 'Pedágio', valor: composicao?.frete != null ? composicao.pedagio : null },
@@ -4210,6 +4302,7 @@ export default function Cotacao() {
                   {formatMoney(composicao?.lucro ?? null)}
                 </span>
               </div>
+              </>)}
               <div
                 className="flex justify-between items-center text-sm font-bold border-t pt-2 mt-0.5 text-[color:var(--rbr-navy-dark)]"
                 style={{ borderColor: 'var(--rbr-border)' }}
@@ -4217,6 +4310,7 @@ export default function Cotacao() {
                 <span>Valor final ao cliente</span>
                 <span className="tabular-nums text-base">{formatMoney(composicao?.valorFinal ?? null)}</span>
               </div>
+              {ehGestor && (<>
               {composicao?.totalMotorista != null && (
                 <div className="flex justify-between text-[11px] text-[color:var(--rbr-muted)] pt-1">
                   <span>
@@ -4238,6 +4332,15 @@ export default function Cotacao() {
                   permitida, mas fica registrada no log de auditoria)
                 </span>
               </div>
+              </>)}
+              {!ehGestor && (
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="text-[11px] font-semibold text-[color:var(--rbr-navy-dark)]">Qualidade do preço:</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ background: qualidadeBadge(composicao?.margem ?? null).bg, color: qualidadeBadge(composicao?.margem ?? null).color }}>
+                    {qualidadeBadge(composicao?.margem ?? null).label}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           )}
@@ -4639,7 +4742,7 @@ export default function Cotacao() {
                 onClick={enviar}
                 disabled={saving}
                 className="text-sm font-bold px-4 py-2 rounded-xl disabled:opacity-60"
-                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
               >
                 Enviar cotação
               </button>
@@ -4751,7 +4854,7 @@ export default function Cotacao() {
       <div className="flex flex-col gap-3">
         {!loading &&
           lista.map((c) => {
-            const margemC = margemBadge(c.margem_ajustada, margemMin, margemMax)
+            const margemC = ehGestor ? margemBadge(c.margem_ajustada, margemMin, margemMax) : qualidadeBadge(c.margem_ajustada)
             const temWhatsapp = Boolean(clienteWhatsappPorId.get(c.cliente_id ?? ''))
             const enviandoEsta = pendingWhatsAppId === c.id
             return (
@@ -4781,7 +4884,7 @@ export default function Cotacao() {
                       className="text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full"
                       style={{ background: margemC.bg, color: margemC.color }}
                     >
-                      margem {margemC.label}
+                      {ehGestor ? 'margem ' : 'preço '}{margemC.label}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -4842,6 +4945,20 @@ export default function Cotacao() {
           tipo={tipoEfetivo}
           qtdVeiculos={qtdVeiculos}
           cargasTotal={cargasTotalForm}
+          mostrarMargem={ehGestor}
+          checklist={(() => {
+            const c = (cotacoes ?? []).find((x) => x.id === editingId)
+            return [
+              { rotulo: 'Contato na coleta', obrigatorio: true, ok: false, nota: 'ainda não disponível: a cotação não guarda o contato' },
+              { rotulo: 'Quem recebe (nome, e-mail, WhatsApp)', obrigatorio: true, ok: false, nota: 'ainda não disponível: a cotação não guarda o contato' },
+              { rotulo: 'Janela de coleta', obrigatorio: true, ok: false, nota: 'ainda não disponível' },
+              { rotulo: 'Janela de entrega', obrigatorio: true, ok: !!c?.prazo_entrega },
+              { rotulo: 'NF-e (XML)', obrigatorio: true, ok: !!c?.nf_chave_acesso },
+              { rotulo: 'Aceite do cliente', obrigatorio: true, ok: false, nota: 'ainda não disponível: o aceite pelo link não é guardado na cotação' },
+              { rotulo: 'Exigências marcadas', obrigatorio: false, ok: false, nota: 'ainda não disponível' },
+              { rotulo: 'Agendamento no destino', obrigatorio: false, ok: false, nota: 'ainda não disponível' },
+            ]
+          })()}
           onConfirmar={converter}
           onFechar={() => setConfirmarConv(false)}
         />

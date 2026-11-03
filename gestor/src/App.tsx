@@ -20,6 +20,12 @@ import SaudeFiscal from './pages/SaudeFiscal'
 import Avisos from './pages/Avisos'
 import Busca from './pages/Busca'
 import Metas from './pages/Metas'
+import Servicos from './pages/Servicos'
+import Jornada from './pages/Jornada'
+import Lote from './pages/Lote'
+import RelatorioComercial from './pages/RelatorioComercial'
+import Alteracoes from './pages/Alteracoes'
+import MeusClientes from './pages/MeusClientes'
 import PropostaPublica from './pages/PropostaPublica'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
@@ -70,7 +76,7 @@ export default function App() {
     <BrowserRouter>
       <AppShell pessoa={auth.pessoa} onSignOut={auth.signOut}>
         <Routes>
-          <Route path="/" element={<Inicio />} />
+          <Route path="/" element={<Inicio nome={auth.pessoa.nome} papel={auth.pessoa.papel} />} />
           <Route path="/cotacao" element={<Cotacao />} />
           <Route path="/fila-do-dia" element={<FilaDoDia />} />
           <Route path="/pre-cotacao" element={<PreCotacao />} />
@@ -85,6 +91,12 @@ export default function App() {
           <Route path="/avisos" element={<Avisos />} />
           <Route path="/busca" element={<Busca />} />
           <Route path="/metas" element={<Metas />} />
+          <Route path="/servicos" element={<Servicos />} />
+          <Route path="/jornada" element={<Jornada />} />
+          <Route path="/operacoes/lote/:cotacaoId" element={<Lote />} />
+          <Route path="/relatorio-comercial" element={<RelatorioComercial />} />
+          <Route path="/alteracoes" element={<Alteracoes />} />
+          <Route path="/meus-clientes" element={<MeusClientes />} />
           <Route path="/risco" element={<Risco />} />
           <Route path="/cadastros" element={<Cadastros />} />
           <Route path="*" element={<Navigate to="/" replace />} />

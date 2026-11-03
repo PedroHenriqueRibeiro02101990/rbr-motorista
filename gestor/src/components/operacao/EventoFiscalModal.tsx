@@ -1,3 +1,4 @@
+import { mostrarToast } from '../../lib/toast'
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { mensagemClara } from '../../lib/mensagemClara'
@@ -13,6 +14,13 @@ const TITULOS: Record<AcaoEventoFiscal, string> = {
   cancelar_cte: 'Cancelar CT-e',
   carta_correcao_cte: 'Carta de correção do CT-e',
   incluir_condutor_mdfe: 'Trocar / incluir condutor no MDF-e',
+}
+
+const SUCESSO_EVENTO: Record<AcaoEventoFiscal, string> = {
+  cancelar_mdfe: 'MDF-e cancelado.',
+  cancelar_cte: 'CT-e cancelado.',
+  carta_correcao_cte: 'Carta de correção enviada.',
+  incluir_condutor_mdfe: 'Condutor incluído no MDF-e.',
 }
 
 const AVISOS: Record<AcaoEventoFiscal, string> = {
@@ -45,9 +53,12 @@ export default function EventoFiscalModal({
   acao,
   onFechar,
   onConcluido,
+  contexto,
 }: {
   operacaoId: string
   acao: AcaoEventoFiscal
+  // OP, cliente e rota (tituloOperacao em lib/toast), mostrados acima do título do pop-up.
+  contexto?: string
   onFechar: () => void
   onConcluido: () => void
 }) {
@@ -83,9 +94,12 @@ export default function EventoFiscalModal({
     const { data: resp, error } = await supabase.functions.invoke('eventos-fiscais', { body })
     setEnviando(false)
     if (error || resp?.sucesso === false) {
-      setErro(error ? await extrairErro(error) : (resp?.erro ?? 'Não foi possível concluir.'))
+      const msg = error ? await extrairErro(error) : (resp?.erro ?? 'Não foi possível concluir.')
+      setErro(msg)
+      mostrarToast(`${TITULOS[acao]}: não deu certo. ${msg}`, 'erro')
       return
     }
+    mostrarToast(`${SUCESSO_EVENTO[acao]}${resp?.aviso ? ' ' + String(resp.aviso) : ''}`, 'sucesso')
     if (resp?.aviso) setAviso(String(resp.aviso))
     onConcluido()
     if (!resp?.aviso) onFechar()
@@ -103,6 +117,7 @@ export default function EventoFiscalModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(18,23,61,0.55)' }}>
       <div className="bg-white rounded-xl w-full max-w-md max-h-[92vh] flex flex-col" style={{ boxShadow: '0 20px 60px rgba(18,23,61,0.35)' }}>
         <div className="px-5 pt-4 pb-3 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+          {contexto && <div className="text-[11px] font-bold text-[color:var(--rbr-muted)] mb-0.5">{contexto}</div>}
           <div className="text-sm font-extrabold text-[color:var(--rbr-navy-dark)]">{TITULOS[acao]}</div>
           <div className="text-[11px] text-[color:var(--rbr-muted)] mt-0.5">{AVISOS[acao]}</div>
         </div>

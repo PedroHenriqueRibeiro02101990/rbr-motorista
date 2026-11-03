@@ -1,9 +1,11 @@
 // Filas da tela Operações: "Sem motorista", "Sem nota", "Para revisar", "Prontas para o fiscal".
 // Só classifica e filtra o que a tela já carrega; não decide nada fiscal. Sem React e sem rede (node --test).
 
-export type FilaId = 'sem_motorista' | 'sem_nota' | 'para_revisar' | 'prontas_fiscal'
+export type FilaId = 'para_assumir' | 'devolvidas' | 'sem_motorista' | 'sem_nota' | 'para_revisar' | 'prontas_fiscal'
 
 export const FILAS: { id: FilaId; rotulo: string; ajuda: string }[] = [
+  { id: 'para_assumir', rotulo: 'Para assumir', ajuda: 'Esperando alguém da operação assumir.' },
+  { id: 'devolvidas', rotulo: 'Devolvidas pelo fiscal', ajuda: 'O fiscal devolveu para a operação corrigir.' },
   { id: 'sem_motorista', rotulo: 'Sem motorista', ajuda: 'Ainda sem motorista alocado.' },
   { id: 'sem_nota', rotulo: 'Sem nota', ajuda: 'Tem motorista, mas nenhuma NF-e do cliente.' },
   { id: 'para_revisar', rotulo: 'Para revisar', ajuda: 'Bloqueio fiscal ou documento com problema.' },
@@ -25,6 +27,8 @@ const ENCERRADAS = ['cancelada', 'fechada', 'entregue']
 export function filasDe(d: DadosFila): FilaId[] {
   if (ENCERRADAS.includes(d.status)) return []
   const f: FilaId[] = []
+  if (d.status === 'aguardando_assumir') f.push('para_assumir')
+  if (d.status === 'devolvida_pelo_fiscal') f.push('devolvidas')
   if (!d.pessoaAlocada) f.push('sem_motorista')
   else if (d.nfes === 0) f.push('sem_nota')
   if (d.bloqueioFiscal || d.docsComProblema > 0) f.push('para_revisar')
@@ -33,7 +37,7 @@ export function filasDe(d: DadosFila): FilaId[] {
 }
 
 export function contarFilas(lista: DadosFila[], ocultarTestes: boolean): Record<FilaId, number> {
-  const c: Record<FilaId, number> = { sem_motorista: 0, sem_nota: 0, para_revisar: 0, prontas_fiscal: 0 }
+  const c: Record<FilaId, number> = { para_assumir: 0, devolvidas: 0, sem_motorista: 0, sem_nota: 0, para_revisar: 0, prontas_fiscal: 0 }
   for (const d of lista) {
     if (ocultarTestes && d.ehTeste) continue
     for (const f of filasDe(d)) c[f]++

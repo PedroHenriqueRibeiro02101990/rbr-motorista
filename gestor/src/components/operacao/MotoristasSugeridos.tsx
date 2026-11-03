@@ -80,6 +80,10 @@ export default function MotoristasSugeridos({
   const [lista, setLista] = useState<Sugestao[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [avisandoId, setAvisandoId] = useState<string | null>(null)
+  // Visual Operacao-Alocar: primeiro "Escolher" (só marca), depois "Enviar frete ao motorista" (usa o mesmo aviso de antes).
+  const [escolhido, setEscolhido] = useState<string | null>(null)
+  const [busca, setBusca] = useState('')
+  const [soAprovados, setSoAprovados] = useState(true)
   // Avisados nesta tela agora (mostra "Avisado agora" em vez da data).
   const [avisadosAgora, setAvisadosAgora] = useState<Set<string>>(new Set())
   // Tarefa 5: frete do parceiro abaixo do piso mínimo da operação (aviso antes de mandar a proposta).
@@ -164,65 +168,117 @@ export default function MotoristasSugeridos({
           </Link>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {lista.map((s) => {
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+        <div className="flex flex-col gap-2 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou cidade" className="border rounded-xl px-3 py-2 text-[13px] bg-white flex-1 min-w-[160px]" style={{ borderColor: 'var(--rbr-border)' }} />
+          {([['Aprovados', true], ['Todos', false]] as const).map(([r, v]) => (
+            <button key={r} type="button" onClick={() => setSoAprovados(v)} aria-pressed={soAprovados === v} className="text-[12px] font-bold px-3.5 py-1.5 rounded-full border" style={soAprovados === v ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>{r}</button>
+          ))}
+          {['Disponíveis', 'Perto da coleta', 'Com rastreador'].map((r) => (
+            <button key={r} type="button" disabled title="Ainda não disponível" className="text-[12px] font-bold px-3.5 py-1.5 rounded-full border bg-white opacity-50 cursor-not-allowed" style={{ borderColor: 'var(--rbr-border)' }}>{r}</button>
+          ))}
+        </div>
+        <div className="border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }}>
+          <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
+            <span className="flex-1">Motorista</span>
+            <span className="w-[210px] flex-shrink-0">Conjunto</span>
+            <span className="w-[220px] flex-shrink-0">Situação</span>
+            <span className="w-[170px] flex-shrink-0" />
+          </div>
+          {lista.filter((x) => (!soAprovados || x.apto) && (!busca.trim() || `${x.nome} ${x.cidade ?? ''}`.toLowerCase().includes(busca.trim().toLowerCase()))).map((s, i) => {
             const chave = `${s.pessoa_id}:${s.veiculo_id}`
             const alertas = s.alertas ?? []
             const avisado = !!s.ja_avisado_em
             const motivo = !s.apto ? `Não apto${alertas.length ? `: ${alertas.join('; ')}` : '.'}` : avisado ? 'Já avisado sobre esta carga.' : null
             const avisando = avisandoId === s.pessoa_id
             return (
-              <div key={chave} className="border rounded-xl px-3.5 py-3 flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between" style={{ borderColor: 'var(--rbr-border)' }}>
-                <div className="min-w-0 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">{s.nome}</span>
-                    {s.online ? (
-                      <Selo bg="#E7F5EC" fg="var(--rbr-positive)">Online</Selo>
-                    ) : (
-                      <Selo bg="#F1F2F6" fg="#6B7280">Offline</Selo>
-                    )}
-                    {s.perfil_confirmado && (
-                      <Selo bg="#E8EEFB" fg="var(--rbr-navy)">Perfil confirmado</Selo>
-                    )}
+              <div key={chave} className="px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3" style={{ borderTop: i ? '1px solid #eef0f5' : undefined }}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-extrabold text-[color:var(--rbr-navy-dark)] flex items-center gap-1.5 flex-wrap">
+                    {s.nome}
+                    {s.online && <Selo bg="#E7F5EC" fg="var(--rbr-positive)">Online</Selo>}
+                    {s.perfil_confirmado && <Selo bg="#E8EEFB" fg="var(--rbr-navy)">Perfil confirmado</Selo>}
                   </div>
-                  <div className="text-xs text-[color:var(--rbr-muted)]">
-                    {[
-                      [s.tipo_veiculo, s.capacidade_carga ? `${Number(s.capacidade_carga).toLocaleString('pt-BR')} kg` : null].filter(Boolean).join(' · ') || 'Veículo não informado',
-                      [s.cidade, s.uf].filter(Boolean).join('/'),
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </div>
-                  {alertas.length > 0 && (
-                    <div className="flex gap-1.5 flex-wrap">
-                      {alertas.map((a) => (
-                        <span key={a} className="text-[11px] font-semibold px-2 py-0.5 rounded-md" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <div className="text-[12px] text-[color:var(--rbr-muted)]">{[s.cidade, s.uf].filter(Boolean).join('/') || 'cidade não informada'}</div>
+                </div>
+                <div className="md:w-[210px] flex-shrink-0 text-[13px] font-bold text-[color:var(--rbr-navy-dark)]">
+                  {[s.tipo_veiculo, s.capacidade_carga ? `${Number(s.capacidade_carga).toLocaleString('pt-BR')} kg` : null].filter(Boolean).join(' · ') || 'Veículo não informado'}
+                </div>
+                <div className="md:w-[220px] flex-shrink-0 flex flex-col gap-1 items-start">
+                  {!s.apto ? (
+                    <span className="text-[11px] font-bold rounded-full px-2.5 py-1" style={{ background: '#fbe3e1', color: '#b42318' }}>✕ não apto</span>
+                  ) : alertas.length === 0 ? (
+                    <span className="text-[11px] font-bold rounded-full px-2.5 py-1" style={{ background: '#d6ecdf', color: '#1a6b3c' }}>✓ tudo em dia</span>
+                  ) : null}
+                  {alertas.map((al) => (
+                    <span key={al} className="text-[11px] font-bold rounded-full px-2.5 py-1" style={{ background: '#fff0d6', color: '#7a5200' }}>
+                      {al}
+                    </span>
+                  ))}
                   {avisado && (
-                    <div className="text-xs font-semibold" style={{ color: 'var(--rbr-positive)' }}>
+                    <span className="text-[11px] font-semibold" style={{ color: 'var(--rbr-positive)' }}>
                       {avisadosAgora.has(chave) ? 'Avisado agora' : `Avisado em ${dataHoraCurta(s.ja_avisado_em!)}`}
-                    </div>
+                    </span>
                   )}
                 </div>
-                <div className="flex flex-col items-stretch md:items-end gap-1 shrink-0 md:max-w-[240px]">
+                <div className="md:w-[170px] flex-shrink-0 flex flex-col gap-1 items-stretch md:items-end">
                   <button
                     type="button"
-                    onClick={() => avisar(s)}
-                    disabled={!!motivo || !!avisandoId}
-                    className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                    style={{ background: '#1F9D55', color: '#fff' }}
+                    onClick={() => setEscolhido(chave)}
+                    disabled={!s.apto || !!avisandoId}
+                    className="text-[12px] font-bold px-3.5 py-2 rounded-[10px] disabled:cursor-not-allowed whitespace-nowrap border"
+                    style={!s.apto ? { background: '#e9ecf4', color: '#8a91ad', borderColor: '#e9ecf4' } : escolhido === chave ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}
                   >
-                    {avisando ? 'Abrindo…' : 'Avisar no WhatsApp'}
+                    {!s.apto ? 'Bloqueado' : escolhido === chave ? 'Escolhido' : 'Escolher'}
                   </button>
+                  {avisando && <div className="text-[11px] text-[color:var(--rbr-muted)] md:text-right">Abrindo…</div>}
                   {motivo && <div className="text-[11px] text-[color:var(--rbr-muted)] md:text-right">{motivo}</div>}
                 </div>
               </div>
             )
           })}
+        </div>
+        <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>O sistema só deixa escolher quem está aprovado. Quem tem bloqueio mostra o motivo.</div>
+        </div>
+        {(() => {
+          const e = lista.find((x) => `${x.pessoa_id}:${x.veiculo_id}` === escolhido)
+          return (
+            <aside className="bg-white border rounded-2xl p-4 flex flex-col gap-2.5" style={{ borderColor: 'var(--rbr-border)' }}>
+              <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>ESCOLHIDO</div>
+              {!e ? (
+                <div className="text-[12px]" style={{ color: 'var(--rbr-muted)' }}>Toque em “Escolher” em um motorista da lista.</div>
+              ) : (
+                <>
+                  <div className="text-[15px] font-extrabold text-[color:var(--rbr-navy-dark)]">{e.nome}</div>
+                  {[
+                    [e.apto, e.apto ? 'Aprovado, documentos em dia' : 'Não apto'],
+                    [e.perfil_confirmado, 'Perfil confirmado'],
+                    [e.online, 'Online agora'],
+                  ].map(([ok, txt]) => (
+                    <div key={String(txt)} className="flex items-center gap-2 text-[12px] font-bold">
+                      <span className="w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center" style={{ background: ok ? '#1f9d55' : '#d9a21b' }} aria-hidden>{ok ? '✓' : '!'}</span>
+                      {String(txt)}
+                    </div>
+                  ))}
+                  {(e.alertas ?? []).map((al) => (
+                    <div key={al} className="text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: '#fff0d6', color: '#7a5200' }}>{al}</div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => void avisar(e)}
+                    disabled={!e.apto || !!e.ja_avisado_em || !!avisandoId}
+                    className="text-[13px] font-extrabold px-4 py-2.5 rounded-xl disabled:cursor-not-allowed"
+                    style={!e.apto || e.ja_avisado_em || avisandoId ? { background: '#e9ecf4', color: '#8a91ad' } : { background: '#1c2559', color: '#fff' }}
+                  >
+                    {avisandoId ? 'Abrindo…' : e.ja_avisado_em ? 'Frete já enviado' : 'Enviar frete ao motorista'}
+                  </button>
+                  <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>Abre o WhatsApp com a rota, a janela e o frete. Nada é enviado até você tocar em “Enviar frete”.</div>
+                </>
+              )}
+            </aside>
+          )
+        })()}
         </div>
       )}
     </div>

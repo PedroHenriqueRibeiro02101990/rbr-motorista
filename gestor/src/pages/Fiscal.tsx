@@ -1,12 +1,15 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDateTime, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import NavegacaoServico from '../components/NavegacaoServico'
+import PassosServico from '../components/operacao/PassosServico'
+import EsteiraEmissao, { DesfazerEPrazos, TrocaMotoristaVeiculo } from '../components/operacao/EsteiraEmissao'
 import { codigoCurto } from '../lib/painelOperacao'
+import { tituloOperacao } from '../lib/toast'
 import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
 import PainelPendencias from '../components/PainelPendencias'
@@ -664,8 +667,31 @@ export default function Fiscal() {
 
   const lista = operacoes ?? []
 
-  // Painel do Fiscal: /fiscal?op=<id> abre a operação por cima da lista (mesmo padrão do painel da Operação).
+  // Fila do Fiscal (visual aprovado): classifica pelo status da operação e pelos documentos já carregados.
+  type FilaFiscal = 'prontas' | 'emissao' | 'erro' | 'devolvidas' | 'concluidas'
+  const FILAS_FISCAL: { id: FilaFiscal; rotulo: string }[] = [
+    { id: 'prontas', rotulo: 'Prontas para emitir' },
+    { id: 'emissao', rotulo: 'Em emissão' },
+    { id: 'erro', rotulo: 'Com erro' },
+    { id: 'devolvidas', rotulo: 'Devolvidas à operação' },
+    { id: 'concluidas', rotulo: 'Concluídas' },
+  ]
+  const [filaFiscal, setFilaFiscal] = useState<FilaFiscal | null>(null)
+  const filaDe = (o: OperacaoEnriquecida): FilaFiscal | null => {
+    const st = o.status as string
+    const docs = docsPorOperacao.get(o.id) ?? []
+    if (docs.some((d) => d.status === 'erro' || d.status === 'bloqueado')) return 'erro'
+    if (st === 'devolvida_pelo_fiscal') return 'devolvidas'
+    if (st === 'em_emissao') return 'emissao'
+    if (st === 'aguardando_liberacao_fiscal') return 'prontas'
+    if (['liberada_coleta', 'carregando', 'em_transito', 'em_viagem', 'entregue', 'fechada', 'finalizada'].includes(st)) return 'concluidas'
+    return null
+  }
+  const contFiscal = (f: FilaFiscal) => lista.filter((o) => filaDe(o) === f).length
   const opAbertaId = params.get('op')
+  const listaFiscal = lista.filter((o) => o.id !== opAbertaId && (filaFiscal === null || filaDe(o) === filaFiscal))
+
+  // Painel do Fiscal: /fiscal?op=<id> abre a operação por cima da lista (mesmo padrão do painel da Operação).
   const opAberta = opAbertaId ? lista.find((o) => o.id === opAbertaId) ?? null : null
   function fecharPainelFiscal() {
     setParams(
@@ -1379,16 +1405,42 @@ export default function Fiscal() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Fiscal</h1>
+        <div>
+          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Serviços</h1>
+          {!loading && (
+            <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>
+              <b style={{ color: 'var(--rbr-navy-dark)' }}>{contFiscal('prontas')} operações prontas para emitir.</b> Abra uma para conferir o pré-voo e emitir.
+            </div>
+          )}
+        </div>
+        <div className="flex p-1 rounded-xl" style={{ background: '#e9ecf4' }} role="group" aria-label="Etapa do serviço">
+          <Link to="/servicos" className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ color: '#4a5275' }}>Cotação</Link>
+          <Link to="/operacoes" className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ color: '#4a5275' }}>Operação</Link>
+          <span className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ background: '#1c2559', color: '#fff' }} aria-current="page">Fiscal</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filas do Fiscal">
+        {FILAS_FISCAL.map((f) => (
+          <button key={f.id} type="button" onClick={() => setFilaFiscal(filaFiscal === f.id ? null : f.id)} className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border" style={filaFiscal === f.id ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>
+            {f.rotulo} · {contFiscal(f.id)}
+          </button>
+        ))}
+        <button type="button" onClick={() => setFilaFiscal(null)} className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border" style={filaFiscal === null ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>
+          Todas · {lista.length}
+        </button>
+        <button type="button" disabled title="Ainda não disponível" className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border bg-white opacity-50 cursor-not-allowed" style={{ borderColor: 'var(--rbr-border)' }}>Cancelamentos</button>
       </div>
 
-      <PainelPendencias modulo="fiscal" />
+      <details className="text-xs"><summary className="cursor-pointer font-bold" style={{ color: 'var(--rbr-muted)' }}>O que fazer agora (pendências do fiscal)</summary><div className="mt-3"><PainelPendencias modulo="fiscal" /></div></details>
 
-      <ParametrosFiscaisPanel />
+      <div id="parametros-fiscais" ref={(el) => { if (el && params.get('parametros')) el.scrollIntoView({ block: 'start' }) }}>
+        {params.get('parametros') ? <ParametrosFiscaisPanel /> : null}
+      </div>
       {evento && (
         <EventoFiscalModal
           operacaoId={evento.op.id}
           acao={evento.acao}
+          contexto={tituloOperacao({ codigo: codigoCurto(evento.op.id), cliente: evento.op.clienteNome, cidadeOrigem: evento.op.cidadeOrigem, ufOrigem: evento.op.ufOrigem, cidadeDestino: evento.op.cidadeDestino, ufDestino: evento.op.ufDestino })}
           onFechar={() => setEvento(null)}
           onConcluido={() => carregarDocumentos([evento.op.id])}
         />
@@ -1396,6 +1448,7 @@ export default function Fiscal() {
       {cancelamento && (
         <CancelarDocumentoModal
           operacaoId={cancelamento.op.id}
+          contexto={tituloOperacao({ codigo: codigoCurto(cancelamento.op.id), cliente: cancelamento.op.clienteNome, cidadeOrigem: cancelamento.op.cidadeOrigem, ufOrigem: cancelamento.op.ufOrigem, cidadeDestino: cancelamento.op.cidadeDestino, ufDestino: cancelamento.op.ufDestino })}
           tipo={cancelamento.tipo}
           ambiente={cancelamento.ambiente}
           chave={cancelamento.chave}
@@ -1471,8 +1524,65 @@ export default function Fiscal() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
-        {!loading && lista.filter((o) => o.id !== opAbertaId).map(renderCard)}
+      <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }} hidden={loading || listaFiscal.length === 0}>
+        <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
+          <span className="flex-1">Operação e rota</span>
+          <span className="w-[170px] flex-shrink-0">Gerou / alocou</span>
+          <span className="w-[150px] flex-shrink-0">Coleta</span>
+          <span className="w-[130px] flex-shrink-0">Pré-voo</span>
+          <span className="w-[80px] flex-shrink-0" />
+        </div>
+        {!loading &&
+          listaFiscal.map((o, i) => {
+            const docs = docsPorOperacao.get(o.id) ?? []
+            const emitidos = TIPOS_EXIBIDOS.filter((tp) => docs.some((d) => d.tipo === tp && d.status === 'emitido')).length
+            const problema = docs.some((d) => d.status === 'erro' || d.status === 'bloqueado')
+            return (
+              <div key={o.id} className="px-4 py-3 flex flex-col gap-1.5 md:flex-row md:items-center md:gap-3" style={{ borderTop: i ? '1px solid #eef0f5' : undefined, background: problema ? '#fff7f6' : undefined }}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-extrabold truncate">
+                    {o.clienteNome ?? 'Cliente a confirmar'} <span className="font-mono text-[11px] font-normal text-[color:var(--rbr-muted)]">{codigoCurto(o.id)}</span>
+                    {o.eh_teste && <span className="ml-2 text-[10px] font-bold uppercase" style={{ color: 'var(--rbr-danger)' }}>teste</span>}
+                  </div>
+                  <div className="text-[12px] truncate" style={{ color: 'var(--rbr-muted)' }}>
+                    {o.cidadeOrigem ?? '?'}/{o.ufOrigem ?? '?'} → {o.cidadeDestino ?? '?'}/{o.ufDestino ?? '?'}
+                  </div>
+                </div>
+                <div className="md:w-[170px] flex-shrink-0">
+                  <span className="text-[11px]" style={{ color: 'var(--rbr-muted)' }} title="Ainda não disponível: a operação não guarda quem a gerou nem quem a alocou">—</span>
+                </div>
+                <div className="md:w-[150px] flex-shrink-0 text-[13px] font-bold">{o.coleta_prevista ? formatDateTime(o.coleta_prevista) : '—'}</div>
+                <div className="md:w-[130px] flex-shrink-0 text-[11px] font-bold">
+                  {problema ? (
+                    <span className="rounded-full px-2.5 py-1" style={{ background: '#fbe3e1', color: '#b42318' }}>✕ bloqueio</span>
+                  ) : (o.status as string) === 'aguardando_liberacao_fiscal' ? (
+                    <span className="rounded-full px-2.5 py-1" style={{ background: '#d6ecdf', color: '#1a6b3c' }}>✓ pronto</span>
+                  ) : (
+                    <span style={{ color: 'var(--rbr-muted)' }}>{emitidos} de {TIPOS_EXIBIDOS.length} emitidos</span>
+                  )}
+                </div>
+                <div className="md:w-[80px] flex-shrink-0 md:text-right">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setParams(
+                        (prev) => {
+                          const n = new URLSearchParams(prev)
+                          n.set('op', o.id)
+                          return n
+                        },
+                        { replace: true },
+                      )
+                    }
+                    className="text-[12px] font-bold px-4 py-1.5 rounded-[10px]"
+                    style={(o.status as string) === 'aguardando_liberacao_fiscal' ? { background: '#1c2559', color: '#fff' } : { background: '#fff', color: '#1c2559', border: '1px solid var(--rbr-border)' }}
+                  >
+                    Abrir
+                  </button>
+                </div>
+              </div>
+            )
+          })}
       </div>
 
       {!loading && opAbertaId && !opAberta && (
@@ -1494,7 +1604,10 @@ export default function Fiscal() {
           }
           fixo={
             <>
-              <div className="text-[15px] font-bold leading-tight">{opAberta.clienteNome ?? 'Cliente a confirmar'}</div>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="text-[26px] leading-tight font-extrabold">{opAberta.clienteNome ?? 'Cliente a confirmar'}</div>
+                <PassosServico status={opAberta.status as string} />
+              </div>
               <NavegacaoServico
                 atual="fiscal"
                 cotacaoId={opAberta.cotacao_id}
@@ -1506,7 +1619,12 @@ export default function Fiscal() {
           onFechar={fecharPainelFiscal}
           largura={880}
         >
-          <Fragment key={opAberta.id}>{renderCard(opAberta)}</Fragment>
+          <Fragment key={opAberta.id}>
+            <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
+            <DesfazerEPrazos />
+            <TrocaMotoristaVeiculo />
+            {renderCard(opAberta)}
+          </Fragment>
         </PainelSobreposto>
       )}
     </div>

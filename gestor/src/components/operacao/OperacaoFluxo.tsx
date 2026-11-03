@@ -30,6 +30,8 @@ import PreVoo from './PreVoo'
 import AssumirOperacao from './AssumirOperacao'
 import DevolverOperacao from './DevolverOperacao'
 import OcorrenciaRota from './OcorrenciaRota'
+import LiberarCaminhaoInfo from './LiberarCaminhaoInfo'
+import CartoesOperacao from './CartoesOperacao'
 import HistoricoOperacao from './HistoricoOperacao'
 import { abaDaEtapa, sinaisDasAbas, type IdAba, type SinalAba } from '../../lib/abasOperacao'
 import BotaoAcao from './BotaoAcao'
@@ -399,6 +401,8 @@ export default function OperacaoFluxo({
         ))
       })()}
       <AssumirOperacao operacaoId={o.id} />
+      <CartoesOperacao d={d} />
+      {['liberada_coleta', 'carregando'].includes(o.status) && <LiberarCaminhaoInfo />}
       {['liberada_coleta', 'carregando', 'em_transito', 'em_viagem'].includes(o.status) && <OcorrenciaRota operacaoId={o.id} />}
       {o.status === 'aguardando_liberacao_fiscal' && <DevolverOperacao operacaoId={o.id} onDevolvida={onChanged} />}
       {etapasNaoSeAplicam(d).length > 0 && (
@@ -1259,7 +1263,7 @@ function AcoesDocumento({
             className={inputClass}
             style={{ ...inputStyle, maxWidth: 440 }}
           />
-          <button type="button" disabled={salvando} onClick={() => void confirmar()} className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60" style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}>
+          <button type="button" disabled={salvando} onClick={() => void confirmar()} className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
             Confirmar
           </button>
           <button type="button" onClick={() => setModo(null)} className="text-xs underline">

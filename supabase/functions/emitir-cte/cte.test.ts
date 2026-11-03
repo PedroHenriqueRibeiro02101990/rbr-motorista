@@ -345,3 +345,17 @@ test("NF-e do cliente: chave com dígito verificador errado bloqueia", () => {
   const r = montarCte(base({ nfesCliente: [{ chave_acesso: NF_CLIENTE_1.slice(0, 43) + "8", valor: 1, peso_kg: 1 }] }));
   assert.ok(r.bloqueios.some((b) => /NF-e do cliente com chave inválida/.test(b)));
 });
+
+// --- 03/11/2026: CFOP 5932/6932 quando a prestação começa fora da UF da RBR (v24) ---
+test("CFOP: saída na UF da RBR segue 5353 (mesma UF) e 6353 (UFs diferentes)", () => {
+  assert.equal(montarCte(base()).payload.cfop, "5353");
+  assert.equal(montarCte(base({ op: { uf_destino: "MG" } })).payload.cfop, "6353");
+});
+
+test("CFOP: saída em UF diferente da RBR usa 5932 (mesma UF) ou 6932 (UFs diferentes), independente do CFOP da NF-e", () => {
+  const mesmaUf = montarCte(base({ op: { uf_origem: "DF", cidade_origem: "BRASILIA", uf_destino: "DF", cidade_destino: "TAGUATINGA" } }));
+  assert.equal(mesmaUf.payload.cfop, "5932");
+  const diferentes = montarCte(base({ op: { uf_origem: "DF", cidade_origem: "BRASILIA", uf_destino: "SP", cidade_destino: "CAMPINAS" } }));
+  assert.equal(diferentes.payload.cfop, "6932");
+  assert.ok(diferentes.avisos.some((a) => /CFOP 6932/.test(a)));
+});

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { mensagemClara } from '../lib/mensagemClara'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
 import { formatMoney, formatDate, STATUS_OPERACAO_LABEL } from '@rbr/shared/format'
-import { IconChevronRight } from '@rbr/shared/icons'
 import { IconAlertTriangle, IconCopy, IconClock } from '../icons-local'
 import { Aviso, Botao, Campo, Modal, inputClass, inputStyle } from '../components/financeiro/ui'
 import CancelarOperacaoInteira from '../components/operacao/CancelarOperacaoInteira'
@@ -18,6 +18,7 @@ import FaixaTeste from '../components/FaixaTeste'
 import { PainelSobreposto } from '../components/PainelSobreposto'
 import { ordenarFila } from '@rbr/shared/regrasOperacao'
 import NavegacaoServico from '../components/NavegacaoServico'
+import PassosServico, { FaixaResumo } from '../components/operacao/PassosServico'
 import { codigoCurto, resumoNfes, vizinhos } from '../lib/painelOperacao'
 import { FILTROS_VAZIOS, SEM_MOTORISTA, passaFiltrosLista, temFiltro, type FiltrosLista } from '../lib/listaOperacoes'
 import { ABAS, abaValida, type IdAba, type SinalAba } from '../lib/abasOperacao'
@@ -127,6 +128,13 @@ function badgeBackground(status: StatusOperacao): string {
   return 'var(--rbr-navy)'
 }
 
+function tempoEsperando(iso: string): string {
+  const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000))
+  if (m < 60) return `há ${m} min`
+  const h = Math.round(m / 60)
+  return h < 48 ? `há ${h} h` : `há ${Math.round(h / 24)} dias`
+}
+
 export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   const [operacoes, setOperacoes] = useState<OperacaoEnriquecida[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -204,7 +212,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
     const { data, error } = await supabase
       .from('operacoes')
       .select(
-        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), cotacoes(valor_total, valor_total_motorista, valor_frete_motorista, cidade_origem, uf_origem, cidade_destino, uf_destino, ncms_produtos, natureza_operacao, nf_remetente_razao_social, nf_remetente_cnpj, nf_destinatario_razao_social, nf_destinatario_cnpj)',
+        '*, clientes(razao_social, nome_fantasia), condicoes_pagamento_operacao(valor_total_contrato), cotacoes(valor_total, valor_total_motorista, valor_frete_motorista, pedagio, cidade_origem, uf_origem, cidade_destino, uf_destino, ncms_produtos, natureza_operacao, nf_remetente_razao_social, nf_remetente_cnpj, nf_destinatario_razao_social, nf_destinatario_cnpj)',
       )
       .order('updated_at', { ascending: false })
       .limit(300)
@@ -680,7 +688,22 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="rbr-display font-bold text-2xl md:text-3xl text-[color:var(--rbr-navy-dark)]">Operações</h1>
+        <div>
+          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Serviços</h1>
+          <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>
+            {contagem[FILAS[0].id] != null ? <><b style={{ color: 'var(--rbr-navy-dark)' }}>{contagem[FILAS[0].id]} {contagem[FILAS[0].id] === 1 ? 'operação esperando' : 'operações esperando'} alguém assumir.</b> Escolha uma fila abaixo para trabalhar.</> : null}
+          </div>
+        </div>
+        <div className="flex p-1 rounded-xl" style={{ background: '#e9ecf4' }} role="group" aria-label="Etapa do serviço">
+          <Link to="/servicos" className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ color: '#4a5275' }}>Cotação</Link>
+          <span className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ background: '#1c2559', color: '#fff' }} aria-current="page">Operação</span>
+          <Link to="/fiscal" className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ color: '#4a5275' }}>Fiscal</Link>
+        </div>
+      </div>
+
+      <details className="text-xs">
+        <summary className="cursor-pointer font-bold" style={{ color: 'var(--rbr-muted)' }}>Buscar, dados de emissão e outras opções</summary>
+        <div className="flex flex-col gap-3 mt-3">
         <div className="flex items-center gap-2 flex-wrap">
           <input
             placeholder="Buscar cliente, cidade, placa, NF-e, código…"
@@ -711,13 +734,11 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           <Link
             to="/cotacao"
             className="text-sm font-bold px-4 py-2 rounded-xl"
-            style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+            style={{ background: 'var(--rbr-navy)', color: '#fff' }}
           >
             + Nova operação
           </Link>
         </div>
-      </div>
-
       <div
         className="text-xs rounded-xl px-3 py-2.5 flex items-center gap-2"
         style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}
@@ -728,8 +749,12 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         </Link>{' '}
         e marque como <em>convertida</em>; a operação aparece aqui automaticamente.
       </div>
+        </div>
+      </details>
 
       {!recusando && confIndicacao}
+      <details className="text-xs"><summary className="cursor-pointer font-bold" style={{ color: 'var(--rbr-muted)' }}>O que fazer agora (pendências da operação)</summary>
+      <div className="mt-3">
       <PainelPendencias
         modulo="operacoes"
         recarregarKey={painelKey}
@@ -766,6 +791,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
           ) : undefined
         }
       />
+      </div>
+      </details>
 
       <AvisoCargasAguardando
         cargas={cargasAguardando}
@@ -786,20 +813,21 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
       )}
 
       <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filas">
-        <button type="button" onClick={() => setFila(null)} className="text-xs font-bold px-3.5 py-2 rounded-full border" style={fila === null ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' } : { borderColor: 'var(--rbr-border)', background: '#fff' }}>
-          Todas
-        </button>
         {FILAS.map((f) => (
-          <button key={f.id} type="button" title={f.ajuda} onClick={() => setFila(fila === f.id ? null : f.id)} className="text-xs font-bold px-3.5 py-2 rounded-full border" style={fila === f.id ? { background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' } : { borderColor: 'var(--rbr-border)', background: '#fff' }}>
-            {f.rotulo} <span className="tabular-nums opacity-80">({contagem[f.id]})</span>
+          <button key={f.id} type="button" title={f.ajuda} onClick={() => setFila(fila === f.id ? null : f.id)} className="text-[12px] font-bold px-4 py-2 rounded-full border" style={fila === f.id ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { borderColor: 'var(--rbr-border)', background: '#fff', color: '#1c2559' }}>
+            {f.rotulo} · <span className="tabular-nums">{contagem[f.id]}</span>
           </button>
         ))}
+        <button type="button" onClick={() => setFila(null)} className="text-[12px] font-bold px-4 py-2 rounded-full border" style={fila === null ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { borderColor: 'var(--rbr-border)', background: '#fff', color: '#1c2559' }}>
+          Todas · <span className="tabular-nums">{(operacoes ?? []).length}</span>
+        </button>
         <label className="text-xs flex items-center gap-1.5 ml-auto text-[color:var(--rbr-muted)]">
           <input type="checkbox" checked={mostrarTestes} onChange={(e) => setMostrarTestes(e.target.checked)} /> Mostrar testes
         </label>
       </div>
 
-      <div className="flex items-end gap-2 flex-wrap" role="group" aria-label="Filtros da lista">
+      <details className="text-xs"><summary className="cursor-pointer font-bold" style={{ color: 'var(--rbr-muted)' }}>Filtrar por cliente, motorista e data</summary>
+      <div className="flex items-end gap-2 flex-wrap mt-3" role="group" aria-label="Filtros da lista">
         <CampoFiltro rotulo="Cliente">
           <select value={filtrosLista.clienteId} onChange={(e) => setFiltrosLista({ ...filtrosLista, clienteId: e.target.value })} className={selectFiltro} style={{ borderColor: 'var(--rbr-border)' }}>
             <option value="">Todos</option>
@@ -839,6 +867,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         )}
       </div>
 
+      </details>
+
       {loading && <div className="text-sm text-[color:var(--rbr-muted)] py-6 text-center">Carregando…</div>}
 
       {!loading && lista.length === 0 && (
@@ -847,12 +877,19 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
         </div>
       )}
 
-      <div className="flex flex-col gap-1.5">
+      <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }} hidden={loading || lista.length === 0}>
+        <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
+          <span className="flex-1">Cliente e rota</span>
+          <span className="w-[130px] flex-shrink-0">Veículo</span>
+          <span className="w-[110px] flex-shrink-0">Coleta</span>
+          <span className="w-[120px] flex-shrink-0">Gerada por</span>
+          <span className="w-[100px] flex-shrink-0">Esperando</span>
+          <span className="w-[110px] flex-shrink-0" />
+        </div>
         {!loading &&
           lista.map((op) => {
             const motorista = motoristas.find((m) => m.id === op.pessoa_alocada_id)
             const placa = veiculos.find((v) => v.id === op.veiculo_id)?.placa
-            const nNfes = (nfesPorOp[op.id] ?? []).filter(Boolean).length
             const ex = extras[op.id]
             return (
               <button
@@ -860,46 +897,58 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                 id={`op-${op.id}`}
                 type="button"
                 onClick={() => abrirOperacao(op)}
-                className="w-full text-left bg-white border rounded-xl px-3.5 py-2.5 flex items-center gap-x-3 gap-y-1 flex-wrap md:flex-nowrap hover:bg-[color:var(--rbr-muted-bg)]"
-                style={ex?.grupo ? { ...cardStyle, borderLeft: '4px solid var(--rbr-gold)' } : cardStyle}
+                className="w-full text-left px-4 py-3 flex items-center gap-x-3 gap-y-1 flex-wrap md:flex-nowrap hover:bg-[#f7f8fc]"
+                style={{ borderTop: '1px solid #eef0f5', ...(ex?.grupo ? { borderLeft: '4px solid var(--rbr-gold)' } : {}), ...(op.coleta_prevista && !['cancelada', 'fechada', 'entregue'].includes(op.status) && Date.parse(op.coleta_prevista) - Date.now() < 24 * 3_600_000 ? { background: '#fff7f6' } : {}) }}
               >
-                <span
-                  className="text-[10px] font-bold uppercase tracking-wide text-white px-2 py-1 rounded-full whitespace-nowrap text-center md:w-[150px] flex-shrink-0"
-                  style={{ background: badgeBackground(op.status) }}
-                >
-                  {STATUS_OPERACAO_LABEL[op.status]}
+                <span className="min-w-0 flex-1">
+                  <b className="block text-[15px] truncate text-[color:var(--rbr-navy-dark)]">
+                    {op.clienteNome ?? 'Cliente a confirmar'}
+                    {ex?.grupo && ex.sequencia != null && (ex.total ?? 1) > 1 ? ` · viagem ${ex.sequencia} de ${ex.total}` : ''}
+                  </b>
+                  <span className="text-xs text-[color:var(--rbr-muted)] truncate block">
+                    {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
+                  </span>
                 </span>
-                <span className="text-[11px] font-mono text-[color:var(--rbr-muted)] flex-shrink-0">{codigoCurto(op.id)}</span>
-                <span className="text-sm font-bold truncate md:w-[190px] flex-shrink-0">{op.clienteNome ?? 'Cliente a confirmar'}</span>
-                {op.coleta_prevista && !['cancelada', 'fechada', 'entregue'].includes(op.status) && Date.parse(op.coleta_prevista) - Date.now() < 24 * 3_600_000 && (
-                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }} title="Coleta em menos de 24 horas">Urgente</span>
-                )}
-                <span className="text-xs text-[color:var(--rbr-muted)] truncate flex-1 min-w-[140px]">
-                  {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
-                </span>
-                <span className="text-xs truncate md:w-[170px] flex-shrink-0">
-                  {motorista ? motorista.nome : <span className="text-[color:var(--rbr-muted)]">sem motorista</span>}
-                  {placa ? <span className="text-[color:var(--rbr-muted)]"> · {placa}</span> : null}
-                </span>
-                <span className="text-xs text-[color:var(--rbr-muted)] tabular-nums md:w-[64px] flex-shrink-0">{nNfes > 0 ? `${nNfes} NF-e` : 'sem NF-e'}</span>
-                <span className="text-sm font-bold tabular-nums md:w-[100px] md:text-right flex-shrink-0">{op.valorCliente != null ? formatMoney(op.valorCliente) : '—'}</span>
-                <span className="flex items-center gap-1 flex-shrink-0">
-                  {op.eh_teste && (
-                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: '#FDF1DC', color: '#8A5A00' }}>
-                      teste
-                    </span>
+                <span className="text-[13px] md:w-[130px] flex-shrink-0 truncate">{placa ?? (motorista ? motorista.nome : '—')}</span>
+                <span className="text-[13px] font-bold md:w-[110px] flex-shrink-0">
+                  {op.coleta_prevista ? new Date(op.coleta_prevista).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) : 'sem data'}
+                  {op.coleta_prevista && !['cancelada', 'fechada', 'entregue'].includes(op.status) && Date.parse(op.coleta_prevista) - Date.now() < 24 * 3_600_000 && (
+                    <span className="block text-[10px] font-extrabold uppercase rounded-full px-2 py-0.5 w-fit mt-0.5" style={{ background: '#fbe3e1', color: '#b42318' }} title="Coleta em menos de 24 horas">urgente</span>
                   )}
-                  {ex?.grupo && (
-                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: '#FDF1DC', color: '#8A5A00' }} title="Saída conjunta">
-                      {ex.sequencia != null && (ex.total ?? 1) > 1 ? `${ex.sequencia}/${ex.total}` : 'conjunta'}
-                    </span>
+                </span>
+                <span className="text-xs md:w-[120px] flex-shrink-0 opacity-60" title="Ainda não disponível: a operação não guarda quem a gerou">—</span>
+                <span className="md:w-[100px] flex-shrink-0">
+                  <span className="text-[11px] font-extrabold rounded-full px-2.5 py-1" style={{ background: '#eef0fa', color: '#4a5275' }}>
+                    {tempoEsperando(op.updated_at)}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1 flex-shrink-0 md:w-[110px] md:justify-end">
+                  {op.eh_teste && (
+                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ background: '#FDF1DC', color: '#8A5A00' }}>teste</span>
                   )}
                   {op.bloqueio_fiscal && (
                     <span className="flex items-center" style={{ color: 'var(--rbr-danger)' }} title="Bloqueio fiscal">
                       <IconAlertTriangle width={14} height={14} />
                     </span>
                   )}
-                  <IconChevronRight width={16} height={16} style={{ color: 'var(--rbr-muted)' }} />
+                  {(op.status as string) === 'aguardando_assumir' ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="text-[12px] font-bold px-4 py-2 rounded-[10px] text-white"
+                      style={{ background: '#1c2559' }}
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        const { error } = await (supabase.rpc as unknown as (fn: string, a: Record<string, unknown>) => Promise<{ error: { message: string } | null }>).call(supabase, 'assumir_operacao', { p_operacao: op.id })
+                        if (error) window.alert(mensagemClara(error, 'Não consegui assumir agora.'))
+                        else void load()
+                      }}
+                    >
+                      Assumir
+                    </span>
+                  ) : (
+                    <span className="text-[12px] font-bold px-4 py-2 rounded-[10px] border bg-white" style={{ borderColor: 'var(--rbr-border)', color: '#1c2559' }}>Abrir</span>
+                  )}
                 </span>
               </button>
             )
@@ -919,15 +968,38 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
             }
             fixo={
               <>
-                <div className="text-[15px] font-bold leading-tight">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold" style={{ color: 'var(--rbr-muted)' }}>Serviços / {op.clienteNome ?? 'Cliente'}</div>
+                    <div className="text-[26px] leading-tight font-extrabold">{op.clienteNome ?? 'Cliente a confirmar'}</div>
+                  </div>
+                  <PassosServico status={op.status as string} />
+                </div>
                 <div className="text-xs text-[color:var(--rbr-muted)]">
                   {op.cotacaoDetalhe?.cidade_origem ?? '?'}/{op.cotacaoDetalhe?.uf_origem ?? '?'} → {op.cotacaoDetalhe?.cidade_destino ?? '?'}/{op.cotacaoDetalhe?.uf_destino ?? '?'}
                 </div>
+                {(extras[op.id]?.total ?? 1) > 1 && op.cotacao_id && (
+                  <Link to={`/operacoes/lote/${op.cotacao_id}`} className="text-[12px] font-extrabold underline" style={{ color: "#1c2559" }}>
+                    Ver o lote de viagens ({extras[op.id]?.total})
+                  </Link>
+                )}
                 <NavegacaoServico
                   atual="operacao"
                   cotacaoId={op.cotacao_id}
                   operacaoId={op.id}
                   confirmarSaida={() => !edicaoPendente || window.confirm('Há campos preenchidos e não salvos nesta operação. Sair mesmo assim?')}
+                />
+                {(op.status as string) === 'devolvida_pelo_fiscal' && (
+                  <div className="rounded-xl px-4 py-2.5 text-[13px]" style={{ background: '#fbe3e1', color: '#7d1a12', border: '1px solid #f2c4c0' }}>
+                    <b>Devolvida pelo fiscal.</b> O motivo e o item a corrigir estão no aviso enviado a quem alocou. Corrija o item e reenvie ao fiscal.
+                  </div>
+                )}
+                <FaixaResumo
+                  itens={[
+                    { rotulo: 'Valor ao cliente', valor: op.valorCliente != null ? formatMoney(op.valorCliente) : null },
+                    { rotulo: 'Frete do motorista', valor: (op.cotacaoDetalhe as any)?.valor_frete_motorista != null ? formatMoney((op.cotacaoDetalhe as any).valor_frete_motorista) : null },
+                    { rotulo: 'Pedágio', valor: (op.cotacaoDetalhe as any)?.pedagio != null ? formatMoney((op.cotacaoDetalhe as any).pedagio) : null },
+                  ]}
                 />
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
                   <ResumoItem rotulo="Motorista" valor={motoristas.find((m) => m.id === op.pessoa_alocada_id)?.nome ?? 'sem motorista'} />
@@ -1018,7 +1090,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                     onClick={() => liberarBloqueio(op)}
                     disabled={saving}
                     className="self-start text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60"
-                    style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                    style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                   >
                     {saving ? 'Salvando…' : 'Liberar bloqueio fiscal'}
                   </button>
@@ -1211,7 +1283,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                                 onClick={() => salvarCamposVeiculo(veiculo.id)}
                                 disabled={saving || Object.keys(veiculoForm).length === 0}
                                 className="col-span-2 md:col-span-1 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                               >
                                 Salvar veículo
                               </button>
@@ -1247,7 +1319,7 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                                 onClick={() => salvarDimensoesCarga(op)}
                                 disabled={saving || Object.keys(cargaForm).length === 0}
                                 className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                                style={{ background: 'var(--rbr-gold)', color: 'var(--rbr-navy-dark)' }}
+                                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
                               >
                                 Salvar dimensões
                               </button>

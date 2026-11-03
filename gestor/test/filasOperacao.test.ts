@@ -17,8 +17,8 @@ test('operação encerrada não aparece em fila nenhuma', () => {
 })
 test('contadores e "testes ocultos"', () => {
   const lista = [base, { ...base, id: '2', ehTeste: true }, { ...base, id: '3', pessoaAlocada: false, nfes: 0 }]
-  assert.deepEqual(contarFilas(lista, false), { sem_motorista: 1, sem_nota: 0, para_revisar: 0, prontas_fiscal: 2 })
-  assert.deepEqual(contarFilas(lista, true), { sem_motorista: 1, sem_nota: 0, para_revisar: 0, prontas_fiscal: 1 })
+  assert.deepEqual(contarFilas(lista, false), { para_assumir: 0, devolvidas: 0, sem_motorista: 1, sem_nota: 0, para_revisar: 0, prontas_fiscal: 2 })
+  assert.deepEqual(contarFilas(lista, true), { para_assumir: 0, devolvidas: 0, sem_motorista: 1, sem_nota: 0, para_revisar: 0, prontas_fiscal: 1 })
   assert.equal(passaFila({ ...base, ehTeste: true }, null, true), false)
   assert.equal(passaFila(base, 'prontas_fiscal', true), true)
   assert.equal(passaFila(base, 'sem_nota', true), false)
@@ -32,4 +32,10 @@ test('busca por placa, NF-e, cliente e código', () => {
   assert.equal(casaBusca('zzz999', c), false)
   assert.equal(casaBusca('14', c), false)
   assert.equal(casaBusca('', c), true)
+})
+
+test('para assumir e devolvidas pelo fiscal têm fila própria', () => {
+  assert.ok(filasDe({ ...base, status: 'aguardando_assumir' }).includes('para_assumir'))
+  assert.ok(filasDe({ ...base, status: 'devolvida_pelo_fiscal' }).includes('devolvidas'))
+  assert.ok(!filasDe(base).includes('para_assumir'))
 })

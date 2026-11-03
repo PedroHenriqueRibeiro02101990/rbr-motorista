@@ -24,3 +24,27 @@
 .rbr-mapa-escuro .leaflet-tile-pane {
   filter: invert(1) hue-rotate(195deg) saturate(0.5) brightness(1.4) contrast(0.68);
 }
+
+/* Front aprovado (docs/visuais-aprovados): paleta e fonte do gestor. Só o gestor; motorista e agenciador não mudam. */
+:root {
+  --rbr-navy: #1c2559;
+  --rbr-navy-dark: #0f1535;
+  --rbr-border: #e4e8f0;
+  --rbr-muted: #6b7390;
+  --rbr-muted-bg: #eef0fa;
+  --rbr-navy-tint: #f3f5f9;
+  --rbr-positive: #1a6b3c;
+  --rbr-danger: #b42318;
+  --rbr-warning-bg: #fff0d6;
+  --rbr-canvas: #f3f5f9;
+}
+body {
+  background: var(--rbr-canvas);
+}
+h1,
+h2,
+h3,
+.rbr-display {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-weight: 800;
+}

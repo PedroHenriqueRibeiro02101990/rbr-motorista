@@ -57,7 +57,14 @@ export default function PreCotacaoPage() {
   return (
     <div className="p-4 md:p-8 flex flex-col gap-4 max-w-6xl">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold">Pré-cotação</h1>
+        <div>
+          <div className="text-[11px] font-bold" style={{ color: 'var(--rbr-muted)' }}>Serviços / Nova cotação</div>
+          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Cotação</h1>
+        </div>
+        <div className="flex p-1 rounded-xl" style={{ background: '#e9ecf4' }} role="group" aria-label="Tipo de cotação">
+          <span className="text-[13px] font-extrabold px-4 py-2 rounded-lg text-white" style={{ background: '#1c2559' }}>Pré-cotação · várias rotas</span>
+          <a href="/cotacao" className="text-[13px] font-bold px-4 py-2 rounded-lg" style={{ color: '#4a5275' }}>Cotação formal · uma carga</a>
+        </div>
         <Botao onClick={() => setEditando('nova')}>Nova pré-cotação</Botao>
       </div>
       <Aviso tipo="info">Esta é uma pré-cotação. Os valores podem ser alterados de acordo com a necessidade dos itens informados.</Aviso>
