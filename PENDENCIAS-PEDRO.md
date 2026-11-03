@@ -103,3 +103,28 @@ Para fechar o portao: criar uma conta de teste de gestor (mudanca no banco, so c
 - Anterior: dpl_FrtnbBDhFG4hN4kt14jMitq58fRq (commit c90f1d5, READY, candidato a rollback).
 - Se o front quebrar apos o merge: promover o deploy de producao anterior ao merge (o 792859f acima) no painel da Vercel ou com `request_rollback`. Nada disso foi usado.
 - Depois do merge: confirmar deploy de producao READY e testar por papel (operacao, fiscal, comercial, financeiro) sem gravar nada e sem tocar nas contas de teste.
+
+## Rodada 6: conta de gestor de teste e prints do gestor (merge NAO feito)
+
+### Conta criada (para voce apagar depois)
+- Login: teste.gestor@rbrcargo.invalid, papel gestor_rbr, nome "TESTE gestor", CPF ficticio 91000000005. Criada no banco de producao com sua ordem, copiando o formato das outras contas de teste. A senha e aleatoria e existe SO na variavel de ambiente do Windows RBR_TESTE_GESTOR_SENHA (nao esta em arquivo nem no git). O cadastro por e-mail recusa o dominio .invalid, por isso a conta foi inserida direto nas tabelas auth.users, auth.identities e pessoas.
+- Para apagar (so com sua ordem): remover a linha de pessoas com esse e-mail, depois as linhas de auth.identities e auth.users desse usuario, e `reg delete HKCU\Environment /v RBR_TESTE_GESTOR_SENHA`.
+- Nos prints so naveguei e fotografei: nao cliquei em emitir, cancelar, pagar, enviar, salvar nem assumir. Cliquei apenas em Funil (troca de visao) e abri a primeira cotacao e a primeira operacao para ver o painel.
+
+### Feito nesta rodada (so local, ainda sem push)
+- Cartao "Suas metas" desativado no Inicio da operacao (5b2b8e4).
+- Inicio do gestor: troquei Coletas/Entregas hoje por "Margem do mes" (media ponderada das cotacoes convertidas no mes, so leitura) e dois cartoes de meta desativados (80447b7).
+- Build limpo e lint sem erros apos cada commit. Nenhum arquivo de migracao no diff.
+
+### Telas do gestor: divergencias que bloqueiam o merge
+- Cotacao por dentro (Cotacao-Formal, Margem): o desenho e uma pagina com cartoes Cliente e carga / Rota / Prazo de pagamento e o painel Preco ao lado. O app abre um painel sobreposto "Editar cotacao" com o formulario antigo; o cartao de Preco e o "Para enviar a cotacao" ja estao iguais, mas a coluna da esquerda NAO. Reescrever o formulario (cerca de 4.900 linhas) fica fora do que cabe sem risco de quebrar a gravacao. NAO IGUAL.
+- Cadastros > Equipe (Equipe-Funcoes): o desenho tem so as abas Clientes/Motoristas/Veiculos/Equipe e a coluna "Autonomia de preco"; o app tem mais abas (Aprovacoes, Agenciadores, Fornecedores, Transportadoras, Gestao de contatos), o painel "O que fazer agora" e nao tem a coluna de autonomia. NAO IGUAL (as abas extras sao funcoes reais).
+- Inicio do gestor (Inicio-Gestor): agora com margem e metas desativadas, mas ainda tem o seletor Geral/Comercial/Operacao/Fiscal/Financeiro e "Resumo do dia com IA", e faltam o selo de contagem no sino e o texto "Voce ve a empresa toda e as metas de cada area". PARCIAL.
+- Funil (Funil): cartoes com o mesmo conteudo, mas o desenho limita 2 cartoes por coluna com "+ N cotacoes", avatar do vendedor (sem dado) e colunas mais largas. PARCIAL.
+- Servicos do gestor (Servicos.png): o PNG mostra o painel lateral do Fiscal (Homologacao, esteira, Vale-pedagio), nao a lista; a lista do app segue o Gestor-Equipe. NAO VERIFICADO contra um painel igual.
+- Detalhe da operacao (Operacao-Servico): painel com abas e os cartoes novos (Motorista e veiculo, Carga, GR e aceites) presentes; o desenho e uma pagina em 3 colunas com a faixa "Para ir ao fiscal" de 11 itens e rodape com Salvar/Pedir alteracao/Pronta para o fiscal. NAO IGUAL.
+- Nao capturados por exigirem dado ou acao que grava: Gerar operacao, cancelar, escolher motorista, lote, proposta, aceite, aprovacao de preco.
+
+### Decisao
+Como telas verificaveis divergem (cotacao por dentro, equipe, detalhe da operacao), NAO fiz push nem merge, e nada foi para producao. Rollback segue pronto (producao atual dpl_CtPQ5CNwwPTuL2KcUSEuiHAYgYDW, commit 792859f; anterior dpl_FrtnbBDhFG4hN4kt14jMitq58fRq).
+Commits so locais agora: a5d9206, 7020a17, 17981d0, 5b2b8e4, 80447b7 e os de documentacao.
