@@ -1,3 +1,4 @@
+import { mostrarToast } from '../../lib/toast'
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { extrairErro } from './EventoFiscalModal'
@@ -48,7 +49,9 @@ export default function CancelarDocumentoModal({
   chave,
   onFechar,
   onCancelado,
+  contexto,
 }: {
+  contexto?: string
   operacaoId: string
   tipo: TipoCancelamento
   ambiente: string | null
@@ -73,12 +76,17 @@ export default function CancelarDocumentoModal({
         body: { operacao_id: operacaoId, tipo, justificativa: justificativa.trim(), confirmar: true },
       })
       if (error || !data || data.sucesso === false) {
-        setErro(error ? await extrairErro(error) : (data?.erro ?? 'Não foi possível cancelar o documento.'))
+        const msg = error ? await extrairErro(error) : (data?.erro ?? 'Não foi possível cancelar o documento.')
+        setErro(msg)
+        mostrarToast(`Cancelar ${TITULOS[tipo]}: não deu certo. ${msg}`, 'erro')
         return
       }
+      mostrarToast(`${TITULOS[tipo]} cancelado.`, 'sucesso')
       onCancelado(data)
     } catch (e) {
-      setErro(mensagemClara(e, 'Não consegui cancelar o documento agora. Tente de novo.'))
+      const msg = mensagemClara(e, 'Não consegui cancelar o documento agora. Tente de novo.')
+      setErro(msg)
+      mostrarToast(msg, 'erro')
     } finally {
       setEnviando(false)
     }
@@ -91,6 +99,7 @@ export default function CancelarDocumentoModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(18,23,61,0.55)' }}>
       <div className="bg-white rounded-xl w-full max-w-md max-h-[92vh] flex flex-col" style={{ boxShadow: '0 20px 60px rgba(18,23,61,0.35)' }}>
         <div className="px-5 pt-4 pb-3 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+          {contexto && <div className="text-[11px] font-bold text-[color:var(--rbr-muted)] mb-0.5">{contexto}</div>}
           <div className="text-sm font-extrabold text-[color:var(--rbr-navy-dark)]">Cancelar {TITULOS[tipo]}</div>
           <div className="text-xs font-bold mt-1" style={{ color: 'var(--rbr-danger)' }}>
             Cancelamento é definitivo e não pode ser desfeito.

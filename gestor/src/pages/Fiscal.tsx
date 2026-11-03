@@ -9,6 +9,7 @@ import NavegacaoServico from '../components/NavegacaoServico'
 import PassosServico from '../components/operacao/PassosServico'
 import EsteiraEmissao, { DesfazerEPrazos, TrocaMotoristaVeiculo } from '../components/operacao/EsteiraEmissao'
 import { codigoCurto } from '../lib/painelOperacao'
+import { tituloOperacao } from '../lib/toast'
 import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
 import PainelPendencias from '../components/PainelPendencias'
@@ -1439,6 +1440,7 @@ export default function Fiscal() {
         <EventoFiscalModal
           operacaoId={evento.op.id}
           acao={evento.acao}
+          contexto={tituloOperacao({ codigo: codigoCurto(evento.op.id), cliente: evento.op.clienteNome, cidadeOrigem: evento.op.cidadeOrigem, ufOrigem: evento.op.ufOrigem, cidadeDestino: evento.op.cidadeDestino, ufDestino: evento.op.ufDestino })}
           onFechar={() => setEvento(null)}
           onConcluido={() => carregarDocumentos([evento.op.id])}
         />
@@ -1446,6 +1448,7 @@ export default function Fiscal() {
       {cancelamento && (
         <CancelarDocumentoModal
           operacaoId={cancelamento.op.id}
+          contexto={tituloOperacao({ codigo: codigoCurto(cancelamento.op.id), cliente: cancelamento.op.clienteNome, cidadeOrigem: cancelamento.op.cidadeOrigem, ufOrigem: cancelamento.op.ufOrigem, cidadeDestino: cancelamento.op.cidadeDestino, ufDestino: cancelamento.op.ufDestino })}
           tipo={cancelamento.tipo}
           ambiente={cancelamento.ambiente}
           chave={cancelamento.chave}

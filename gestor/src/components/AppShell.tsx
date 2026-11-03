@@ -5,6 +5,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { IconLogOut } from '@rbr/shared/icons'
 import { initials } from '@rbr/shared/format'
 import { IconMenu, IconX, IconSearch, IconAlertTriangle } from '../icons-local'
+import ToastHost from './ToastHost'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import { podeVerNoMenu } from '../lib/menuPorPapel'
@@ -335,6 +336,7 @@ export default function AppShell({
         </nav>
       )}
 
+      <ToastHost />
       <AjudaFlutuante app="gestor" />
     </div>
   )
