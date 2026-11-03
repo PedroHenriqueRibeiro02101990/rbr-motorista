@@ -80,3 +80,26 @@ Gerais, em todas as telas: o app tem barra de busca e sino no topo e, no rodape 
 ### Proximo passo sugerido (aguarda sua ordem)
 - Trazer a fila de Operacao-Fila para a rota que a operacao usa (hoje /operacoes) ou apontar o menu para Servicos com o seletor Cotacao/Operacao/Fiscal.
 - Alinhar colunas da fila do Fiscal ao desenho (Gerou/Alocou, Pre-voo, "outro emite").
+
+## Rodada 5: ordem "so local" e portao do merge
+
+### So local (NAO enviado ao GitHub, por ordem sua de economizar deploys)
+- 7020a17 pendencias da Operacao recolhidas
+- a5d9206 fila da Operacao no visual aprovado (Servicos, seletor Cotacao/Operacao/Fiscal, chips, colunas Cliente e rota/Veiculo/Coleta/Gerada por/Esperando, Assumir)
+- 17981d0 fila do Fiscal no visual aprovado (Servicos, chips, Gerou/alocou, Pre-voo; painel de parametros so aparece em /fiscal?parametros=1)
+- (este arquivo e commitado so local junto com eles)
+Quando voce liberar: um unico `git push origin feat/front-aprovado`, depois o merge. Build limpo, lint sem erros, 128 testes passando, nenhum arquivo de migracao nem de banco no diff contra a main.
+
+### Portao do merge: NAO atendido, entao NAO fiz merge nem producao
+Voce autorizou o merge so se todas as telas ficarem iguais aos PNGs. Hoje nao estao:
+- Telas do gestor (Inicio, Servicos, Funil, Cotacao por dentro, Equipe, Fiscal por dentro etc.) nao foram vistas no navegador: nao existe conta de teste de gestor. Nao posso afirmar que estao iguais.
+- Cotacao por dentro (Vendedor-Cotacao), detalhe da operacao, Gerar operacao, cancelar, lote e escolher motorista: exigem dados ou acoes que gravam no banco; nao verificadas no navegador.
+- Inicio da operacao: falta o cartao "Suas metas" (metas sem definicao: deveria aparecer desativado). Fila da Operacao e do Fiscal ainda sem as colunas/filtros que dependem de banco (Gerada por, Gerou/alocou, Minhas, Aguardando alteracao, Cancelamentos): ficam desativados como voce mandou.
+- Tela sem dados no banco de teste nao conta como diferente (sua regra). Contei so estrutura e textos.
+Para fechar o portao: criar uma conta de teste de gestor (mudanca no banco, so com sua ordem) ou voce conferir o preview das telas do gestor e me dizer se estao iguais.
+
+### Rollback pronto (producao)
+- Producao atual: dpl_CtPQ5CNwwPTuL2KcUSEuiHAYgYDW (commit 792859f, READY, candidato a rollback).
+- Anterior: dpl_FrtnbBDhFG4hN4kt14jMitq58fRq (commit c90f1d5, READY, candidato a rollback).
+- Se o front quebrar apos o merge: promover o deploy de producao anterior ao merge (o 792859f acima) no painel da Vercel ou com `request_rollback`. Nada disso foi usado.
+- Depois do merge: confirmar deploy de producao READY e testar por papel (operacao, fiscal, comercial, financeiro) sem gravar nada e sem tocar nas contas de teste.
