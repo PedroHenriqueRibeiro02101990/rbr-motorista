@@ -2506,6 +2506,7 @@ export default function Cotacao() {
 
       {form && (
         <PainelSobreposto
+          pagina
           titulo={
             <>
               {editingId ? 'Editar cotação' : 'Nova cotação'}

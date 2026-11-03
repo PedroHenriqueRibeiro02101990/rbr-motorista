@@ -128,3 +128,9 @@ Para fechar o portao: criar uma conta de teste de gestor (mudanca no banco, so c
 ### Decisao
 Como telas verificaveis divergem (cotacao por dentro, equipe, detalhe da operacao), NAO fiz push nem merge, e nada foi para producao. Rollback segue pronto (producao atual dpl_CtPQ5CNwwPTuL2KcUSEuiHAYgYDW, commit 792859f; anterior dpl_FrtnbBDhFG4hN4kt14jMitq58fRq).
 Commits so locais agora: a5d9206, 7020a17, 17981d0, 5b2b8e4, 80447b7 e os de documentacao.
+
+## Rodada 7: cotacao por dentro como pagina (so local)
+- A cotacao aberta deixou de ser um painel sobreposto com fundo desfocado: agora e uma pagina ao lado do menu (PainelSobreposto com a opcao `pagina`, usada so na Cotacao). O formulario, os botoes e toda a gravacao ficaram exatamente como estavam; so mudou a moldura (sem escurecer o fundo, sem cartao flutuante).
+- Verificado no navegador so com uma cotacao ja convertida (leitura): o cartao de Preco e o "Para enviar a cotacao" aparecem ao lado do menu. A coluna da esquerda desse caso e o resumo de conversao; NAO conferi uma cotacao em rascunho/enviada (exigiria criar uma). Os cartoes Cliente e carga / Rota / Prazo de pagamento do desenho continuam sendo o formulario antigo, nao cartoes novos. Segue PARCIAL.
+- Build limpo, lint sem erros, 128 testes passando. Nada de push, merge, deploy, migracao ou mudanca de banco; emitir-cte e emitir-mdfe intocados.
+- Backup do banco: nao existe script no repositorio (so scripts/deploy-functions.js). Nada foi criado. Docs citam um dump manual de 30/10 e plano sem PITR.
