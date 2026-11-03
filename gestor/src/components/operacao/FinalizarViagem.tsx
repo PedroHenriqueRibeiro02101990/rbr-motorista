@@ -5,6 +5,7 @@ import { formatDateTime } from '@rbr/shared/format'
 import { Aviso, Campo, inputClass, inputStyle, Modal } from '../financeiro/ui'
 import { extrairErro } from './EventoFiscalModal'
 import { mensagemClara } from '../../lib/mensagemClara'
+import { mostrarToast } from '../../lib/toast'
 import { passosPendentes, resumoFinalizacao, type ResultadoPasso } from '../../lib/finalizacao'
 import { CIOT_EFRETE_HABILITADO } from '../../lib/efreteFlags'
 
@@ -308,9 +309,11 @@ function ConfirmarFinalizacao({
       const resumo = resumoFinalizacao(resultados)
       if (usaEstadoFinalizando) await rpcFin.call(supabase, 'terminar_finalizacao', { p_operacao: operacaoId, p_ok: resumo.tudoCerto })
       if (!resumo.tudoCerto) setErro(resumo.mensagem)
+      mostrarToast(resumo.tudoCerto ? 'Viagem finalizada: MDF-e e CIOT encerrados.' : `Finalizar viagem: ${resumo.mensagem}`, resumo.tudoCerto ? 'sucesso' : 'erro')
       await onTentou(resumo.tudoCerto, resumo.mensagem)
     } catch (e) {
       setErro(mensagemClara(e, 'Não foi possível finalizar a viagem.'))
+      mostrarToast(mensagemClara(e, 'Não foi possível finalizar a viagem.'), 'erro')
     } finally {
       enviandoRef.current = false
       setEnviando(false)

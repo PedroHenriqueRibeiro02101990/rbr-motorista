@@ -9,7 +9,7 @@ import NavegacaoServico from '../components/NavegacaoServico'
 import PassosServico from '../components/operacao/PassosServico'
 import EsteiraEmissao, { DesfazerEPrazos, TrocaMotoristaVeiculo } from '../components/operacao/EsteiraEmissao'
 import { codigoCurto } from '../lib/painelOperacao'
-import { tituloOperacao } from '../lib/toast'
+import { mostrarToast, tituloOperacao } from '../lib/toast'
 import { mensagemClara } from '../lib/mensagemClara'
 import ParametrosFiscaisPanel from '../components/operacao/ParametrosFiscaisPanel'
 import PainelPendencias from '../components/PainelPendencias'
@@ -332,6 +332,8 @@ export default function Fiscal() {
     })
   }
 
+  const NOME_DOC = { cte: 'CT-e', mdfe: 'MDF-e', nfse: 'NFS-e' } as const
+
   async function emitirDocumento(op: OperacaoEnriquecida, tipo: 'cte' | 'mdfe' | 'nfse') {
     const chave = `${op.id}:${tipo}`
     const funcao = tipo === 'cte' ? 'emitir-cte' : tipo === 'mdfe' ? 'emitir-mdfe' : 'emitir-nfse-intramunicipal'
@@ -344,18 +346,22 @@ export default function Fiscal() {
       if (error) {
         const detalhe = await extrairDetalheErroInvoke(error)
         setErroPorOperacao((prev) => ({ ...prev, [op.id]: detalhe }))
+        mostrarToast(`Emitir ${NOME_DOC[tipo]}: não deu certo. ${detalhe?.erro ?? 'Veja o motivo no card da operação.'}`, 'erro')
       } else if (data && data.sucesso === false) {
         setErroPorOperacao((prev) => ({ ...prev, [op.id]: { erro: data.erro, motivos: data.motivos, avisos: data.avisos, regras: data.regras } }))
+        mostrarToast(`Emitir ${NOME_DOC[tipo]}: não deu certo. ${data.erro ?? 'Veja o motivo no card da operação.'}`, 'erro')
       } else if (data) {
         // Emitiu, mas com regra da RBR em aberto (ex.: destino de pagamento do motorista): mostra em amarelo.
         const avisosRbr = (data.regras ?? []).filter((r) => r.tipo === 'aviso' && r.origem === 'rbr')
         setAvisosRbrPorOperacao((prev) => ({ ...prev, [op.id]: avisosRbr.length > 0 ? avisosRbr : null }))
+        mostrarToast(`${NOME_DOC[tipo]} enviado para autorização. Acompanhe o resultado no card da operação.`, 'sucesso')
       }
     } catch (e) {
       setErroPorOperacao((prev) => ({
         ...prev,
         [op.id]: { erro: mensagemClara(e, 'Não consegui emitir o documento agora. Tente de novo.') },
       }))
+      mostrarToast(mensagemClara(e, 'Não consegui emitir o documento agora. Tente de novo.'), 'erro')
     } finally {
       marcarEmAndamento(chave, false)
       await carregarDocumentos([op.id])
@@ -1500,6 +1506,7 @@ export default function Fiscal() {
           operacaoId={conferencia.op.id}
           tipo={conferencia.tipo}
           titulo={conferencia.tipo === 'cte' ? 'CT-e' : conferencia.tipo === 'mdfe' ? 'MDF-e' : 'NFS-e'}
+          contexto={tituloOperacao({ codigo: codigoCurto(conferencia.op.id), cliente: conferencia.op.clienteNome, cidadeOrigem: conferencia.op.cidadeOrigem, ufOrigem: conferencia.op.ufOrigem, cidadeDestino: conferencia.op.cidadeDestino, ufDestino: conferencia.op.ufDestino })}
           emitindo={emAndamento.has(`${conferencia.op.id}:${conferencia.tipo}`)}
           onCancelar={() => setConferencia(null)}
           onConfirmar={async () => {

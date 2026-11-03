@@ -239,11 +239,14 @@ export default function ConferenciaEmissaoModal({
   operacaoId,
   tipo,
   titulo,
+  contexto,
   emitindo,
   onCancelar,
   onConfirmar,
 }: {
   operacaoId: string
+  // OP, cliente e rota (tituloOperacao), só para mostrar no título.
+  contexto?: string
   tipo: TipoConferencia
   titulo: string
   emitindo: boolean
@@ -301,6 +304,7 @@ export default function ConferenciaEmissaoModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3" style={{ background: 'rgba(18,23,61,0.55)' }}>
       <div className="bg-white rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col" style={{ boxShadow: '0 20px 60px rgba(18,23,61,0.35)' }}>
         <div className="px-5 pt-4 pb-3 border-b" style={{ borderColor: 'var(--rbr-border)' }}>
+          {contexto && <div className="text-[11px] font-bold text-[color:var(--rbr-muted)] mb-0.5">{contexto}</div>}
           <div className="text-sm font-extrabold text-[color:var(--rbr-navy-dark)]">Conferir antes de emitir — {titulo}</div>
           <div className="text-[11px] text-[color:var(--rbr-muted)] mt-0.5">
             É isto que vai para a SEFAZ (via Focus). Cada linha mostra de onde o dado vem; o que vem de cotação ou cadastro é
