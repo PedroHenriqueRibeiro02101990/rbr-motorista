@@ -33,3 +33,39 @@ B3 (Fiscal uma operação por vez), B4 (condutor e titular separados), B5 (clien
 2. B4 exige migração aditiva (colunas anuláveis `condutor_id` e `titular_id`) e mudança no `emitir-mdfe`, que emite documento real. Só com autorização e fora do horário de emissão.
 3. B13: a fundação de papéis (A01 e A02) ainda não existe, então só a lista do que falta: perfis de emissão para Eduardo e José, com RLS própria, ainda a criar.
 4. Conta de teste `teste.gestor@rbrcargo.invalid` criada antes (para apagar com a ordem do Pedro).
+
+---
+
+# Parte 2 (feat/atualizacao-parte-2)
+
+## Situação da parte 1 (atualiza os números acima)
+- Enviada e no ar: 1 push, PR #52, 1 merge (`866caa5` na main). Deploy de produção do rbr-gestor `dpl_4X2mM3ATFaac2LTcCkufwFfwnqtc`: READY (gestor.rbrcargo.com.br). Os outros projetos (rbr-motorista, rbr-agenciador) foram ignorados pela regra de build.
+- Teste por papel em produção (só navegar, sem gravar): operação, fiscal, comercial e financeiro abriram 20 telas sem erro de página. O gestor NÃO foi testado em produção: o sistema de permissões negou o acesso porque a conta de gestor leria operações reais. Rollback pronto e não usado (produção anterior `dpl_CtPQ5CNwwPTuL2KcUSEuiHAYgYDW`).
+- Funções publicadas na parte 1: nenhuma (o repositório só foi igualado ao que já estava publicado: emitir-cte v24 e emitir-mdfe v26).
+
+## Concluído na parte 2
+1. Avisos de sucesso e erro e título com OP, cliente e rota nos botões de emitir CT-e, emitir MDF-e e encerrar (Finalizar viagem). Só apresentação: a chamada, o corpo e a lógica das funções não mudaram. Teste manual com mocks não foi possível sem navegador autenticado em dados reais; build, lint e 128 testes do gestor passam.
+3. B4, condutor e titular separados:
+   - Migração ADITIVA aplicada: `operacoes.condutor_id` e `operacoes.titular_id` (anuláveis, índices parciais). SQL em `supabase/migrations/20261103-1200-operacoes-condutor-titular.sql`; rollback em `docs/rollbacks/20261103-1200-operacoes-condutor-titular.sql`. Advisors de segurança: nenhum alerta novo. Nenhuma linha foi alterada (sem preenchimento: sem os campos o sistema usa o motorista, como sempre).
+   - `emitir-mdfe` v23 NO REPOSITÓRIO (não publicada): o MDF-e usa nome e CPF do condutor; o pagamento vai para o titular; se o condutor informado não existir, bloqueia com mensagem clara; condutor igual ao motorista e sem titular = nada muda. Regras em `condutorTitular.ts` com 8 testes (34 testes do MDF-e passando).
+12. B12, locais de entrega por cliente: tabela nova `clientes_locais_entrega` (migração aditiva aplicada), RLS ligado e SEM política de propósito, sem regra de triangulação e sem tela. Rollback em `docs/rollbacks/20261103-1210-clientes-locais-entrega.sql`.
+13. B13: só a lista abaixo; nada de RLS ou papéis foi alterado.
+
+## Parcial / não feito
+- Publicar `emitir-mdfe` v23: NÃO publiquei. Não há Deno aqui para rodar a função, e o teste de fumaça em homologação exigiria chamar a função em produção com operação real ou de teste. A sintaxe foi conferida com o compilador TypeScript e as regras têm testes, mas a função publicada continua a v26. Para publicar: `node scripts/deploy-functions.js emitir-mdfe` fora do horário de emissão, rodando a prévia (`previa: true`) numa operação de teste antes e voltando à v26 se falhar.
+- CIOT usando o condutor (`efrete-ciot-operacao`) e a tela de alocação com campos Condutor e Titular: não feitos.
+- B3 (Fiscal uma operação por vez), A1 (cartões Cliente e carga, Rota e Prazo), B5, B6, B7, B8, B9, B10, B11: não feitos nesta rodada.
+
+## Migrações
+- Aplicadas (aditivas): `operacoes_condutor_titular` e `clientes_locais_entrega`.
+- Aguardando o Pedro: políticas de acesso (RLS) da tabela `clientes_locais_entrega` e qualquer preenchimento de `condutor_id`/`titular_id` em operações existentes.
+
+## B13: o que falta para os perfis do Eduardo e do José emitirem
+- Papéis novos ou funções de emissão para os dois (hoje só `gestor_rbr` emite CT-e e MDF-e).
+- Políticas de acesso (RLS) por papel nas tabelas fiscais (documentacao_operacao, operacao_ciot_vpo, operacao_nfes) e nas funções emitir-cte, emitir-mdfe e eventos-fiscais, que hoje checam `papel = gestor_rbr`.
+- Decidir se Eduardo e José também cancelam e encerram.
+- Contas de login e convite pela tela Equipe (o convite hoje está desativado).
+- Nada disso foi alterado.
+
+## Números da parte 2
+- Pushes: 0 até este ponto da parte 2 (o único push desta sessão foi o da parte 1). Deploys da Vercel: 1 (produção da parte 1). Funções publicadas: 0. Migrações aplicadas: 2.
