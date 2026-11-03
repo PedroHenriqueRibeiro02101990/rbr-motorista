@@ -67,5 +67,9 @@ B3 (Fiscal uma operação por vez), B4 (condutor e titular separados), B5 (clien
 - Contas de login e convite pela tela Equipe (o convite hoje está desativado).
 - Nada disso foi alterado.
 
-## Números da parte 2
-- Pushes: 0 até este ponto da parte 2 (o único push desta sessão foi o da parte 1). Deploys da Vercel: 1 (produção da parte 1). Funções publicadas: 0. Migrações aplicadas: 2.
+## Números da parte 2 (final)
+- Pushes: 2 nesta sessão (1 da parte 1, branch feat/atualizacao-2026-11-03; 1 da parte 2, branch feat/atualizacao-parte-2) mais 1 só de documentação [skip ci].
+- Merges: 2 (PR #52, `866caa5`, e PR #53, `2a13989`). Deploys da Vercel de produção do rbr-gestor: 2 (`dpl_4X2mM3ATFaac2LTcCkufwFfwnqtc`, READY; `dpl_2rBYmBfE8M1yQ1qhJ42m5hAP82Yr`, READY).
+- Funções publicadas: 0 (emitir-cte segue v24 e emitir-mdfe segue v26 no ar; a v23 do emitir-mdfe está só no repositório).
+- Migrações aplicadas: 2 (aditivas). Aguardando o Pedro: políticas de acesso da tabela clientes_locais_entrega, preenchimento de condutor/titular em operações existentes e a publicação do emitir-mdfe v23.
+- Rollback da produção do front: promover `dpl_4X2mM3ATFaac2LTcCkufwFfwnqtc` se o último deploy der problema (e, antes dele, `dpl_CtPQ5CNwwPTuL2KcUSEuiHAYgYDW`).
