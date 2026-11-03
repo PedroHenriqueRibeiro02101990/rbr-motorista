@@ -687,10 +687,10 @@ export default function Fiscal() {
     return null
   }
   const contFiscal = (f: FilaFiscal) => lista.filter((o) => filaDe(o) === f).length
+  const opAbertaId = params.get('op')
   const listaFiscal = lista.filter((o) => o.id !== opAbertaId && (filaFiscal === null || filaDe(o) === filaFiscal))
 
   // Painel do Fiscal: /fiscal?op=<id> abre a operação por cima da lista (mesmo padrão do painel da Operação).
-  const opAbertaId = params.get('op')
   const opAberta = opAbertaId ? lista.find((o) => o.id === opAbertaId) ?? null : null
   function fecharPainelFiscal() {
     setParams(
