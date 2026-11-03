@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -1405,29 +1405,35 @@ export default function Fiscal() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Fiscal</h1>
+          <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Serviços</h1>
           {!loading && (
             <div className="text-[13px] mt-1" style={{ color: '#4a5275' }}>
               <b style={{ color: 'var(--rbr-navy-dark)' }}>{contFiscal('prontas')} operações prontas para emitir.</b> Abra uma para conferir o pré-voo e emitir.
             </div>
           )}
         </div>
+        <div className="flex p-1 rounded-xl" style={{ background: '#e9ecf4' }} role="group" aria-label="Etapa do serviço">
+          <Link to="/servicos" className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ color: '#4a5275' }}>Cotação</Link>
+          <Link to="/operacoes" className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ color: '#4a5275' }}>Operação</Link>
+          <span className="text-[13px] font-bold px-5 py-2 rounded-lg" style={{ background: '#1c2559', color: '#fff' }} aria-current="page">Fiscal</span>
+        </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Filas do Fiscal">
-        <button type="button" onClick={() => setFilaFiscal(null)} className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border" style={filaFiscal === null ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>
-          Todas · {lista.length}
-        </button>
         {FILAS_FISCAL.map((f) => (
           <button key={f.id} type="button" onClick={() => setFilaFiscal(filaFiscal === f.id ? null : f.id)} className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border" style={filaFiscal === f.id ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>
             {f.rotulo} · {contFiscal(f.id)}
           </button>
         ))}
+        <button type="button" onClick={() => setFilaFiscal(null)} className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border" style={filaFiscal === null ? { background: '#1c2559', color: '#fff', borderColor: '#1c2559' } : { background: '#fff', color: '#1c2559', borderColor: 'var(--rbr-border)' }}>
+          Todas · {lista.length}
+        </button>
+        <button type="button" disabled title="Ainda não disponível" className="text-[13px] font-bold px-3.5 py-1.5 rounded-full border bg-white opacity-50 cursor-not-allowed" style={{ borderColor: 'var(--rbr-border)' }}>Cancelamentos</button>
       </div>
 
-      <PainelPendencias modulo="fiscal" />
+      <details className="text-xs"><summary className="cursor-pointer font-bold" style={{ color: 'var(--rbr-muted)' }}>O que fazer agora (pendências do fiscal)</summary><div className="mt-3"><PainelPendencias modulo="fiscal" /></div></details>
 
       <div id="parametros-fiscais" ref={(el) => { if (el && params.get('parametros')) el.scrollIntoView({ block: 'start' }) }}>
-        <ParametrosFiscaisPanel />
+        {params.get('parametros') ? <ParametrosFiscaisPanel /> : null}
       </div>
       {evento && (
         <EventoFiscalModal
@@ -1518,9 +1524,9 @@ export default function Fiscal() {
       <div className="bg-white border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--rbr-border)' }} hidden={loading || listaFiscal.length === 0}>
         <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[10px] font-extrabold tracking-[0.08em] uppercase" style={{ background: '#f7f8fc', color: 'var(--rbr-muted)' }}>
           <span className="flex-1">Operação e rota</span>
-          <span className="w-[170px] flex-shrink-0">Situação</span>
+          <span className="w-[170px] flex-shrink-0">Gerou / alocou</span>
           <span className="w-[150px] flex-shrink-0">Coleta</span>
-          <span className="w-[130px] flex-shrink-0">Documentos</span>
+          <span className="w-[130px] flex-shrink-0">Pré-voo</span>
           <span className="w-[80px] flex-shrink-0" />
         </div>
         {!loading &&
@@ -1540,13 +1546,17 @@ export default function Fiscal() {
                   </div>
                 </div>
                 <div className="md:w-[170px] flex-shrink-0">
-                  <span className="text-[11px] font-bold rounded-full px-2.5 py-1" style={problema ? { background: '#fbe3e1', color: '#b42318' } : { background: '#eef0fa', color: '#1c2559' }}>
-                    {problema ? '✕ com problema' : ((STATUS_OPERACAO_LABEL as Record<string, string>)[o.status as string] ?? o.status)}
-                  </span>
+                  <span className="text-[11px]" style={{ color: 'var(--rbr-muted)' }} title="Ainda não disponível: a operação não guarda quem a gerou nem quem a alocou">—</span>
                 </div>
                 <div className="md:w-[150px] flex-shrink-0 text-[13px] font-bold">{o.coleta_prevista ? formatDateTime(o.coleta_prevista) : '—'}</div>
-                <div className="md:w-[130px] flex-shrink-0 text-[12px]" style={{ color: 'var(--rbr-muted)' }}>
-                  {emitidos} de {TIPOS_EXIBIDOS.length} emitidos
+                <div className="md:w-[130px] flex-shrink-0 text-[11px] font-bold">
+                  {problema ? (
+                    <span className="rounded-full px-2.5 py-1" style={{ background: '#fbe3e1', color: '#b42318' }}>✕ bloqueio</span>
+                  ) : (o.status as string) === 'aguardando_liberacao_fiscal' ? (
+                    <span className="rounded-full px-2.5 py-1" style={{ background: '#d6ecdf', color: '#1a6b3c' }}>✓ pronto</span>
+                  ) : (
+                    <span style={{ color: 'var(--rbr-muted)' }}>{emitidos} de {TIPOS_EXIBIDOS.length} emitidos</span>
+                  )}
                 </div>
                 <div className="md:w-[80px] flex-shrink-0 md:text-right">
                   <button
