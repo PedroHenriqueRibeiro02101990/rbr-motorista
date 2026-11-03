@@ -1,4 +1,6 @@
-// Edge Function: emitir-mdfe (v22)
+// Edge Function: emitir-mdfe (v23)
+// v23 (2026-11-03, B4): condutor (operacoes.condutor_id) e titular/recebedor (operacoes.titular_id) separados do motorista alocado.
+//   MDF-e usa nome e CPF do condutor; pagamento vai para o titular. Sem os campos, nada muda. Ver condutorTitular.ts.
 // v22 (2026-11-03): UFs de percurso (percursos[].uf_percurso) quando a UF de inicio e fim nao sao limitrofes (rejeicao 'Percurso informado invalido'). Le documentacao_operacao vpo.payload_resposta.percurso_ufs; ver mdfe.ts.
 // v21 (2026-10-24, passo 4): com NF-e do cliente na operacao (operacao_nfes), peso bruto, NCM e valor da carga vem das notas
 // (soma); sem notas, segue a cotacao. CIOT emitido na homologacao da efrete nunca libera MDF-e em producao (mdfe.ts).
@@ -17,6 +19,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { mensagemCondutorAusente, opComCondutor, resolverCondutorTitular } from "./condutorTitular.ts";
 import { cepCarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const CORS_HEADERS = {
@@ -171,12 +174,23 @@ Deno.serve(async (req: Request) => {
       municipioEmitente = m?.cidade ?? null;
     }
 
+    // B4: condutor (quem dirige) e titular/recebedor (quem recebe) podem ser pessoas diferentes do motorista alocado.
+    // Sem condutor_id/titular_id nada muda (condutor = recebedor = motorista alocado).
+    const { data: opCT } = await supabaseAdmin.from("operacoes").select("condutor_id, titular_id").eq("id", operacao_id).maybeSingle();
+    const ct = resolverCondutorTitular({ motoristaId: op.motorista_id ?? null, condutorId: opCT?.condutor_id ?? null, titularId: opCT?.titular_id ?? null });
+    let opFinal = op;
+    let condutorAusente: string | null = null;
+    if (ct.condutorDiferente && ct.condutorId) {
+      const { data: c } = await supabaseAdmin.from("pessoas").select("id, nome, cpf").eq("id", ct.condutorId).maybeSingle();
+      if (c) opFinal = opComCondutor(op, c);
+      else condutorAusente = mensagemCondutorAusente(ct.condutorId);
+    }
     let motorista = null;
-    if (op.motorista_id) {
+    if (ct.recebedorId) {
       const { data: m } = await supabaseAdmin
         .from("pessoas")
         .select("banco_codigo, banco_agencia, pix")
-        .eq("id", op.motorista_id)
+        .eq("id", ct.recebedorId)
         .maybeSingle();
       motorista = m;
     }
@@ -211,7 +225,7 @@ Deno.serve(async (req: Request) => {
       : cepCarregamentoDe(cot?.nf_remetente_cnpj, op.emitente_cnpj, cot?.nf_remetente_endereco, pf?.endereco_cep);
 
     const { ambiente, bloqueios, avisos, regras, payload } = montarMdfe({
-      op: notas.length && notas.every((n) => n.valor != null) ? { ...op, valor_nf: Math.round(somaNotas("valor") * 100) / 100 } : op,
+      op: notas.length && notas.every((n) => n.valor != null) ? { ...opFinal, valor_nf: Math.round(somaNotas("valor") * 100) / 100 } : opFinal,
       pf,
       municipioEmitente,
       cte: cteDoc ?? null,
@@ -244,6 +258,7 @@ Deno.serve(async (req: Request) => {
       agora: new Date(),
     });
 
+    if (condutorAusente) bloqueios.push(condutorAusente);
     if (testeDaTrava(trava) && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
     if (testeDaTrava(trava) && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
