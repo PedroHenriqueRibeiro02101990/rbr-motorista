@@ -216,6 +216,16 @@ export default function InicioFuncao({ funcao, nome }: { funcao: 'operacao' | 'f
           <Kpi rotulo="Devolvidas" valor={devolvidas.length} cor="#b42318" nota="corrigir e reenviar" />
           <Kpi rotulo="Em viagem" valor={emViagem.length} nota={semSinal.length ? `${semSinal.length} sem sinal` : 'sem atrasos de sinal'} />
           <Kpi rotulo="Para finalizar" valor={paraFinalizar} cor="#1a6b3c" nota="entregues, esperando finalizar" />
+          <div className={`${card} px-4 py-3 flex flex-col gap-1.5 opacity-70`} style={borda} title="Ainda não disponível">
+            <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>SUAS METAS</div>
+            {['Operações no prazo', 'Resposta na fila', 'Sem devolução do fiscal'].map((r) => (
+              <div key={r} className="flex flex-col gap-0.5">
+                <div className="flex justify-between text-[11px]"><span className="font-bold">{r}</span><span style={{ color: 'var(--rbr-muted)' }}>meta —</span></div>
+                <div className="h-1.5 rounded-full" style={{ background: '#e9ecf4' }} />
+              </div>
+            ))}
+            <div className="text-[10px]" style={{ color: '#8a91ad' }}>Ainda não disponível: o gestor define e liga as metas da Operação.</div>
+          </div>
         </div>
         <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
           <div className="flex flex-col gap-3.5 min-w-0">
