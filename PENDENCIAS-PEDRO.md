@@ -52,3 +52,31 @@ Ultimo deploy do gestor com codigo novo: commit e37e24e, estado READY (rbr-gesto
 ### Decisoes suas
 - Quer que o checklist "Antes de gerar" passe a travar o botao pelos itens obrigatorios (como no desenho)? Isso exige guardar contatos, janelas e aceite na cotacao (mudanca no banco, so com sua ordem).
 - Progresso do Lote: hoje conta documentos exigidos ja cumpridos. Confirmar se e essa a regra do "11 itens".
+
+## Rodada 4: prints por papel contra os PNGs (nao testado no preview da Vercel)
+
+Como foi feito: o preview da Vercel pede login da Vercel, entao os prints sairam do mesmo codigo da branch rodando local (vite), 1280x800, com as contas teste.operacao, teste.fiscal, teste.comercial e teste.financeiro. As senhas foram lidas so na memoria do script; nada foi gravado nem commitado. Prints ficam fora do repositorio (pasta temporaria). Nenhuma escrita no banco: so telas de leitura. Nao ha conta de teste de gestor, entao as telas so do gestor nao foram vistas.
+
+### Bug achado e corrigido pelos prints
+- A tela /fiscal abria em BRANCO (erro "opAbertaId before initialization"), introduzido por mim na fila do Fiscal. Corrigido no commit 8ae94e2. Os deploys anteriores da branch com essa tela estavam quebrados para o fiscal.
+
+### Diferencas por tela (real x PNG)
+Gerais, em todas as telas: o app tem barra de busca e sino no topo e, no rodape do menu, "Entrar com digital ou rosto" e "Sair" (existem no sistema, nao estao nos PNGs). Nomes das contas de teste aparecem como "TESTE". Os PNGs usam numeros e pessoas de exemplo; o banco de teste esta quase vazio, entao varias listas aparecem vazias. Mapa e real (OpenStreetMap), nao o desenho.
+
+- Inicio Operacao (Inicio-Operacao): estrutura igual (4 numeros, mapa, Precisa de voce, Para completar). Falta o 4o cartao "Suas metas" (metas ainda nao definidas). Precisa de voce vazio por falta de dado. PARCIAL.
+- Operacoes da operacao (Operacao-Fila): NAO IGUAL. /operacoes ainda e a tela antiga ("Operacoes", filtros, "O que fazer agora"). O desenho e a lista em Servicos com seletor Cotacao/Operacao/Fiscal, chips Para assumir/Minhas/Devolvidas/No fiscal e colunas Veiculo, Coleta, Gerada por, Esperando e botao Assumir. Nao corrigido (fila nova so existe no codigo de Servicos, nao nesta rota).
+- Servicos da operacao (Operacao-Fila): mostra a lista geral com esteira e "Novos pedidos/Lista/Funil", nao o seletor Cotacao/Operacao/Fiscal nem os chips de fila. PARCIAL.
+- Fiscal fila (Fiscal-Fila): estrutura diferente. Titulo "Fiscal" (desenho: "Servicos" com seletor), painel extra "O que fazer agora" com 60 pendencias, colunas Situacao/Coleta/Documentos (desenho: Gerou/Alocou, Coleta, Pre-voo), sem o botao trancado "outro emite". Aparece o erro "Nenhuma configuracao fiscal encontrada (parametros_fiscais)" para a conta fiscal de teste: conferir RLS ou dado. PARCIAL.
+- Inicio Fiscal (Inicio-Fiscal): igual em estrutura (3 numeros, Prontas para emitir, Em emissao, mapa, metas). Metas sem definicao e "sem data de coleta" onde o desenho tem horarios. PARCIAL (quase igual).
+- Inicio Comercial (Vendedor-Inicio): igual em estrutura. Meta do mes sem barra (sem meta definida), "Minhas operacoes" vazio, sem o trecho "Faltam R$ para a meta". PARCIAL (quase igual).
+- Meus clientes (Meus-Clientes): igual em estrutura e textos; carteira vazia (a cotacao nao guarda vendedor). IGUAL na estrutura.
+- Cotacao do comercial (Vendedor-Cotacao): /cotacao abre a lista "Cotacao & Funil" antiga. A tela do desenho (edicao com preco e qualidade) so aparece ao abrir uma cotacao; nao criei cotacao de teste para nao gravar no banco. NAO VERIFICADO.
+- Financeiro: sem visual aprovado; nao comparado.
+- Nao capturados (exigem dados ou acoes que gravam): cotacao por dentro, detalhe da operacao e cartoes, Gerar operacao, cancelar em passos, escolher motorista, lote, telas do gestor.
+
+### Avisos do console (conta fiscal)
+- 4 respostas 400 do banco ao abrir /fiscal e aviso React "duas criancas com a mesma key". Investigar na proxima rodada.
+
+### Proximo passo sugerido (aguarda sua ordem)
+- Trazer a fila de Operacao-Fila para a rota que a operacao usa (hoje /operacoes) ou apontar o menu para Servicos com o seletor Cotacao/Operacao/Fiscal.
+- Alinhar colunas da fila do Fiscal ao desenho (Gerou/Alocou, Pre-voo, "outro emite").
