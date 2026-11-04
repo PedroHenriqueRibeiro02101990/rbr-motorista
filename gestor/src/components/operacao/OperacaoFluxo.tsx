@@ -34,6 +34,7 @@ import LiberarCaminhaoInfo from './LiberarCaminhaoInfo'
 import CartoesOperacao from './CartoesOperacao'
 import CondutorTitular from './CondutorTitular'
 import PacoteRepom from './PacoteRepom'
+import DivergenciasDocumentos from './DivergenciasDocumentos'
 import HistoricoOperacao from './HistoricoOperacao'
 import { abaDaEtapa, sinaisDasAbas, type IdAba, type SinalAba } from '../../lib/abasOperacao'
 import BotaoAcao from './BotaoAcao'
@@ -406,6 +407,7 @@ export default function OperacaoFluxo({
       <CartoesOperacao d={d} />
       <CondutorTitular operacaoId={o.id} motoristaNome={d.motorista?.nome ?? null} onSalvo={() => void recarregar().then(onChanged)} />
       <PacoteRepom d={d} />
+      <DivergenciasDocumentos d={d} />
       {['liberada_coleta', 'carregando'].includes(o.status) && <LiberarCaminhaoInfo />}
       {['liberada_coleta', 'carregando', 'em_transito', 'em_viagem'].includes(o.status) && <OcorrenciaRota operacaoId={o.id} />}
       {o.status === 'aguardando_liberacao_fiscal' && <DevolverOperacao operacaoId={o.id} onDevolvida={onChanged} />}
