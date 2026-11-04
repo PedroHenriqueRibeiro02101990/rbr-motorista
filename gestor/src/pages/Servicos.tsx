@@ -30,7 +30,7 @@ type Cot = {
   created_at: string
   updated_at: string
 }
-type Op = { id: string; status: string; cotacao_id: string | null; cliente_id: string | null; eh_teste: boolean; updated_at: string }
+type Op = { id: string; status: string; cotacao_id: string | null; cliente_id: string | null; eh_teste: boolean; updated_at: string; pessoa_alocada_id?: string | null }
 type Cli = { id: string; razao_social: string | null; nome_fantasia: string | null }
 type Doc = { operacao_id: string; tipo: string; status: string }
 type Linha = { id: string; etapa: Etapa; cliente: string; rota: string; nota: string; valor: number | null; teste: boolean; para: string; cot?: Cot; dots: Dot[] }
