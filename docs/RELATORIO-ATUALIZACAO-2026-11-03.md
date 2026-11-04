@@ -67,5 +67,39 @@ B3 (Fiscal uma operação por vez), B4 (condutor e titular separados), B5 (clien
 - Contas de login e convite pela tela Equipe (o convite hoje está desativado).
 - Nada disso foi alterado.
 
-## Números da parte 2
-- Pushes: 0 até este ponto da parte 2 (o único push desta sessão foi o da parte 1). Deploys da Vercel: 1 (produção da parte 1). Funções publicadas: 0. Migrações aplicadas: 2.
+## Números da parte 2 (final)
+- Pushes: 2 nesta sessão (1 da parte 1, branch feat/atualizacao-2026-11-03; 1 da parte 2, branch feat/atualizacao-parte-2) mais 1 só de documentação [skip ci].
+- Merges: 2 (PR #52, `866caa5`, e PR #53, `2a13989`). Deploys da Vercel de produção do rbr-gestor: 2 (`dpl_4X2mM3ATFaac2LTcCkufwFfwnqtc`, READY; `dpl_2rBYmBfE8M1yQ1qhJ42m5hAP82Yr`, READY).
+- Funções publicadas: 0 (emitir-cte segue v24 e emitir-mdfe segue v26 no ar; a v23 do emitir-mdfe está só no repositório).
+- Migrações aplicadas: 2 (aditivas). Aguardando o Pedro: políticas de acesso da tabela clientes_locais_entrega, preenchimento de condutor/titular em operações existentes e a publicação do emitir-mdfe v23.
+- Rollback da produção do front: promover `dpl_4X2mM3ATFaac2LTcCkufwFfwnqtc` se o último deploy der problema (e, antes dele, `dpl_CtPQ5CNwwPTuL2KcUSEuiHAYgYDW`).
+
+---
+
+# Parte 3 (feat/atualizacao-parte-3)
+
+## Item 0: conta de teste do gestor apagada
+- Apagados só estes registros: a linha "TESTE gestor" em `pessoas`, a identidade e o usuário `teste.gestor@rbrcargo.invalid` em `auth.users` (com conferência de 1 usuário e 1 pessoa antes, dentro da mesma transação).
+- Conferência depois: 0 linhas em `pessoas`, 0 em `auth.users`; as outras 4 contas de teste (operação, fiscal, comercial, financeiro) continuam. A primeira tentativa expirou sem confirmação (2 minutos); a segunda funcionou.
+- A senha local (variável de ambiente `RBR_TESTE_GESTOR_SENHA`) também foi removida.
+- Consequência: não há mais conta de gestor de teste, então a prévia do `emitir-mdfe` (que só aceita gestor) não pode ser rodada sem uma conta nova.
+
+## Concluído
+- Item 1: o PR #54 (só documentação) foi incorporado a esta branch e sobe junto no mesmo push.
+- B10: alertas antes de alocar no painel "Escolhido" (CRLV vencido ou sem exercício, RNTRC do veículo inativo ou vencido, sem tara, sem eixos, sem UF de licenciamento, titular sem RNTRC de 8 dígitos, ativo e em dia). Regra pura em `lib/alertasAlocacao.ts`, 6 testes.
+- Item 3 (parcial): campos Condutor e Titular/recebedor no detalhe da operação (`CondutorTitular.tsx`), gravando só `operacoes.condutor_id` e `titular_id`; em branco = tudo como antes. O MDF-e (v23 no repositório) já usa o condutor e paga ao titular.
+- B7: pacote de dados da Repom no detalhe da operação, com botão Copiar campo a campo (placa, eixos, CPF, chaves da NF-e e do CT-e, peso, NCM, valor, adiantamento com aviso de 80%). Subcontratado em branco com aviso. Regras em `lib/dadosRepom.ts`, 3 testes.
+- Testes: 137 do gestor passando; build e lint sem erros.
+
+## Não feito
+- B3 (Fiscal uma operação por vez), A1 (cartões Cliente e carga, Rota e Prazo), B5, B6, B8, B9, B11.
+- CIOT usando o condutor (`efrete-ciot-operacao`): não alterei, porque emite CIOT real e não há como testar aqui sem Deno e sem conta de gestor.
+
+## emitir-mdfe v23: NÃO publicado
+- Diff v23 (repositório) x v26 (publicada, lida por leitura): o v23 mantém `percursos[].uf_percurso`, o pagamento sem o VPO e o telefone do responsável técnico. Só diferem o código do B4 e 3 textos (o repositório tem a redação nova de efrete e NSPEDÁGIO).
+- Hora da checagem: 04/11 02:51 em Brasília, dentro da janela de 22h às 6h.
+- Motivo de não publicar: a prévia (`previa: true`) é obrigatória antes e só roda com login de gestor; a conta de teste de gestor foi apagada por ordem do Pedro e eu não crio login em produção sem autorização. Sem a prévia, não há como garantir a volta automática.
+- Para publicar: criar uma conta de gestor de teste (ou usar a do próprio Pedro), rodar a prévia numa operação de teste, depois `node scripts/deploy-functions.js emitir-mdfe`; se falhar, republicar a v26 (código no histórico do git e na pasta temporária do diff).
+
+## Números da parte 3
+- Funções publicadas: 0 (emitir-cte v24 e emitir-mdfe v26 seguem no ar). Migrações aplicadas nesta parte: 0. Aguardando o Pedro: as mesmas da parte 2.

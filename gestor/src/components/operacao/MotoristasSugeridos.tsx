@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { formatMoney } from '@rbr/shared/format'
+import { alertasDeAlocacao, type AlertaAlocacao } from '../../lib/alertasAlocacao'
 
 // As funções do aviso de carga ainda não estão em shared/database.types.ts:
 // usamos o cliente sem tipos e tipos locais mínimos.
@@ -84,6 +85,32 @@ export default function MotoristasSugeridos({
   const [escolhido, setEscolhido] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
   const [soAprovados, setSoAprovados] = useState(true)
+  // B10: alertas do veículo e do titular da sugestão escolhida (CRLV, RNTRC, tara, eixos, UF, titular).
+  const [alertasEscolhido, setAlertasEscolhido] = useState<AlertaAlocacao[] | null>(null)
+  useEffect(() => {
+    const e = (lista ?? []).find((x) => `${x.pessoa_id}:${x.veiculo_id}` === escolhido)
+    if (!e) {
+      setAlertasEscolhido(null)
+      return
+    }
+    if (!e.veiculo_id) {
+      setAlertasEscolhido(alertasDeAlocacao(null, null))
+      return
+    }
+    let vivo = true
+    void (async () => {
+      const { data: v } = await supabase.from('veiculos').select('placa, crlv_exercicio, rntrc_status, rntrc_validade, tara_kg, quantidade_eixos, uf_licenciamento, is_veiculo_proprio, titular_id').eq('id', e.veiculo_id as string).maybeSingle()
+      let titular = null
+      if (v && v.is_veiculo_proprio === false && v.titular_id) {
+        const { data: t } = await supabase.from('pessoas').select('rntrc_numero, rntrc_status, rntrc_validade').eq('id', v.titular_id).maybeSingle()
+        titular = t
+      }
+      if (vivo) setAlertasEscolhido(alertasDeAlocacao(v, titular))
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [escolhido, lista])
   // Avisados nesta tela agora (mostra "Avisado agora" em vez da data).
   const [avisadosAgora, setAvisadosAgora] = useState<Set<string>>(new Set())
   // Tarefa 5: frete do parceiro abaixo do piso mínimo da operação (aviso antes de mandar a proposta).
@@ -261,6 +288,13 @@ export default function MotoristasSugeridos({
                       {String(txt)}
                     </div>
                   ))}
+                  {(alertasEscolhido ?? []).map((al) => (
+                    <div key={al.texto} className="text-[12px] rounded-lg px-2.5 py-1.5" style={al.gravidade === 'bloqueia' ? { background: '#fbe3e1', color: '#7d1a12' } : { background: '#fff0d6', color: '#7a5200' }}>
+                      {al.gravidade === 'bloqueia' ? '✕ ' : '! '}
+                      {al.texto}
+                    </div>
+                  ))}
+                  {alertasEscolhido !== null && alertasEscolhido.length === 0 && <div className="text-[12px] font-bold" style={{ color: '#1a6b3c' }}>✓ Veículo e titular com os dados que o CT-e, o MDF-e, o CIOT e o VPO exigem.</div>}
                   {(e.alertas ?? []).map((al) => (
                     <div key={al} className="text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: '#fff0d6', color: '#7a5200' }}>{al}</div>
                   ))}
