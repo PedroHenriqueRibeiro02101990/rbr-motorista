@@ -117,3 +117,25 @@ B3 (Fiscal uma operação por vez), B4 (condutor e titular separados), B5 (clien
 - **Volta (rollback):** se precisar voltar à v26, republique o código da v26 (guardado fora do repositório em `C:\Users\Aline\AppData\Local\Temp\mdfe-v26`) com `npx supabase functions deploy emitir-mdfe --project-ref kwscmegsfbtvlnyxougt --yes`.
 - **Não mexido:** CIOT (`efrete-ciot-operacao`) e as próximas partes (B3, A1, B5, B6, B8, B9, B11), para um único push depois.
 - **Números:** pushes 0, merges 0, deploys da Vercel 0 nesta parte; funções publicadas 1; migrações 0.
+
+## Parte 4 (final, modo autônomo): itens do front
+
+Feito, um commit por item (branch feat/atualizacao-parte-4; um único push no fim):
+- **B3** Fiscal: a esteira de emissão, a opção de devolver e as tabelas de referência passaram a ficar DENTRO do card da operação aberta, junto dos botões de emitir; a lista continua sem repetir a operação que está aberta. Pop-ups fiscais e botões de emitir/encerrar já mostram OP, cliente, rota e aviso de sucesso ou erro (parte 2).
+- **B11** Lista de Serviços: cada serviço mostra "Próximo: <passo> (<função>)". Regras em `lib/proximoPassoQuem.ts` (3 testes).
+- **B6** Cartão "Conferência entre a NF e os documentos" no detalhe da operação: alerta quando a NF não traz o peso (o sistema não inventa peso) e quando CT-e, MDF-e e NF divergem em peso, valor ou NCM. Regras em `lib/divergenciasDocumentos.ts` (5 testes, inclui o caso real de 4.000 kg x 8.721 kg).
+- **B5** Aviso quando o endereço da NF-e difere do cadastro do cliente (CEP, logradouro, número, bairro, cidade, UF). Só compara e avisa: não grava nem sobrescreve o cadastro. Regras em `lib/enderecoNf.ts` (4 testes).
+- **A1** Cartões da cotação por dentro no estilo aprovado: cartão branco com borda, títulos "CLIENTE E CARGA" e "PRAZO DE PAGAMENTO E VALIDADE", sem a faixa azul. Só apresentação: os campos e a gravação não mudaram.
+- **B9 (parcial)** Cartão "Documentos do motorista" com os PDFs que já existem (DACTE, DAMDFE, VPO, CIOT, averbação, apólice), abrindo um a um.
+
+Pulado, com motivo:
+- **B8** (registrar VPO e CIOT por upload do PDF): ler PDF exige uma biblioteca de PDF no navegador ou uma função nova no Supabase, e esta parte não pode publicar função nem adicionar dependências sem revisão.
+- **B9 completo** (um arquivo só e comprovante de eventos de condutor): idem, precisa de biblioteca para juntar PDFs.
+- **CIOT usando o condutor**: não mexer no CIOT, por ordem.
+
+## Decisões tomadas (sem perguntar, por estar o Pedro fora)
+1. **Quem faz o passo (B11):** o sistema não guarda quem assumiu cada passo, e não sei quem do time faz o quê. Mostrei a FUNÇÃO (Operação, Fiscal, Gestor, Motorista), não Pedro, Eduardo ou José. Reversível e sem dado novo.
+2. **B5 só avisa:** criar ou atualizar cliente a partir da NF mexeria em cadastro de produção. Escolhi só mostrar a divergência e deixar a decisão com o gestor, como o pedido diz ("não sobrescreva sem mostrar o aviso").
+3. **B6 sem CIOT e VPO:** o peso do CIOT e do VPO fica fora de `documentacao_operacao`; ler de outra tabela exigiria alterar o que o front monta de outras funções. Ficou só NF, CT-e e MDF-e.
+4. **B9 em lista:** um arquivo único exige biblioteca nova; entreguei a lista de PDFs e registrei o que falta.
+5. **Erro de build no meio:** um commit de B11 saiu com erro de tipo (campo faltando no tipo); corrigi no commit seguinte, antes de qualquer push.
