@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import RegrasFiscais, { type RegraFiscal } from '../components/operacao/RegrasFiscais'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -710,7 +710,8 @@ export default function Fiscal() {
     )
   }
 
-  const renderCard = (op: OperacaoEnriquecida) => {
+  // B3: o que é da operação aberta (esteira, devolver, referências) entra DENTRO do card dela, junto dos botões de emitir.
+  const renderCard = (op: OperacaoEnriquecida, dentro?: ReactNode) => {
       const docs = docsPorOperacao.get(op.id) ?? []
       const docsExibidos = TIPOS_EXIBIDOS.map((tipo) => docs.find((d) => d.tipo === tipo)).filter(
         (d): d is DocumentacaoOperacao => Boolean(d),
@@ -738,6 +739,7 @@ export default function Fiscal() {
 
       return (
         <div key={op.id} className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3" style={cardStyle}>
+          {dentro}
           {op.eh_teste && testeEncerrado({ nfeChave: op.nfChaveAcesso, cte: docCte, mdfe: docMdfe }) && (
             <div className="text-xs font-semibold rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-muted)' }}>
               Operação de teste · Teste encerrado (documentos cancelados)
@@ -1627,10 +1629,14 @@ export default function Fiscal() {
           largura={880}
         >
           <Fragment key={opAberta.id}>
-            <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
-            <DesfazerEPrazos />
-            <TrocaMotoristaVeiculo />
-            {renderCard(opAberta)}
+            {renderCard(
+              opAberta,
+              <>
+                <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
+                <DesfazerEPrazos />
+                <TrocaMotoristaVeiculo />
+              </>,
+            )}
           </Fragment>
         </PainelSobreposto>
       )}

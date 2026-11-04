@@ -1,3 +1,4 @@
+import { textoProximoPasso } from '../lib/proximoPassoQuem'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -29,7 +30,7 @@ type Cot = {
   created_at: string
   updated_at: string
 }
-type Op = { id: string; status: string; cotacao_id: string | null; cliente_id: string | null; eh_teste: boolean; updated_at: string }
+type Op = { id: string; status: string; cotacao_id: string | null; cliente_id: string | null; eh_teste: boolean; updated_at: string; pessoa_alocada_id?: string | null }
 type Cli = { id: string; razao_social: string | null; nome_fantasia: string | null }
 type Doc = { operacao_id: string; tipo: string; status: string }
 type Linha = { id: string; etapa: Etapa; cliente: string; rota: string; nota: string; valor: number | null; teste: boolean; para: string; cot?: Cot; dots: Dot[] }
@@ -350,7 +351,7 @@ export default function Servicos() {
     void (async () => {
       const [c, o] = await Promise.all([
         supabase.from('cotacoes').select(COLS_COT).in('status', ['rascunho', 'enviada']).is('cancelada_em', null).order('updated_at', { ascending: false }).limit(200),
-        supabase.from('operacoes').select('id, status, cotacao_id, cliente_id, eh_teste, updated_at').not('status', 'in', `(${ENCERRADAS.join(',')})`).is('deleted_at', null).order('updated_at', { ascending: false }).limit(200),
+        supabase.from('operacoes').select('id, status, cotacao_id, cliente_id, eh_teste, updated_at, pessoa_alocada_id').not('status', 'in', `(${ENCERRADAS.join(',')})`).is('deleted_at', null).order('updated_at', { ascending: false }).limit(200),
       ])
       if (!vivo) return
       if (c.error || o.error) {
@@ -377,7 +378,7 @@ export default function Servicos() {
             etapa: fiscal ? 'fiscal' : 'operacao',
             cliente: nomeCli.get(x.cliente_id ?? k?.cliente_id ?? '') ?? 'Cliente',
             rota: rota(k),
-            nota: STATUS_OPERACAO_LABEL[x.status] ?? x.status,
+            nota: [STATUS_OPERACAO_LABEL[x.status] ?? x.status, textoProximoPasso(x.status as string, Boolean(x.pessoa_alocada_id))].filter(Boolean).join(' · '),
             valor: k?.valor_total ?? null,
             teste: x.eh_teste,
             para: fiscal ? '/fiscal' : '/operacoes',

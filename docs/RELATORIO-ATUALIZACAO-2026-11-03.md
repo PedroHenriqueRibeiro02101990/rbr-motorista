@@ -103,3 +103,39 @@ B3 (Fiscal uma operação por vez), B4 (condutor e titular separados), B5 (clien
 
 ## Números da parte 3
 - Funções publicadas: 0 (emitir-cte v24 e emitir-mdfe v26 seguem no ar). Migrações aplicadas nesta parte: 0. Aguardando o Pedro: as mesmas da parte 2.
+
+---
+
+# Parte 4: publicação do emitir-mdfe (04/11, madrugada)
+
+- **Publicado:** `emitir-mdfe` v26 para **v27** (código v23 do repositório). Cada publicação do Supabase soma 1 à versão; o v23 é o nome interno do código. Hora: 03h Brasília, dentro da janela de 22h às 6h. Nenhuma outra função foi publicada (`emitir-cte` segue v24).
+- **Conta de teste:** `teste.gestor@rbrcargo.invalid` criada só em `pessoas` e `auth.users` para a prévia e apagada em seguida: 0 linhas nas duas tabelas, 4 outras contas de teste intactas, senha local removida. A primeira tentativa de exclusão expirou (confirmação sem resposta em 2 minutos); a segunda funcionou.
+- **Prévia antes de publicar (sem Deno):** rodei o código do repositório (v23) e o da versão publicada (v26) lado a lado, no computador, com o login do gestor de teste, na mesma operação de teste (`965ceb0d`). A prévia devolve antes de gravar ou de chamar a Focus, e o teste ainda bloqueava qualquer chamada a `focusnfe` (nenhuma tentativa). Resultado: payloads iguais, exceto o carimbo de hora (1 segundo) e a redação de um aviso (texto novo de efrete). Percurso `[]` (rota SP→SP), telefone do responsável técnico `1153977966` igual nas duas. A operação de teste não tem contrato de pagamento nem rota entre UFs não limítrofes, então percurso e pagamento sem VPO foram conferidos pelos testes automáticos (mesmo código da v26).
+- **Condutor:** simulando em memória um condutor (sem gravar nada), o v23 colocou nome e CPF dele no MDF-e; a v26 não. Sem condutor informado, nada muda.
+- **Depois de publicar:** a prévia na função publicada devolveu HTTP 200, `previa: true`, sem chamar a Focus, igual ao v23 local (a única diferença é um aviso que vem da trava real de operação de teste, que o teste local não tem).
+- **Observação da publicação:** o CLI do Supabase pediu confirmação explícita (`--yes`) para publicar em produção em modo agente. Usei `--yes` uma única vez, no comando, com a autorização do Pedro para esta publicação; o `scripts/deploy-functions.js` não foi alterado e, rodando sem `--yes`, falha com essa mensagem.
+- **Volta (rollback):** se precisar voltar à v26, republique o código da v26 (guardado fora do repositório em `C:\Users\Aline\AppData\Local\Temp\mdfe-v26`) com `npx supabase functions deploy emitir-mdfe --project-ref kwscmegsfbtvlnyxougt --yes`.
+- **Não mexido:** CIOT (`efrete-ciot-operacao`) e as próximas partes (B3, A1, B5, B6, B8, B9, B11), para um único push depois.
+- **Números:** pushes 0, merges 0, deploys da Vercel 0 nesta parte; funções publicadas 1; migrações 0.
+
+## Parte 4 (final, modo autônomo): itens do front
+
+Feito, um commit por item (branch feat/atualizacao-parte-4; um único push no fim):
+- **B3** Fiscal: a esteira de emissão, a opção de devolver e as tabelas de referência passaram a ficar DENTRO do card da operação aberta, junto dos botões de emitir; a lista continua sem repetir a operação que está aberta. Pop-ups fiscais e botões de emitir/encerrar já mostram OP, cliente, rota e aviso de sucesso ou erro (parte 2).
+- **B11** Lista de Serviços: cada serviço mostra "Próximo: <passo> (<função>)". Regras em `lib/proximoPassoQuem.ts` (3 testes).
+- **B6** Cartão "Conferência entre a NF e os documentos" no detalhe da operação: alerta quando a NF não traz o peso (o sistema não inventa peso) e quando CT-e, MDF-e e NF divergem em peso, valor ou NCM. Regras em `lib/divergenciasDocumentos.ts` (5 testes, inclui o caso real de 4.000 kg x 8.721 kg).
+- **B5** Aviso quando o endereço da NF-e difere do cadastro do cliente (CEP, logradouro, número, bairro, cidade, UF). Só compara e avisa: não grava nem sobrescreve o cadastro. Regras em `lib/enderecoNf.ts` (4 testes).
+- **A1** Cartões da cotação por dentro no estilo aprovado: cartão branco com borda, títulos "CLIENTE E CARGA" e "PRAZO DE PAGAMENTO E VALIDADE", sem a faixa azul. Só apresentação: os campos e a gravação não mudaram.
+- **B9 (parcial)** Cartão "Documentos do motorista" com os PDFs que já existem (DACTE, DAMDFE, VPO, CIOT, averbação, apólice), abrindo um a um.
+
+Pulado, com motivo:
+- **B8** (registrar VPO e CIOT por upload do PDF): ler PDF exige uma biblioteca de PDF no navegador ou uma função nova no Supabase, e esta parte não pode publicar função nem adicionar dependências sem revisão.
+- **B9 completo** (um arquivo só e comprovante de eventos de condutor): idem, precisa de biblioteca para juntar PDFs.
+- **CIOT usando o condutor**: não mexer no CIOT, por ordem.
+
+## Decisões tomadas (sem perguntar, por estar o Pedro fora)
+1. **Quem faz o passo (B11):** o sistema não guarda quem assumiu cada passo, e não sei quem do time faz o quê. Mostrei a FUNÇÃO (Operação, Fiscal, Gestor, Motorista), não Pedro, Eduardo ou José. Reversível e sem dado novo.
+2. **B5 só avisa:** criar ou atualizar cliente a partir da NF mexeria em cadastro de produção. Escolhi só mostrar a divergência e deixar a decisão com o gestor, como o pedido diz ("não sobrescreva sem mostrar o aviso").
+3. **B6 sem CIOT e VPO:** o peso do CIOT e do VPO fica fora de `documentacao_operacao`; ler de outra tabela exigiria alterar o que o front monta de outras funções. Ficou só NF, CT-e e MDF-e.
+4. **B9 em lista:** um arquivo único exige biblioteca nova; entreguei a lista de PDFs e registrei o que falta.
+5. **Erro de build no meio:** um commit de B11 saiu com erro de tipo (campo faltando no tipo); corrigi no commit seguinte, antes de qualquer push.

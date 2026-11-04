@@ -2756,9 +2756,9 @@ export default function Cotacao() {
               esquerda, pra separar visualmente das outras seções (igual ao preview aprovado). */}
           <div
             className="rounded-2xl border p-4 flex flex-col gap-3"
-            style={{ borderColor: 'var(--rbr-border)', borderLeft: '4px solid var(--rbr-navy)', background: 'var(--rbr-navy-tint)' }}
+            style={{ borderColor: 'var(--rbr-border)', background: '#fff' }}
           >
-          <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-navy)]">Cliente e documento fiscal</div>
+          <div className="text-[11px] font-extrabold tracking-[0.08em] text-[color:var(--rbr-muted)]">CLIENTE E CARGA</div>
           <div className="flex flex-col gap-2">
             <label className={labelClass}>Cliente *</label>
             <div className="flex gap-2 flex-wrap items-start">
@@ -3664,7 +3664,7 @@ export default function Cotacao() {
           {abaCotacao === 'padrao' && (
           <div
             className="rounded-2xl border p-4 flex flex-col gap-3"
-            style={{ borderColor: 'var(--rbr-border)', borderLeft: '4px solid var(--rbr-navy)', background: 'var(--rbr-navy-tint)' }}
+            style={{ borderColor: 'var(--rbr-border)', background: '#fff' }}
           >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <div>
@@ -4118,10 +4118,8 @@ export default function Cotacao() {
             {/* Condições comerciais — mesmos campos de forma/prazo de recebimento e validade
                 que existem em "Recebimento do cliente" (aba avançada), só que resumidos aqui
                 pra quem só usa a aba padrão. Ficam nos dois lugares, gravando no mesmo campo. */}
-            <div className="rounded-lg p-3.5 flex flex-col gap-3" style={{ background: 'var(--rbr-muted-bg)' }}>
-              <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">
-                Condições comerciais
-              </div>
+            <div className="rounded-2xl border p-4 flex flex-col gap-3 bg-white" style={{ borderColor: 'var(--rbr-border)' }}>
+              <div className="text-[11px] font-extrabold tracking-[0.08em] text-[color:var(--rbr-muted)]">PRAZO DE PAGAMENTO E VALIDADE</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass} style={{ marginBottom: 0 }}>Forma de recebimento</label>
