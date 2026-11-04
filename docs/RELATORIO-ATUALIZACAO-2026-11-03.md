@@ -103,3 +103,17 @@ B3 (Fiscal uma operação por vez), B4 (condutor e titular separados), B5 (clien
 
 ## Números da parte 3
 - Funções publicadas: 0 (emitir-cte v24 e emitir-mdfe v26 seguem no ar). Migrações aplicadas nesta parte: 0. Aguardando o Pedro: as mesmas da parte 2.
+
+---
+
+# Parte 4: publicação do emitir-mdfe (04/11, madrugada)
+
+- **Publicado:** `emitir-mdfe` v26 para **v27** (código v23 do repositório). Cada publicação do Supabase soma 1 à versão; o v23 é o nome interno do código. Hora: 03h Brasília, dentro da janela de 22h às 6h. Nenhuma outra função foi publicada (`emitir-cte` segue v24).
+- **Conta de teste:** `teste.gestor@rbrcargo.invalid` criada só em `pessoas` e `auth.users` para a prévia e apagada em seguida: 0 linhas nas duas tabelas, 4 outras contas de teste intactas, senha local removida. A primeira tentativa de exclusão expirou (confirmação sem resposta em 2 minutos); a segunda funcionou.
+- **Prévia antes de publicar (sem Deno):** rodei o código do repositório (v23) e o da versão publicada (v26) lado a lado, no computador, com o login do gestor de teste, na mesma operação de teste (`965ceb0d`). A prévia devolve antes de gravar ou de chamar a Focus, e o teste ainda bloqueava qualquer chamada a `focusnfe` (nenhuma tentativa). Resultado: payloads iguais, exceto o carimbo de hora (1 segundo) e a redação de um aviso (texto novo de efrete). Percurso `[]` (rota SP→SP), telefone do responsável técnico `1153977966` igual nas duas. A operação de teste não tem contrato de pagamento nem rota entre UFs não limítrofes, então percurso e pagamento sem VPO foram conferidos pelos testes automáticos (mesmo código da v26).
+- **Condutor:** simulando em memória um condutor (sem gravar nada), o v23 colocou nome e CPF dele no MDF-e; a v26 não. Sem condutor informado, nada muda.
+- **Depois de publicar:** a prévia na função publicada devolveu HTTP 200, `previa: true`, sem chamar a Focus, igual ao v23 local (a única diferença é um aviso que vem da trava real de operação de teste, que o teste local não tem).
+- **Observação da publicação:** o CLI do Supabase pediu confirmação explícita (`--yes`) para publicar em produção em modo agente. Usei `--yes` uma única vez, no comando, com a autorização do Pedro para esta publicação; o `scripts/deploy-functions.js` não foi alterado e, rodando sem `--yes`, falha com essa mensagem.
+- **Volta (rollback):** se precisar voltar à v26, republique o código da v26 (guardado fora do repositório em `C:\Users\Aline\AppData\Local\Temp\mdfe-v26`) com `npx supabase functions deploy emitir-mdfe --project-ref kwscmegsfbtvlnyxougt --yes`.
+- **Não mexido:** CIOT (`efrete-ciot-operacao`) e as próximas partes (B3, A1, B5, B6, B8, B9, B11), para um único push depois.
+- **Números:** pushes 0, merges 0, deploys da Vercel 0 nesta parte; funções publicadas 1; migrações 0.
