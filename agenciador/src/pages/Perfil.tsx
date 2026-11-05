@@ -6,6 +6,8 @@ import { IconLogOut } from '@rbr/shared/icons'
 import { MeusDados, StatusCadastro } from '@rbr/shared/cadastro'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import DocumentoIdentidade from '../components/DocumentoIdentidade'
+import LogoUpload from '../components/LogoUpload'
+import { MODULOS_RBR } from '../lib/flags'
 import { consultarCnpj, consultarCep, preencherVazios } from '@rbr/shared/consultaCadastro'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -306,6 +308,7 @@ export default function Perfil({
       <StatusCadastro pessoa={pessoa} onAtualizar={onRecarregar} />
       <DocumentoIdentidade pessoa={pessoa} onEnviado={onRecarregar} />
 
+      <LogoUpload pessoaId={pessoa.id} logoPath={(pessoa as { logo_path?: string | null }).logo_path} onMudou={onRecarregar} />
       <form
         onSubmit={handleSubmit}
         className="bg-white border rounded-[20px] p-[18px] flex flex-col gap-3"
@@ -452,7 +455,7 @@ export default function Perfil({
         </button>
       </form>
 
-      <section className="flex flex-col gap-2.5">
+      <section className={MODULOS_RBR ? "flex flex-col gap-2.5" : "hidden"}>
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Sua base de motoristas</div>
           {!importAberto && pessoa.aprovacao_status === 'aprovado' && (
