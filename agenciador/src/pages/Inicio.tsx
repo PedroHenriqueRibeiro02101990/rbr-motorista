@@ -9,6 +9,8 @@ import { StatusCadastro } from '@rbr/shared/cadastro'
 import PainelPendencias from '../components/PainelPendencias'
 import BaixarDocumentacao from '../components/BaixarDocumentacao'
 import ContratoAgenciador from '../components/ContratoAgenciador'
+import { MODULOS_RBR } from '../lib/flags'
+import FunilReal from '../components/FunilReal'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Operacao = Database['public']['Tables']['operacoes']['Row']
@@ -152,10 +154,11 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
         </div>
       )}
 
-      <ContratoAgenciador pessoaId={pessoa.id} />
+      {MODULOS_RBR && <ContratoAgenciador pessoaId={pessoa.id} />}
       <PainelPendencias />
+      <FunilReal pessoaId={pessoa.id} />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className={MODULOS_RBR ? "grid grid-cols-2 md:grid-cols-3 gap-3" : "hidden"}>
         <div
           className="bg-white border rounded-[16px] p-3.5"
           style={{ borderColor: 'var(--rbr-border)', boxShadow: '0 1px 2px rgba(18,23,61,0.03), 0 6px 18px rgba(18,23,61,0.05)' }}
@@ -209,7 +212,7 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
         </div>
       </Link>
 
-      <div className="text-[11px] font-bold tracking-wide text-[color:var(--rbr-muted)] uppercase mt-1">
+      <div className={MODULOS_RBR ? "text-[11px] font-bold tracking-wide text-[color:var(--rbr-muted)] uppercase mt-1" : "hidden"}>
         Cargas em andamento
       </div>
 
@@ -249,11 +252,11 @@ export default function Inicio({ pessoa, onRecarregar }: { pessoa: Pessoa; onRec
         })}
       </div>
 
-      <div className="text-[11px] font-bold tracking-wide text-[color:var(--rbr-muted)] uppercase mt-1">
+      <div className={MODULOS_RBR ? "text-[11px] font-bold tracking-wide text-[color:var(--rbr-muted)] uppercase mt-1" : "hidden"}>
         Onde está sua frota
       </div>
-      {!loading && <FrotaMap pontos={pontosMapa} height={320} />}
-      <div className="text-[11px] text-[color:var(--rbr-muted)] -mt-2">
+      {MODULOS_RBR && !loading && <FrotaMap pontos={pontosMapa} height={320} />}
+      <div className={MODULOS_RBR ? "text-[11px] text-[color:var(--rbr-muted)] -mt-2" : "hidden"}>
         Última localização conhecida via GPS do celular do motorista — não é uma posição ao vivo, atualiza quando ele abre o app.
       </div>
     </div>

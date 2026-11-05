@@ -9,4 +9,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node --test gestor/test/*.test.ts supabase/functions/_shared/*.test.ts supabase/functions/emitir-mdfe/*.test.ts shared/*.test.ts
+      - run: node --test gestor/test/*.test.ts supabase/functions/_shared/*.test.ts supabase/functions/emitir-mdfe/*.test.ts shared/*.test.ts agenciador/src/lib/*.test.ts

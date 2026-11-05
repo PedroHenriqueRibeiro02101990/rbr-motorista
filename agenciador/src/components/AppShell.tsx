@@ -3,6 +3,8 @@ import type { Database } from '@rbr/shared/database.types'
 import { IconHome, IconQuote, IconWallet, IconUsers, IconUser, IconLogOut } from '@rbr/shared/icons'
 import { initials } from '@rbr/shared/format'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
+import { SeloAgenciador } from './ui'
+import { logoPublico } from './LogoUpload'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 
@@ -11,6 +13,7 @@ const NAV = [
   { to: '/cotacoes', label: 'Cotações', Icon: IconQuote, end: false },
   { to: '/financeiro', label: 'Financeiro', Icon: IconWallet, end: false },
   { to: '/clientes', label: 'Clientes', Icon: IconUsers, end: false },
+  { to: '/operacoes', label: 'Operações', Icon: IconHome, end: false },
   { to: '/perfil', label: 'Perfil', Icon: IconUser, end: false },
 ]
 
@@ -87,6 +90,11 @@ export default function AppShell({
 
       {/* Main column */}
       <div className="flex-1 flex flex-col min-h-dvh">
+        <header className="flex items-center justify-between px-4 h-14 border-b md:px-10" style={{ borderColor: "var(--rbr-border)" }}>
+          <div className="flex items-center gap-2 md:hidden"><img src="/logo-192.png" alt="RBR Cargo" className="w-8 h-8 rounded-lg" /><span className="rbr-display font-bold text-[15px]">RBR Cargo</span></div>
+          <div className="hidden md:block" />
+          <SeloAgenciador nome={pessoa.nome} logoUrl={logoPublico((pessoa as { logo_path?: string | null }).logo_path)} />
+        </header>
         <main className="flex-1 overflow-y-auto pb-24 md:pb-10 mx-auto w-full max-w-[480px] md:max-w-none md:mx-0 md:px-10 md:py-8">
           {children}
         </main>
@@ -119,6 +127,15 @@ export default function AppShell({
         </nav>
       </div>
 
+      <a
+        href="https://wa.me/5511953977966?text=Ol%C3%A1%2C%20RBR!%20Sou%20agenciador%20parceiro."
+        target="_blank"
+        rel="noreferrer"
+        className="fixed bottom-24 right-4 md:bottom-5 z-40 px-4 py-2.5 rounded-full text-sm font-bold shadow-lg"
+        style={{ background: '#16a34a', color: '#fff' }}
+      >
+        Falar com a RBR
+      </a>
       <AjudaFlutuante app="agenciador" />
     </div>
   )
