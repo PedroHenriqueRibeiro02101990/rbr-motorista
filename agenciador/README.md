@@ -30,3 +30,6 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Demonstracao sem login
+Com `VITE_DEMO_AGENCIADOR=true` (somente no escopo Preview da Vercel), a rota `/demo` abre o painel com dados ficticios, sem gravar nada. Em producao a variavel nao existe e a rota cai no app normal.
