@@ -2,3 +2,25 @@
 @import "@rbr/shared/theme.css";
 /* shared/ fica fora do src/: sem isto o Tailwind não gera as classes usadas só lá (ex.: AuthTelas) */
 @source "../../shared";
+
+/* Modo escuro (segue o sistema). Os cartoes usam bg-white, entao a classe e remapeada aqui. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rbr-bg: #0e1230;
+    --rbr-border: #2a3166;
+    --rbr-muted: #a4abc9;
+    --rbr-muted-bg: #20275a;
+    --rbr-navy-tint: #171c45;
+    --rbr-navy: #aab4ff;
+    --rbr-navy-dark: #eef0ff;
+    --rbr-warning-bg: #4a3a1c;
+    --rbr-btn: #3a46a0;
+    color-scheme: dark;
+  }
+  .bg-white { background-color: #151a40 !important; }
+  input, select, textarea { background-color: #0e1230; color: #eef0ff; }
+}
+@keyframes rbr-pulse { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+.rbr-skeleton { background: var(--rbr-muted-bg); border-radius: 12px; animation: rbr-pulse 1.4s ease-in-out infinite; }
+.rbr-card { background: #fff; border: 1px solid var(--rbr-border); border-radius: 18px; box-shadow: 0 1px 2px rgba(18,23,61,.04); }
+@media (prefers-color-scheme: dark) { .rbr-card { background: #151a40; } }
