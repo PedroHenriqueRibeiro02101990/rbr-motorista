@@ -255,3 +255,10 @@ export function chaveCanonicaRota(p: Pick<PedidoRotaRepom, 'origem' | 'destino' 
 export function codigoRoteiroDe(hashHex: string): string {
   return ('R' + hashHex.replace(/[^0-9a-f]/gi, '').toUpperCase()).slice(0, 10)
 }
+
+const UF_POR_CODIGO: Record<string, string> = { '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO', '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA', '31': 'MG', '32': 'ES', '33': 'RJ', '35': 'SP', '41': 'PR', '42': 'SC', '43': 'RS', '50': 'MS', '51': 'MT', '52': 'GO', '53': 'DF' }
+/** UF a partir dos 2 primeiros dígitos do IBGE (a Repom exige o Estado junto do código). */
+export function ufDoIbge(ibge: string | number | null | undefined): string | null {
+  const d = String(ibge ?? '').replace(/\D/g, '')
+  return d.length === 7 ? (UF_POR_CODIGO[d.slice(0, 2)] ?? null) : null
+}

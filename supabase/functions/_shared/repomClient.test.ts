@@ -118,3 +118,9 @@ test('falha da Repom no fluxo devolve erro sem quebrar; eixos inválidos nem con
   const g = await pedagioPorRota({ ...entrada, eixos: 1 }, repoMemoria(), cli)
   assert.equal(g.ok, false)
 })
+
+test('UF pelo IBGE', () => {
+  assert.equal(r.ufDoIbge('3550308'), 'SP')
+  assert.equal(r.ufDoIbge('1801012'), null)
+  assert.equal(r.ufDoIbge(null), null)
+})
