@@ -19,6 +19,7 @@ import { Aviso, Botao } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
 import PedagioSugerido from '../components/cotacao/PedagioSugerido'
+import CalcularPedagioRepom from '@rbr/shared/CalcularPedagioRepom'
 import { CancelarCotacaoModal, ConfirmarConversaoModal, ProgramarOperacoesModal, rotuloOperacao, type ResumoConversao } from '../components/cotacao/ConversaoModais'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
 import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao, lerParametro, whatsappLink } from '../lib/financeiro'
@@ -3991,6 +3992,9 @@ export default function Cotacao() {
                     pedagioAtual={form.pedagio}
                     onUsar={(v) => setForm((f) => (f ? { ...f, pedagio: String(v) } : f))}
                   />
+                )}
+                {pracasPedagio.length === 0 && (
+                  <CalcularPedagioRepom cotacaoId={editingId} onAceitar={(v) => setForm((f) => (f ? { ...f, pedagio: String(v) } : f))} />
                 )}
               </div>
             </div>

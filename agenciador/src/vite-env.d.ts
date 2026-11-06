@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 interface ImportMetaEnv {
+  // Repom (roteirizacao de pedagio na cotacao). Desligada por padrao em todos os escopos.
+  readonly VITE_REPOM_ROTEIRIZACAO_HABILITADO?: string
   /** So no escopo Preview da Vercel: liga a rota /demo (dados ficticios, sem login). Em producao fica indefinida. */
   readonly VITE_DEMO_AGENCIADOR?: string
   /** Liga as telas fora do escopo atual (contrato gov.br, base de motoristas, frota etc.). Desligada por padrao. */
