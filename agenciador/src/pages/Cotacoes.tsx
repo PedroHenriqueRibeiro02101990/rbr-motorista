@@ -8,6 +8,7 @@ import { IconPlus, IconX, IconAlertTriangle } from '../icons-local'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import { useContratoAgenciador } from '../components/ContratoAgenciador'
 import DeclaracaoCarga from '../components/DeclaracaoCarga'
+import CalcularPedagioRepom from '@rbr/shared/CalcularPedagioRepom'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -863,6 +864,8 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
                 onChange={(e) => setForm((f) => ({ ...f, pedagio: e.target.value }))}
               />
             </label>
+            {/* Repom: só aparece com VITE_REPOM_ROTEIRIZACAO_HABILITADO=true */}
+            <CalcularPedagioRepom cotacaoId={form.id} onAceitar={(v) => setForm((f) => ({ ...f, pedagio: String(v) }))} />
             <label className="flex flex-col gap-1 text-xs font-semibold text-[color:var(--rbr-muted)]">
               Seguro/TAG (R$)
               <input
