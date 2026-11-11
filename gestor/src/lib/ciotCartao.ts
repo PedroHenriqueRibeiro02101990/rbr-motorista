@@ -34,7 +34,7 @@ const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', curren
 const ASSUNTOS: { id: string; titulo: string; origem: Origem; corrigir: Corrigir; casa: RegExp }[] = [
   { id: 'proprietario', titulo: 'Proprietário do veículo', origem: 'Cadastro', corrigir: 'cadastro_motorista', casa: /^Transportador .*(CPF|RNTRC)/ },
   { id: 'veiculos', titulo: 'Veículos', origem: 'Cadastro', corrigir: 'cadastro_veiculo', casa: /(Veículo|Implemento|veículo alocado)/ },
-  { id: 'motorista', titulo: 'Motorista', origem: 'Cadastro', corrigir: 'cadastro_motorista', casa: /^Motorista sem/ },
+  { id: 'motorista', titulo: 'Motorista', origem: 'Cadastro', corrigir: 'cadastro_motorista', casa: /^(Motorista sem|Falta o (CPF|número da CNH) do motorista)/ },
   { id: 'rota', titulo: 'Rota e carga', origem: 'Cotação', corrigir: 'cotacao', casa: /(Origem ou destino|NCM|peso bruto)/ },
   { id: 'notas', titulo: 'Notas fiscais', origem: 'Operação', corrigir: 'nfe', casa: /(NF-e)/ },
   { id: 'piso', titulo: 'Frete acima do piso ANTT', origem: 'Cotação', corrigir: 'cotacao', casa: /(iso mínimo|abaixo do piso)/ },

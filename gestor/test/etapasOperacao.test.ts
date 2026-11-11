@@ -149,3 +149,23 @@ test('B13: etapas que não se aplicam trazem o motivo', () => {
   assert.match(sem[0].motivo, /Sem pedágio/)
   assert.deepEqual(etapasNaoSeAplicam(op({ docs: [], pedagio: 50, frotaPropria: false })), [])
 })
+
+test('CT-e e MDF-e dispensados (demonstração só de CIOT/VPO): não viram etapa pendente', () => {
+  const d = op({ docs: [
+    { tipo: 'cte', status: 'pendente', exigido: false, dispensa_motivo: 'Fora do roteiro da demonstração' },
+    { tipo: 'mdfe', status: 'pendente', exigido: false, dispensa_motivo: 'Fora do roteiro da demonstração' },
+    { tipo: 'ciot', status: 'pendente', exigido: false, dispensa_motivo: 'Operação de teste (eh_teste)' },
+  ] })
+  const ids = etapasDaOperacao(d).map((e) => e.id)
+  assert.ok(!ids.includes('documento'), 'sem etapa de CT-e')
+  assert.ok(!ids.includes('mdfe'), 'sem etapa de MDF-e')
+  assert.ok(!ids.includes('averbacao_sompo'))
+})
+
+test('CIOT cancelado não conta como CIOT feito na linha do tempo', () => {
+  const base = op({ docs: [{ tipo: 'ciot', status: 'emitido', exigido: true }, { tipo: 'cte', status: 'emitido', exigido: true }, { tipo: 'mdfe', status: 'pendente', exigido: true }], ciot: '560000618470' })
+  const ciotEmitido = etapasDaOperacao(base).find((e) => e.id === 'ciot')
+  assert.equal(ciotEmitido?.estado, 'concluida')
+  const cancelado = { ...base, ciotVpo: { ...base.ciotVpo!, ciot_status: 'cancelado' } } as DetalheOperacao
+  assert.notEqual(etapasDaOperacao(cancelado).find((e) => e.id === 'ciot')?.estado, 'concluida')
+})

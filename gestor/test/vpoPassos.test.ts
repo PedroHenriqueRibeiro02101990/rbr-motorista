@@ -20,7 +20,10 @@ test('estado: nada, simulado, comprado, cancelado, e compra de novo depois de ca
 
 test('chamada com erro ou sem resposta não muda o estado', () => {
   assert.equal(estadoVpo([req('simular', { http_status: 400, erro: 'x' })]), 'nao_simulado')
-  assert.equal(estadoVpo([req('simular'), req('comprar', { http_status: null })]), 'simulado')
+  // Compra enviada sem nenhuma resposta (função cortada): não é sucesso nem erro; fica "em processamento" até o recibo decidir (vpoAcompanhar.test.ts).
+  const semResposta = req('comprar', { http_status: null })
+  assert.equal(estadoVpo([req('simular'), semResposta], Date.parse(semResposta.criado_em) + 1000), 'comprando')
+  assert.equal(estadoVpo([req('simular'), semResposta], Date.parse(semResposta.criado_em) + 10 * 60_000), 'nao_confirmado')
   assert.equal(estadoVpo([req('simular'), req('comprar'), req('cancelar', { http_status: 502, erro: 'caiu' })]), 'comprado')
 })
 

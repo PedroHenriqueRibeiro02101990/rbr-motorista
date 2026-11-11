@@ -1,0 +1,11 @@
+-- Operação de demonstração "DEMO NSTech" (homologação). JÁ APLICADA em 11/11/2026 (referência/reprodução).
+-- Clona a operação de teste 965ceb0d (cavalo RQW4D58, motorista fictício, titular com PIX/RNTRC 56802388, NF-e de teste, frete 8000 / adiantamento 3000)
+-- com início previsto em 20/11/2026 (o CIOT só cancela até 24 h antes do início). CT-e e MDF-e dispensados (fora do roteiro).
+-- Ids usados: cotação 359a6fb4-71fb-4d82-bc5c-cae0f204d6fc, operação 70cdfc53-2911-43d4-adb0-98e12d3cbd3d.
+-- PENDENTE: anexar o semirreboque RRD5B39 (o gatilho trg_fn_reboque_exige_aprovado exige veículo aprovado; hoje "aguardando_documentos").
+-- Depois de aprovado:
+--   insert into operacao_reboques (operacao_id, veiculo_id, ordem) values ('70cdfc53-2911-43d4-adb0-98e12d3cbd3d','2f568e42-7ab7-4a63-9f5c-ccec3789e845',1);
+-- Rollback (só a operação de demonstração, tudo por id):
+--   delete from operacao_nfes where operacao_id='70cdfc53-2911-43d4-adb0-98e12d3cbd3d';
+--   delete from vpo_requisicoes where operacao_id='70cdfc53-2911-43d4-adb0-98e12d3cbd3d';
+--   (demais tabelas filhas por operacao_id; depois operacoes e cotacoes pelos ids acima)

@@ -448,15 +448,15 @@ export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
   const avisos: string[] = []
   const ref = `RBR-${d.ambiente === 'homologacao' ? 'HML-' : ''}OP-${d.operacaoId.replace(/-/g, '').slice(0, 12).toUpperCase()}${d.tentativa && d.tentativa > 1 ? `-T${Math.floor(d.tentativa)}` : ''}`
 
-  if (!d.motorista?.cpf) bloqueios.push('Motorista sem CPF.')
-  if (!d.motorista?.cnh) bloqueios.push('Motorista sem número da CNH.')
-  if (!d.contratado?.cpfOuCnpj) bloqueios.push('Transportador (titular do veículo) sem CPF/CNPJ.')
-  if (!d.contratado?.rntrc) bloqueios.push('Transportador sem RNTRC.')
-  if (!d.contratado?.pix) bloqueios.push('Transportador sem chave Pix (o pagamento do CIOT vai por Pix).')
-  if (!d.tracao) bloqueios.push('Operação sem veículo alocado.')
-  if (!d.rota.origem || !d.rota.destino) bloqueios.push('Origem ou destino sem coordenadas (cidade não encontrada em municipios_coordenadas).')
-  if (!d.notas.length) bloqueios.push('Operação sem NF-e do cliente: suba o XML ou digite a chave no bloco "NF-e do cliente".')
-  if (!d.condicao?.valorTotal) bloqueios.push('Condição de pagamento do motorista sem valor do frete.')
+  if (!d.motorista?.cpf) bloqueios.push('Falta o CPF do motorista. Preencha em Cadastros > Motoristas.')
+  if (!d.motorista?.cnh) bloqueios.push('Falta o número da CNH do motorista. Preencha em Cadastros > Motoristas.')
+  if (!d.contratado?.cpfOuCnpj) bloqueios.push('Transportador (dono do veículo): falta o CPF ou CNPJ. Preencha no cadastro dele.')
+  if (!d.contratado?.rntrc) bloqueios.push('Transportador (dono do veículo): falta o RNTRC. Preencha no cadastro dele.')
+  if (!d.contratado?.pix) bloqueios.push('Falta o PIX do motorista (ou do dono do veículo): cadastre a chave Pix. O pagamento do CIOT vai por Pix.')
+  if (!d.tracao) bloqueios.push('Falta alocar o cavalo (veículo alocado) na operação.')
+  if (!d.rota.origem || !d.rota.destino) bloqueios.push('Origem ou destino sem localização: a cidade não foi encontrada. Confira o nome da cidade e a UF na cotação.')
+  if (!d.notas.length) bloqueios.push('Operação sem NF-e do cliente: falta a NF-e. Suba o XML ou digite a chave no bloco "NF-e do cliente".')
+  if (!d.condicao?.valorTotal) bloqueios.push('Falta o valor do frete na condição de pagamento do motorista.')
 
   const eixos = (d.tracao?.eixos ?? 0) + d.implementos.reduce((s, i) => s + (i.eixos ?? 0), 0)
   if (d.tracao && d.tracao.eixos == null) bloqueios.push(`Veículo ${d.tracao.placa} sem número de eixos no cadastro.`)
@@ -494,7 +494,7 @@ export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
   const pesoKg = dinheiro(d.notas.reduce((s, n) => s + (n.pesoKg ?? 0), 0))
   if (d.notas.length && !(pesoKg > 0)) bloqueios.push('NF-e do cliente sem peso bruto (PesoCarga do CIOT).')
   const ncm = soDigitos(d.carga.ncm ?? d.notas.find((n) => n.ncm)?.ncm ?? '').slice(0, 4)
-  if (ncm.length !== 4) bloqueios.push('Sem NCM da carga (4 primeiros dígitos).')
+  if (ncm.length !== 4) bloqueios.push('Falta o NCM da carga (informe os 4 primeiros dígitos).')
 
   const adiant = dinheiro(d.condicao?.adiantamento ?? 0)
   const quit = frete != null ? dinheiro(frete - adiant) : 0

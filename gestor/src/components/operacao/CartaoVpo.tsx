@@ -1,34 +1,39 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { NSPEDAGIO_HABILITADO } from '../../lib/efreteFlags'
 import { mensagemClara } from '../../lib/mensagemClara'
 import {
   ROTULO_ESTADO_VPO,
   estadoVpo,
+  pendenciaVpo,
   podeCancelar,
   podeComprar,
   registroDePassos,
   registroEmJson,
   type RequisicaoVpo,
 } from '../../lib/vpoPassos'
+import { acompanharRecibo, type RespostaAcompanhamento } from '../../lib/vpoAcompanhar'
 import { FaixaFixa } from './CartaoCiot'
 
 // Vale-pedágio (VPO) pelo NSPEDAGIO, ligado à operação (Edge Function nspedagio-vpo, só gestor, só homologação).
 // Aqui só se chama a função (nunca o NSPEDAGIO direto). Sem as credenciais no Vault a função responde com o provedor
 // SIMULADO, e o cartão avisa. O "Registro de passos" lê vpo_requisicoes (uma linha por chamada).
 
-type Resposta = { ok: boolean; erro?: string; simulado?: boolean; ambiente?: string; dados?: unknown; repetida?: boolean }
+type Resposta = { ok: boolean; erro?: string; simulado?: boolean; ambiente?: string; dados?: unknown; repetida?: boolean; em_processamento?: boolean; situacao?: RespostaAcompanhamento['situacao']; aviso?: string; semResposta?: boolean }
 
 async function chamar(body: Record<string, unknown>): Promise<Resposta> {
   const { data, error } = await supabase.functions.invoke<Resposta>('nspedagio-vpo', { body })
   if (error) {
     const ctx = (error as { context?: Response }).context
     const corpo = ctx ? ((await ctx.json().catch(() => null)) as Resposta | null) : null
-    return { ok: false, erro: corpo?.erro ?? 'Não consegui falar com o servidor agora. Tente de novo em instantes.' }
+    // Sem corpo = a resposta não voltou (cortada pelo tempo). A compra/cancelamento pode ter seguido no NSPEDAGIO.
+    return corpo ? { ...corpo, ok: false, erro: corpo.erro ?? 'Não consegui falar com o servidor agora. Tente de novo em instantes.' } : { ok: false, semResposta: true, erro: 'Não consegui falar com o servidor agora. Tente de novo em instantes.' }
   }
   return data ?? { ok: false, erro: 'O servidor não respondeu. Tente de novo em instantes.' }
 }
 
+// Placa que já passou na consulta de tag e na compra em homologação (ConectCar/Veloe ativos, 2 eixos).
+const PLACA_TAG_TESTE = 'GYI1732'
 const soDigitos = (v: string) => v.replace(/\D/g, '')
 const aaaammdd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '')
 const emDias = (n: number) => new Date(Date.now() + n * 86_400_000)
@@ -48,6 +53,15 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
   const [resumoSim, setResumoSim] = useState<string | null>(null)
   const [motivo, setMotivo] = useState('')
   const [novaPlaca, setNovaPlaca] = useState('')
+  const [, setRelogio] = useState(0)
+  const acompanhando = useRef<string | null>(null)
+  const vivo = useRef(true)
+  useEffect(() => {
+    vivo.current = true
+    return () => {
+      vivo.current = false
+    }
+  }, [])
   const [f, setF] = useState({
     origem: '3550308',
     destino: '3106200',
@@ -59,10 +73,40 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
     subcontratado: '',
   })
 
+  // Operação de teste: já deixa preenchidos o CNPJ da transportadora (RBR) e o documento do dono do cavalo (subcontratado).
+  // Só preenche o que ainda está vazio; se a leitura falhar, os campos continuam editáveis como antes.
+  useEffect(() => {
+    if (!ehTeste) return
+    let vivo = true
+    void (async () => {
+      try {
+        const [pf, op] = await Promise.all([
+          supabase.from('parametros_fiscais').select('cnpj').eq('ativo', true).maybeSingle(),
+          supabase.from('operacoes').select('veiculo_id').eq('id', operacaoId).maybeSingle(),
+        ])
+        let doc = ''
+        if (op.data?.veiculo_id) {
+          const v = await supabase.from('veiculos').select('titular_id').eq('id', op.data.veiculo_id).maybeSingle()
+          if (v.data?.titular_id) {
+            const p = await supabase.from('pessoas').select('cpf, cnpj').eq('id', v.data.titular_id).maybeSingle()
+            doc = soDigitos(String(p.data?.cnpj ?? p.data?.cpf ?? ''))
+          }
+        }
+        const cnpj = soDigitos(String(pf.data?.cnpj ?? ''))
+        if (vivo) setF((a) => ({ ...a, cnpjTransportadora: a.cnpjTransportadora || cnpj, subcontratado: a.subcontratado || doc }))
+      } catch {
+        /* sem preenchimento automático */
+      }
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [ehTeste, operacaoId])
+
   const carregar = useCallback(async () => {
     const { data, error } = await supabase
       .from('vpo_requisicoes')
-      .select('id, acao, ambiente, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro, criado_em, request_json, response_json')
+      .select('id, acao, ambiente, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro, criado_em, request_json, response_json, situacao, processando_desde')
       .eq('operacao_id', operacaoId)
       .order('criado_em', { ascending: true })
     if (error) setErro(`Não consegui ler o registro do vale-pedágio. ${mensagemClara(error, '')}`.trim())
@@ -72,7 +116,8 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
     void carregar()
   }, [carregar])
 
-  const estado = useMemo(() => estadoVpo(reqs ?? []), [reqs])
+  const estado = estadoVpo(reqs ?? [])
+  const pendencia = pendenciaVpo(reqs ?? [])
   const passos = useMemo(() => registroDePassos(reqs ?? []), [reqs])
   const pontos = () => [{ codIbge: soDigitos(f.origem) }, { codIbge: soDigitos(f.destino) }]
 
@@ -83,11 +128,56 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
     try {
       const r = await chamar({ ...body, operacao_id: operacaoId })
       if (typeof r.simulado === 'boolean') setSimulado(r.simulado)
-      if (!r.ok) setErro(mensagemClara(r.erro, 'O vale-pedágio recusou o pedido.'))
+      if (r.ok && r.em_processamento) setInfo('O NSPEDAGIO ainda está processando. A tela confere o recibo sozinha, sem comprar de novo.')
+      else if (!r.ok && r.semResposta && (nome === 'comprar' || nome === 'cancelar')) setInfo('A resposta demorou. Conferindo o recibo sozinho; nada será enviado de novo.')
+      else if (!r.ok) setErro(mensagemClara(r.erro, 'O vale-pedágio recusou o pedido.'))
       else if (sucesso) setInfo(sucesso(r))
       await carregar()
       onMudou?.()
       return r
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  // Compra/cancelamento que passou do limite da função: confere o recibo a cada 15 s por até 5 min.
+  const chaveEspera = pendencia && !pendencia.expirou ? `${pendencia.id}:${pendencia.acao}` : null
+  useEffect(() => {
+    if (!chaveEspera || !pendencia || acompanhando.current === chaveEspera) return
+    acompanhando.current = chaveEspera
+    const { acao: esperando, desde } = pendencia
+    void (async () => {
+      const desfecho = await acompanharRecibo({
+        consultar: async () => (await chamar({ acao: 'recibo', aguardando: esperando, operacao_id: operacaoId })) as RespostaAcompanhamento,
+        esperar: (ms) => new Promise((ok) => setTimeout(ok, ms)),
+        agora: () => Date.now(),
+        desde,
+        interrompido: () => !vivo.current,
+      })
+      acompanhando.current = null
+      if (!vivo.current || desfecho === 'interrompido') return
+      if (desfecho === 'concluida') setInfo('Vale-pedágio comprado (homologação). O recibo apareceu.')
+      else if (desfecho === 'cancelada') setInfo('Vale-pedágio cancelado.')
+      await carregar()
+      setRelogio((n) => n + 1)
+      onMudou?.()
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveEspera, operacaoId])
+
+  // "Não confirmado": uma conferência manual do recibo (nunca compra nem cancela de novo).
+  async function consultarDeNovo() {
+    if (!pendencia) return
+    setOcupado('conferir')
+    setErro(null)
+    try {
+      const r = (await chamar({ acao: 'recibo', aguardando: pendencia.acao, operacao_id: operacaoId })) as Resposta
+      if (r.situacao === 'concluida') setInfo('Vale-pedágio comprado (homologação). O recibo apareceu.')
+      else if (r.situacao === 'cancelada') setInfo('Vale-pedágio cancelado.')
+      else if (!r.ok) setErro(mensagemClara(r.erro, 'Não consegui conferir o recibo agora. Tente de novo.'))
+      else setInfo('Ainda não apareceu no NSPEDAGIO. Tente consultar de novo daqui a pouco.')
+      await carregar()
+      onMudou?.()
     } finally {
       setOcupado(null)
     }
@@ -167,6 +257,19 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
         {erro && <div className="text-xs text-red-700" role="alert">{erro}</div>}
         {info && <div className="text-xs text-green-800" role="status">{info}</div>}
         {resumoSim && <div className="text-xs">Simulação: {resumoSim}</div>}
+        {(estado === 'comprando' || ocupado === 'comprar') && (
+          <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">Comprando o vale-pedágio, isso pode levar alguns minutos. Não feche esta tela e não compre de novo.</div>
+        )}
+        {(estado === 'cancelando' || ocupado === 'cancelar') && (
+          <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">Cancelando o vale-pedágio, isso pode levar alguns minutos.</div>
+        )}
+        {estado === 'nao_confirmado' && (
+          <div className="text-xs px-2 py-1.5 rounded bg-amber-50 text-amber-900 flex items-center gap-2 flex-wrap" role="status">
+            <span className="font-bold">Não confirmado. Consulte de novo.</span>
+            <span>{pendencia?.acao === 'cancelar' ? 'O cancelamento ainda não foi confirmado.' : 'O recibo ainda não apareceu; nada foi comprado de novo.'}</span>
+            <button className="text-xs font-bold px-3 py-1 rounded-lg border" disabled={!!ocupado} onClick={() => void consultarDeNovo()}>{ocupado === 'conferir' ? 'Consultando…' : 'Consultar de novo'}</button>
+          </div>
+        )}
 
         <details className="text-xs">
           <summary className="cursor-pointer font-semibold">Dados da rota e do veículo</summary>
@@ -177,6 +280,11 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
             <label>Eixos (cavalo + carreta)<input className={campo} inputMode="numeric" value={f.eixos} onChange={(e) => setF({ ...f, eixos: e.target.value })} /></label>
             <label>Início (AAAAMMDD)<input className={campo} value={f.inicio} onChange={(e) => setF({ ...f, inicio: e.target.value })} /></label>
             <label>Fim (AAAAMMDD, até 15 dias)<input className={campo} value={f.fim} onChange={(e) => setF({ ...f, fim: e.target.value })} /></label>
+            {ehTeste && (
+              <button type="button" className="col-span-2 text-xs font-bold px-3 py-1 rounded-lg border" onClick={() => setF({ ...f, placa: PLACA_TAG_TESTE, eixos: '5' })}>
+                Usar a placa de teste com tag ativa ({PLACA_TAG_TESTE})
+              </button>
+            )}
             <label>CNPJ da transportadora<input className={campo} value={f.cnpjTransportadora} onChange={(e) => setF({ ...f, cnpjTransportadora: e.target.value })} /></label>
             <label>CPF/CNPJ do subcontratado<input className={campo} value={f.subcontratado} onChange={(e) => setF({ ...f, subcontratado: e.target.value })} /></label>
           </div>
@@ -185,7 +293,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
         <div className="flex gap-1.5 flex-wrap">
           <button className={botao} disabled={!!ocupado} onClick={() => void simular()}>{ocupado === 'simular' ? 'Simulando…' : 'Simular'}</button>
           <button className={botao} disabled={!!ocupado || !f.placa} onClick={() => void consultarTag()}>Consultar tag</button>
-          <button className={botao} disabled={!!ocupado || !podeComprar(estado)} onClick={comprar} title={podeComprar(estado) ? '' : 'Simule primeiro (e não pode haver compra ativa).'}>Comprar</button>
+          <button className={botao} disabled={!!ocupado || !podeComprar(estado) || !!pendencia} onClick={comprar} title={podeComprar(estado) ? '' : 'Simule primeiro (e não pode haver compra ativa).'}>Comprar</button>
           <button className={botao} disabled={!!ocupado || estado !== 'comprado'} onClick={() => void recibo()}>Reemitir recibo</button>
         </div>
 

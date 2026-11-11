@@ -14,15 +14,24 @@ export type RequisicaoVpo = {
   criado_em: string
   request_json?: unknown
   response_json?: unknown
+  situacao?: string | null // 'em_processamento' enquanto o NSPEDAGIO ainda não concluiu (compra/cancelamento demorados)
+  processando_desde?: string | null
 }
 
-export type EstadoVpo = 'nao_simulado' | 'simulado' | 'comprado' | 'cancelado'
+// Quanto a tela espera pelo recibo (mesmos valores de supabase/functions/_shared/vpoAndamento.ts).
+export const ESPERA_MAXIMA_MS = 5 * 60_000
+export const INTERVALO_RECIBO_MS = 15_000
+
+export type EstadoVpo = 'nao_simulado' | 'simulado' | 'comprando' | 'comprado' | 'cancelando' | 'cancelado' | 'nao_confirmado'
 
 export const ROTULO_ESTADO_VPO: Record<EstadoVpo, string> = {
   nao_simulado: 'Não simulado',
   simulado: 'Simulado',
+  comprando: 'Comprando…',
   comprado: 'Comprado',
+  cancelando: 'Cancelando…',
   cancelado: 'Cancelado',
+  nao_confirmado: 'Não confirmado',
 }
 
 export const ROTULO_ACAO_VPO: Record<string, string> = {
@@ -38,7 +47,20 @@ export const ROTULO_ACAO_VPO: Record<string, string> = {
 // Chamada que o NSPEDAGIO aceitou. Linha sem resposta ainda (http_status nulo) não conta.
 export const deuCerto = (r: RequisicaoVpo) => r.erro == null && r.http_status != null && r.http_status >= 200 && r.http_status < 300
 
-export function estadoVpo(reqs: RequisicaoVpo[]): EstadoVpo {
+// Compra/cancelamento que o NSPEDAGIO ainda não concluiu: marcada pela função, ou enviada sem nenhuma resposta nem erro
+// (a função pode ter sido cortada antes de marcar). A espera conta a partir de processando_desde (ou do envio).
+export type PendenciaVpo = { id: string; acao: 'comprar' | 'cancelar'; desde: number; expirou: boolean }
+export function pendenciaVpo(reqs: RequisicaoVpo[], agora = Date.now()): PendenciaVpo | null {
+  const lentas = reqs.filter((r) => (r.acao === 'comprar' || r.acao === 'cancelar') && (r.situacao === 'em_processamento' || (r.situacao == null && r.http_status == null && r.erro == null)))
+  if (!lentas.length) return null
+  const r = [...lentas].sort((a, b) => b.criado_em.localeCompare(a.criado_em))[0]
+  const desde = new Date(r.processando_desde ?? r.criado_em).getTime()
+  return { id: r.id, acao: r.acao as 'comprar' | 'cancelar', desde, expirou: agora - desde > ESPERA_MAXIMA_MS }
+}
+
+export function estadoVpo(reqs: RequisicaoVpo[], agora = Date.now()): EstadoVpo {
+  const pend = pendenciaVpo(reqs, agora)
+  if (pend) return pend.expirou ? 'nao_confirmado' : pend.acao === 'comprar' ? 'comprando' : 'cancelando'
   const ordenadas = [...reqs].sort((a, b) => a.criado_em.localeCompare(b.criado_em))
   let estado: EstadoVpo = 'nao_simulado'
   for (const r of ordenadas) {
@@ -56,6 +78,7 @@ export type Passo = { id: string; quando: string; titulo: string; resultado: 'ok
 
 export function passoDe(r: RequisicaoVpo): Passo {
   const titulo = ROTULO_ACAO_VPO[r.acao] ?? r.acao
+  if (r.situacao === 'em_processamento') return { id: r.id, quando: r.criado_em, titulo, resultado: 'andamento', detalhe: 'Em processamento no NSPEDAGIO; a tela confere o recibo sozinha.' }
   if (r.http_status == null && r.erro == null) return { id: r.id, quando: r.criado_em, titulo, resultado: 'andamento', detalhe: 'Enviado; sem resposta registrada.' }
   if (!deuCerto(r)) return { id: r.id, quando: r.criado_em, titulo, resultado: 'erro', detalhe: r.erro ?? `NSPEDAGIO respondeu HTTP ${r.http_status}.` }
   const partes: string[] = []

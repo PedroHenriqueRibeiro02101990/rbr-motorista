@@ -157,7 +157,10 @@ export function etapasDaOperacao(d: DetalheOperacao): Etapa[] {
   const rastreio = docPor(d, 'wialon')
   if (rastreio && rastreio.exigido) add('rastreio', 'Rastreamento por satélite', estadoDoc(rastreio))
 
-  const cteMdfe = usaCteMdfe(d)
+  // CT-e/MDF-e dispensados de propósito (ex.: operação de demonstração só do CIOT e do vale-pedágio) não viram etapa pendente.
+  const cteDoc = docPor(d, 'cte')
+  const cteDispensado = !!cteDoc && dispensado(cteDoc) && cteDoc.status !== 'emitido'
+  const cteMdfe = usaCteMdfe(d) && !cteDispensado
   if (cteMdfe) {
     add('documento', 'CT-e', estadoDoc(docPor(d, 'cte')))
     const atm = docPor(d, 'atm')
@@ -173,13 +176,14 @@ export function etapasDaOperacao(d: DetalheOperacao): Etapa[] {
               : 'pendente'
       add('averbacao_allianz', 'Averbação Allianz (RCTR-C) - CT-e', est)
     }
-  } else {
+  } else if (!cteDispensado) {
     add('documento', 'NFS-e', estadoDoc(docPor(d, 'nfse')))
   }
 
   if (ciotAplicavel(d) || vpoAplicavel(d)) {
     const v = d.ciotVpo
-    const ciotOk = !ciotAplicavel(d) || CIOT_OK(v?.ciot)
+    // CIOT cancelado não conta como feito (o número antigo continua gravado na operação).
+    const ciotOk = !ciotAplicavel(d) || (CIOT_OK(v?.ciot) && v?.ciot_status !== 'cancelado')
     const vpoOk = !vpoAplicavel(d) || !!(v?.vpo_idvpo ?? '').trim()
     add('ciot', ciotAplicavel(d) && vpoAplicavel(d) ? 'CIOT e vale-pedágio' : ciotAplicavel(d) ? 'CIOT' : 'Vale-pedágio', ciotOk && vpoOk ? 'concluida' : 'pendente')
   }

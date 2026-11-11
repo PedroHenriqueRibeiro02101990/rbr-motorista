@@ -275,6 +275,17 @@ async function garantirCadastros(ctx: Contexto): Promise<{ ok: true; feitos: str
   return { ok: true, feitos };
 }
 
+// Espelha o estado real do CIOT no documento "ciot" da aba Fiscal (documentacao_operacao). Antes ficava sempre "pendente".
+// Nunca derruba a ação principal: a efrete já respondeu, o que importa é o pedido em efrete_ciot_pedidos.
+async function espelharDocumentoCiot(operacaoId: string, campos: Record<string, unknown>) {
+  try {
+    const { error } = await admin.from("documentacao_operacao").update({ provedor: "efrete", ambiente: AMBIENTE, atualizado_em: new Date().toISOString(), ...campos }).eq("operacao_id", operacaoId).eq("tipo", "ciot");
+    if (error) console.error("[efrete-ciot-operacao] documento ciot não atualizado:", error.message);
+  } catch (e) {
+    console.error("[efrete-ciot-operacao] documento ciot não atualizado:", e instanceof Error ? e.message : String(e));
+  }
+}
+
 function repositorio(operacaoId: string, previa: PreviaCiot, ator: Ator, confirmadoPorNome: string): RepositorioPedidos {
   return {
     async obter(ref) {
@@ -350,9 +361,11 @@ function repositorio(operacaoId: string, previa: PreviaCiot, ator: Ator, confirm
         { onConflict: "operacao_id" },
       );
       if (e3) throw new Error(`CIOT emitido, mas não consegui copiar para a operação: ${e3.message}`);
+      await espelharDocumentoCiot(operacaoId, { status: "emitido", numero_documento: juntarCiot(c.numero, c.verificador), emitido_em: agora, mensagem_erro: null, encerrado_em: null });
     },
     async marcarErro(ref, mensagem) {
       await admin.from("efrete_ciot_pedidos").update({ status: "erro", ultimo_erro: mensagem.slice(0, 1000), atualizado_em: new Date().toISOString() }).eq("id_operacao_cliente", ref);
+      await espelharDocumentoCiot(operacaoId, { status: "erro", mensagem_erro: traduzirErroEfrete(mensagem).slice(0, 500) });
     },
   };
 }
@@ -480,6 +493,7 @@ Deno.serve(async (req: Request) => {
       await admin.from("efrete_ciot_pedidos").update({ status: "cancelado", cancelado_em: agora, cancelamento_protocolo: r.dados.protocolo, cancelamento_motivo: motivo, atualizado_em: agora }).eq("id", p.id);
       await admin.from("efrete_ciot_pagamentos").update({ status: "cancelado", atualizado_em: agora }).eq("pedido_id", p.id);
       await admin.from("operacao_ciot_vpo").update({ ciot_status: "cancelado", ciot_cancelado_em: agora }).eq("operacao_id", operacaoId);
+      await espelharDocumentoCiot(operacaoId, { status: "cancelado", mensagem_erro: null });
       return json({ ok: true, protocolo: r.dados.protocolo, data: r.dados.data });
     }
     if (acao === "encerrar") {
@@ -491,6 +505,7 @@ Deno.serve(async (req: Request) => {
       const agora = new Date().toISOString();
       await admin.from("efrete_ciot_pedidos").update({ status: "encerrado", encerrado_em: agora, encerramento_protocolo: r.dados.protocolo, atualizado_em: agora }).eq("id", p.id);
       await admin.from("operacao_ciot_vpo").update({ ciot_status: "encerrado", ciot_encerrado_em: agora }).eq("operacao_id", operacaoId);
+      await espelharDocumentoCiot(operacaoId, { status: "emitido", encerrado_em: agora });
       return json({ ok: true, protocolo: r.dados.protocolo, versao });
     }
     return json({ ok: false, motivo: "Ação desconhecida." }, 400);
