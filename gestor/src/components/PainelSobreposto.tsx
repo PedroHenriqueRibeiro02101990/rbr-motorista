@@ -22,7 +22,7 @@ export function PainelSobreposto({
   onFechar: () => void
   largura?: number
   rodape?: boolean
-  // Linhas extras do cabeçalho (resumo, navegação). O cabeçalho inteiro fica fixo no topo ao rolar o painel.
+  // Linhas extras do cabeçalho (resumo, navegação). O cabeçalho rola junto com o painel (não é fixo).
   fixo?: ReactNode
   cartaoProps?: HTMLAttributes<HTMLDivElement>
   // Modo página (visual aprovado da Cotação): ocupa a área ao lado do menu, sem fundo escuro nem desfoque. O conteúdo e o fechamento são os mesmos.
@@ -67,7 +67,8 @@ export function PainelSobreposto({
           maxWidth: largura,
         }}
       >
-        <div className="sticky top-0 z-10 -mx-[18px] -mt-[18px] px-[18px] pt-[18px] pb-3 md:rounded-t-[20px] flex flex-col gap-2.5 border-b" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-canvas)' }}>
+        {/* O cabeçalho rola junto com o conteúdo (não fica fixo): nada cobre o início da tela. Fechar: X aqui, botão Fechar no fim e Esc. */}
+        <div className="-mx-[18px] -mt-[18px] px-[18px] pt-[18px] pb-3 md:rounded-t-[20px] flex flex-col gap-2.5 border-b" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-canvas)' }}>
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2.5 flex-wrap">
             <button type="button" onClick={onFechar} className="md:hidden text-xs font-bold px-2.5 py-1.5 rounded-lg border" style={{ borderColor: 'var(--rbr-border)' }}>

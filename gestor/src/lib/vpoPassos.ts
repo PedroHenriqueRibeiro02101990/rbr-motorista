@@ -97,7 +97,9 @@ const CHAVE_SENSIVEL = /token|secret|senha|password|authorization|client_?id|has
 function limpar(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(limpar)
   if (v && typeof v === 'object') {
-    return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, CHAVE_SENSIVEL.test(k) ? '***' : limpar(x)]))
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, CHAVE_SENSIVEL.test(k) ? '***' : k === 'recibo' && typeof x === 'string' && x.length > 200 ? '[PDF do recibo omitido]' : limpar(x)]),
+    )
   }
   return v
 }

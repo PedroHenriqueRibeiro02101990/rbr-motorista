@@ -14,7 +14,9 @@ import {
   type RequisicaoVpo,
 } from '../../lib/vpoPassos'
 import { acompanharRecibo, type RespostaAcompanhamento } from '../../lib/vpoAcompanhar'
-import { FaixaFixa } from './CartaoCiot'
+import { seloVale, type FormularioVale } from '../../lib/modoDemonstracao'
+import { faltamCaracteres, motivoValido } from '../../lib/ciotCartao'
+import { FaixaFixa, Modal } from './CartaoCiot'
 
 // Vale-pedágio (VPO) pelo NSPEDAGIO, ligado à operação (Edge Function nspedagio-vpo, só gestor, só homologação).
 // Aqui só se chama a função (nunca o NSPEDAGIO direto). Sem as credenciais no Vault a função responde com o provedor
@@ -40,13 +42,14 @@ const aaaammdd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '')
 const emDias = (n: number) => new Date(Date.now() + n * 86_400_000)
 
 // demo = modo de demonstração: dados da rota sempre à vista, placa de teste (GYI1732) já preenchida e aviso de espera de 1 a 3 minutos.
-export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void }
+// inicial: valores de partida do formulário na demonstração (vêm da operação); onDados devolve o que o formulário tem agora, para a tabela "Dado enviado" ler a MESMA fonte.
+export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void; inicial?: Partial<FormularioVale>; onDados?: (f: FormularioVale) => void }
 export default function CartaoVpo(props: PropsCartaoVpo) {
   if (!NSPEDAGIO_HABILITADO) return null
   return <CartaoVpoAtivo key={props.operacaoId} {...props} />
 }
 
-function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca }: PropsCartaoVpo) {
+function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca, inicial, onDados }: PropsCartaoVpo) {
   const [reqs, setReqs] = useState<RequisicaoVpo[] | null>(null)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -55,6 +58,8 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
   const [resumoSim, setResumoSim] = useState<string | null>(null)
   const [motivo, setMotivo] = useState('')
   const [novaPlaca, setNovaPlaca] = useState('')
+  const [confirmandoCompra, setConfirmandoCompra] = useState(false)
+  const [cancelandoVale, setCancelandoVale] = useState(false)
   const [, setRelogio] = useState(0)
   const acompanhando = useRef<string | null>(null)
   const vivo = useRef(true)
@@ -65,12 +70,12 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
     }
   }, [])
   const [f, setF] = useState({
-    origem: '3550308',
-    destino: '3106200',
-    placa: demo ? PLACA_TAG_TESTE : (placa ?? ''),
-    eixos: '5',
-    inicio: aaaammdd(emDias(1)),
-    fim: aaaammdd(emDias(5)),
+    origem: inicial?.origem || '3550308',
+    destino: inicial?.destino || '3106200',
+    placa: inicial?.placa || (demo ? PLACA_TAG_TESTE : (placa ?? '')),
+    eixos: inicial?.eixos || '5',
+    inicio: inicial?.inicio || aaaammdd(emDias(1)),
+    fim: inicial?.fim || aaaammdd(emDias(5)),
     cnpjTransportadora: '',
     subcontratado: '',
   })
@@ -105,10 +110,15 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
     }
   }, [ehTeste, operacaoId])
 
+  useEffect(() => {
+    onDados?.({ origem: f.origem, destino: f.destino, placa: f.placa, eixos: f.eixos, inicio: f.inicio, fim: f.fim })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.origem, f.destino, f.placa, f.eixos, f.inicio, f.fim])
+
   const carregar = useCallback(async () => {
     const { data, error } = await supabase
       .from('vpo_requisicoes')
-      .select('id, acao, ambiente, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro, criado_em, request_json, response_json, situacao, processando_desde')
+      .select('id, acao, ambiente, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro, criado_em, request_json, situacao, processando_desde')
       .eq('operacao_id', operacaoId)
       .order('criado_em', { ascending: true })
     if (error) setErro(`Não consegui ler o registro do vale-pedágio. ${mensagemClara(error, '')}`.trim())
@@ -196,7 +206,11 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
     })
   const consultarTag = () => acao('consultar-tag', { acao: 'consultar-tag', placa: f.placa }, () => 'Tag consultada.')
   const comprar = () => {
+    if (demo) return setConfirmandoCompra(true)
     if (!window.confirm('Comprar o vale-pedágio de HOMOLOGAÇÃO desta operação de teste?')) return
+    executarCompra()
+  }
+  const executarCompra = () => {
     void acao(
       'comprar',
       {
@@ -216,18 +230,47 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
     )
   }
   const cancelar = () => {
+    if (demo) return setCancelandoVale(true)
     if (!motivo.trim()) return setErro('Escreva o motivo do cancelamento.')
     if (!window.confirm('Cancelar o vale-pedágio desta operação?')) return
     void acao('cancelar', { acao: 'cancelar', confirmar: true, motivo }, () => 'Cancelamento enviado.')
+  }
+  // Demonstração: confirmação em janela do sistema (mesmo padrão do cancelamento do CIOT), motivo obrigatório de 15+ caracteres.
+  async function confirmarCancelamentoDemo() {
+    const r = await acao('cancelar', { acao: 'cancelar', confirmar: true, motivo: motivo.trim() }, () => 'Cancelamento enviado.')
+    if (r?.ok) {
+      setCancelandoVale(false)
+      setMotivo('')
+    }
   }
   const trocarPlaca = () => {
     if (!novaPlaca.trim() || !motivo.trim()) return setErro('Informe a nova placa e o motivo.')
     void acao('trocar-placa', { acao: 'trocar-placa', confirmar: true, placa: novaPlaca, motivo }, () => 'Placa trocada.')
   }
   const recibo = () => acao('recibo', { acao: 'recibo' }, () => 'Recibo reemitido (veja o registro abaixo).')
+  // O PDF do recibo só trafega na resposta (nunca é gravado no banco nem no registro de passos).
+  async function baixarReciboPdf() {
+    const r = await acao('recibo', { acao: 'recibo' })
+    if (!r?.ok) return
+    const d = r.dados as { pdfBase64?: string | null; numeroViagem?: string | null; idVpoAntt?: string | null } | undefined
+    if (!d?.pdfBase64) {
+      setErro('O NSPEDÁGIO não devolveu o PDF do recibo.')
+      return
+    }
+    const bytes = Uint8Array.from(atob(d.pdfBase64), (c) => c.charCodeAt(0))
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `recibo-vale-${d.idVpoAntt ?? d.numeroViagem ?? operacaoId.slice(0, 8)}.pdf`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+    setInfo('Recibo em PDF baixado.')
+  }
 
-  function baixarJson() {
-    const url = URL.createObjectURL(new Blob([registroEmJson(operacaoId, reqs ?? [])], { type: 'application/json' }))
+  async function baixarJson() {
+    // As respostas completas só são lidas aqui (são pesadas e a tela não precisa delas).
+    const { data } = await supabase.from('vpo_requisicoes').select('id, acao, ambiente, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro, criado_em, request_json, response_json, situacao, processando_desde').eq('operacao_id', operacaoId).order('criado_em', { ascending: true })
+    const url = URL.createObjectURL(new Blob([registroEmJson(operacaoId, ((data ?? reqs ?? []) as unknown) as RequisicaoVpo[])], { type: 'application/json' }))
     const a = document.createElement('a')
     a.href = url
     a.download = `vpo-registro-${operacaoId.slice(0, 8)}.json`
@@ -254,7 +297,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
       <div className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Vale-Pedágio (VPO){placa ? ` · ${placa}` : ''}</div>
-          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100" data-estado={estado}>{ROTULO_ESTADO_VPO[estado]}</span>
+          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100" data-estado={estado}>{demo ? seloVale(estado, resumoSim != null || (reqs ?? []).some((r) => r.acao === 'simular' && deuCerto(r))) : ROTULO_ESTADO_VPO[estado]}</span>
         </div>
         {simulado && <div className="text-xs font-bold px-2 py-1 rounded bg-amber-100 text-amber-900">SIMULADO, não é real: as credenciais do NSPEDAGIO não estão configuradas.</div>}
         {!ehTeste && <div className="text-xs text-amber-800">Nesta fase o vale-pedágio real só roda em operação de teste.</div>}
@@ -269,6 +312,15 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
               <b>Vale-pedágio comprado (homologação)</b>
               <span>Número do vale {c.id_vpo_antt}{c.numero_viagem ? ` · viagem ${c.numero_viagem}` : ''}{c.id_recibo ? ` · recibo ${c.id_recibo}` : ''}{c.total_viagem != null ? ` · valor ${c.total_viagem.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</span>
               <span className="text-[color:var(--rbr-muted)]">Fica gravado na operação e vai para o MDF-e. Use "Reemitir recibo" para ver o recibo e "Cancelar vale" para desfazer.</span>
+            </div>
+          )
+        })()}
+        {estado === 'cancelado' && (() => {
+          const c = [...(reqs ?? [])].reverse().find((r) => r.acao === 'cancelar' && deuCerto(r))
+          if (!c) return null
+          return (
+            <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBF3E4', color: '#8A5A00' }} role="status">
+              <b>Vale cancelado em {new Date(c.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</b>{c.id_recibo ? ` (protocolo ${c.id_recibo})` : ''}. Você pode comprar de novo.
             </div>
           )
         })()}
@@ -296,7 +348,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
             <label>Início (AAAAMMDD)<input className={campo} value={f.inicio} onChange={(e) => setF({ ...f, inicio: e.target.value })} /></label>
             <label>Fim (AAAAMMDD, até 15 dias)<input className={campo} value={f.fim} onChange={(e) => setF({ ...f, fim: e.target.value })} /></label>
             {ehTeste && (
-              <button type="button" className="col-span-2 text-xs font-bold px-3 py-1 rounded-lg border" onClick={() => { setF({ ...f, placa: PLACA_TAG_TESTE, eixos: '5' }); onPlaca?.(PLACA_TAG_TESTE) }}>
+              <button type="button" className="col-span-2 text-xs font-bold px-3 py-1 rounded-lg border" onClick={() => { setF({ ...f, placa: PLACA_TAG_TESTE, ...(demo ? {} : { eixos: '5' }) }); onPlaca?.(PLACA_TAG_TESTE) }}>
                 Usar a placa de teste com tag ativa ({PLACA_TAG_TESTE})
               </button>
             )}
@@ -310,9 +362,15 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
           <button className={botao} disabled={!!ocupado || !f.placa} onClick={() => void consultarTag()}>Consultar tag</button>
           <button className={botao} disabled={!!ocupado || !podeComprar(estado) || !!pendencia} onClick={comprar} title={podeComprar(estado) ? '' : 'Simule primeiro (e não pode haver compra ativa).'}>Comprar</button>
           <button className={botao} disabled={!!ocupado || estado !== 'comprado'} onClick={() => void recibo()}>Reemitir recibo</button>
+          <button className={botao} disabled={!!ocupado || estado !== 'comprado'} onClick={() => void baixarReciboPdf()}>Baixar recibo (PDF)</button>
         </div>
 
-        {podeCancelar(estado) && (
+        {podeCancelar(estado) && demo && (
+          <div className="flex gap-1.5 flex-wrap">
+            <button className={botao} style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }} disabled={!!ocupado} onClick={cancelar}>Cancelar vale</button>
+          </div>
+        )}
+        {podeCancelar(estado) && !demo && (
           <div className="flex gap-1.5 flex-wrap items-end">
             <label className="text-xs flex-1 min-w-[10rem]">Motivo<input className={campo} value={motivo} onChange={(e) => setMotivo(e.target.value)} /></label>
             <label className="text-xs w-28">Nova placa<input className={campo} value={novaPlaca} onChange={(e) => setNovaPlaca(e.target.value.toUpperCase())} /></label>
@@ -325,7 +383,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-xs font-bold">Registro de passos</div>
             <div className="flex gap-1.5">
-              <button className={botao} disabled={!passos.length} onClick={baixarJson}>Baixar JSON</button>
+              <button className={botao} disabled={!passos.length} onClick={() => void baixarJson()}>Baixar JSON</button>
               <button className={botao} disabled={!passos.length} onClick={imprimirPdf}>Salvar em PDF</button>
             </div>
           </div>
@@ -347,6 +405,31 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
           )}
         </div>
       </div>
+      {confirmandoCompra && (
+        <Modal titulo="Comprar o vale-pedágio agora?" onFechar={() => setConfirmandoCompra(false)}>
+          <div className="text-xs text-[color:var(--rbr-muted)]">
+            Placa {f.placa} · {f.eixos} eixos · vigência {f.inicio} a {f.fim}. <b className="block mt-1">Homologação: nenhum vale-pedágio real. Em homologação a compra leva de 1 a 3 minutos.</b>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setConfirmandoCompra(false)} className={`${botao}`}>Voltar</button>
+            <button type="button" onClick={() => { setConfirmandoCompra(false); executarCompra() }} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>Confirmar compra</button>
+          </div>
+        </Modal>
+      )}
+      {cancelandoVale && (
+        <Modal titulo="Cancelar o vale-pedágio?" onFechar={() => setCancelandoVale(false)}>
+          <div className="text-xs text-[color:var(--rbr-muted)]">O vale-pedágio desta operação será cancelado no NSPEDÁGIO e o número dele sai da operação. Depois disso é possível comprar de novo. Conte o motivo (mínimo 15 caracteres).</div>
+          <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="Motivo do cancelamento" autoFocus />
+          <div className="text-[11px] text-[color:var(--rbr-muted)]">{motivoValido(motivo) ? 'Motivo suficiente.' : `Faltam ${faltamCaracteres(motivo)} caracteres.`}</div>
+          {erro && <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>{erro}</div>}
+          <div className="flex gap-2 justify-end">
+            <button type="button" disabled={!!ocupado} onClick={() => { setCancelandoVale(false); setMotivo('') }} className={botao}>Voltar</button>
+            <button type="button" disabled={!!ocupado || !motivoValido(motivo)} onClick={() => void confirmarCancelamentoDemo()} className={botao} style={{ background: 'var(--rbr-danger)', color: '#fff' }}>
+              {ocupado === 'cancelar' ? 'Cancelando…' : 'Confirmar cancelamento'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </>
   )
 }

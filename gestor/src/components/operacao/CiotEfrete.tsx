@@ -22,6 +22,17 @@ async function chamar(body: Record<string, unknown>): Promise<Resposta> {
   return data ?? { ok: false, motivo: 'O servidor não respondeu. Tente de novo em instantes.' }
 }
 
+// Código de estado que a efrete devolve na consulta (1 = emitido, 3 = cancelado, visto na homologação).
+const SITUACAO_EFRETE: Record<string, string> = { '1': 'emitido', '2': 'encerrado', '3': 'cancelado' }
+function textoSituacaoEfrete(estado: string | number | undefined): string | null {
+  if (estado == null || String(estado) === '') return null
+  return SITUACAO_EFRETE[String(estado)] ?? `código ${estado}`
+}
+function textoSituacaoLocal(status: string | undefined): string | null {
+  if (!status) return null
+  return ({ emitido: 'emitido', cancelado: 'cancelado', encerrado: 'encerrado', erro: 'com erro', pendente: 'pendente' } as Record<string, string>)[status] ?? status
+}
+
 const LINK_CORRIGIR: Partial<Record<Corrigir, string>> = {
   cadastro_motorista: '/cadastros?aba=motoristas',
   cadastro_veiculo: '/cadastros?aba=motoristas',
@@ -29,14 +40,14 @@ const LINK_CORRIGIR: Partial<Record<Corrigir, string>> = {
 }
 
 // Com a flag desligada não renderiza nada e não chama a efrete (o CIOT manual é o caminho principal).
-export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void; demo?: boolean; onPrevia?: (p: Previa) => void }
+export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void; demo?: boolean; onPrevia?: (p: Previa) => void; onPedido?: (p: PedidoCiot | null) => void }
 export default function CiotEfrete(props: PropsCiotEfrete) {
   if (!CIOT_EFRETE_HABILITADO) return null
   // key: ao trocar de operação com o painel aberto, o cartão recomeça do zero (nunca mostra o CIOT de uma operação na outra).
   return <CiotEfreteAtivo key={props.operacaoId} {...props} />
 }
 
-function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPrevia }: PropsCiotEfrete) {
+function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPrevia, onPedido }: PropsCiotEfrete) {
   const [pedido, setPedido] = useState<PedidoCiot | null | undefined>(undefined)
   const [pagamentos, setPagamentos] = useState<PagamentoCiot[]>([])
   const [ambiente, setAmbiente] = useState<string | null>(null)
@@ -51,7 +62,9 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPr
     const r = await chamar({ acao: 'status', operacao_id: operacaoId })
     // Se a leitura falhar, o cartão não finge que "nada foi emitido": avisa e deixa tentar de novo (consultar).
     if (!r.ok) setErro(`Não consegui ler o estado do CIOT desta operação. ${mensagemClara(r.mensagem ?? r.motivo, '')}`.trim())
-    setPedido(r.ok ? ((r.pedido as PedidoCiot | null) ?? null) : null)
+    const novo = r.ok ? ((r.pedido as PedidoCiot | null) ?? null) : null
+    setPedido(novo)
+    onPedido?.(novo)
     setPagamentos(r.ok ? ((r.pagamentos as PagamentoCiot[] | undefined) ?? []) : [])
     if (r.ok && typeof r.ambiente === 'string') setAmbiente(r.ambiente)
   }, [operacaoId])
@@ -69,9 +82,10 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPr
   const carregou = pedido !== undefined
   const status = pedido?.status
   useEffect(() => {
-    if (!carregou || status === 'emitido' || status === 'cancelado' || status === 'encerrado') return
+    // Na demonstração o cancelado não esconde a prévia: o cartão volta a oferecer a emissão.
+    if (!carregou || status === 'emitido' || status === 'encerrado' || (status === 'cancelado' && !demo)) return
     void carregarPrevia()
-  }, [carregou, status, carregarPrevia])
+  }, [carregou, status, carregarPrevia, demo])
 
   async function acao(nome: string, body: Record<string, unknown>, sucesso?: (r: Resposta) => string | null) {
     setOcupado(nome)
@@ -136,7 +150,16 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPr
         transacoes={transacoes}
         linkCorrigir={(c) => LINK_CORRIGIR[c] ?? null}
         onEmitir={() => void acao('emitir', { acao: 'emitir', confirmar: true }, (x) => `CIOT ${String(x.ciot ?? '')} emitido${x.jaExistia ? ' (já existia na efrete; nada foi emitido de novo)' : ''}.`)}
-        onConsultar={() => void acao('consultar', { acao: 'consultar' }, () => 'Consultado na efrete pela referência da operação.')}
+        onConsultar={() =>
+          void acao('consultar', { acao: 'consultar' }, (x) => {
+            const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            const achado = x.encontrado as { estado?: string | number } | undefined
+            const efrete = textoSituacaoEfrete(achado?.estado)
+            const local = textoSituacaoLocal(pedido?.status)
+            if (efrete === null) return `Consultado às ${hora}: a efrete respondeu, mas sem a situação do CIOT.`
+            return efrete === local ? `Consultado às ${hora}: situação ${efrete}, sem alterações.` : `Consultado às ${hora}: a efrete mostra ${efrete}; o sistema mostra ${local ?? 'sem CIOT'}.`
+          })
+        }
         onEmitirNovamente={() => void acao('emitir', { acao: 'emitir', confirmar: true, emitir_novamente: true }, (x) => `Novo CIOT ${String(x.ciot ?? '')} emitido.`)}
         onPdf={() => void baixarPdf()}
         onTransacoes={async () => {

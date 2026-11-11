@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { formatMoney } from '@rbr/shared/format'
 import { mensagemClara } from '../../lib/mensagemClara'
+import { textoConfirmacao } from '../../lib/modoDemonstracao'
 import { faltamCaracteres, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
 
 // Cartão visual do CIOT (4 estados). Só apresenta: quem chama a função é CiotEfrete; /demo-ciot usa o mesmo cartão com dados de mentira.
@@ -53,7 +54,7 @@ export function FaixaFixa({ texto }: { texto: string }) {
   )
 }
 
-function Modal({ titulo, children, onFechar }: { titulo: string; children: React.ReactNode; onFechar: () => void }) {
+export function Modal({ titulo, children, onFechar }: { titulo: string; children: React.ReactNode; onFechar: () => void }) {
   // Esc fecha o modal mesmo sem foco dentro dele (o painel por baixo ignora o Esc enquanto há um modal aberto).
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => e.key === 'Escape' && onFechar()
@@ -144,7 +145,19 @@ export default function CartaoCiot(p: PropsCartao) {
       </div>
 
       {/* Antes de emitir (ou depois de erro): conferência e botão */}
-      {!emitido && !cancelado && (
+      {/* Demonstração: o cancelado antigo fica recolhido em "Tentativas anteriores" e a tela mostra o botão de emitir. */}
+      {cancelado && p.demo && ped && (
+        <details className="text-xs rounded-lg border px-3 py-2" style={borda}>
+          <summary className="cursor-pointer font-semibold">Tentativas anteriores (1)</summary>
+          <div className="mt-1.5 flex flex-col gap-0.5">
+            <span>CIOT <b>{ped.ciot}{ped.ciot_verificador ? `-${ped.ciot_verificador}` : ''}</b> · cancelado em {dataHora(ped.cancelado_em)} (protocolo {ped.cancelamento_protocolo ?? '—'})</span>
+            {ped.cancelamento_motivo && <span>Motivo: {ped.cancelamento_motivo}</span>}
+            <span className="text-[color:var(--rbr-muted)]">{textoConfirmacao(ped.confirmado_por_nome, ped.confirmado_em, dataHora)}</span>
+          </div>
+        </details>
+      )}
+
+      {!emitido && (!cancelado || p.demo) && (
         <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           <div className="rounded-lg border p-3 flex flex-col" style={borda}>
             <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1">Conferência antes de emitir</div>
@@ -210,7 +223,7 @@ export default function CartaoCiot(p: PropsCartao) {
                 <span className="text-[color:var(--rbr-muted)]">Tentar de novo não gera outro CIOT: antes de emitir, o sistema pergunta à efrete se esta operação já tem um.</span>
               </div>
             )}
-            <button type="button" disabled={bloqueado || ocupado} onClick={() => setConfirmando(true)} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+            <button type="button" disabled={bloqueado || ocupado} onClick={() => (cancelado ? setReemitindo(true) : setConfirmando(true))} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
               {rotuloEmitir}
             </button>
             <div className="text-[11px] text-[color:var(--rbr-muted)]">O protocolo é gravado antes de ler a resposta. Clicar de novo não gera outro CIOT.</div>
@@ -219,7 +232,7 @@ export default function CartaoCiot(p: PropsCartao) {
       )}
 
       {/* Emitido ou cancelado: dados */}
-      {ped && (emitido || cancelado) && (
+      {ped && (emitido || (cancelado && !p.demo)) && (
         <div className="flex flex-col gap-3">
           <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
             <div>
@@ -245,7 +258,7 @@ export default function CartaoCiot(p: PropsCartao) {
             </div>
           </div>
           <div className="text-xs text-[color:var(--rbr-muted)]">
-            Frete {formatMoney(ped.valor_frete)} · piso ANTT {formatMoney(ped.piso_minimo)} · confirmado por {ped.confirmado_por_nome ?? '—'} em {dataHora(ped.confirmado_em)}
+            Frete {formatMoney(ped.valor_frete)} · piso ANTT {formatMoney(ped.piso_minimo)} · {textoConfirmacao(ped.confirmado_por_nome, ped.confirmado_em, dataHora)}
           </div>
           {cancelado && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--rbr-muted-bg)' }}>
