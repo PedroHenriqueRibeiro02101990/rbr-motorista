@@ -18,6 +18,8 @@ import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/ope
 import NfesCliente from '../components/operacao/NfesCliente'
 import CiotEfrete from '../components/operacao/CiotEfrete'
 import CartaoVpo from '../components/operacao/CartaoVpo'
+import DemoFiscal from '../components/operacao/DemoFiscal'
+import { modoDemonstracaoAtivo } from '../lib/modoDemonstracao'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
 import FinalizarViagem from '../components/operacao/FinalizarViagem'
 import CancelarDocumentoModal, {
@@ -53,11 +55,14 @@ type DocumentacaoOperacao = Pick<
   | 'encerrado_em'
   | 'encerramento_origem'
   | 'encerramento_erro'
+  | 'exigido'
+  | 'dispensa_motivo'
 >
 type StatusDocumentoFiscal = Database['public']['Enums']['status_documento_fiscal']
 type TipoDocumentoFiscal = Database['public']['Enums']['tipo_documento_fiscal']
 
 type OperacaoEnriquecida = Operacao & {
+  modo_demonstracao?: boolean | null
   clienteNome?: string | null
   valorTotal?: number | null
   cidadeOrigem?: string | null
@@ -247,7 +252,7 @@ export default function Fiscal() {
     const { data } = await supabase
       .from('documentacao_operacao')
       .select(
-        'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente, encerrado_em, encerramento_origem, encerramento_erro',
+        'id, operacao_id, tipo, status, referencia, numero_documento, chave_acesso, url_pdf, emitido_em, disponivel_para_agenciador, mensagem_erro, atualizado_em, provedor, ambiente, encerrado_em, encerramento_origem, encerramento_erro, exigido, dispensa_motivo',
       )
       .in('operacao_id', operacaoIds)
     const { data: rcvs } = await supabase.from('operacao_ciot_vpo').select(COLUNAS_AVERBACAO_RCV).in('operacao_id', operacaoIds)
@@ -713,6 +718,14 @@ export default function Fiscal() {
   // B3: o que é da operação aberta (esteira, devolver, referências) entra DENTRO do card dela, junto dos botões de emitir.
   const renderCard = (op: OperacaoEnriquecida, dentro?: ReactNode) => {
       const docs = docsPorOperacao.get(op.id) ?? []
+      // Modo de demonstração (operação de teste + homologação + marca): só CIOT e vale-pedágio, nada do resto da aba.
+      if (modoDemonstracaoAtivo(op, ambienteFiscal)) {
+        return (
+          <div key={op.id} className="bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
+            <DemoFiscal operacaoId={op.id} docs={docs.map((d) => ({ tipo: d.tipo, status: d.status, exigido: d.exigido, dispensa_motivo: d.dispensa_motivo, conferencia_status: null }))} resumo={{ cliente: op.clienteNome, frete: op.valorTotal }} onMudou={() => void carregarDocumentos([op.id])} />
+          </div>
+        )
+      }
       const docsExibidos = TIPOS_EXIBIDOS.map((tipo) => docs.find((d) => d.tipo === tipo)).filter(
         (d): d is DocumentacaoOperacao => Boolean(d),
       )
@@ -1295,7 +1308,7 @@ export default function Fiscal() {
           )}
 
           {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
-          {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs} />}
+          {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs.map((d) => ({ tipo: d.tipo, status: d.status }))} />}
           {ofereceCteMdfe && <CartaoVpo operacaoId={op.id} ehTeste={op.eh_teste === true} />}
 
           <div className="flex gap-2 flex-wrap">
@@ -1607,9 +1620,14 @@ export default function Fiscal() {
         <PainelSobreposto
           titulo={codigoCurto(opAberta.id)}
           cabecalho={
+            <>
             <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: 'var(--rbr-navy)' }}>
               {STATUS_OPERACAO_LABEL[opAberta.status]}
             </span>
+            {modoDemonstracaoAtivo(opAberta, ambienteFiscal) && (
+              <span className="ml-2 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ background: '#FDF1DC', color: '#8A5A00' }}>Demonstração</span>
+            )}
+            </>
           }
           fixo={
             <>

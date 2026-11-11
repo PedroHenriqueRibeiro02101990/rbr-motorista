@@ -76,27 +76,28 @@ export function montarConferencia(previa: Previa | null): Linha[] {
 export const pendencias = (l: Linha[]) => l.filter((x) => !x.ok).length
 
 // ---- Cadeia: o CIOT só sai depois de CT-e autorizado e averbação feita ----
-export type EstadoPasso = 'ok' | 'pendente' | 'nao_exigido' | 'nao_exigido_teste'
+export type EstadoPasso = 'ok' | 'pendente' | 'nao_exigido' | 'nao_exigido_teste' | 'dispensado_demo'
 export type DocLeve = { tipo: string; status: string; exigido?: boolean; dispensa_motivo?: string | null; conferencia_status?: string | null }
 
 const cumprido = (d?: DocLeve) => !!d && (d.status === 'emitido' || d.conferencia_status === 'ok' || d.conferencia_status === 'aceito_manual')
 const dispensado = (d?: DocLeve) => !!d && !d.exigido && !!d.dispensa_motivo
 
 // Passo anterior ao CIOT. Documento dispensado = "não exigido"; sem a linha na operação de teste = "não exigido no teste".
-export function estadoPasso(doc: DocLeve | undefined, ehTeste: boolean): EstadoPasso {
+// demo = modo de demonstração (só com operação de teste em homologação marcada como demonstração): documento dispensado conta como atendido.
+export function estadoPasso(doc: DocLeve | undefined, ehTeste: boolean, demo = false): EstadoPasso {
   if (cumprido(doc)) return 'ok'
-  if (dispensado(doc)) return 'nao_exigido'
+  if (dispensado(doc)) return demo ? 'dispensado_demo' : 'nao_exigido'
   if (!doc && ehTeste) return 'nao_exigido_teste'
   return 'pendente'
 }
 export const passoLibera = (e: EstadoPasso) => e !== 'pendente'
 
 export type Passo = { rotulo: string; estado: EstadoPasso }
-export function passosAntesDoCiot(docs: DocLeve[], ehTeste: boolean): Passo[] {
+export function passosAntesDoCiot(docs: DocLeve[], ehTeste: boolean, demo = false): Passo[] {
   const por = (t: string) => docs.find((d) => d.tipo === t)
   return [
-    { rotulo: 'CT-e autorizado', estado: estadoPasso(por('cte'), ehTeste) },
-    { rotulo: 'Averbação feita', estado: estadoPasso(por('atm'), ehTeste) },
+    { rotulo: 'CT-e autorizado', estado: estadoPasso(por('cte'), ehTeste, demo) },
+    { rotulo: 'Averbação feita', estado: estadoPasso(por('atm'), ehTeste, demo) },
   ]
 }
 

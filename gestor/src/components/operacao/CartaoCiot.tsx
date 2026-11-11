@@ -154,14 +154,17 @@ export default function CartaoCiot(p: PropsCartao) {
                 <span className="flex-1">
                   <b className="block">{x.rotulo.replace(' autorizado', '').replace(' feita', '')}</b>
                   <span className="text-[color:var(--rbr-muted)]">
-                    {x.estado === 'ok' ? 'Pronto' : x.estado === 'nao_exigido' ? 'Não exigido nesta operação' : x.estado === 'nao_exigido_teste' ? 'Não exigido no teste' : 'Emita antes do CIOT'}
+                    {x.estado === 'ok' ? 'Pronto' : x.estado === 'dispensado_demo' ? 'Dispensado nesta demonstração' : x.estado === 'nao_exigido' ? 'Não exigido nesta operação' : x.estado === 'nao_exigido_teste' ? 'Não exigido no teste' : 'Emita antes do CIOT'}
                   </span>
                 </span>
                 <Pill cor="var(--rbr-navy)" fundo="var(--rbr-muted-bg)">Fiscal</Pill>
               </div>
             ))}
             {p.linhas.length === 0 && <div className="text-xs text-[color:var(--rbr-muted)] py-2">Conferindo os dados…</div>}
-            {p.linhas.map((l) => {
+            {p.demo && p.linhas.length > 0 && p.linhas.every((l) => l.ok) && (
+              <div className="flex items-center gap-2 py-1.5 text-xs"><span className="font-bold" style={{ color: 'var(--rbr-positive)' }}>✓</span><b>Dados conferidos ({p.linhas.length} itens)</b></div>
+            )}
+            {(p.demo ? p.linhas.filter((l) => !l.ok) : p.linhas).map((l) => {
               const href = l.corrigir ? p.linkCorrigir(l.corrigir) : null
               return (
                 <div key={l.id} className="flex items-start gap-2 py-1.5 border-b last:border-b-0 text-xs" style={borda}>

@@ -4,6 +4,7 @@ import { NSPEDAGIO_HABILITADO } from '../../lib/efreteFlags'
 import { mensagemClara } from '../../lib/mensagemClara'
 import {
   ROTULO_ESTADO_VPO,
+  deuCerto,
   estadoVpo,
   pendenciaVpo,
   podeCancelar,
@@ -38,13 +39,14 @@ const soDigitos = (v: string) => v.replace(/\D/g, '')
 const aaaammdd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '')
 const emDias = (n: number) => new Date(Date.now() + n * 86_400_000)
 
-export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void }
+// demo = modo de demonstração: dados da rota sempre à vista, placa de teste (GYI1732) já preenchida e aviso de espera de 1 a 3 minutos.
+export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void }
 export default function CartaoVpo(props: PropsCartaoVpo) {
   if (!NSPEDAGIO_HABILITADO) return null
   return <CartaoVpoAtivo key={props.operacaoId} {...props} />
 }
 
-function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo) {
+function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca }: PropsCartaoVpo) {
   const [reqs, setReqs] = useState<RequisicaoVpo[] | null>(null)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -65,7 +67,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
   const [f, setF] = useState({
     origem: '3550308',
     destino: '3106200',
-    placa: placa ?? '',
+    placa: demo ? PLACA_TAG_TESTE : (placa ?? ''),
     eixos: '5',
     inicio: aaaammdd(emDias(1)),
     fim: aaaammdd(emDias(5)),
@@ -187,7 +189,9 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
     acao('simular', { acao: 'simular', pontos: pontos() }, (r) => {
       const d = r.dados as { distanciaKm?: number; valorPorEixos?: Record<string, number> } | undefined
       const v = d?.valorPorEixos?.[Number(f.eixos)]
-      setResumoSim(d ? `${d.distanciaKm ?? '?'} km${v != null ? ` · ${f.eixos} eixos: ${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}` : null)
+      const resumo = d ? `${d.distanciaKm ?? '?'} km${v != null ? ` · ${f.eixos} eixos: ${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}` : null
+      setResumoSim(resumo)
+      onSimulacao?.(v != null ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + ` (${f.eixos} eixos, simulação do NSPEDAGIO)` : resumo)
       return 'Simulação concluída. Nada foi comprado.'
     })
   const consultarTag = () => acao('consultar-tag', { acao: 'consultar-tag', placa: f.placa }, () => 'Tag consultada.')
@@ -257,8 +261,19 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
         {erro && <div className="text-xs text-red-700" role="alert">{erro}</div>}
         {info && <div className="text-xs text-green-800" role="status">{info}</div>}
         {resumoSim && <div className="text-xs">Simulação: {resumoSim}</div>}
+        {estado === 'comprado' && (() => {
+          const c = [...(reqs ?? [])].reverse().find((r) => r.acao === 'comprar' && deuCerto(r) && r.id_vpo_antt)
+          if (!c) return null
+          return (
+            <div className="text-xs rounded-lg px-3 py-2 flex flex-col gap-0.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }} role="status">
+              <b>Vale-pedágio comprado (homologação)</b>
+              <span>Número do vale {c.id_vpo_antt}{c.numero_viagem ? ` · viagem ${c.numero_viagem}` : ''}{c.id_recibo ? ` · recibo ${c.id_recibo}` : ''}{c.total_viagem != null ? ` · valor ${c.total_viagem.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</span>
+              <span className="text-[color:var(--rbr-muted)]">Fica gravado na operação e vai para o MDF-e. Use "Reemitir recibo" para ver o recibo e "Cancelar vale" para desfazer.</span>
+            </div>
+          )
+        })()}
         {(estado === 'comprando' || ocupado === 'comprar') && (
-          <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">Comprando o vale-pedágio, isso pode levar alguns minutos. Não feche esta tela e não compre de novo.</div>
+          <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">{demo ? 'Comprando o vale-pedágio. Em homologação isso leva de 1 a 3 minutos.' : 'Comprando o vale-pedágio, isso pode levar alguns minutos. Não feche esta tela e não compre de novo.'}</div>
         )}
         {(estado === 'cancelando' || ocupado === 'cancelar') && (
           <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">Cancelando o vale-pedágio, isso pode levar alguns minutos.</div>
@@ -271,17 +286,17 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou }: PropsCartaoVpo)
           </div>
         )}
 
-        <details className="text-xs">
+        <details className="text-xs" open={demo ? true : undefined}>
           <summary className="cursor-pointer font-semibold">Dados da rota e do veículo</summary>
           <div className="grid grid-cols-2 gap-2 mt-2">
             <label>IBGE origem<input className={campo} value={f.origem} onChange={(e) => setF({ ...f, origem: e.target.value })} /></label>
             <label>IBGE destino<input className={campo} value={f.destino} onChange={(e) => setF({ ...f, destino: e.target.value })} /></label>
-            <label>Placa do cavalo<input className={campo} value={f.placa} onChange={(e) => setF({ ...f, placa: e.target.value.toUpperCase() })} /></label>
+            <label>Placa do cavalo<input className={campo} value={f.placa} onChange={(e) => { setF({ ...f, placa: e.target.value.toUpperCase() }); onPlaca?.(e.target.value.toUpperCase()) }} /></label>
             <label>Eixos (cavalo + carreta)<input className={campo} inputMode="numeric" value={f.eixos} onChange={(e) => setF({ ...f, eixos: e.target.value })} /></label>
             <label>Início (AAAAMMDD)<input className={campo} value={f.inicio} onChange={(e) => setF({ ...f, inicio: e.target.value })} /></label>
             <label>Fim (AAAAMMDD, até 15 dias)<input className={campo} value={f.fim} onChange={(e) => setF({ ...f, fim: e.target.value })} /></label>
             {ehTeste && (
-              <button type="button" className="col-span-2 text-xs font-bold px-3 py-1 rounded-lg border" onClick={() => setF({ ...f, placa: PLACA_TAG_TESTE, eixos: '5' })}>
+              <button type="button" className="col-span-2 text-xs font-bold px-3 py-1 rounded-lg border" onClick={() => { setF({ ...f, placa: PLACA_TAG_TESTE, eixos: '5' }); onPlaca?.(PLACA_TAG_TESTE) }}>
                 Usar a placa de teste com tag ativa ({PLACA_TAG_TESTE})
               </button>
             )}
