@@ -165,3 +165,29 @@ test('cancelamento com FALHA_CANCELAMENTO_VIAGEM (HTTP 200) vira falha, não "ca
   assert.equal(r.ok, false)
   assert.match((r as { erro: string }).erro, /Falha no cancelamento/)
 })
+
+test('recibo com PDF: o PDF vai em dados (só para a resposta) e NÃO no bruto que é gravado no banco', async () => {
+  const pdf = 'JVBERi0xLjUK' + 'A'.repeat(900)
+  const corpo = [{ status: { descricao: 'Sucesso' }, nroTransporte: 100008, dadosRetorno: { viagem: [{ idVpoAntt: '0572', numeroViagem: '530315', idRecibo: '4392', totalViagem: 140.64, recibo: pdf }] } }]
+  const p = criarNsPedagioReal(CFG, async (url: string) => (url === CFG.authUrl ? resp(200, { access_token: 't', expires_in: 60 }) : resp(200, corpo)))
+  const r = await p.recibo(100008)
+  assert.equal(r.ok, true)
+  if (r.ok) {
+    assert.equal(r.dados.pdfBase64, pdf)
+    assert.equal(r.dados.idRecibo, '4392')
+    assert.equal(r.dados.idVpoAntt, '0572')
+    assert.ok(!JSON.stringify(r.bruto).includes(pdf), 'o bruto gravado não leva o PDF')
+    assert.match(JSON.stringify(r.bruto), /PDF do recibo omitido/)
+  }
+})
+
+test('recibo sem PDF: pdfBase64 nulo e o número do recibo não vira o PDF', async () => {
+  const corpo = [{ dadosRetorno: { viagem: [{ idVpoAntt: '0572', numeroViagem: '1', recibo: '4392' }] } }]
+  const p = criarNsPedagioReal(CFG, async (url: string) => (url === CFG.authUrl ? resp(200, { access_token: 't', expires_in: 60 }) : resp(200, corpo)))
+  const r = await p.recibo(1)
+  assert.equal(r.ok, true)
+  if (r.ok) {
+    assert.equal(r.dados.pdfBase64, null)
+    assert.equal(r.dados.idRecibo, '4392')
+  }
+})
