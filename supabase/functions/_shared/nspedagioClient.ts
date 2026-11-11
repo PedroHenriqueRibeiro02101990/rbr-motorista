@@ -43,7 +43,8 @@ export interface RespostaHttp {
   status: number
   corpo: unknown
 }
-export type ResultadoNs<T> = { ok: true; http: number; dados: T; bruto: unknown } | { ok: false; http: number; erro: string; bruto: unknown }
+// naoLocalizado: o NSPEDAGIO respondeu normalmente que não existe viagem/recibo para o documento (diferente de erro de rede ou HTTP).
+export type ResultadoNs<T> = { ok: true; http: number; dados: T; bruto: unknown } | { ok: false; http: number; erro: string; bruto: unknown; naoLocalizado?: true }
 
 export interface ProvedorNsPedagio {
   readonly simulado: boolean
@@ -286,7 +287,7 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
       const res = resultado(r, lerCompra)
       if (res.ok && !res.dados.idVpoAntt && !res.dados.numeroViagem && !res.dados.idRecibo) {
         const desc = achar(r.corpo, ['descricao'])
-        return { ok: false, http: r.status, erro: typeof desc === 'string' ? desc : 'Recibo não localizado.', bruto: r.corpo }
+        return { ok: false, http: r.status, erro: typeof desc === 'string' ? desc : 'Recibo não localizado.', bruto: r.corpo, naoLocalizado: true }
       }
       return res
     },

@@ -11,6 +11,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { LIMITE_CHAMADA_MS, MOTIVO_CANCELAMENTO_EM_ANDAMENTO, MOTIVO_COMPRA_EM_ANDAMENTO, acaoPodeDemorar, conferirRecibo, decidirAntesDeComprar, ehTimeout, emProcessamento, type Andamento, type LinhaVpo, type Veredito } from "../_shared/vpoAndamento.ts";
 import { chaveIdempotencia, criarNsPedagio, validarCompra, type AcaoVpo, type PedidoCompra, type PontoRota, type ProvedorNsPedagio, type ResultadoNs } from "../_shared/nspedagioClient.ts";
 
 const CORS_HEADERS = {
@@ -38,7 +39,7 @@ async function provedor(): Promise<ProvedorNsPedagio> {
     segredo("NSPEDAGIO_CNPJ"),
     segredo("NSPEDAGIO_COMPRA_LIBERADA"),
   ]);
-  return criarNsPedagio({ baseUrl: baseUrl ?? "", authUrl: authUrl ?? "", clientId: clientId ?? "", clientSecret: clientSecret ?? "", cnpj: cnpj ?? "", compraLiberada: liberada === "sim" });
+  return criarNsPedagio({ baseUrl: baseUrl ?? "", authUrl: authUrl ?? "", clientId: clientId ?? "", clientSecret: clientSecret ?? "", cnpj: cnpj ?? "", compraLiberada: liberada === "sim", limiteMs: LIMITE_CHAMADA_MS });
 }
 
 const json = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
@@ -76,6 +77,29 @@ async function numeroDaOperacao(operacaoId: string): Promise<{ numero: number; e
   return { numero: Number(numero), ehTeste: op.eh_teste === true };
 }
 
+const COLUNAS_LINHA = "id, acao, situacao, http_status, erro, criado_em, processando_desde";
+async function linhasLentas(operacaoId: string): Promise<LinhaVpo[]> {
+  const { data } = await admin.from("vpo_requisicoes").select(COLUNAS_LINHA).eq("operacao_id", operacaoId).in("acao", ["comprar", "cancelar", "trocar-placa"]);
+  return (data ?? []) as LinhaVpo[];
+}
+
+// Grava no banco o desfecho de uma chamada que ficou em processamento (compra apareceu no recibo, ou cancelamento confirmado).
+async function resolverLinha(linha: { id: string }, v: Veredito, operacaoId: string, simulado: boolean) {
+  if (v.situacao === "concluida") {
+    await admin.from("vpo_requisicoes").update({ response_json: v.bruto ?? null, http_status: 200, id_vpo_antt: v.dados.idVpoAntt, numero_viagem: v.dados.numeroViagem, id_recibo: v.dados.idRecibo, total_viagem: v.dados.totalViagem, erro: null, situacao: "concluida" }).eq("id", linha.id);
+    if (!simulado && v.dados.idVpoAntt) {
+      const campos = { vpo_idvpo: v.dados.idVpoAntt, vpo_valor: v.dados.totalViagem ?? null };
+      const { data: existe } = await admin.from("operacao_ciot_vpo").select("id").eq("operacao_id", operacaoId).maybeSingle();
+      if (existe) await admin.from("operacao_ciot_vpo").update(campos).eq("id", existe.id);
+      else await admin.from("operacao_ciot_vpo").insert({ operacao_id: operacaoId, origem: "api", ...campos });
+    }
+  } else if (v.situacao === "cancelada") {
+    await admin.from("vpo_requisicoes").update({ response_json: v.bruto ?? null, http_status: 200, erro: null, situacao: "concluida" }).eq("id", linha.id);
+    // Cancelado de verdade: o ID do vale não pode continuar gravado na operação (o MDF-e leria um vale que não existe).
+    if (!simulado) await admin.from("operacao_ciot_vpo").update({ vpo_idvpo: null, vpo_valor: null }).eq("operacao_id", operacaoId);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   try {
@@ -95,6 +119,19 @@ Deno.serve(async (req) => {
     const gravaMudanca = acao === "comprar" || acao === "cancelar" || acao === "trocar-placa";
     if (gravaMudanca && b.confirmar !== true) return json({ ok: false, erro: "Confirme a ação para continuar." }, 400);
 
+    // Acompanhamento de compra/cancelamento que passou do limite: a tela chama {acao:"recibo", aguardando:"comprar"|"cancelar"}
+    // a cada 15 s. Só lê o NSPEDAGIO (recibo) e fecha a linha pendente; não compra nem cancela nada.
+    if (acao === "recibo" && (b.aguardando === "comprar" || b.aguardando === "cancelar")) {
+      const esperando = b.aguardando as Andamento;
+      const pendente = (await linhasLentas(operacaoId)).filter((l) => l.acao === esperando && emProcessamento(l)).sort((x, y) => y.criado_em.localeCompare(x.criado_em))[0];
+      if (!pendente) return json({ ok: true, simulado: prov.simulado, ambiente: AMBIENTE, situacao: "nada_pendente" });
+      const v = await conferirRecibo(prov, esperando, op.numero);
+      await resolverLinha(pendente, v, operacaoId, prov.simulado);
+      if (v.situacao === "concluida") return json({ ok: true, simulado: prov.simulado, ambiente: AMBIENTE, situacao: "concluida", dados: v.dados });
+      if (v.situacao === "cancelada") return json({ ok: true, simulado: prov.simulado, ambiente: AMBIENTE, situacao: "cancelada" });
+      return json({ ok: true, simulado: prov.simulado, ambiente: AMBIENTE, situacao: "aguardando", ...(v.situacao === "erro" ? { aviso: v.detalhe } : {}) });
+    }
+
     let chave = "";
     let reaproveitar: string | null = null;
     let pedidoCompra: PedidoCompra | null = null;
@@ -109,12 +146,29 @@ Deno.serve(async (req) => {
       if (invalido) return json({ ok: false, erro: invalido }, 422);
       chave = chaveIdempotencia(operacaoId, pedidoCompra.placa, pedidoCompra.inicioVigencia);
       requisicao = { acao, operacao_id: operacaoId, pedido: pedidoCompra };
+      // Nunca uma segunda compra enquanto houver compra/cancelamento em processamento. Primeiro olha o recibo: se a viagem
+      // já existe, a compra anterior concluiu e nada é comprado de novo.
+      const dec = decidirAntesDeComprar(await linhasLentas(operacaoId));
+      if (dec.tipo === "conferir_recibo") {
+        const esperando: Andamento = dec.linha.acao === "cancelar" ? "cancelar" : "comprar";
+        const v = await conferirRecibo(prov, esperando, op.numero);
+        await resolverLinha(dec.linha, v, operacaoId, prov.simulado);
+        if (esperando === "comprar" && v.situacao === "concluida") return json({ ok: true, repetida: true, simulado: prov.simulado, ambiente: AMBIENTE, dados: v.dados });
+        if (!(esperando === "cancelar" && v.situacao === "cancelada")) {
+          return json({ ok: false, em_processamento: true, erro: esperando === "comprar" ? MOTIVO_COMPRA_EM_ANDAMENTO : MOTIVO_CANCELAMENTO_EM_ANDAMENTO }, 409);
+        }
+      }
       // Compra repetida com a mesma chave devolve o que já foi comprado, sem comprar de novo.
       const { data: ja } = await admin.from("vpo_requisicoes").select("id, response_json, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro").eq("idempotency_key", chave).maybeSingle();
       if (ja && ja.http_status && ja.http_status >= 200 && ja.http_status < 300 && !ja.erro) return json({ ok: true, repetida: true, simulado: prov.simulado, ambiente: AMBIENTE, resultado: ja });
       // Linha anterior sem sucesso (travou ou deu erro): a tentativa nova reaproveita a mesma linha em vez de bater na chave única.
       if (ja) reaproveitar = ja.id as string;
     } else {
+      // Cancelar ou trocar placa também esperam: nada de mexer no vale enquanto outra operação dele ainda está em processamento.
+      if (acao === "cancelar" || acao === "trocar-placa") {
+        const pend = (await linhasLentas(operacaoId)).filter(emProcessamento);
+        if (pend.length) return json({ ok: false, em_processamento: true, erro: pend[0].acao === "cancelar" ? MOTIVO_CANCELAMENTO_EM_ANDAMENTO : MOTIVO_COMPRA_EM_ANDAMENTO }, 409);
+      }
       chave = `vpo:${operacaoId}:${acao}:${crypto.randomUUID()}`;
       if (acao === "simular") requisicao = { acao, operacao_id: operacaoId, pontos: b.pontos };
       if (acao === "consultar-tag") requisicao = { acao, operacao_id: operacaoId, placa: b.placa };
@@ -124,7 +178,7 @@ Deno.serve(async (req) => {
 
     // 1) grava a linha ANTES de chamar e de interpretar a resposta
     const { data: linha, error: eIns } = reaproveitar
-      ? await admin.from("vpo_requisicoes").update({ request_json: requisicao, response_json: null, http_status: null, erro: null, criado_por: quem.authUserId }).eq("id", reaproveitar).select("id").single()
+      ? await admin.from("vpo_requisicoes").update({ request_json: requisicao, response_json: null, http_status: null, erro: null, situacao: null, processando_desde: null, criado_por: quem.authUserId }).eq("id", reaproveitar).select("id").single()
       : await admin
           .from("vpo_requisicoes")
           .insert({ operacao_id: operacaoId, acao, ambiente: AMBIENTE, idempotency_key: chave, request_json: requisicao, criado_por: quem.authUserId })
@@ -142,7 +196,14 @@ Deno.serve(async (req) => {
       else if (acao === "trocar-placa") r = await prov.trocarPlaca(op.numero, String(b.placa ?? ""), String(b.motivo ?? ""));
       else r = await prov.recibo(op.numero); // recibo e status
     } catch (e) {
-      const demorou = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+      const demorou = ehTimeout(e);
+      if (demorou && acaoPodeDemorar(acao)) {
+        // Passou do limite: o NSPEDAGIO pode concluir depois (a compra de 11/11 levou ~3 min). Não é erro: fica "em processamento"
+        // e a tela confere o recibo sozinha. Se o banco recusar (já há compra em processamento), nada é comprado de novo.
+        const { error: eMarca } = await admin.from("vpo_requisicoes").update({ situacao: "em_processamento", processando_desde: new Date().toISOString(), erro: null }).eq("id", linha.id);
+        if (eMarca) return json({ ok: false, em_processamento: true, erro: MOTIVO_COMPRA_EM_ANDAMENTO }, 409);
+        return json({ ok: true, em_processamento: true, acao, simulado: prov.simulado, ambiente: AMBIENTE, limite_ms: LIMITE_CHAMADA_MS }, 202);
+      }
       const erro = demorou ? "O NSPEDAGIO não respondeu a tempo. Confira com Reemitir recibo se a viagem foi criada antes de tentar de novo." : e instanceof Error ? e.message : "Falha ao falar com o NSPEDAGIO.";
       await admin.from("vpo_requisicoes").update({ erro }).eq("id", linha.id);
       return json({ ok: false, erro }, 502);
