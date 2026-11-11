@@ -29,14 +29,14 @@ const LINK_CORRIGIR: Partial<Record<Corrigir, string>> = {
 }
 
 // Com a flag desligada não renderiza nada e não chama a efrete (o CIOT manual é o caminho principal).
-export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void }
+export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void; demo?: boolean; onPrevia?: (p: Previa) => void }
 export default function CiotEfrete(props: PropsCiotEfrete) {
   if (!CIOT_EFRETE_HABILITADO) return null
   // key: ao trocar de operação com o painel aberto, o cartão recomeça do zero (nunca mostra o CIOT de uma operação na outra).
   return <CiotEfreteAtivo key={props.operacaoId} {...props} />
 }
 
-function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCiotEfrete) {
+function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPrevia }: PropsCiotEfrete) {
   const [pedido, setPedido] = useState<PedidoCiot | null | undefined>(undefined)
   const [pagamentos, setPagamentos] = useState<PagamentoCiot[]>([])
   const [ambiente, setAmbiente] = useState<string | null>(null)
@@ -58,8 +58,10 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
 
   // A prévia só lê o banco (nada vai para a efrete); serve de conferência enquanto não há CIOT emitido.
   const carregarPrevia = useCallback(async () => {
-    setPrevia((await chamar({ acao: 'previa', operacao_id: operacaoId })) as unknown as Previa)
-  }, [operacaoId])
+    const p = (await chamar({ acao: 'previa', operacao_id: operacaoId })) as unknown as Previa
+    setPrevia(p)
+    onPrevia?.(p)
+  }, [operacaoId, onPrevia])
 
   useEffect(() => {
     void carregar()
@@ -108,7 +110,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
   }
 
   const linhas = useMemo(() => montarConferencia(previa), [previa])
-  const passos = useMemo(() => passosAntesDoCiot(docs, ehTeste), [docs, ehTeste])
+  const passos = useMemo(() => passosAntesDoCiot(docs, ehTeste, demo === true), [docs, ehTeste, demo])
   const inicioViagem = pedido?.data_inicio_viagem ?? null
   const naoCancela = useMemo(() => motivoNaoCancela(docs, inicioViagem), [docs, inicioViagem])
 
@@ -120,6 +122,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou }: PropsCio
         rotuloCaminhao={`Caminhão 1${placa ? ` · ${placa}` : ''}`}
         ambiente={ambiente}
         ehTeste={ehTeste}
+        demo={demo}
         pedido={pedido}
         pagamentos={pagamentos}
         previa={previa}

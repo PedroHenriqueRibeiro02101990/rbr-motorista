@@ -68,13 +68,13 @@ async function gestor(req: Request): Promise<{ ok: true; authUserId: string | nu
 }
 
 // Número numérico e único da operação (idDocumentoTransporte). Operações antigas ficam sem número até a primeira vez.
-async function numeroDaOperacao(operacaoId: string): Promise<{ numero: number; ehTeste: boolean } | { erro: string }> {
-  const { data: op, error } = await admin.from("operacoes").select("id, eh_teste").eq("id", operacaoId).maybeSingle();
+async function numeroDaOperacao(operacaoId: string): Promise<{ numero: number; ehTeste: boolean; demo: boolean } | { erro: string }> {
+  const { data: op, error } = await admin.from("operacoes").select("id, eh_teste, modo_demonstracao").eq("id", operacaoId).maybeSingle();
   if (error || !op) return { erro: "Operação não encontrada." };
   // numerar_operacao_vpo (supabase-migrations/20261029_02): devolve o número existente ou atribui o próximo.
   const { data: numero, error: e2 } = await admin.rpc("numerar_operacao_vpo", { p_operacao: operacaoId });
   if (e2 || !numero) return { erro: "Não consegui numerar a operação para o vale-pedágio." };
-  return { numero: Number(numero), ehTeste: op.eh_teste === true };
+  return { numero: Number(numero), ehTeste: op.eh_teste === true, demo: op.eh_teste === true && op.modo_demonstracao === true };
 }
 
 const COLUNAS_LINHA = "id, acao, situacao, http_status, erro, criado_em, processando_desde";
@@ -116,6 +116,8 @@ Deno.serve(async (req) => {
     const prov = await provedor();
     // Trava da operação: o NSPEDAGIO real só atende operação de teste nesta fase.
     if (!prov.simulado && !op.ehTeste) return json({ ok: false, erro: "Nesta fase o vale-pedágio real só roda em operação de teste." }, 403);
+    // Operação de demonstração: nunca cai no provedor SIMULADO. Sem as credenciais reais, a função avisa em vez de fingir.
+    if (prov.simulado && op.demo) return json({ ok: false, erro: "O NSPEDAGIO de homologação não está configurado (credenciais ausentes no Vault). A demonstração não usa simulação." }, 503);
     const gravaMudanca = acao === "comprar" || acao === "cancelar" || acao === "trocar-placa";
     if (gravaMudanca && b.confirmar !== true) return json({ ok: false, erro: "Confirme a ação para continuar." }, 400);
 
