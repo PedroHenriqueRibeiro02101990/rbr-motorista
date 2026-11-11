@@ -75,6 +75,8 @@ export interface CompraVpo {
   numeroViagem: string | null
   idRecibo: string | null
   totalViagem: number | null
+  // PDF do recibo em base64: só trafega na resposta da função (compra e recibo). NUNCA é gravado no banco nem no registro de passos.
+  pdfBase64?: string | null
 }
 
 // ---------- regras e montagem de corpo (puras, testáveis) ----------
@@ -187,12 +189,34 @@ function achar(o: unknown, chaves: string[]): unknown {
   }
   return undefined
 }
+const numeroRecibo = (v: unknown) => (typeof v === 'string' && v.length > 60 ? undefined : v)
+
+// O PDF do recibo vem em dadosRetorno.viagem[].recibo (base64, começa com JVBER). Visto na homologação de 11/11/2026.
+export function lerPdfRecibo(corpo: unknown): string | null {
+  const achado = achar(corpo, ['recibo'])
+  return typeof achado === 'string' && achado.length > 200 && /^JVBER/.test(achado) ? achado : null
+}
+
+// Cópia da resposta sem o PDF (é o que vai para vpo_requisicoes.response_json).
+export function semPdfRecibo<T>(corpo: T): T {
+  if (Array.isArray(corpo)) return corpo.map(semPdfRecibo) as unknown as T
+  if (corpo && typeof corpo === 'object') {
+    return Object.fromEntries(
+      Object.entries(corpo as Record<string, unknown>).map(([k, v]) => [k, k === 'recibo' && typeof v === 'string' && v.length > 200 ? '[PDF do recibo omitido]' : semPdfRecibo(v)]),
+    ) as T
+  }
+  return corpo
+}
+
+const lerCompraComPdf = (corpo: unknown): CompraVpo => ({ ...lerCompra(corpo), pdfBase64: lerPdfRecibo(corpo) })
+
 export function lerCompra(corpo: unknown): CompraVpo {
   const t = (v: unknown) => (v === undefined ? null : String(v))
   return {
     idVpoAntt: t(achar(corpo, ['idVpoAntt', 'idVpoANTT', 'idVPOAntt'])),
     numeroViagem: t(achar(corpo, ['numeroViagem', 'nroViagem'])),
-    idRecibo: t(achar(corpo, ['idRecibo', 'recibo'])),
+    // 'recibo' também é o nome do campo do PDF em base64: só vale como número se for curto.
+    idRecibo: t(numeroRecibo(achar(corpo, ['idRecibo', 'recibo']))),
     totalViagem: num(achar(corpo, ['totalViagem', 'valorTotal', 'total'])),
   }
 }
@@ -237,8 +261,9 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
   function resultado<T>(r: RespostaHttp, ler: (c: unknown) => T | null): ResultadoNs<T> {
     if (r.status >= 200 && r.status < 300) {
       const dados = ler(r.corpo)
-      if (dados !== null) return { ok: true, http: r.status, dados, bruto: r.corpo }
-      return { ok: false, http: r.status, erro: 'Resposta do NSPEDAGIO em formato inesperado.', bruto: r.corpo }
+      // bruto é o que vai para o banco: nunca com o PDF do recibo.
+      if (dados !== null) return { ok: true, http: r.status, dados, bruto: semPdfRecibo(r.corpo) }
+      return { ok: false, http: r.status, erro: 'Resposta do NSPEDAGIO em formato inesperado.', bruto: semPdfRecibo(r.corpo) }
     }
     const msg = typeof r.corpo === 'string' && r.corpo ? r.corpo.slice(0, 300) : `NSPEDAGIO respondeu HTTP ${r.status}.`
     return { ok: false, http: r.status, erro: msg, bruto: r.corpo }
@@ -272,7 +297,7 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
     async comprar(p) {
       const trava = travaCompra<CompraVpo>()
       if (trava) return trava
-      return resultado(await chamar('POST', 'valePedagio/', corpoCompra(p, config.cnpj)), lerCompra)
+      return resultado(await chamar('POST', 'valePedagio/', corpoCompra(p, config.cnpj)), lerCompraComPdf)
     },
     async cancelar(id, motivo) {
       const trava = travaCompra<{ mensagem: string }>()
@@ -284,7 +309,7 @@ export function criarNsPedagioReal(config: ConfigNsPedagio, fetchFn: Fetch = (u,
     async recibo(id) {
       // O NSPEDAGIO responde HTTP 200 mesmo quando não há viagem ("Recibo ... não foi localizado"): sem dados, é falha.
       const r = await chamar('POST', 'valePedagio/recibo', [id])
-      const res = resultado(r, lerCompra)
+      const res = resultado(r, lerCompraComPdf)
       if (res.ok && !res.dados.idVpoAntt && !res.dados.numeroViagem && !res.dados.idRecibo) {
         const desc = achar(r.corpo, ['descricao'])
         return { ok: false, http: r.status, erro: typeof desc === 'string' ? desc : 'Recibo não localizado.', bruto: r.corpo, naoLocalizado: true }
