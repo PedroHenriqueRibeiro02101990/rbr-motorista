@@ -5,14 +5,20 @@ import { esteiraDemonstracao, linhasDadosCiot, linhasDadosVpo, mascarar, modoDem
 import { estadoPasso, passosAntesDoCiot, passoLibera, type DocLeve } from '../src/lib/ciotCartao.ts'
 import type { RequisicaoVpo } from '../src/lib/vpoPassos.ts'
 
-test('modo de demonstração: só com teste + homologação + marca, os três juntos', () => {
-  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, 'homologacao'), true)
-  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, 'producao'), false)
-  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, null), false)
-  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: false }, 'homologacao'), false)
-  assert.equal(modoDemonstracaoAtivo({ eh_teste: false, modo_demonstracao: true }, 'homologacao'), false)
-  assert.equal(modoDemonstracaoAtivo({ eh_teste: true }, 'homologacao'), false)
-  assert.equal(modoDemonstracaoAtivo(null, 'homologacao'), false)
+test('modo de demonstração: eh_teste + marca + nenhum documento da operação em produção', () => {
+  const homolog = [{ ambiente: 'homologacao' }, { ambiente: 'homologacao' }]
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, homolog), true)
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, [{ ambiente: null }]), true)
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, [...homolog, { ambiente: 'producao' }]), false)
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: false }, homolog), false)
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: false, modo_demonstracao: true }, homolog), false)
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: true }, homolog), false)
+  assert.equal(modoDemonstracaoAtivo(null, homolog), false)
+})
+
+test('o ambiente fiscal GLOBAL (producao no gestor) não esconde mais o modo: a regra nem recebe esse valor', () => {
+  assert.equal(modoDemonstracaoAtivo.length, 2)
+  assert.equal(modoDemonstracaoAtivo({ eh_teste: true, modo_demonstracao: true }, undefined), true)
 })
 
 const dispensados: DocLeve[] = [

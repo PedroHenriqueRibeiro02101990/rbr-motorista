@@ -1,10 +1,13 @@
 // Modo de demonstração da aba Fiscal (reunião com a NSTech). Sem React e sem rede, para testar com
 // node --test gestor/test/modoDemonstracao.test.ts
-// Só vale com TRÊS condições juntas: operação de teste, ambiente fiscal de homologação e a marca modo_demonstracao.
+// Só vale com TRÊS condições juntas, TODAS da própria operação: eh_teste, a marca modo_demonstracao e nenhum documento dela em produção
+// (CIOT/efrete e NSPEDAGIO só rodam em homologação). NÃO olha o ambiente fiscal global do sistema (parametros_fiscais), que no gestor de
+// produção vale 'producao' e escondia o modo. Isto decide só o que a tela MOSTRA: nenhuma trava de emissão muda.
 import { estadoVpo, type EstadoVpo, type RequisicaoVpo } from './vpoPassos.ts'
 
-export function modoDemonstracaoAtivo(op: { eh_teste?: boolean | null; modo_demonstracao?: boolean | null } | null | undefined, ambienteFiscal: string | null | undefined): boolean {
-  return !!op && op.eh_teste === true && op.modo_demonstracao === true && ambienteFiscal === 'homologacao'
+export function modoDemonstracaoAtivo(op: { eh_teste?: boolean | null; modo_demonstracao?: boolean | null } | null | undefined, docs: { ambiente?: string | null }[] | null | undefined): boolean {
+  if (!op || op.eh_teste !== true || op.modo_demonstracao !== true) return false
+  return !(docs ?? []).some((d) => d.ambiente === 'producao')
 }
 
 // ---- Esteira completa: CT-e, Averbação, Vale-pedágio, CIOT, MDF-e ----

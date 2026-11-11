@@ -719,7 +719,7 @@ export default function Fiscal() {
   const renderCard = (op: OperacaoEnriquecida, dentro?: ReactNode) => {
       const docs = docsPorOperacao.get(op.id) ?? []
       // Modo de demonstração (operação de teste + homologação + marca): só CIOT e vale-pedágio, nada do resto da aba.
-      if (modoDemonstracaoAtivo(op, ambienteFiscal)) {
+      if (modoDemonstracaoAtivo(op, docs)) {
         return (
           <div key={op.id} className="bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
             <DemoFiscal operacaoId={op.id} docs={docs.map((d) => ({ tipo: d.tipo, status: d.status, exigido: d.exigido, dispensa_motivo: d.dispensa_motivo, conferencia_status: null }))} resumo={{ cliente: op.clienteNome, frete: op.valorTotal }} onMudou={() => void carregarDocumentos([op.id])} />
@@ -1624,7 +1624,7 @@ export default function Fiscal() {
             <span className="text-[11px] font-bold uppercase tracking-wide text-white px-2.5 py-1 rounded-full" style={{ background: 'var(--rbr-navy)' }}>
               {STATUS_OPERACAO_LABEL[opAberta.status]}
             </span>
-            {modoDemonstracaoAtivo(opAberta, ambienteFiscal) && (
+            {modoDemonstracaoAtivo(opAberta, docsPorOperacao.get(opAberta.id)) && (
               <span className="ml-2 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full" style={{ background: '#FDF1DC', color: '#8A5A00' }}>Demonstração</span>
             )}
             </>
