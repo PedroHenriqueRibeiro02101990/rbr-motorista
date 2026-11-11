@@ -1644,7 +1644,7 @@ export default function Fiscal() {
             </>
           }
           onFechar={fecharPainelFiscal}
-          largura={880}
+          largura={modoDemonstracaoAtivo(opAberta, docsPorOperacao.get(opAberta.id)) ? 1200 : 880}
         >
           <Fragment key={opAberta.id}>
             {renderCard(

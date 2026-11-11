@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { esteiraDemonstracao, linhasDadosCiot, linhasDadosVpo, type DadosDemo, type LinhaDado } from '../../lib/modoDemonstracao'
+import { aaaammddDeIso, esteiraDemonstracao, linhasDadosCiot, linhasDadosVpo, type DadosDemo, type EstadoCaixa, type FormularioVale, type LinhaDado } from '../../lib/modoDemonstracao'
 import type { DocLeve, Previa } from '../../lib/ciotCartao'
 import type { RequisicaoVpo } from '../../lib/vpoPassos'
 import { formatMoney } from '@rbr/shared/format'
@@ -15,7 +15,7 @@ import { FaixaFixa } from './CartaoCiot'
 type Estado = {
   dados: DadosDemo
   reqs: RequisicaoVpo[]
-  ciot: { ciot: string | null; verificador: string | null; status: string | null; protocolo: string | null }
+  ciot: { ciot: string | null; verificador: string | null; status: string | null; protocolo: string | null; emitidoEm: string | null; canceladoEm: string | null }
 }
 
 const VAZIO: DadosDemo = {
@@ -47,7 +47,7 @@ async function carregarEstado(operacaoId: string): Promise<Estado> {
     op?.veiculo_id ? supabase.from('veiculos').select('placa, quantidade_eixos, titular_id').eq('id', op.veiculo_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from('operacao_reboques').select('ordem, veiculos(placa, quantidade_eixos)').eq('operacao_id', operacaoId).order('ordem'),
     supabase.from('parametros_fiscais').select('razao_social, cnpj').eq('ativo', true).maybeSingle(),
-    supabase.from('operacao_ciot_vpo').select('ciot, ciot_verificador, ciot_status, ciot_protocolo, vpo_idvpo, vpo_valor').eq('operacao_id', operacaoId).maybeSingle(),
+    supabase.from('operacao_ciot_vpo').select('ciot, ciot_verificador, ciot_status, ciot_protocolo, ciot_emitido_em, ciot_cancelado_em, vpo_idvpo, vpo_valor').eq('operacao_id', operacaoId).maybeSingle(),
     supabase
       .from('vpo_requisicoes')
       .select('id, acao, ambiente, http_status, id_vpo_antt, numero_viagem, id_recibo, total_viagem, erro, criado_em, situacao, processando_desde')
@@ -85,11 +85,20 @@ async function carregarEstado(operacaoId: string): Promise<Estado> {
   return {
     dados,
     reqs: (reqs.data ?? []) as unknown as RequisicaoVpo[],
-    ciot: { ciot: civ.data?.ciot ?? null, verificador: civ.data?.ciot_verificador ?? null, status: civ.data?.ciot_status ?? null, protocolo: civ.data?.ciot_protocolo ?? null },
+    ciot: { ciot: civ.data?.ciot ?? null, verificador: civ.data?.ciot_verificador ?? null, status: civ.data?.ciot_status ?? null, protocolo: civ.data?.ciot_protocolo ?? null, emitidoEm: civ.data?.ciot_emitido_em ?? null, canceladoEm: civ.data?.ciot_cancelado_em ?? null },
   }
 }
 
 const borda = { borderColor: 'var(--rbr-border, #e5e7eb)' }
+
+// Um quadro por documento, no padrão de cores da esteira: a emitir (claro, pontilhado), emitido (verde com check), cancelado (âmbar), fora (cinza pontilhado).
+const ESTILO_CAIXA: Record<EstadoCaixa, { caixa: React.CSSProperties; titulo: string; texto: string; marca: string }> = {
+  fora: { caixa: { border: '1.5px dashed #b6bcc6', background: '#fafbfc' }, titulo: '#8b93a1', texto: '#8b93a1', marca: '' },
+  a_emitir: { caixa: { border: '1.5px dashed var(--rbr-navy)', background: '#fff' }, titulo: 'var(--rbr-navy-dark)', texto: 'var(--rbr-muted)', marca: '' },
+  processando: { caixa: { border: '2px solid #2563a8', background: '#EEF5FD' }, titulo: 'var(--rbr-navy-dark)', texto: '#2563a8', marca: '… ' },
+  emitido: { caixa: { border: '2px solid var(--rbr-positive)', background: '#E8F5EC' }, titulo: 'var(--rbr-navy-dark)', texto: 'var(--rbr-positive)', marca: '✓ ' },
+  cancelado: { caixa: { border: '2px solid #C98A1B', background: '#FBF3E4' }, titulo: 'var(--rbr-navy-dark)', texto: '#8A5A00', marca: '' },
+}
 
 function Etiqueta({ children, forte }: { children: string; forte?: boolean }) {
   return (
@@ -115,12 +124,12 @@ function Fluxo({ destino }: { destino: string }) {
 
 function TabelaDados({ linhas }: { linhas: LinhaDado[] }) {
   return (
-    <table className="w-full text-[13px] border-collapse">
+    <table className="w-full text-[13px] border-collapse table-auto">
       <thead>
         <tr className="text-left text-[11px] uppercase tracking-wide text-[color:var(--rbr-muted)]">
           <th className="py-1 pr-3 font-bold">Dado enviado</th>
           <th className="py-1 pr-3 font-bold">Valor nesta operação</th>
-          <th className="py-1 font-bold text-right">De onde vem</th>
+          <th className="py-1 font-bold text-right whitespace-nowrap">De onde vem</th>
         </tr>
       </thead>
       <tbody>
@@ -128,7 +137,7 @@ function TabelaDados({ linhas }: { linhas: LinhaDado[] }) {
           <tr key={l.dado} className="border-t align-top" style={borda}>
             <td className="py-1.5 pr-3 font-semibold whitespace-nowrap">{l.dado}</td>
             <td className="py-1.5 pr-3 break-words min-w-0" style={l.valor === 'não informado' ? { color: 'var(--rbr-muted)', fontStyle: 'italic' } : undefined}>{l.valor}</td>
-            <td className="py-1.5 text-right"><Etiqueta>{l.origem}</Etiqueta></td>
+            <td className="py-1.5 text-right whitespace-nowrap"><Etiqueta>{l.origem}</Etiqueta></td>
           </tr>
         ))}
       </tbody>
@@ -156,13 +165,14 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
   const [estado, setEstado] = useState<Estado | null>(null)
   const [previa, setPrevia] = useState<Previa | null>(null)
   const [simulacao, setSimulacao] = useState<string | null>(null)
-  const [placa, setPlaca] = useState('GYI1732')
+  const [formVale, setFormVale] = useState<FormularioVale | null>(null)
+  const [pisoPedido, setPisoPedido] = useState<number | null>(null)
 
   const recarregar = useCallback(async () => {
     try {
       setEstado(await carregarEstado(operacaoId))
     } catch {
-      setEstado((e) => e ?? { dados: VAZIO, reqs: [], ciot: { ciot: null, verificador: null, status: null, protocolo: null } })
+      setEstado((e) => e ?? { dados: VAZIO, reqs: [], ciot: { ciot: null, verificador: null, status: null, protocolo: null, emitidoEm: null, canceladoEm: null } })
     }
   }, [operacaoId])
   useEffect(() => {
@@ -174,9 +184,23 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
   }, [recarregar, onMudou])
 
   const dados = estado?.dados ?? VAZIO
-  const esteira = useMemo(() => esteiraDemonstracao(estado?.reqs ?? [], estado?.ciot.status), [estado])
-  const linhasCiot = useMemo(() => linhasDadosCiot(dados, previa?.piso ?? null), [dados, previa])
-  const linhasVpo = useMemo(() => linhasDadosVpo(dados, simulacao, placa), [dados, simulacao, placa])
+  const esteira = useMemo(() => esteiraDemonstracao(estado?.reqs ?? [], estado?.ciot.status, Date.now(), { emitidoEm: estado?.ciot.emitidoEm, canceladoEm: estado?.ciot.canceladoEm }), [estado])
+  const linhasCiot = useMemo(() => linhasDadosCiot(dados, previa?.piso ?? null, pisoPedido), [dados, previa, pisoPedido])
+  // Valores de partida do formulário do vale: vêm da operação (a MESMA fonte que a tabela mostra).
+  const inicialVale = useMemo<Partial<FormularioVale>>(
+    () => ({
+      origem: dados.rota.ibgeOrigem ?? undefined,
+      destino: dados.rota.ibgeDestino ?? undefined,
+      eixos: dados.veiculos.length ? String(dados.veiculos.reduce((s, v) => s + (v.eixos ?? 0), 0)) : undefined,
+      inicio: aaaammddDeIso(dados.datas.inicio) || undefined,
+      fim: aaaammddDeIso(dados.datas.fim) || undefined,
+    }),
+    [dados],
+  )
+  const linhasVpo = useMemo(
+    () => linhasDadosVpo(dados, formVale ?? { origem: inicialVale.origem ?? '', destino: inicialVale.destino ?? '', placa: 'GYI1732', eixos: inicialVale.eixos ?? '', inicio: inicialVale.inicio ?? '', fim: inicialVale.fim ?? '' }, simulacao),
+    [dados, formVale, inicialVale, simulacao],
+  )
   const rotaTexto = dados.rota.origem && dados.rota.destino ? `${dados.rota.origem} → ${dados.rota.destino}` : 'rota não informada'
   const veicTexto = dados.veiculos.length ? dados.veiculos.map((v) => v.placa).join(' + ') : 'veículos não informados'
   const freteTexto = dados.frete.total != null ? formatMoney(dados.frete.total) : resumo.frete != null ? formatMoney(resumo.frete) : 'frete não informado'
@@ -196,17 +220,16 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
         <div className="text-xs font-bold" aria-label="Contador da demonstração">{esteira.contador} concluídas</div>
       </div>
       <ol className="grid grid-cols-2 sm:grid-cols-5 gap-2 list-none m-0 p-0" aria-label="Esteira fiscal">
-        {esteira.caixas.map((c) => (
-          <li
-            key={c.id}
-            className="rounded-lg px-2.5 py-2 flex flex-col gap-0.5 min-w-0"
-            style={c.ativo ? { border: '2px solid var(--rbr-navy)', background: '#fff' } : { border: '1.5px dashed #b6bcc6', color: '#8b93a1', background: '#fafbfc' }}
-            data-ativo={c.ativo}
-          >
-            <span className="text-xs font-bold" style={c.ativo ? { color: 'var(--rbr-navy-dark)' } : undefined}>{c.rotulo}</span>
-            <span className="text-[11px]" style={c.concluido ? { color: 'var(--rbr-positive)', fontWeight: 700 } : undefined}>{c.concluido ? '✓ ' : ''}{c.status}</span>
-          </li>
-        ))}
+        {esteira.caixas.map((c) => {
+          const e = ESTILO_CAIXA[c.estado]
+          return (
+            <li key={c.id} className="rounded-lg px-2.5 py-2 flex flex-col gap-0.5 min-w-0" style={e.caixa} data-ativo={c.ativo} data-estado={c.estado}>
+              <span className="text-xs font-bold" style={{ color: e.titulo }}>{c.rotulo}</span>
+              <span className="text-[11px] font-semibold" style={{ color: e.texto }}>{e.marca}{c.status}</span>
+              {c.detalhe && <span className="text-[11px]" style={{ color: e.texto }}>{c.detalhe}</span>}
+            </li>
+          )
+        })}
       </ol>
 
       <Cartao
@@ -220,9 +243,9 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
           ) : undefined
         }
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] items-start">
+        <div className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_22rem] items-start">
           <TabelaDados linhas={linhasVpo} />
-          <CartaoVpo operacaoId={operacaoId} ehTeste demo onMudou={aoMudar} onSimulacao={setSimulacao} onPlaca={setPlaca} />
+          {estado && <CartaoVpo operacaoId={operacaoId} ehTeste demo onMudou={aoMudar} onSimulacao={setSimulacao} inicial={inicialVale} onDados={setFormVale} />}
         </div>
       </Cartao>
 
@@ -238,9 +261,9 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
           ) : undefined
         }
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] items-start">
+        <div className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_24rem] items-start">
           <TabelaDados linhas={linhasCiot} />
-          <CiotEfrete operacaoId={operacaoId} ehTeste docs={docs} demo onMudou={aoMudar} onPrevia={setPrevia} />
+          <CiotEfrete operacaoId={operacaoId} ehTeste docs={docs} demo onMudou={aoMudar} onPrevia={setPrevia} onPedido={(p) => setPisoPedido(p?.piso_minimo ?? null)} />
         </div>
       </Cartao>
     </div>
