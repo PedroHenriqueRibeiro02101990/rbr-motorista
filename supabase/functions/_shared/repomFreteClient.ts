@@ -432,7 +432,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     // D-F14: caminho "/PaymentAuthorization" (tabela do guia); o texto escreve "/Payment/Authorization".
     autorizarPagamento: (itens) =>
       itens.length && itens.every((i) => i.identifier.trim() && i.branchCode.trim() && !Number.isNaN(new Date(i.dataPagamento).getTime()))
-        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, Branch: 0, BranchCode: i.branchCode, PaymentDate: i.dataPagamento })) })
+        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, Branch: 0, BranchCode: i.branchCode, PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
         : invalido('Dados da autorização de pagamento incompletos.'),
     consultarAutorizacaoPorLote: (l) => rodar('GET', `/PaymentAuthorization/ByBatchId/${seg(l)}`),
     consultarAutorizacaoPorIdentificador: (i) => rodar('GET', `/PaymentAuthorization/ByIdentifier/${seg(i)}`),
@@ -442,7 +442,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     quitarViagem: (p) =>
       !idViagem(p.shippingId) || !p.branchCode.trim() || !p.documentos.length
         ? invalido('Dados da quitação incompletos.')
-        : rodar('POST', '/ShippingPayment', { corpo: { BranchCode: p.branchCode, ShippingID: String(p.shippingId), ...(p.pesoDescarregado != null ? { TotalUnloadWeight: p.pesoDescarregado } : {}), Documents: p.documentos.map((d) => ({ Number: d.numero, Series: d.serie, BranchCode: d.branchCode, DocumentType: d.tipo, DocumentStatus: d.status })) } }),
+        : rodar('POST', '/ShippingPayment', { corpo: { BranchCode: p.branchCode, ShippingID: String(p.shippingId), ...(p.pesoDescarregado != null ? { TotalUnloadWeight: p.pesoDescarregado } : {}), Documents: p.documentos.map((d) => ({ Number: d.numero, Series: d.serie, BranchCode: d.branchCode, DocumentType: d.tipo, DocumentStatus: d.status })) } }, undefined, true), // dinheiro: timeout/5xx = INCERTO
     consultarQuitacao: (id) => (idViagem(id) ? rodar('GET', `/ShippingPayment/DownloadPaymentFile/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     cancelarQuitacao: (id) => (idViagem(id) ? rodar('PATCH', `/ShippingPayment/Cancel/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
 
