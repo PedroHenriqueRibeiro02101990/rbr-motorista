@@ -43,13 +43,13 @@ const emDias = (n: number) => new Date(Date.now() + n * 86_400_000)
 
 // demo = modo de demonstração: dados da rota sempre à vista, placa de teste (GYI1732) já preenchida e aviso de espera de 1 a 3 minutos.
 // inicial: valores de partida do formulário na demonstração (vêm da operação); onDados devolve o que o formulário tem agora, para a tabela "Dado enviado" ler a MESMA fonte.
-export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void; inicial?: Partial<FormularioVale>; onDados?: (f: FormularioVale) => void; tabela?: ReactNode }
+export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void; inicial?: Partial<FormularioVale>; onDados?: (f: FormularioVale) => void; tabela?: ReactNode; seletor?: ReactNode }
 export default function CartaoVpo(props: PropsCartaoVpo) {
   if (!NSPEDAGIO_HABILITADO) return null
   return <CartaoVpoAtivo key={props.operacaoId} {...props} />
 }
 
-function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca, inicial, onDados, tabela }: PropsCartaoVpo) {
+function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca, inicial, onDados, tabela, seletor }: PropsCartaoVpo) {
   const [reqs, setReqs] = useState<RequisicaoVpo[] | null>(null)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -414,6 +414,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
           </section>
 
           <section className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white min-w-0" style={linha}>
+            {seletor}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h4 className={titulo}>Ações</h4>
               <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100" data-estado={estado}>{seloVale(estado, resumoSim != null || (reqs ?? []).some((r) => r.acao === 'simular' && deuCerto(r)))}</span>

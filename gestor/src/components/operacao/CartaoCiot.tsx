@@ -111,6 +111,8 @@ export type PropsCartao = {
   onEmitirNovamente: () => void
   // Aba da demonstração: a tabela do que enviamos vira a coluna da esquerda e o cartão passa a ser a coluna da direita (mesma altura).
   tabela?: ReactNode
+  // Seletor "Empresa que emite" no topo do cartão da direita da aba (some sozinho com a flag desligada e na demonstração).
+  seletor?: ReactNode
 }
 
 export default function CartaoCiot(p: PropsCartao) {
@@ -178,6 +180,7 @@ export default function CartaoCiot(p: PropsCartao) {
           </div>
         </div>
       )}
+      {aba && p.seletor}
       {aba && <h4 className={tituloSecao}>Ações</h4>}
 
       {/* Antes de emitir (ou depois de erro): conferência e botão */}

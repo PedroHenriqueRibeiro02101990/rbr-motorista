@@ -40,14 +40,14 @@ const LINK_CORRIGIR: Partial<Record<Corrigir, string>> = {
 }
 
 // Com a flag desligada não renderiza nada e não chama a efrete (o CIOT manual é o caminho principal).
-export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void; demo?: boolean; onPrevia?: (p: Previa) => void; onPedido?: (p: PedidoCiot | null) => void; tabela?: ReactNode }
+export type PropsCiotEfrete = { operacaoId: string; ehTeste: boolean; docs: DocLeve[]; placa?: string | null; onMudou?: () => void; demo?: boolean; onPrevia?: (p: Previa) => void; onPedido?: (p: PedidoCiot | null) => void; tabela?: ReactNode; seletor?: ReactNode }
 export default function CiotEfrete(props: PropsCiotEfrete) {
   if (!CIOT_EFRETE_HABILITADO) return null
   // key: ao trocar de operação com o painel aberto, o cartão recomeça do zero (nunca mostra o CIOT de uma operação na outra).
   return <CiotEfreteAtivo key={props.operacaoId} {...props} />
 }
 
-function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPrevia, onPedido, tabela }: PropsCiotEfrete) {
+function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPrevia, onPedido, tabela, seletor }: PropsCiotEfrete) {
   const [pedido, setPedido] = useState<PedidoCiot | null | undefined>(undefined)
   const [pagamentos, setPagamentos] = useState<PagamentoCiot[]>([])
   const [ambiente, setAmbiente] = useState<string | null>(null)
@@ -138,6 +138,7 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPr
         ehTeste={ehTeste}
         demo={demo}
         tabela={tabela}
+        seletor={seletor}
         pedido={pedido}
         pagamentos={pagamentos}
         previa={previa}

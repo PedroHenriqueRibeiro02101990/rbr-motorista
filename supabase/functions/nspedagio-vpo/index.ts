@@ -13,6 +13,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { LIMITE_CHAMADA_MS, MOTIVO_CANCELAMENTO_EM_ANDAMENTO, MOTIVO_COMPRA_EM_ANDAMENTO, acaoPodeDemorar, conferirRecibo, decidirAntesDeComprar, ehTimeout, emProcessamento, type Andamento, type LinhaVpo, type Veredito } from "../_shared/vpoAndamento.ts";
 import { chaveIdempotencia, criarNsPedagio, validarCompra, type AcaoVpo, type PedidoCompra, type PontoRota, type ProvedorNsPedagio, type ResultadoNs } from "../_shared/nspedagioClient.ts";
+import { guardaFornecedor } from "../_shared/fornecedoresFiscais.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -113,6 +114,9 @@ Deno.serve(async (req) => {
 
     const op = await numeroDaOperacao(operacaoId);
     if ("erro" in op) return json({ ok: false, erro: op.erro }, 404);
+    // Empresa que emite o vale desta operação: só a nstech (NSPEDAGIO) tem adaptador. Outra escolhida => erro claro, sem chamar ninguém.
+    const forn = await guardaFornecedor(admin as unknown as Parameters<typeof guardaFornecedor>[0], operacaoId, "vpo", op.demo);
+    if (!forn.ok) return json({ ok: false, erro: forn.erro }, 409);
     const prov = await provedor();
     // Trava da operação: o NSPEDAGIO real só atende operação de teste nesta fase.
     if (!prov.simulado && !op.ehTeste) return json({ ok: false, erro: "Nesta fase o vale-pedágio real só roda em operação de teste." }, 403);

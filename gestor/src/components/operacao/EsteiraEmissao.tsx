@@ -1,5 +1,6 @@
 import DevolverOperacao from './DevolverOperacao'
 import AvisoJanelaEmissao from './AvisoJanelaEmissao'
+import { useFornecedoresOperacao } from './useFornecedoresOperacao'
 
 // Painel do Fiscal (visuais Fiscal-Servico e Fiscal-Erro): esteira de emissão com o estado de cada etapa, o que deu errado e "Algo errado?".
 // Só leitura do que a tela já carrega; emitir, reemitir e cancelar continuam nos cartões de documento abaixo (lógica intacta).
@@ -92,6 +93,7 @@ export function TrocaMotoristaVeiculo() {
 
 export default function EsteiraEmissao({ operacaoId, status, docs, onDevolvida }: { operacaoId: string; status: string; docs: Doc[]; onDevolvida: () => void }) {
   const estado = (tipo: string) => docs.find((d) => d.tipo === tipo)
+  const fornecedores = useFornecedoresOperacao(operacaoId) // nulo com a flag desligada ou na demonstração: nada muda na tela
   const feitas = ETAPAS.filter((e) => estado(e.tipo)?.status === 'emitido').length
   const comErro = ETAPAS.map((e) => ({ e, d: estado(e.tipo) })).filter((x) => x.d && (x.d.status === 'erro' || x.d.status === 'bloqueado'))
   return (
@@ -111,6 +113,7 @@ export default function EsteiraEmissao({ operacaoId, status, docs, onDevolvida }
               </span>
               <div className="min-w-0">
                 <div className="text-[14px] font-extrabold">{e.rotulo}</div>
+                {fornecedores && (e.tipo === 'vpo' || e.tipo === 'ciot') && <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>{fornecedores[e.tipo]}</div>}
                 <div className="text-[12px]" style={{ color: erro ? '#b42318' : 'var(--rbr-muted)' }}>
                   {erro ? (d?.mensagem_erro ?? 'Rejeitado') : ok ? `${d?.numero_documento ? `nº ${d.numero_documento} · ` : ''}emitido` : d ? 'Em andamento' : e.vazio}
                 </div>
