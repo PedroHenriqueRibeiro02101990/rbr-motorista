@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { formatMoney } from '@rbr/shared/format'
 import { mensagemClara } from '../../lib/mensagemClara'
 import { textoConfirmacao } from '../../lib/modoDemonstracao'
@@ -109,6 +109,8 @@ export type PropsCartao = {
   // B08: encerra o CIOT na efrete (peso total das NF-e). Só aparece com o CIOT emitido.
   onEncerrar?: () => Promise<boolean>
   onEmitirNovamente: () => void
+  // Aba da demonstração: a tabela do que enviamos vira a coluna da esquerda e o cartão passa a ser a coluna da direita (mesma altura).
+  tabela?: ReactNode
 }
 
 export default function CartaoCiot(p: PropsCartao) {
@@ -125,6 +127,8 @@ export default function CartaoCiot(p: PropsCartao) {
   const passoPendente = p.passos.find((x) => !passoLibera(x.estado))
   const bloqueado = faltam > 0 || !!passoPendente || !p.previa?.pedido
   const ocupado = !!p.ocupado
+  const aba = !!(p.demo && p.tabela)
+  const tituloSecao = 'text-[13px] font-extrabold uppercase tracking-wide text-[#8F6A2A] m-0'
 
   const rotuloEmitir = passoPendente
     ? `Falta: ${passoPendente.rotulo.toLowerCase()}`
@@ -136,15 +140,45 @@ export default function CartaoCiot(p: PropsCartao) {
           ? 'Tentar de novo'
           : 'Emitir CIOT'
 
-  return (
-    <div className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white" style={borda}>
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">CIOT · {p.rotuloCaminhao}</div>
-        <div className="flex gap-1.5 items-center">
-          {p.ehTeste && <Pill cor="#8A5A00" fundo="#FDF1DC">Teste</Pill>}
-          {p.ambiente === 'homologacao' && <Pill cor="#8A5A00" fundo="#FDF1DC">Homologação</Pill>}
+  function baixarJson() {
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ pedido: ped, pagamentos: p.pagamentos, conferencia: p.previa?.pedido ?? null }, null, 2)], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ciot-registro-${ped?.ciot ?? 'sem-ciot'}.json`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  }
+  function imprimirPdf() {
+    const w = window.open('', '_blank')
+    if (!w) return
+    const esc = (v: unknown) => String(v ?? '—').replace(/</g, '&lt;')
+    const linhasPdf = [
+      ['CIOT', ped?.ciot ? `${ped.ciot}${ped.ciot_verificador ? `-${ped.ciot_verificador}` : ''}` : null],
+      ['Situação', ped?.status],
+      ['Protocolo', ped?.protocolo],
+      ['Emitido em', dataHora(ped?.emitido_em ?? null)],
+      ['Frete', ped?.valor_frete != null ? formatMoney(ped.valor_frete) : null],
+      ['Piso ANTT', ped?.piso_minimo != null ? formatMoney(ped.piso_minimo) : null],
+    ]
+      .map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`)
+      .join('')
+    w.document.write(`<html><head><title>Registro do CIOT</title><style>body{font:13px sans-serif}td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}table{border-collapse:collapse}</style></head><body><h3>Registro do CIOT (HOMOLOGAÇÃO)</h3><table>${linhasPdf}</table></body></html>`)
+    w.document.close()
+    w.print()
+  }
+
+  const corpo = (
+    <>
+      {!aba && (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">CIOT · {p.rotuloCaminhao}</div>
+          <div className="flex gap-1.5 items-center">
+            {p.ehTeste && <Pill cor="#8A5A00" fundo="#FDF1DC">Teste</Pill>}
+            {p.ambiente === 'homologacao' && <Pill cor="#8A5A00" fundo="#FDF1DC">Homologação</Pill>}
+          </div>
         </div>
-      </div>
+      )}
+      {aba && <h4 className={tituloSecao}>Ações</h4>}
 
       {/* Antes de emitir (ou depois de erro): conferência e botão */}
       {/* Demonstração: o cancelado antigo fica recolhido em "Tentativas anteriores" e a tela mostra o botão de emitir. */}
@@ -160,7 +194,7 @@ export default function CartaoCiot(p: PropsCartao) {
       )}
 
       {!emitido && (!cancelado || p.demo) && (
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className={aba ? 'grid gap-3' : 'grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]'}>
           <div className="rounded-lg border p-3 flex flex-col" style={borda}>
             <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)] mb-1">Conferência antes de emitir</div>
             {p.passos.map((x) => (
@@ -231,6 +265,31 @@ export default function CartaoCiot(p: PropsCartao) {
             <div className="text-[11px] text-[color:var(--rbr-muted)]">O protocolo é gravado antes de ler a resposta. Clicar de novo não gera outro CIOT.</div>
           </div>
         </div>
+      )}
+
+      {aba && (
+        <>
+          <h4 className={tituloSecao}>Resultado</h4>
+          {!(ped && emitido) && (
+            <div className="flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs" style={{ background: 'var(--rbr-muted-bg)' }}>
+              <span className="text-[color:var(--rbr-muted)]">Ainda não emitido. O protocolo é gravado antes de ler a resposta; clicar de novo não gera outro CIOT.</span>
+              {p.info && <div className="rounded-lg px-3 py-2" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>{p.info}</div>}
+              {p.erro && !comErro && !cancelando && !confirmando && (
+                <div className="rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
+                  {p.erro}
+                  {p.erroOriginal && <MensagemOriginal texto={p.erroOriginal} />}
+                </div>
+              )}
+            </div>
+          )}
+          {!(ped && emitido) && (
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled className={`${botao} border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>Baixar PDF</button>
+              <button type="button" disabled className={`${botao} border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }}>Consultar</button>
+              <button type="button" disabled className={`${botao} border col-span-2`} style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }}>Cancelar CIOT</button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Emitido ou cancelado: dados */}
@@ -344,14 +403,24 @@ export default function CartaoCiot(p: PropsCartao) {
         </div>
       )}
 
-      {p.info && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>{p.info}</div>}
-      {p.erro && !comErro && !cancelando && !confirmando && (
+      {(!aba || (ped && emitido)) && p.info && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }}>{p.info}</div>}
+      {(!aba || (ped && emitido)) && p.erro && !comErro && !cancelando && !confirmando && (
         <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBE9E9', color: 'var(--rbr-danger)' }}>
           {p.erro}
           {p.erroOriginal && <MensagemOriginal texto={p.erroOriginal} />}
         </div>
       )}
-      <div className="text-[11px] text-[color:var(--rbr-muted)]">Se a efrete estiver fora do ar, digite o CIOT à mão no bloco "CIOT" da operação: o caminho manual continua valendo.</div>
+      {aba ? (
+        <div className="mt-auto border-t pt-2.5 flex flex-col gap-2" style={borda}>
+          <div className="flex gap-1.5 flex-wrap">
+            <button type="button" className={`${botao} border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }} onClick={baixarJson}>Baixar JSON</button>
+            <button type="button" className={`${botao} border`} style={{ borderColor: 'var(--rbr-navy)', color: 'var(--rbr-navy)' }} onClick={imprimirPdf}>Salvar em PDF</button>
+          </div>
+          <div className="text-[11px] text-[color:var(--rbr-muted)]">Se a efrete estiver fora do ar, digite o CIOT à mão no bloco "CIOT" da operação: o caminho manual continua valendo.</div>
+        </div>
+      ) : (
+        <div className="text-[11px] text-[color:var(--rbr-muted)]">Se a efrete estiver fora do ar, digite o CIOT à mão no bloco "CIOT" da operação: o caminho manual continua valendo.</div>
+      )}
 
       {confirmando && (
         <Modal titulo="Emitir o CIOT agora?" onFechar={() => setConfirmando(false)}>
@@ -415,6 +484,23 @@ export default function CartaoCiot(p: PropsCartao) {
           </div>
         </Modal>
       )}
+    </>
+  )
+
+  if (aba) {
+    return (
+      <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] items-stretch" data-aba="ciot">
+        <section className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white min-w-0" style={borda}>
+          <h4 className={tituloSecao}>O que enviamos e de onde vem</h4>
+          {p.tabela}
+        </section>
+        <section className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white min-w-0" style={borda}>{corpo}</section>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white" style={borda}>
+      {corpo}
     </div>
   )
 }

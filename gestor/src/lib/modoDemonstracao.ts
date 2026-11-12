@@ -167,3 +167,32 @@ export function linhasDadosVpo(d: DadosDemo, form: FormularioVale, simulacao: st
     { dado: 'Valor do vale', valor: simulacao ?? (d.vpo.valor != null ? brl(d.vpo.valor) : 'aparece depois de Simular'), origem: 'Fiscal' },
   ]
 }
+
+// ---- Abas Vale-pedágio / CIOT da demonstração ----
+export type AbaDemo = 'vpo' | 'ciot'
+export const CHAVE_ABA_DEMO = 'rbr-demo-aba'
+
+export function abaDeHash(hash: string | null | undefined): AbaDemo | null {
+  const h = (hash ?? '').replace(/^#/, '').toLowerCase()
+  return h === 'vpo' || h === 'ciot' ? h : null
+}
+export function abaDeTexto(v: string | null | undefined): AbaDemo | null {
+  return v === 'vpo' || v === 'ciot' ? v : null
+}
+// Qual aba abre: o hash da URL manda (F5 e link), depois o que ficou guardado na sessão, senão o Vale-pedágio.
+export function abaInicial(hash: string | null | undefined, guardada: string | null | undefined): AbaDemo {
+  return abaDeHash(hash) ?? abaDeTexto(guardada) ?? 'vpo'
+}
+
+// A faixa "próximo passo" e o anel dourado só aparecem com o vale comprado e o CIOT ainda sem estar emitido.
+export function proximoPassoCiot(e: Esteira): boolean {
+  const vpo = e.caixas.find((c) => c.id === 'vpo')
+  const ciot = e.caixas.find((c) => c.id === 'ciot')
+  return vpo?.estado === 'emitido' && !!ciot && ciot.estado !== 'emitido'
+}
+
+// Texto do estado de cada aba na esteira: "Comprado · R$ valor" quando há valor do vale.
+export function textoEstadoAba(c: CaixaEsteira, valorVpo?: number | null): string {
+  if (c.id === 'vpo' && c.estado === 'emitido' && valorVpo != null) return `${c.status} · ${brl(valorVpo)}`
+  return c.status
+}
