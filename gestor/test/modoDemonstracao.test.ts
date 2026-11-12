@@ -187,3 +187,32 @@ test('registro exportado nunca leva o PDF do recibo', () => {
   assert.ok(!json.includes(pdf))
   assert.match(json, /PDF do recibo omitido/)
 })
+
+// ---- Abas Vale-pedágio / CIOT ----
+import { abaDeHash, abaInicial, proximoPassoCiot, textoEstadoAba } from '../src/lib/modoDemonstracao.ts'
+
+test('abas: hash da URL manda, depois a sessão, senão o vale', () => {
+  assert.equal(abaInicial('', null), 'vpo')
+  assert.equal(abaInicial('#ciot', null), 'ciot')
+  assert.equal(abaInicial('#ciot', 'vpo'), 'ciot')
+  assert.equal(abaInicial('', 'ciot'), 'ciot')
+  assert.equal(abaInicial('#qualquer', 'lixo'), 'vpo')
+  assert.equal(abaDeHash('#VPO'), 'vpo')
+})
+
+test('abas: faixa e anel só com vale comprado e CIOT não emitido', () => {
+  const comprado = [req('simular'), req('comprar')]
+  assert.equal(proximoPassoCiot(esteiraDemonstracao([], null)), false)
+  assert.equal(proximoPassoCiot(esteiraDemonstracao(comprado, null)), true)
+  assert.equal(proximoPassoCiot(esteiraDemonstracao(comprado, 'emitido')), false)
+  assert.equal(proximoPassoCiot(esteiraDemonstracao([], 'emitido')), false)
+})
+
+test('abas: estado do vale na esteira mostra o valor quando comprado', () => {
+  const e = esteiraDemonstracao([req('simular'), req('comprar')], null)
+  const vpo = e.caixas.find((c) => c.id === 'vpo')!
+  assert.equal(textoEstadoAba(vpo, 143.2).startsWith('Comprado · R$'), true)
+  assert.equal(textoEstadoAba(vpo, null), 'Comprado')
+  const ciot = e.caixas.find((c) => c.id === 'ciot')!
+  assert.equal(textoEstadoAba(ciot, 143.2), 'A emitir')
+})

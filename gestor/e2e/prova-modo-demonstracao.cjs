@@ -99,7 +99,15 @@ async function rodar(browser, modo, captura, largura = 1366, altura = 768) {
   await pagina.goto(`${BASE}/fiscal?op=${OP}`, { waitUntil: 'networkidle' })
   await pagina.waitForTimeout(1500)
   // innerText respeita o CSS (text-transform: uppercase); compara sem diferenciar maiúsculas
-  const texto = (await pagina.evaluate(() => document.body.innerText)).toLowerCase().replace(/ /g, ' ')
+  let texto = (await pagina.evaluate(() => document.body.innerText)).toLowerCase().replace(/ /g, ' ')
+  // Vale e CIOT agora são abas: lê também o texto do quadro do CIOT e volta para o vale antes das capturas.
+  if (await pagina.locator('#aba-demo-ciot').count()) {
+    await pagina.locator('#aba-demo-ciot').click()
+    await pagina.waitForTimeout(2000)
+    texto += '\n' + (await pagina.evaluate(() => document.body.innerText)).toLowerCase().replace(/ /g, ' ')
+    await pagina.locator('#aba-demo-vpo').click()
+    await pagina.waitForTimeout(400)
+  }
   if (captura) await pagina.screenshot({ path: captura, fullPage: true })
   // O painel da operação rola por dentro: mede o maior contêiner rolável e tira uma segunda captura no fim dele.
   const medida = await pagina.evaluate(() => {
