@@ -2,37 +2,42 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { criarRepomVpoClient } from './repomVpoClient.ts'
-import { criarRepomFreteEsqueleto } from './repomFrete.ts'
 import { criarProvedorVpo } from './vpoProvedor.ts'
 import type { Fetch } from './repomClient.ts'
 
-const cfg = { ambiente: 'qa' as const, login: 'L', senha: 'S', codigoCliente: '9501' }
-test('VPO Repom: token cacheado e consulta de TAG; 401 renova', async () => {
+const cfg = { ambiente: 'qa' as const, roteirizacaoLogin: '', roteirizacaoSenha: '', valePedagioLogin: 'L', valePedagioSenha: 'S' }
+const tokenOk = { authenticated: true, created: '2025-11-12 17:00:19', expiration: '2025-11-13 17:00:18', accessToken: 'tok' }
+
+test('VPO Repom: consulta de TAG pela API do manual (GET tags/placa, token usuario/senha) e 401 renova uma vez', async () => {
   let tokens = 0
-  const urls: string[] = []
+  const chamadas: { url: string; method?: string; body?: string }[] = []
   const f: Fetch = async (url, init) => {
-    urls.push(url)
-    if (url.endsWith('/api/Token')) return { ok: true, status: 200, json: async () => ({ access_token: 'tok' + ++tokens }) }
+    chamadas.push({ url, method: init?.method, body: init?.body })
+    if (url.endsWith('/api/Token')) return { ok: true, status: 200, json: async () => ({ ...tokenOk, accessToken: 'tok' + ++tokens }) }
     if (init?.headers?.authorization === 'Bearer tok1') return { ok: false, status: 401, json: async () => null }
-    return { ok: true, status: 200, json: async () => ({ possuiTag: true, operadora: 'X' }) }
+    return { ok: true, status: 200, json: async () => [{ nomeTag: 'Tag Veloe', numeroTag: '1', codigoStatusTag: 1, statusTag: 'Ativa', apto: 'Sim' }] }
   }
   const c = criarRepomVpoClient(cfg, f)
   const r = await c.consultarTag('abc-1d23')
   assert.equal(r.ok, true)
+  if (r.ok) assert.deepEqual(r.dados, { placa: 'abc-1d23', possuiTag: true, operadora: 'Tag Veloe' })
   assert.equal(tokens, 2)
-  assert.ok(urls[0]!.startsWith('https://qa.repom.com.br'))
+  assert.deepEqual(JSON.parse(chamadas[0]!.body!), { usuario: 'L', senha: 'S' })
+  const consulta = chamadas.find((x) => x.url.includes('/tags/placa'))!
+  assert.equal(consulta.method, 'GET')
+  assert.match(consulta.url, /^https:\/\/qa\.repom\.com\.br\/Repom\.ValePedagio\.WebAPI\/api\/RepomVeiculo\/tags\/placa\?placa=ABC1D23$/)
 })
-test('VPO Repom: emitir e cancelar seguem NAO IMPLEMENTADO e o provedor padrão não mudou', async () => {
+test('VPO Repom: TAG de banco (não apta) não é elegível', async () => {
+  const f: Fetch = async (url) => (url.endsWith('/api/Token') ? { ok: true, status: 200, json: async () => tokenOk } : { ok: true, status: 200, json: async () => [{ nomeTag: 'Tag C6', codigoStatusTag: 1, statusTag: 'Ativa', apto: 'Não' }] })
+  const r = await criarRepomVpoClient(cfg, f).consultarTag('ABC1D23')
+  assert.equal(r.ok && r.dados.possuiTag, false)
+})
+test('VPO Repom: emissão e cancelamento pelo provedor genérico seguem sem implementação (vão pela função repom-vpo) e o provedor padrão não mudou', async () => {
   const c = criarRepomVpoClient(cfg, async () => ({ ok: true, status: 200, json: async () => ({}) }))
   await assert.rejects(() => c.emitir({} as never), /não implementado/)
   await assert.rejects(() => c.cancelar('1', 'x'), /não implementado/)
   assert.equal(criarProvedorVpo(undefined), null) // sem VPO_FORNECEDOR: fluxo manual como hoje
   assert.equal(criarProvedorVpo('nspedagio')?.fornecedor, 'nspedagio')
-})
-test('Repom Frete: só esqueleto, nenhum método funciona', async () => {
-  const c = criarRepomFreteEsqueleto()
-  await assert.rejects(() => c.emitir({}), /não implementado/)
-  await assert.rejects(() => c.encerrar('1'), /não implementado/)
 })
 test('flag desligada: front não monta o botão e a função recusa (503) sem a trava do Vault', async () => {
   const { readFileSync } = await import('node:fs')

@@ -57,7 +57,8 @@ export function ibgeParaRepom(ibge: string | number | null | undefined): string 
 }
 
 export type TipoRota = 'mais_rapida' | 'mais_curta' | 'curta' | 'economica'
-export const TIPO_ROTA_CODIGO: Record<TipoRota, number> = { mais_rapida: 1, mais_curta: 2, curta: 3, economica: 4 } // CONFIRMAR códigos no manual
+// Manual VPR v2.0 (3.2): TipoRoteiro 1 = Roteiro Curto (meio-termo), 2 = Rápido, 3 = Mais Curto, 4 = Econômico. Ver DUVIDAS-PARA-REPOM.md D-V08.
+export const TIPO_ROTA_CODIGO: Record<TipoRota, number> = { curta: 1, mais_rapida: 2, mais_curta: 3, economica: 4 }
 
 export interface PontoRepom {
   ibge: string // 7 dígitos
@@ -70,7 +71,7 @@ export interface PedidoRotaRepom {
   paradas?: PontoRepom[] // até 23, sem repetir origem/destino
   idaVolta: boolean
   tipoRota?: TipoRota
-  tipoVeiculo?: number // CONFIRMAR
+  tipoVeiculo?: number // 1 leve, 2 pesado
 }
 
 export function validarPedidoRota(p: PedidoRotaRepom): string | null {
@@ -90,8 +91,8 @@ export function montarCorpoRota(p: PedidoRotaRepom) {
     Origem: ponto(p.origem),
     Destino: ponto(p.destino),
     Paradas: (p.paradas ?? []).map(ponto),
-    TipoRota: TIPO_ROTA_CODIGO[p.tipoRota ?? 'mais_rapida'], // CONFIRMAR nome do campo
-    ...(p.tipoVeiculo != null ? { TipoVeiculo: p.tipoVeiculo } : {}), // CONFIRMAR nome do campo
+    TipoRoteiro: TIPO_ROTA_CODIGO[p.tipoRota ?? 'mais_rapida'], // nome do campo conforme o manual (nao e TipoRota)
+    ...(p.tipoVeiculo != null ? { TipoVeiculo: p.tipoVeiculo } : {}), // 1 leve, 2 pesado
   }
 }
 
@@ -134,7 +135,7 @@ export function lerRota(bruto: unknown): RotaRepom | null {
   const o = (Array.isArray(bruto) ? bruto[0] : bruto) as Record<string, unknown> | null
   if (!o || typeof o !== 'object') return null
   const r = pick(o, 'codigoRoteiroRepom')
-  const p = pick(o, 'codigoPercursoRepom')
+  const p = pick(o, 'codigoPercurso', 'codigoPercursoRepom') // manual VPR 3.2: o campo se chama codigoPercurso
   if (r == null || p == null) return null
   return { codigoRoteiroRepom: String(r), codigoPercursoRepom: String(p), distanciaKm: num(pick(o, 'distancia', 'distanciaKm', 'distanciaTotal')) } // CONFIRMAR nome da distância
 }
@@ -155,6 +156,29 @@ export function higienizar(obj: unknown): unknown {
     return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, proibidas.test(k) ? '[oculto]' : rec(x, nivel + 1)]))
   }
   return rec(obj, 0)
+}
+
+/**
+ * Lê a mensagem de erro da Repom nos QUATRO formatos do manual: (a) isValid:false + errors[].descricao; (b) validação 400 com
+ * errors{campo:[msgs]}; (c) result.status:false + result.descricao (+ numeroErro); (d) dicionário {Campo:[msgs]} na raiz ou {Message,Description}.
+ * Devolve null quando o corpo não é um erro conhecido. Nunca devolve token nem segredo (só texto de erro).
+ */
+export function lerErroRepom(bruto: unknown): { mensagem: string; numeroErro: string | null } | null {
+  if (!bruto || typeof bruto !== 'object' || Array.isArray(bruto)) return null
+  const o = bruto as Record<string, unknown>
+  const result = o.result as Record<string, unknown> | undefined
+  if (result && typeof result === 'object' && result.status === false) return { mensagem: String(result.descricao ?? 'Erro na Repom.'), numeroErro: result.numeroErro != null ? String(result.numeroErro) : null }
+  if (o.isValid === false && Array.isArray(o.errors)) {
+    const d = (o.errors as Record<string, unknown>[]).map((e) => String(e?.descricao ?? e?.Message ?? e?.message ?? '')).filter(Boolean)
+    return { mensagem: d.join('; ') || 'Erro na Repom.', numeroErro: null }
+  }
+  const dic = (o.errors && typeof o.errors === 'object' && !Array.isArray(o.errors) ? o.errors : null) as Record<string, unknown> | null
+  const texto = (d: Record<string, unknown>) => Object.entries(d).filter(([, v]) => Array.isArray(v)).map(([k, v]) => `${k.replace(/^$./, '')}: ${(v as unknown[]).join(' ')}`).join('; ')
+  if (dic && texto(dic)) return { mensagem: texto(dic), numeroErro: null }
+  if (typeof o.Message === 'string') return { mensagem: o.Message, numeroErro: null }
+  if (Array.isArray(o.Errors) && o.Errors.length) return { mensagem: (o.Errors as Record<string, unknown>[]).map((e) => String(e?.Message ?? '')).filter(Boolean).join('; ') || 'Erro na Repom.', numeroErro: (o.Errors as Record<string, unknown>[])[0]?.ErrorCode != null ? String((o.Errors as Record<string, unknown>[])[0]!.ErrorCode) : null }
+  if (Object.values(o).length && Object.values(o).every((v) => Array.isArray(v) && v.every((x) => typeof x === 'string'))) return { mensagem: texto(o), numeroErro: null }
+  return null
 }
 
 export function mensagemErroHttp(status: number): string {

@@ -139,10 +139,12 @@ Parâmetro `ID` (integer, sim, 10). Resposta igual à da emissão (sem o status 
    `{Campo:[msgs]}` na raiz (emissão, consulta) ou `{Message, Description}` (cancelamento). O cliente novo trata todos.
 2. **`TipoRoteiro` (não `TipoRota`)**: 1 curto, 2 rápido, 3 mais curto, 4 econômico. O código antigo mandava `TipoRota` e
    mapeava `mais_rapida:1` (que é "curto" no manual) — corrigido em `repomClient.ts`.
-3. Faltavam no resumo: `VoltarMesmoCaminhoIda`, sentido `0/1` na consulta de rota, CEP e lat/long como alternativas ao IBGE.
-4. Token do vale-pedágio é `{usuario, senha}`; o código antigo (`repomVpoClient.ts`) mandava `{Login, Senha, CodigoCliente}` e
+3. **Resposta do cadastro de rota:** o campo do percurso é `codigoPercurso` (não `codigoPercursoRepom`, que era o que o código antigo lia: a rota
+   nova nunca era reconhecida). `lerRota` agora aceita os dois nomes.
+4. Faltavam no resumo: `VoltarMesmoCaminhoIda`, sentido `0/1` na consulta de rota, CEP e lat/long como alternativas ao IBGE.
+5. Token do vale-pedágio é `{usuario, senha}`; o código antigo (`repomVpoClient.ts`) mandava `{Login, Senha, CodigoCliente}` e
    consultava TAG por `POST /api/Tag/Consultar` (caminho inventado). O correto é `GET /api/RepomVeiculo/tags/placa?placa=`.
-5. Tamanhos: `numeroEixos` e `carretaNumeroEixos` têm tamanho 1 no manual (um dígito) mas o exemplo de resposta tem 6 eixos
+6. Tamanhos: `numeroEixos` e `carretaNumeroEixos` têm tamanho 1 no manual (um dígito) mas o exemplo de resposta tem 6 eixos
    somados: tratar como dúvida (DUVIDAS-PARA-REPOM.md).
-6. A consulta (4.5) é POST no texto e sem corpo no curl: o cliente deixa o verbo configurável (padrão GET) e a dúvida registrada.
-7. Prazo de cancelamento: este manual diz 3 h; o guia Repom Frete diz VPR 72 h, CIOT 24 h, TAG 15 min — ver dúvidas.
+7. A consulta (4.5) é POST no texto e sem corpo no curl: o cliente deixa o verbo configurável (padrão GET) e a dúvida registrada.
+8. Prazo de cancelamento: este manual diz 3 h; o guia Repom Frete diz VPR 72 h, CIOT 24 h, TAG 15 min — ver dúvidas.
