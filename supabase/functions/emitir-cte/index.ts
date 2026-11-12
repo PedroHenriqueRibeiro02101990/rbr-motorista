@@ -46,6 +46,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { calcularRef } from "../_shared/refDocumento.ts";
 import { montarCte, normalizarCidade } from "./cte.ts";
 
 const CORS_HEADERS = {
@@ -184,7 +185,14 @@ Deno.serve(async (req: Request) => {
     if (trava?.teste === true && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
     if (trava?.teste === true && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
-    const ref = `rbr-cte-${operacao_id}`;
+    // Ref versionada: a primeira emissão (v1) usa a ref de sempre; depois de cancelar a Focus não aceita a mesma ref, então a reemissão usa -v2, -v3...
+    const { data: docAnterior } = await supabaseAdmin
+      .from("documentacao_operacao")
+      .select("referencia, status")
+      .eq("operacao_id", operacao_id)
+      .eq("tipo", "cte")
+      .maybeSingle();
+    const { ref } = calcularRef("cte", operacao_id, docAnterior);
 
     // Modo prévia (card de conferência): devolve o que SERIA enviado + o que falta, sem gravar nem chamar a Focus.
     if (previa === true) {

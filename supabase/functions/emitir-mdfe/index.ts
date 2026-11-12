@@ -19,6 +19,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { calcularRef } from "../_shared/refDocumento.ts";
 import { mensagemCondutorAusente, opComCondutor, resolverCondutorTitular } from "./condutorTitular.ts";
 import { cepCarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
@@ -262,7 +263,14 @@ Deno.serve(async (req: Request) => {
     if (testeDaTrava(trava) && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
     if (testeDaTrava(trava) && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
-    const ref = `rbr-mdfe-${operacao_id}`;
+    // Ref versionada: a primeira emissão (v1) usa a ref de sempre; depois de cancelar ou encerrar a Focus não aceita a mesma ref, então a reemissão usa -v2, -v3...
+    const { data: docAnterior } = await supabaseAdmin
+      .from("documentacao_operacao")
+      .select("referencia, status, encerrado_em")
+      .eq("operacao_id", operacao_id)
+      .eq("tipo", "mdfe")
+      .maybeSingle();
+    const { ref } = calcularRef("mdfe", operacao_id, docAnterior);
 
     if (previa === true) {
       return jsonResponse({ sucesso: true, previa: true, ambiente, bloqueios, avisos, regras, payload });
