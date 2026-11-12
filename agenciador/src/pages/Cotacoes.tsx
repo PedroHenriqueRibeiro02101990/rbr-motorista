@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -8,7 +8,7 @@ import { IconPlus, IconX, IconAlertTriangle } from '../icons-local'
 import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import { useContratoAgenciador } from '../components/ContratoAgenciador'
 import DeclaracaoCarga from '../components/DeclaracaoCarga'
-import CalcularPedagioRepom from '@rbr/shared/CalcularPedagioRepom'
+import CalcularPedagioRepom, { REPOM_FRONT_LIGADO } from '@rbr/shared/CalcularPedagioRepom'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -148,6 +148,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
   const [error, setError] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const pedagioRepomRef = useRef<{ valor: string; consultadoEm: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [xmlUploading, setXmlUploading] = useState(false)
   const [xmlError, setXmlError] = useState<string | null>(null)
@@ -416,6 +417,13 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
       margem_ajustada: toNumberOrNull(form.margem_ajustada),
       piso_antt_calculado: toNumberOrNull(form.piso_antt_calculado),
       pedagio: toNumberOrNull(form.pedagio),
+      // Origem do pedágio: repom só se o valor aceito do cálculo automático continua igual ao do campo; senão manual.
+      // Só com a flag do Repom ligada (as colunas vêm da migração 20261112-1200; com a flag desligada nada novo é enviado ao banco).
+      ...(!REPOM_FRONT_LIGADO
+        ? {}
+        : pedagioRepomRef.current && pedagioRepomRef.current.valor === String(form.pedagio)
+        ? { pedagio_origem: 'repom', pedagio_consultado_em: pedagioRepomRef.current.consultadoEm }
+        : { pedagio_origem: toNumberOrNull(form.pedagio) != null ? 'manual' : null, pedagio_consultado_em: null }),
       valor_seguro_tag: toNumberOrNull(form.valor_seguro_tag),
       lucro_rbr: toNumberOrNull(form.lucro_rbr),
       xml_danfe_url: form.xml_danfe_url,
@@ -865,7 +873,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
               />
             </label>
             {/* Repom: só aparece com VITE_REPOM_ROTEIRIZACAO_HABILITADO=true */}
-            <CalcularPedagioRepom cotacaoId={form.id} onAceitar={(v) => setForm((f) => ({ ...f, pedagio: String(v) }))} />
+            <CalcularPedagioRepom cotacaoId={form.id} onAceitar={(v, em) => { pedagioRepomRef.current = { valor: String(v), consultadoEm: em }; setForm((f) => ({ ...f, pedagio: String(v) })) }} />
             <label className="flex flex-col gap-1 text-xs font-semibold text-[color:var(--rbr-muted)]">
               Seguro/TAG (R$)
               <input

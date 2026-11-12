@@ -5,7 +5,9 @@
 // Entrada: { cotacao_id } (lê ibge_origem, ibge_destino e eixos da cotação, respeitando o acesso do usuário)
 //      ou { ibge_origem, ibge_destino, paradas?, ida_volta?, eixos, eixos_suspensos_ida?, eixos_suspensos_volta? }.
 // Quem chama: gestor RBR ou agenciador logados, ou o motor de preço com a chave interna (REPOM_CHAMADA_INTERNA no Vault).
-// Desligada por padrão: precisa de REPOM_ROTEIRIZACAO_HABILITADO = 'sim' no Vault. Ambiente: REPOM_AMBIENTE (qa|prd, padrão qa).
+// TRAVA DE CUSTO (toda consulta é cobrada): só roda com REPOM_ROTEIRIZACAO_LIBERADA = 'sim' no Vault; senão 503 "Roteirização Repom desligada"
+// sem chamar a Repom. Cache de 30 dias (mesma rota e mesmos eixos) não chama a Repom e não conta no limite. Limite diário global:
+// REPOM_LIMITE_DIARIO (padrão 100), contado em repom_requisicoes; acima disso 429. Ambiente: REPOM_AMBIENTE (qa|prd, padrão qa).
 // Limite de uso: 10 consultas por usuário por minuto (protege o custo por consulta). Cada chamada vira uma linha em
 // repom_requisicoes ANTES de a resposta ser interpretada, sem segredo e sem token. Erro da Repom nunca quebra a cotação:
 // a resposta é { ok:false, erro } e o campo manual segue valendo.
@@ -14,6 +16,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ambienteRepom, criarRepomClient, higienizar, ufDoIbge } from "../_shared/repomClient.ts";
 import { pedagioPorRota, sha256Hex, type Repositorio } from "../_shared/repomPedagio.ts";
+import { decidirLimite, decidirTrava, inicioDoDia, limiteDiario, travaLiberada } from "../_shared/repomTrava.ts";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-repom-chave-interna" };
 const LIMITE_POR_MINUTO = 10;
@@ -74,7 +77,8 @@ Deno.serve(async (req) => {
     const quem = await quemChama(req);
     if (!quem.ok) return json({ ok: false, erro: quem.erro }, quem.status);
 
-    if ((await segredo("REPOM_ROTEIRIZACAO_HABILITADO")) !== "sim") return json({ ok: false, desligado: true, erro: "O cálculo automático de pedágio ainda não está ligado. Informe o pedágio manualmente." });
+    const trava = decidirTrava(travaLiberada(await segredo("REPOM_ROTEIRIZACAO_LIBERADA")));
+    if (!trava.permitido) return json({ ok: false, desligado: true, erro: trava.erro }, trava.status);
 
     const ambiente = ambienteRepom(await segredo("REPOM_AMBIENTE"));
     const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -112,9 +116,21 @@ Deno.serve(async (req) => {
       roteirizacaoSenha: (await segredo("REPOM_VPR_ROTEIRIZACAO_SENHA")) ?? "",
       valePedagioLogin: "", valePedagioSenha: "",
     });
-    const r = await pedagioPorRota(entrada, repo, repom);
+    // Limite diário: roda só quando o cache não resolve, antes da primeira chamada à Repom. Conta apenas consultas que foram (ou vão) à Repom.
+    const antesDeChamar = async (): Promise<string | null> => {
+      const limite = limiteDiario(await segredo("REPOM_LIMITE_DIARIO"));
+      let q = admin.from("repom_requisicoes").select("id", { count: "exact", head: true }).eq("acao", "pedagio-rota").in("status", ["pendente", "ok", "erro"]).gte("criado_em", inicioDoDia());
+      if (linha?.id) q = q.neq("id", linha.id);
+      const { count } = await q;
+      const v = decidirLimite(count ?? 0, limite);
+      return v.permitido ? null : v.erro;
+    };
+    const r = await pedagioPorRota(entrada, repo, repom, Date.now(), antesDeChamar);
 
-    if (linha?.id) await admin.from("repom_requisicoes").update({ response_json: higienizar(r), status: r.ok ? "ok" : "erro", erro: r.ok ? null : r.erro ?? null, http_status: r.ok ? 200 : null }).eq("id", linha.id);
+    // Cache e limite não contam como consulta à Repom (status próprio, fora da contagem do dia).
+    const statusFinal = r.limite ? "bloqueado_limite" : r.doCache ? "cache" : r.ok ? "ok" : "erro";
+    if (linha?.id) await admin.from("repom_requisicoes").update({ response_json: higienizar(r), status: statusFinal, erro: r.ok ? null : r.erro ?? null, http_status: r.ok ? 200 : null }).eq("id", linha.id);
+    if (r.limite) return json({ ok: false, limite: true, erro: r.erro }, 429);
     return json({ ...r, ambiente, emTeste: ambiente !== "prd" });
   } catch (e) {
     return json({ ok: false, erro: "Não foi possível calcular o pedágio agora. Informe o valor manualmente." }, 200);

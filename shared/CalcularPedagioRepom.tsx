@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 
 // Botão "Calcular pedágio automático" (Repom). Desligado por padrão: só aparece com VITE_REPOM_ROTEIRIZACAO_HABILITADO=true.
@@ -19,11 +19,28 @@ export const REPOM_FRONT_LIGADO = (import.meta as unknown as { env?: Record<stri
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-export default function CalcularPedagioRepom({ cotacaoId, onAceitar }: { cotacaoId: string | null | undefined; onAceitar: (valor: number) => void }) {
+// Só aparece com a flag do front ligada E a trava do servidor liberada (repom-status.liberada); com a trava desligada nem aparece.
+export default function CalcularPedagioRepom({ cotacaoId, onAceitar }: { cotacaoId: string | null | undefined; onAceitar: (valor: number, consultadoEm: string) => void }) {
+  const [liberada, setLiberada] = useState(false)
+  useEffect(() => {
+    if (!REPOM_FRONT_LIGADO) return
+    let vivo = true
+    void (async () => {
+      try {
+        const { data } = await supabase.functions.invoke('repom-status', { body: {} })
+        if (vivo) setLiberada((data as { liberada?: boolean } | null)?.liberada === true)
+      } catch {
+        if (vivo) setLiberada(false)
+      }
+    })()
+    return () => {
+      vivo = false
+    }
+  }, [])
   const [carregando, setCarregando] = useState(false)
   const [res, setRes] = useState<Resposta | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
-  if (!REPOM_FRONT_LIGADO) return null
+  if (!REPOM_FRONT_LIGADO || !liberada) return null
 
   async function calcular() {
     if (!cotacaoId) return setMsg('Salve a cotação (com origem, destino e eixos) para calcular o pedágio automático.')
@@ -54,14 +71,14 @@ export default function CalcularPedagioRepom({ cotacaoId, onAceitar }: { cotacao
       {res?.ok && res.valor != null && (
         <div className="rounded-xl border p-2.5 text-[12px]" style={{ borderColor: 'var(--rbr-border)', background: 'var(--rbr-navy-tint)' }}>
           {res.emTeste && <div className="mb-1.5 rounded-lg px-2 py-1 font-bold" style={{ background: 'var(--rbr-warning-bg)', color: 'var(--rbr-navy-dark)' }}>Repom em teste: valor de homologação, não use como definitivo.</div>}
-          <div className="font-bold text-[14px]">{brl(res.valor)}</div>
+          <div className="font-bold text-[14px]">{brl(res.valor)} <span className="font-semibold text-[11px] text-[color:var(--rbr-muted)]">origem: Repom</span></div>
           {res.descricaoPercurso && <div className="text-[color:var(--rbr-muted)] mt-0.5">Rodovias: {res.descricaoPercurso}</div>}
           <div className="text-[color:var(--rbr-muted)]">
             Consulta de {res.consultadoEm ? new Date(res.consultadoEm).toLocaleDateString('pt-BR') : '—'}
             {res.doCache ? ' (já consultada antes)' : ''}
           </div>
           <div className="flex gap-2 mt-2">
-            <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-bold" style={{ background: 'var(--rbr-btn, #1e2761)', color: '#fff' }} onClick={() => { onAceitar(res.valor!); setRes(null) }}>
+            <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-bold" style={{ background: 'var(--rbr-btn, #1e2761)', color: '#fff' }} onClick={() => { onAceitar(res.valor!, res.consultadoEm ?? new Date().toISOString()); setRes(null) }}>
               Usar este valor
             </button>
             <button type="button" className="px-3 py-1.5 rounded-lg text-xs font-bold" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy)' }} onClick={() => setRes(null)}>

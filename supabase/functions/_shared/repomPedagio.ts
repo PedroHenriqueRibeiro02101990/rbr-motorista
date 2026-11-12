@@ -34,6 +34,7 @@ export interface SaidaPedagio {
   consultadoEm?: string
   doCache?: boolean
   erro?: string
+  limite?: boolean // true = o limite diário barrou a consulta (a função responde 429)
 }
 
 export const validoNoCache = (consultadoEm: string, validadeDias: number, agora = Date.now()) => agora - new Date(consultadoEm).getTime() < validadeDias * 86_400_000
@@ -43,7 +44,8 @@ export async function sha256Hex(texto: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-export async function pedagioPorRota(e: EntradaPedagio, repo: Repositorio, repom: ClienteRepom, agora = Date.now()): Promise<SaidaPedagio> {
+// antesDeChamar roda só quando o cache não resolve e ANTES da primeira chamada à Repom; devolve a mensagem de recusa (limite diário) ou null.
+export async function pedagioPorRota(e: EntradaPedagio, repo: Repositorio, repom: ClienteRepom, agora = Date.now(), antesDeChamar?: () => Promise<string | null>): Promise<SaidaPedagio> {
   if (!(e.eixos >= 2 && e.eixos <= 15)) return { ok: false, erro: 'Informe o número de eixos (de 2 a 15).' }
   const susIda = e.eixosSuspensosIda ?? 0
   const susVolta = e.eixosSuspensosVolta ?? 0
@@ -60,6 +62,10 @@ export async function pedagioPorRota(e: EntradaPedagio, repo: Repositorio, repom
     const cache = await repo.buscarPedagio(rota.id, e.eixos, susIda, susVolta)
     if (cache && validoNoCache(cache.consultado_em, cache.validade_dias, agora))
       return { ok: true, valor: cache.valor_total, valorIda: cache.valor_ida, valorVolta: cache.valor_volta, descricaoPercurso: rota.descricao_percurso, consultadoEm: cache.consultado_em, doCache: true }
+  }
+  if (antesDeChamar) {
+    const recusa = await antesDeChamar()
+    if (recusa) return { ok: false, erro: recusa, limite: true }
   }
   if (!rota) {
     const pedido: PedidoRotaRepom = { codigoRoteiroCliente: codigoRoteiroDe(hash), origem: { ibge: e.ibgeOrigem, uf: e.ufOrigem }, destino: { ibge: e.ibgeDestino, uf: e.ufDestino }, paradas: e.paradas, idaVolta: e.idaVolta, tipoRota: e.tipoRota }

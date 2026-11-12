@@ -1,10 +1,13 @@
-// Edge Function: repom-status  (verify_jwt = true)  NÃO PUBLICADA.
-// Diz ao front se o cálculo automático de pedágio está ligado e em que ambiente (qa|prd), e se as credenciais estão
-// cadastradas, SEM expor nenhum valor secreto e SEM chamar a Repom (não gasta consulta). Gestor ou agenciador logados.
+// Edge Function: repom-status  (verify_jwt = true)
+// Diz ao front e ao Pedro: ambiente (qa|prd), se a TRAVA de custo está liberada (REPOM_ROTEIRIZACAO_LIBERADA = sim), o limite diário
+// (REPOM_LIMITE_DIARIO, padrão 100) e o uso de hoje (repom_requisicoes), e se as credenciais existem. NUNCA expõe valor de segredo.
+// Por padrão NÃO chama a Repom. Com { "verificar_token": true} faz UMA única chamada de token (não consulta rota nem pedágio) e
+// informa só se o token foi obtido. Gestor ou agenciador logados (o agenciador usa o estado "liberada" para mostrar o botão).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { ambienteRepom } from "../_shared/repomClient.ts";
+import { ambienteRepom, criarRepomClient } from "../_shared/repomClient.ts";
+import { inicioDoDia, limiteDiario, travaLiberada } from "../_shared/repomTrava.ts";
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const url = Deno.env.get("SUPABASE_URL")!;
@@ -20,9 +23,30 @@ Deno.serve(async (req) => {
   const { data: p } = await admin.from("pessoas").select("papel").eq("auth_user_id", data.user.id).maybeSingle();
   if (p?.papel !== "gestor_rbr" && p?.papel !== "agenciador") return json({ ok: false, erro: "Sem permissão." }, 403);
   try {
-    const [hab, amb, login, senha] = await Promise.all([segredo("REPOM_ROTEIRIZACAO_HABILITADO"), segredo("REPOM_AMBIENTE"), segredo("REPOM_VPR_ROTEIRIZACAO_LOGIN"), segredo("REPOM_VPR_ROTEIRIZACAO_SENHA")]);
+    const corpo = (await req.json().catch(() => ({}))) as { verificar_token?: unknown };
+    const [lib, amb, lim, login, senha, codigo] = await Promise.all([
+      segredo("REPOM_ROTEIRIZACAO_LIBERADA"), segredo("REPOM_AMBIENTE"), segredo("REPOM_LIMITE_DIARIO"),
+      segredo("REPOM_VPR_ROTEIRIZACAO_LOGIN"), segredo("REPOM_VPR_ROTEIRIZACAO_SENHA"), segredo("REPOM_VPR_CODIGO_CLIENTE"),
+    ]);
     const ambiente = ambienteRepom(amb);
-    return json({ ok: true, habilitado: hab === "sim", ambiente, emTeste: ambiente !== "prd", credenciaisCadastradas: Boolean(login && senha) });
+    const { count } = await admin.from("repom_requisicoes").select("id", { count: "exact", head: true }).eq("acao", "pedagio-rota").in("status", ["pendente", "ok", "erro"]).gte("criado_em", inicioDoDia());
+    const saida: Record<string, unknown> = {
+      ok: true,
+      ambiente,
+      emTeste: ambiente !== "prd",
+      liberada: travaLiberada(lib),
+      limiteDiario: limiteDiario(lim),
+      usoHoje: count ?? 0,
+      credenciaisCadastradas: Boolean(login && senha),
+    };
+    if (corpo.verificar_token === true) {
+      if (!login || !senha) saida.tokenObtido = false;
+      else {
+        const repom = criarRepomClient({ ambiente, codigoCliente: codigo ?? "", roteirizacaoLogin: login, roteirizacaoSenha: senha, valePedagioLogin: "", valePedagioSenha: "" });
+        saida.tokenObtido = (await repom.verificarToken()).ok;
+      }
+    }
+    return json(saida);
   } catch {
     return json({ ok: false, erro: "Não consegui ler a configuração." });
   }
