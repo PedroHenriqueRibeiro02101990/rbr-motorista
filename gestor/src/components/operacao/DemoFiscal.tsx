@@ -6,6 +6,7 @@ import type { RequisicaoVpo } from '../../lib/vpoPassos'
 import { formatMoney } from '@rbr/shared/format'
 import CartaoVpo from './CartaoVpo'
 import CiotEfrete from './CiotEfrete'
+import SeletorFornecedor from './SeletorFornecedor'
 import { FaixaFixa } from './CartaoCiot'
 
 // Aba Fiscal no MODO DE DEMONSTRAÇÃO (reunião com a NSTech): só a esteira completa, o vale-pedágio e o CIOT, cada um
@@ -310,7 +311,7 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
         {aba === 'vpo' ? (
           <>
             <Cabecalho titulo="1. Vale-pedágio (NSPEDAGIO)" fluxo="ao NSPEDAGIO" />
-            {estado && <CartaoVpo operacaoId={operacaoId} ehTeste demo onMudou={aoMudar} onSimulacao={setSimulacao} inicial={{ ...inicialVale, ...(formVale ?? {}) }} onDados={setFormVale} tabela={tabelaVpo} />}
+            {estado && <CartaoVpo operacaoId={operacaoId} ehTeste demo onMudou={aoMudar} onSimulacao={setSimulacao} inicial={{ ...inicialVale, ...(formVale ?? {}) }} onDados={setFormVale} tabela={tabelaVpo} seletor={<SeletorFornecedor operacaoId={operacaoId} tipo="vpo" demo />} />}
             {dados.vpo.idvpo && (
               <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)' }}>
                 Vale <b>{dados.vpo.idvpo}</b> gravado na operação. Depois ele vai para o CIOT e para o MDF-e.
@@ -330,7 +331,7 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
         ) : (
           <>
             <Cabecalho titulo="2. CIOT (efrete)" fluxo="à efrete" />
-            <CiotEfrete operacaoId={operacaoId} ehTeste docs={docs} demo onMudou={aoMudar} onPrevia={setPrevia} onPedido={(p) => setPisoPedido(p?.piso_minimo ?? null)} tabela={tabelaCiot} />
+            <CiotEfrete operacaoId={operacaoId} ehTeste docs={docs} demo onMudou={aoMudar} onPrevia={setPrevia} onPedido={(p) => setPisoPedido(p?.piso_minimo ?? null)} tabela={tabelaCiot} seletor={<SeletorFornecedor operacaoId={operacaoId} tipo="ciot" demo />} />
             {estado?.ciot.ciot && estado.ciot.status !== 'cancelado' && (
               <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)' }}>
                 Voltou: CIOT <b>{estado.ciot.ciot}{estado.ciot.verificador ? `/${estado.ciot.verificador}` : ''}</b>

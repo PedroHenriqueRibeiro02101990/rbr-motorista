@@ -14,10 +14,10 @@ test('migração só aditiva: nada apagado nem alterado de dados existentes', ()
   assert.doesNotMatch(mig, /alter\s+table[^;]*\b(drop|alter\s+column|rename)\b/i)
   assert.match(mig, /on conflict \(id\) do nothing/)
 })
-test('RLS ligado e forçado; leitura só gestor; sem escrita para usuário', () => {
+test('RLS ligado e forçado; leitura gestor e Fiscal; sem escrita para usuário', () => {
   assert.match(mig, /enable row level security/)
   assert.match(mig, /force row level security/)
-  assert.match(mig, /for select to authenticated\s+using \(public\.current_papel\(\)::text = 'gestor_rbr'\)/)
+  assert.match(mig, /for select to authenticated\s+using \(public\.current_papel\(\)::text in \('gestor_rbr', 'fiscal'\)\)/)
   assert.doesNotMatch(mig, /create policy[^;]*for (insert|update|delete|all)/i)
   assert.match(mig, /revoke insert, update, delete on public\.fornecedores_fiscais from authenticated/)
 })

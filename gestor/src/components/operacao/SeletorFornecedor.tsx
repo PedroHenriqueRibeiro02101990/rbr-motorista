@@ -61,22 +61,25 @@ export default function SeletorFornecedor({ operacaoId, tipo, demo = false, onMu
   const idAtual = escolhido ?? catalogo.find((f) => (tipo === 'ciot' ? f.padrao_ciot : f.padrao_vpo))?.id ?? 'nstech'
   return (
     <div className="rounded-lg border px-3 py-2 text-xs flex flex-col gap-1" style={{ borderColor: 'var(--rbr-border, #e5e7eb)' }}>
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={`forn-${tipo}`} className="font-bold text-[color:var(--rbr-navy-dark)]">Empresa que emite</label>
-        <select
-          id={`forn-${tipo}`}
-          value={valor}
-          disabled={!podeTrocar || !!travado || salvando}
-          onChange={(e) => void trocar(e.target.value)}
-          className="rounded border px-2 py-1 text-xs bg-white"
-          style={{ borderColor: 'var(--rbr-border, #e5e7eb)' }}
-        >
-          {opcoes.map((o) => (
-            <option key={o.id} value={o.id} disabled={o.desabilitada}>{o.rotulo}</option>
-          ))}
-        </select>
+      {/* Opções sempre à vista (radio): a empresa marcada e as que ainda estão "em implantação" (desabilitadas) aparecem sem abrir lista. */}
+      <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 border-0 p-0 m-0 min-w-0" id={`forn-${tipo}`}>
+        <legend className="sr-only">Empresa que emite</legend>
+        <span className="font-bold text-[color:var(--rbr-navy-dark)]" aria-hidden>Empresa que emite</span>
+        {opcoes.map((o) => (
+          <label key={o.id} className={`inline-flex items-center gap-1.5 ${o.desabilitada ? 'opacity-60' : ''}`}>
+            <input
+              type="radio"
+              name={`forn-${tipo}`}
+              value={o.id}
+              checked={valor === o.id}
+              disabled={o.desabilitada || !podeTrocar || !!travado || salvando}
+              onChange={() => void trocar(o.id)}
+            />
+            {o.rotulo}
+          </label>
+        ))}
         <span className="text-[color:var(--rbr-muted)]">{rotuloEtapa(tipo, idAtual, catalogo.find((f) => f.id === idAtual)?.nome)}{escolhido ? '' : ' · padrão, sem escolha feita'}</span>
-      </div>
+      </fieldset>
       {travado && <div className="text-[color:var(--rbr-muted)]">{travado}</div>}
       {!travado && !podeTrocar && <div className="text-[color:var(--rbr-muted)]">Só o Fiscal ou o gestor trocam a empresa.</div>}
       {linha?.fornecedor_escolhido_em && escolhido && <div className="text-[color:var(--rbr-muted)]">Escolhida em {new Date(linha.fornecedor_escolhido_em).toLocaleString('pt-BR')}.</div>}

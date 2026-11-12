@@ -19,8 +19,8 @@ alter table public.fornecedores_fiscais enable row level security;
 alter table public.fornecedores_fiscais force row level security;
 drop policy if exists fornecedores_fiscais_leitura on public.fornecedores_fiscais;
 create policy fornecedores_fiscais_leitura on public.fornecedores_fiscais for select to authenticated
-  using (public.current_papel()::text = 'gestor_rbr');
--- Escrita: nenhuma policy para usuário (só service_role e as funções abaixo).
+  using (public.current_papel()::text in ('gestor_rbr', 'fiscal'));
+-- Leitura: gestor e Fiscal (o Fiscal é quem escolhe a empresa). Escrita: nenhuma policy para usuário (só service_role e as funções abaixo).
 revoke all on public.fornecedores_fiscais from anon;
 revoke insert, update, delete on public.fornecedores_fiscais from authenticated;
 

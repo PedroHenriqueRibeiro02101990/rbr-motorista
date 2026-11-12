@@ -99,9 +99,9 @@ async function cenario(browser, { nome, demo, emitido, papel = 'gestor_rbr' }, c
   await pagina.goto(`${BASE}/fiscal?op=${OP}`, { waitUntil: 'networkidle' })
   await pagina.waitForTimeout(1800)
   const texto = (await pagina.evaluate(() => document.body.innerText)).toLowerCase().replace(/ /g, ' ')
-  const seletores = await pagina.evaluate(() => Array.from(document.querySelectorAll('select[id^="forn-"]')).map((s) => ({ id: s.id, desabilitado: s.disabled, opcoes: Array.from(s.options).map((o) => ({ texto: o.text, desabilitada: o.disabled, selecionada: o.selected })) })))
+  const seletores = await pagina.evaluate(() => Array.from(document.querySelectorAll('fieldset[id^="forn-"]')).map((f) => { const r = Array.from(f.querySelectorAll('input[type=radio]')); return { id: f.id, desabilitado: r.every((x) => x.disabled), opcoes: r.map((x) => ({ texto: x.parentElement.innerText.trim(), desabilitada: x.disabled, selecionada: x.checked })) } }))
   if (captura) {
-    const alvo = pagina.locator('select[id^="forn-"]').first()
+    const alvo = pagina.locator('fieldset[id^="forn-"]').first()
     if (await alvo.count()) await alvo.scrollIntoViewIfNeeded()
     await pagina.waitForTimeout(300)
     await pagina.screenshot({ path: captura })
@@ -131,7 +131,7 @@ async function cenario(browser, { nome, demo, emitido, papel = 'gestor_rbr' }, c
   if (ligada) {
     confere(livre.seletores.length === 2, 'flag ligada, não-demo: seletor nos dois cartões (CIOT e vale)')
     const s = livre.seletores[0]
-    confere(!s.desabilitado && s.opcoes.some((o) => /nstech/i.test(o.texto) && o.selecionada), 'seletor com nstech marcado e habilitado')
+    confere(s.opcoes.some((o) => /nstech/i.test(o.texto) && o.selecionada && !o.desabilitada), 'seletor com nstech marcado e habilitado')
     confere(s.opcoes.some((o) => /repom/i.test(o.texto) && o.desabilitada && /em implantação/i.test(o.texto)), 'repom desabilitado "em implantação"')
     confere(livre.texto.includes('vpo: nspedagio (padrão)') && livre.texto.includes('ciot: efrete (padrão)'), 'esteira mostra o fornecedor de cada etapa, com "(padrão)" sem escolha feita')
     confere(emitido.seletores.length === 2 && emitido.seletores.every((x) => x.desabilitado), 'depois de emitir: seletores bloqueados')
