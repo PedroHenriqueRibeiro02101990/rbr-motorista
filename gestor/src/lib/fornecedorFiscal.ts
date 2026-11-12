@@ -47,3 +47,19 @@ export function textoEmpresa(tipo: TipoFornecimento, escolhido: string | null | 
 
 // O seletor só existe com a flag ligada e fora da demonstração (a demo fica exatamente como está: nstech fixo).
 export const seletorVisivel = (flag: boolean, demo: boolean) => flag && !demo
+
+// Texto de cada etapa na esteira e no pré-voo: "VPO: NSPEDAGIO (padrão)" sem escolha feita; "CIOT: efrete · emitido por NSTech" depois de emitir.
+// Documento já emitido mostra o fornecedor gravado, que a troca não altera (o seletor fica bloqueado) e que cancelar e consultar continuam usando.
+export type LinhaFornecedor = { ciot_fornecedor?: string | null; vpo_fornecedor?: string | null; ciot_status?: string | null; vpo_idvpo?: string | null }
+export function rotulosFornecedores(catalogo: FornecedorFiscal[], linha: LinhaFornecedor | null | undefined): Record<TipoFornecimento, string> {
+  const um = (tipo: TipoFornecimento): string => {
+    const escolhido = (tipo === 'ciot' ? linha?.ciot_fornecedor : linha?.vpo_fornecedor) ?? null
+    const id = escolhido ?? padraoDoCatalogo(catalogo, tipo)
+    const f = catalogo.find((x) => x.id === id)
+    const base = rotuloEtapa(tipo, id, f?.nome)
+    const emitido = tipo === 'ciot' ? ['emitido', 'encerrado'].includes(linha?.ciot_status ?? '') : !!linha?.vpo_idvpo
+    if (emitido) return `${base} · emitido por ${f?.nome ?? id}`
+    return escolhido ? base : `${base} (padrão)`
+  }
+  return { ciot: um('ciot'), vpo: um('vpo') }
+}

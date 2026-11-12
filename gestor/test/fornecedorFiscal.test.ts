@@ -53,3 +53,27 @@ test('rótulo da etapa para esteira e pré-voo', () => {
   assert.equal(rotuloEtapa('ciot', 'nstech'), 'CIOT: efrete')
   assert.equal(rotuloEtapa('vpo', 'repom', 'Repom'), 'VPO: Repom')
 })
+
+import { rotulosFornecedores } from '../src/lib/fornecedorFiscal.ts'
+test('esteira e pré-voo: fornecedor de cada etapa, "(padrão)" sem escolha e "emitido por" depois de emitir', () => {
+  assert.deepEqual(rotulosFornecedores(CAT, null), { ciot: 'CIOT: efrete (padrão)', vpo: 'VPO: NSPEDAGIO (padrão)' })
+  assert.equal(rotulosFornecedores(CAT, { vpo_fornecedor: 'nstech' }).vpo, 'VPO: NSPEDAGIO')
+  const emitido = rotulosFornecedores(CAT, { ciot_fornecedor: 'nstech', ciot_status: 'emitido', vpo_idvpo: '669' })
+  assert.equal(emitido.ciot, 'CIOT: efrete · emitido por NSTech')
+  assert.equal(emitido.vpo, 'VPO: NSPEDAGIO · emitido por NSTech')
+  // CIOT cancelado volta a "a emitir" com o fornecedor atual
+  assert.equal(rotulosFornecedores(CAT, { ciot_status: 'cancelado' }).ciot, 'CIOT: efrete (padrão)')
+})
+
+test('demonstração: seletor e texto novo não aparecem com a flag ligada nem desligada', () => {
+  for (const flag of [true, false]) assert.equal(seletorVisivel(flag, true), false)
+})
+test('flag desligada: nada novo em nenhuma operação; ligada em operação comum: seletor e fornecedor aparecem', () => {
+  assert.equal(seletorVisivel(false, false), false)
+  assert.equal(seletorVisivel(true, false), true)
+  assert.equal(rotulosFornecedores(CAT, null).vpo, 'VPO: NSPEDAGIO (padrão)')
+})
+test('papel sem permissão vê o fornecedor mas não troca', () => {
+  assert.equal(podeTrocarFornecedor('operacao'), false)
+  assert.equal(rotulosFornecedores(CAT, { vpo_fornecedor: 'nstech' }).vpo, 'VPO: NSPEDAGIO')
+})

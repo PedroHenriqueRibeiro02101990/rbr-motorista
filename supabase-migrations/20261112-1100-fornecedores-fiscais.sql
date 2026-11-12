@@ -16,15 +16,16 @@ create unique index if not exists fornecedores_fiscais_um_padrao_ciot on public.
 create unique index if not exists fornecedores_fiscais_um_padrao_vpo on public.fornecedores_fiscais (padrao_vpo) where padrao_vpo;
 
 alter table public.fornecedores_fiscais enable row level security;
+alter table public.fornecedores_fiscais force row level security;
 drop policy if exists fornecedores_fiscais_leitura on public.fornecedores_fiscais;
 create policy fornecedores_fiscais_leitura on public.fornecedores_fiscais for select to authenticated
-  using (public.current_papel()::text in ('gestor_rbr', 'fiscal'));
+  using (public.current_papel()::text = 'gestor_rbr');
 -- Escrita: nenhuma policy para usuário (só service_role e as funções abaixo).
 revoke all on public.fornecedores_fiscais from anon;
 revoke insert, update, delete on public.fornecedores_fiscais from authenticated;
 
 insert into public.fornecedores_fiscais (id, nome, capacidades, ativo, disponivel_emissao, ambiente, ordem, padrao_ciot, padrao_vpo) values
-  ('nstech', 'NSTech (efrete para CIOT, NSPEDAGIO para vale)', array['ciot','vpo'], true, true,  'homologacao', 10, true,  true),
+  ('nstech', 'NSTech', array['ciot','vpo'], true, true,  'homologacao', 10, true,  true),
   ('repom',  'Repom',                                           array['ciot','vpo'], true, false, 'homologacao', 20, false, false)
 on conflict (id) do nothing;
 

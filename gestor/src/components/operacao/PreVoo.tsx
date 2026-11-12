@@ -1,6 +1,7 @@
 import { supabase } from '@rbr/shared/supabaseClient'
 import { useEffect, useState } from 'react'
 import { resumoNfes } from './NfesCliente'
+import { useFornecedoresOperacao } from './useFornecedoresOperacao'
 import { abaDaPendencia, ROTULO_ABA, type AbaDoPreVoo } from '../../lib/preVooEtapas'
 import { situacaoApolice, type SituacaoApolice } from '@rbr/shared/regrasOperacao'
 
@@ -12,6 +13,7 @@ type Item = { doc: string; item: string; ok: boolean; motivo: string }
 // B13: tipo 'todos' é o pré-voo único da operação (CT-e, MDF-e, risco e itens gerais numa lista só).
 export default function PreVoo({ operacaoId, tipo, onIr }: { operacaoId: string; tipo: 'cte' | 'mdfe' | 'nfse' | 'todos'; onIr?: (aba: AbaDoPreVoo) => void }) {
   const [itens, setItens] = useState<Item[] | null>(null)
+  const fornecedores = useFornecedoresOperacao(operacaoId) // nulo com a flag desligada ou na demonstração
   const [erro, setErro] = useState(false)
   const [nfes, setNfes] = useState<{ quantidade: number; valor_total: number } | null>(null)
   // C08: limite da apólice RCTR-C lido do cadastro (nunca fixo no código).
@@ -62,6 +64,7 @@ export default function PreVoo({ operacaoId, tipo, onIr }: { operacaoId: string;
   return (
     <div className="rounded-lg px-3 py-2 text-xs" style={{ background: faltam.length ? '#FDF1DC' : '#E7F5EC', color: faltam.length ? '#8A5A00' : 'var(--rbr-positive)' }}>
       <div className="font-bold mb-1">{faltam.length ? `Pré-voo: ${faltam.length} pendência(s) antes de emitir` : '✓ Pré-voo completo: nada pendente'}</div>
+      {fornecedores && tipo !== 'nfse' && <div className="mb-1">{fornecedores.vpo} · {fornecedores.ciot}</div>}
       {nfes && tipo !== 'nfse' && <div className="mb-1 tabular-nums">{resumoNfes(Number(nfes.quantidade), Number(nfes.valor_total))}</div>}
       {destinatarios > 1 && tipo !== 'nfse' && (
         <div className="mb-1 font-bold" style={{ color: '#8A5A00' }}>
