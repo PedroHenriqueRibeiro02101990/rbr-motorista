@@ -42,4 +42,4 @@ Mais urgentes: D-F01/D-F02 (URL e corpo do token do Frete), D-V03/D-V12 (reenvio
 `node --test` (mesma lista do CI): 406 testes, 0 falhas. `tsc` estrito nos arquivos novos e `tsc -b && vite build` do gestor: ok. `oxlint`: só avisos já existentes e de estilo. Limite da leitura: as figuras do guia Frete (token, portal de testes, quadro do TAC-Agregado) são imagens e não puderam ser lidas; as dúvidas D-F02, D-F16 e D-F20 cobrem isso.
 
 ## PR e merge
-(preenchido abaixo depois dos checks)
+PR #76. Regra do dia: merge squash permitido só se todos os checks passarem **e** o diff não tocar nada que a demonstração usa. Checks: `testes` (2 execuções) e Vercel, todos verdes; o diff (26 arquivos, só `docs/`, `supabase/functions/_shared/repom*`, `repom-*`, uma migração e um rollback) **não toca** `nspedagio-vpo`, `efrete-ciot-operacao`, `emitir-cte`, `emitir-mdfe`, abas Vale-pedágio/CIOT, operações DEMO nem front. **Resultado: PR mergeado (squash).** Nada foi publicado e nenhuma migração foi aplicada: isso fica para o Claude, na ordem acima.
