@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
-import { aaaammddDeIso, esteiraDemonstracao, linhasDadosCiot, linhasDadosVpo, type DadosDemo, type EstadoCaixa, type FormularioVale, type LinhaDado } from '../../lib/modoDemonstracao'
+import { aaaammddDeIso, abaInicial, CHAVE_ABA_DEMO, esteiraDemonstracao, linhasDadosCiot, linhasDadosVpo, proximoPassoCiot, textoEstadoAba, type AbaDemo, type DadosDemo, type EstadoCaixa, type FormularioVale, type LinhaDado } from '../../lib/modoDemonstracao'
 import { textoPedagio, type DocLeve, type Previa } from '../../lib/ciotCartao'
 import type { RequisicaoVpo } from '../../lib/vpoPassos'
 import { formatMoney } from '@rbr/shared/format'
@@ -145,17 +145,15 @@ function TabelaDados({ linhas }: { linhas: LinhaDado[] }) {
   )
 }
 
-function Cartao({ titulo, fluxo, children, rodape }: { titulo: string; fluxo: string; children: React.ReactNode; rodape?: React.ReactNode }) {
+function Cabecalho({ titulo, fluxo }: { titulo: string; fluxo: string }) {
   return (
-    <section className="rounded-xl border p-3.5 flex flex-col gap-2.5 bg-white" style={borda}>
+    <div className="flex flex-col gap-2 mt-1">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="m-0 text-[15px] font-extrabold text-[color:var(--rbr-navy-dark)]">{titulo}</h3>
         <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full" style={{ background: '#FDF1DC', color: '#8A5A00' }}>Homologação</span>
       </div>
       <Fluxo destino={fluxo} />
-      {children}
-      {rodape}
-    </section>
+    </div>
   )
 }
 
@@ -167,6 +165,17 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
   const [simulacao, setSimulacao] = useState<string | null>(null)
   const [formVale, setFormVale] = useState<FormularioVale | null>(null)
   const [pisoPedido, setPisoPedido] = useState<number | null>(null)
+  // Aba aberta: o hash da URL (#vpo, #ciot) vale para o F5 e links; depois a sessão; senão o Vale-pedágio.
+  const [aba, setAba] = useState<AbaDemo>(() => {
+    let guardada: string | null = null
+    try {
+      guardada = window.sessionStorage.getItem(CHAVE_ABA_DEMO)
+    } catch {
+      /* sem sessionStorage */
+    }
+    return abaInicial(window.location.hash, guardada)
+  })
+  const esteiraRef = useRef<HTMLDivElement>(null)
 
   const recarregar = useCallback(async () => {
     try {
@@ -184,6 +193,13 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
   }, [recarregar, onMudou])
 
   const dados = estado?.dados ?? VAZIO
+  // Só um quadro fica montado: se o vale estiver em processamento e a pessoa estiver na aba do CIOT, a esteira se atualiza sozinha.
+  const vpoProcessando = (estado?.reqs ?? []).length > 0 && esteiraDemonstracao(estado?.reqs ?? [], null).caixas.find((c) => c.id === 'vpo')?.estado === 'processando'
+  useEffect(() => {
+    if (!vpoProcessando || aba === 'vpo') return
+    const t = setInterval(() => void recarregar(), 15_000)
+    return () => clearInterval(t)
+  }, [vpoProcessando, aba, recarregar])
   const esteira = useMemo(() => esteiraDemonstracao(estado?.reqs ?? [], estado?.ciot.status, Date.now(), { emitidoEm: estado?.ciot.emitidoEm, canceladoEm: estado?.ciot.canceladoEm }), [estado])
   const linhasCiot = useMemo(() => linhasDadosCiot(dados, previa?.piso ?? null, pisoPedido, textoPedagio(previa?.pedagio)), [dados, previa, pisoPedido])
   // Valores de partida do formulário do vale: vêm da operação (a MESMA fonte que a tabela mostra).
@@ -205,6 +221,35 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
   const veicTexto = dados.veiculos.length ? dados.veiculos.map((v) => v.placa).join(' + ') : 'veículos não informados'
   const freteTexto = dados.frete.total != null ? formatMoney(dados.frete.total) : resumo.frete != null ? formatMoney(resumo.frete) : 'frete não informado'
 
+  const aoMudarAba = useCallback((nova: AbaDemo) => {
+    setAba(nova)
+    try {
+      window.sessionStorage.setItem(CHAVE_ABA_DEMO, nova)
+    } catch {
+      /* sem sessionStorage: a aba só não é lembrada */
+    }
+    try {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${nova}`)
+    } catch {
+      /* sem history: o hash só não acompanha */
+    }
+    // A rolagem volta ao topo do quadro da esteira (o painel da operação rola por dentro).
+    requestAnimationFrame(() => esteiraRef.current?.scrollIntoView({ block: 'start' }))
+  }, [])
+  const aoTeclarAba = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault()
+      const nova: AbaDemo = aba === 'vpo' ? 'ciot' : 'vpo'
+      aoMudarAba(nova)
+      requestAnimationFrame(() => document.getElementById(`aba-demo-${nova}`)?.focus())
+    }
+  }
+
+  const proximo = proximoPassoCiot(esteira)
+  const valorVpo = dados.vpo.valor
+  const tabelaVpo = <TabelaDados linhas={linhasVpo} />
+  const tabelaCiot = <TabelaDados linhas={linhasCiot} />
+
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <FaixaFixa texto="HOMOLOGAÇÃO: nenhum documento ou vale-pedágio real" />
@@ -215,57 +260,86 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div ref={esteiraRef} className="flex items-center justify-between gap-2 flex-wrap scroll-mt-2">
         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Esteira fiscal</div>
         <div className="text-xs font-bold" aria-label="Contador da demonstração">{esteira.contador} concluídas</div>
       </div>
-      <ol className="grid grid-cols-2 sm:grid-cols-5 gap-2 list-none m-0 p-0" aria-label="Esteira fiscal">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2" role="tablist" aria-label="Esteira fiscal" onKeyDown={aoTeclarAba}>
         {esteira.caixas.map((c) => {
           const e = ESTILO_CAIXA[c.estado]
-          return (
-            <li key={c.id} className="rounded-lg px-2.5 py-2 flex flex-col gap-0.5 min-w-0" style={e.caixa} data-ativo={c.ativo} data-estado={c.estado}>
+          const texto = textoEstadoAba(c, valorVpo)
+          const conteudo = (
+            <>
               <span className="text-xs font-bold" style={{ color: e.titulo }}>{c.rotulo}</span>
-              <span className="text-[11px] font-semibold" style={{ color: e.texto }}>{e.marca}{c.status}</span>
+              <span className="text-[11px] font-semibold" style={{ color: e.texto }}>{e.marca}{texto}</span>
               {c.detalhe && <span className="text-[11px]" style={{ color: e.texto }}>{c.detalhe}</span>}
-            </li>
+            </>
+          )
+          if (c.id !== 'vpo' && c.id !== 'ciot') {
+            return (
+              <div key={c.id} className="rounded-lg px-2.5 py-2 flex flex-col gap-0.5 min-w-0" style={e.caixa} data-ativo={c.ativo} data-estado={c.estado}>
+                {conteudo}
+              </div>
+            )
+          }
+          const selecionada = aba === c.id
+          const anel = c.id === 'ciot' && proximo && !selecionada
+          return (
+            <button
+              key={c.id}
+              id={`aba-demo-${c.id}`}
+              type="button"
+              role="tab"
+              aria-selected={selecionada}
+              aria-controls="painel-demo"
+              tabIndex={selecionada ? 0 : -1}
+              onClick={() => aoMudarAba(c.id as AbaDemo)}
+              className={`rounded-lg px-2.5 py-2 flex flex-col gap-0.5 min-w-0 text-left border-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E2761] ${selecionada ? 'border-[#1E2761]' : 'border-[#e5e7eb] hover:border-[#1E2761]'}`}
+              style={{ background: e.caixa.background, boxShadow: anel ? '0 0 0 3px rgba(184,134,59,.45)' : undefined }}
+              data-ativo={c.ativo}
+              data-estado={c.estado}
+              data-proximo={anel || undefined}
+            >
+              {conteudo}
+            </button>
           )
         })}
-      </ol>
+      </div>
 
-      <Cartao
-        titulo="1. Vale-pedágio (NSPEDAGIO)"
-        fluxo="ao NSPEDAGIO"
-        rodape={
-          dados.vpo.idvpo ? (
-            <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)' }}>
-              Vale <b>{dados.vpo.idvpo}</b> gravado na operação. Depois ele vai para o CIOT e para o MDF-e.
-            </div>
-          ) : undefined
-        }
-      >
-        <div className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_22rem] items-start">
-          <TabelaDados linhas={linhasVpo} />
-          {estado && <CartaoVpo operacaoId={operacaoId} ehTeste demo onMudou={aoMudar} onSimulacao={setSimulacao} inicial={inicialVale} onDados={setFormVale} />}
-        </div>
-      </Cartao>
-
-      <Cartao
-        titulo="2. CIOT (efrete)"
-        fluxo="à efrete"
-        rodape={
-          estado?.ciot.ciot && estado.ciot.status !== 'cancelado' ? (
-            <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)' }}>
-              Voltou: CIOT <b>{estado.ciot.ciot}{estado.ciot.verificador ? `/${estado.ciot.verificador}` : ''}</b>
-              {estado.ciot.protocolo ? ` · protocolo ${estado.ciot.protocolo}` : ''}. O CIOT e o vale-pedágio vão para o MDF-e.
-            </div>
-          ) : undefined
-        }
-      >
-        <div className="grid gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_24rem] items-start">
-          <TabelaDados linhas={linhasCiot} />
-          <CiotEfrete operacaoId={operacaoId} ehTeste docs={docs} demo onMudou={aoMudar} onPrevia={setPrevia} onPedido={(p) => setPisoPedido(p?.piso_minimo ?? null)} />
-        </div>
-      </Cartao>
+      <div id="painel-demo" role="tabpanel" aria-labelledby={`aba-demo-${aba}`} className="flex flex-col gap-3">
+        {aba === 'vpo' ? (
+          <>
+            <Cabecalho titulo="1. Vale-pedágio (NSPEDAGIO)" fluxo="ao NSPEDAGIO" />
+            {estado && <CartaoVpo operacaoId={operacaoId} ehTeste demo onMudou={aoMudar} onSimulacao={setSimulacao} inicial={{ ...inicialVale, ...(formVale ?? {}) }} onDados={setFormVale} tabela={tabelaVpo} />}
+            {dados.vpo.idvpo && (
+              <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)' }}>
+                Vale <b>{dados.vpo.idvpo}</b> gravado na operação. Depois ele vai para o CIOT e para o MDF-e.
+              </div>
+            )}
+            {proximo && (
+              <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl px-4 py-3" style={{ background: '#E4F3EA', border: '1px solid #9AD0B1' }} role="status" data-faixa="proximo-passo">
+                <div>
+                  <b>Vale-pedágio comprado.</b> Próximo passo da esteira: emitir o CIOT.
+                </div>
+                <button type="button" onClick={() => aoMudarAba('ciot')} className="text-xs font-bold px-3.5 py-2 rounded-lg" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
+                  Continuar para o CIOT →
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <Cabecalho titulo="2. CIOT (efrete)" fluxo="à efrete" />
+            <CiotEfrete operacaoId={operacaoId} ehTeste docs={docs} demo onMudou={aoMudar} onPrevia={setPrevia} onPedido={(p) => setPisoPedido(p?.piso_minimo ?? null)} tabela={tabelaCiot} />
+            {estado?.ciot.ciot && estado.ciot.status !== 'cancelado' && (
+              <div className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--rbr-muted-bg)' }}>
+                Voltou: CIOT <b>{estado.ciot.ciot}{estado.ciot.verificador ? `/${estado.ciot.verificador}` : ''}</b>
+                {estado.ciot.protocolo ? ` · protocolo ${estado.ciot.protocolo}` : ''}. O CIOT e o vale-pedágio vão para o MDF-e.
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

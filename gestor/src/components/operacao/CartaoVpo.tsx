@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { NSPEDAGIO_HABILITADO } from '../../lib/efreteFlags'
 import { mensagemClara } from '../../lib/mensagemClara'
@@ -43,13 +43,13 @@ const emDias = (n: number) => new Date(Date.now() + n * 86_400_000)
 
 // demo = modo de demonstração: dados da rota sempre à vista, placa de teste (GYI1732) já preenchida e aviso de espera de 1 a 3 minutos.
 // inicial: valores de partida do formulário na demonstração (vêm da operação); onDados devolve o que o formulário tem agora, para a tabela "Dado enviado" ler a MESMA fonte.
-export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void; inicial?: Partial<FormularioVale>; onDados?: (f: FormularioVale) => void }
+export type PropsCartaoVpo = { operacaoId: string; ehTeste: boolean; placa?: string | null; onMudou?: () => void; demo?: boolean; onSimulacao?: (resumo: string | null) => void; onPlaca?: (placa: string) => void; inicial?: Partial<FormularioVale>; onDados?: (f: FormularioVale) => void; tabela?: ReactNode }
 export default function CartaoVpo(props: PropsCartaoVpo) {
   if (!NSPEDAGIO_HABILITADO) return null
   return <CartaoVpoAtivo key={props.operacaoId} {...props} />
 }
 
-function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca, inicial, onDados }: PropsCartaoVpo) {
+function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao, onPlaca, inicial, onDados, tabela }: PropsCartaoVpo) {
   const [reqs, setReqs] = useState<RequisicaoVpo[] | null>(null)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -291,6 +291,171 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
   if (reqs === null) return null
   const campo = 'border rounded px-2 py-1 text-xs w-full'
   const botao = 'text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50'
+
+  // Blocos usados nos dois formatos da tela (operação comum e aba da demonstração): mesma lógica, só muda onde aparecem.
+  const avisos = (
+    <>
+      {simulado && <div className="text-xs font-bold px-2 py-1 rounded bg-amber-100 text-amber-900">SIMULADO, não é real: as credenciais do NSPEDAGIO não estão configuradas.</div>}
+      {!ehTeste && <div className="text-xs text-amber-800">Nesta fase o vale-pedágio real só roda em operação de teste.</div>}
+      {erro && <div className="text-xs text-red-700" role="alert">{erro}</div>}
+      {info && <div className="text-xs text-green-800" role="status">{info}</div>}
+      {resumoSim && <div className="text-xs">Simulação: {resumoSim}</div>}
+      {estado === 'comprado' && (() => {
+        const c = [...(reqs ?? [])].reverse().find((r) => r.acao === 'comprar' && deuCerto(r) && r.id_vpo_antt)
+        if (!c) return null
+        return (
+          <div className="text-xs rounded-lg px-3 py-2 flex flex-col gap-0.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }} role="status">
+            <b>Vale-pedágio comprado (homologação)</b>
+            <span>Número do vale {c.id_vpo_antt}{c.numero_viagem ? ` · viagem ${c.numero_viagem}` : ''}{c.id_recibo ? ` · recibo ${c.id_recibo}` : ''}{c.total_viagem != null ? ` · valor ${c.total_viagem.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</span>
+            <span className="text-[color:var(--rbr-muted)]">Fica gravado na operação e vai para o MDF-e. Use "Reemitir recibo" para ver o recibo e "Cancelar vale" para desfazer.</span>
+          </div>
+        )
+      })()}
+      {estado === 'cancelado' && (() => {
+        const c = [...(reqs ?? [])].reverse().find((r) => r.acao === 'cancelar' && deuCerto(r))
+        if (!c) return null
+        return (
+          <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBF3E4', color: '#8A5A00' }} role="status">
+            <b>Vale cancelado em {new Date(c.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</b>{c.id_recibo ? ` (protocolo ${c.id_recibo})` : ''}. Você pode comprar de novo.
+          </div>
+        )
+      })()}
+      {(estado === 'comprando' || ocupado === 'comprar') && (
+        <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">{demo ? 'Comprando o vale-pedágio. Em homologação isso leva de 1 a 3 minutos.' : 'Comprando o vale-pedágio, isso pode levar alguns minutos. Não feche esta tela e não compre de novo.'}</div>
+      )}
+      {(estado === 'cancelando' || ocupado === 'cancelar') && (
+        <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">Cancelando o vale-pedágio, isso pode levar alguns minutos.</div>
+      )}
+      {estado === 'nao_confirmado' && (
+        <div className="text-xs px-2 py-1.5 rounded bg-amber-50 text-amber-900 flex items-center gap-2 flex-wrap" role="status">
+          <span className="font-bold">Não confirmado. Consulte de novo.</span>
+          <span>{pendencia?.acao === 'cancelar' ? 'O cancelamento ainda não foi confirmado.' : 'O recibo ainda não apareceu; nada foi comprado de novo.'}</span>
+          <button className="text-xs font-bold px-3 py-1 rounded-lg border" disabled={!!ocupado} onClick={() => void consultarDeNovo()}>{ocupado === 'conferir' ? 'Consultando…' : 'Consultar de novo'}</button>
+        </div>
+      )}
+    </>
+  )
+
+  const modais = (
+    <>
+      {confirmandoCompra && (
+        <Modal titulo="Comprar o vale-pedágio agora?" onFechar={() => setConfirmandoCompra(false)}>
+          <div className="text-xs text-[color:var(--rbr-muted)]">
+            Placa {f.placa} · {f.eixos} eixos · vigência {f.inicio} a {f.fim}. <b className="block mt-1">Homologação: nenhum vale-pedágio real. Em homologação a compra leva de 1 a 3 minutos.</b>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setConfirmandoCompra(false)} className={`${botao}`}>Voltar</button>
+            <button type="button" onClick={() => { setConfirmandoCompra(false); executarCompra() }} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>Confirmar compra</button>
+          </div>
+        </Modal>
+      )}
+      {cancelandoVale && (
+        <Modal titulo="Cancelar o vale-pedágio?" onFechar={() => setCancelandoVale(false)}>
+          <div className="text-xs text-[color:var(--rbr-muted)]">O vale-pedágio desta operação será cancelado no NSPEDÁGIO e o número dele sai da operação. Depois disso é possível comprar de novo. Conte o motivo (mínimo 15 caracteres).</div>
+          <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="Motivo do cancelamento" autoFocus />
+          <div className="text-[11px] text-[color:var(--rbr-muted)]">{motivoValido(motivo) ? 'Motivo suficiente.' : `Faltam ${faltamCaracteres(motivo)} caracteres.`}</div>
+          {erro && <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>{erro}</div>}
+          <div className="flex gap-2 justify-end">
+            <button type="button" disabled={!!ocupado} onClick={() => { setCancelandoVale(false); setMotivo('') }} className={botao}>Voltar</button>
+            <button type="button" disabled={!!ocupado || !motivoValido(motivo)} onClick={() => void confirmarCancelamentoDemo()} className={botao} style={{ background: 'var(--rbr-danger)', color: '#fff' }}>
+              {ocupado === 'cancelar' ? 'Cancelando…' : 'Confirmar cancelamento'}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
+
+  const listaPassos = (
+    <ol className="mt-1.5 flex flex-col gap-1">
+      {passos.map((p) => (
+        <li key={p.id} className="text-xs flex gap-2">
+          <span className="text-slate-500 whitespace-nowrap">{new Date(p.quando).toLocaleString('pt-BR')}</span>
+          <span className="font-semibold">{p.titulo}</span>
+          <span className={p.resultado === 'erro' ? 'text-red-700' : p.resultado === 'ok' ? 'text-green-800' : 'text-slate-500'}>
+            {p.resultado === 'ok' ? 'OK' : p.resultado === 'erro' ? 'Erro' : 'Sem resposta'}
+          </span>
+          <span className="break-words min-w-0">{p.detalhe}</span>
+        </li>
+      ))}
+    </ol>
+  )
+
+  // Aba da demonstração: duas colunas de altura igual. Esquerda = tabela "o que enviamos" + dados editáveis recolhidos;
+  // direita = ações, resultado e rodapé. Mesmos botões, mesmas travas e mesmas chamadas do formato comum.
+  if (demo && tabela) {
+    const titulo = 'text-[13px] font-extrabold uppercase tracking-wide text-[#8F6A2A] m-0'
+    const linha = { borderColor: 'var(--rbr-border, #e5e7eb)' }
+    return (
+      <>
+        <FaixaFixa texto="HOMOLOGAÇÃO: nenhum vale-pedágio real" />
+        <div className="grid gap-4 min-[900px]:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] items-stretch" data-aba="vpo">
+          <section className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white min-w-0" style={linha}>
+            <h4 className={titulo}>O que enviamos e de onde vem</h4>
+            {tabela}
+            <details className="text-xs mt-auto border-t pt-2.5" style={linha}>
+              <summary className="cursor-pointer font-semibold text-[color:var(--rbr-navy)]">Ajustar dados da rota e do veículo</summary>
+              <div className="grid grid-cols-2 min-[700px]:grid-cols-4 gap-2 mt-2">
+                <label>IBGE origem<input className={campo} value={f.origem} onChange={(e) => setF({ ...f, origem: e.target.value })} /></label>
+                <label>IBGE destino<input className={campo} value={f.destino} onChange={(e) => setF({ ...f, destino: e.target.value })} /></label>
+                <label>Placa do cavalo<input className={campo} value={f.placa} onChange={(e) => { setF({ ...f, placa: e.target.value.toUpperCase() }); onPlaca?.(e.target.value.toUpperCase()) }} /></label>
+                <label>Eixos (cavalo + carreta)<input className={campo} inputMode="numeric" value={f.eixos} onChange={(e) => setF({ ...f, eixos: e.target.value })} /></label>
+                <label>Início (AAAAMMDD)<input className={campo} value={f.inicio} onChange={(e) => setF({ ...f, inicio: e.target.value })} /></label>
+                <label>Fim (AAAAMMDD, até 15 dias)<input className={campo} value={f.fim} onChange={(e) => setF({ ...f, fim: e.target.value })} /></label>
+                <label>CNPJ da transportadora<input className={campo} value={f.cnpjTransportadora} onChange={(e) => setF({ ...f, cnpjTransportadora: e.target.value })} /></label>
+                <label>CPF/CNPJ do subcontratado<input className={campo} value={f.subcontratado} onChange={(e) => setF({ ...f, subcontratado: e.target.value })} /></label>
+              </div>
+              {ehTeste && (
+                <button type="button" className="mt-2 text-xs font-bold px-3 py-1 rounded-lg border" onClick={() => { setF({ ...f, placa: PLACA_TAG_TESTE }); onPlaca?.(PLACA_TAG_TESTE) }}>
+                  Usar a placa de teste com tag ativa ({PLACA_TAG_TESTE})
+                </button>
+              )}
+            </details>
+          </section>
+
+          <section className="rounded-xl border p-3.5 flex flex-col gap-3 bg-white min-w-0" style={linha}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h4 className={titulo}>Ações</h4>
+              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100" data-estado={estado}>{seloVale(estado, resumoSim != null || (reqs ?? []).some((r) => r.acao === 'simular' && deuCerto(r)))}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button className={botao} disabled={!!ocupado} onClick={() => void simular()}>{ocupado === 'simular' ? 'Simulando…' : 'Simular'}</button>
+              <button className={botao} disabled={!!ocupado || !f.placa} onClick={() => void consultarTag()}>Consultar tag</button>
+              <button className={`${botao} col-span-2`} style={{ background: 'var(--rbr-navy)', color: '#fff', borderColor: 'var(--rbr-navy)' }} disabled={!!ocupado || !podeComprar(estado) || !!pendencia} onClick={comprar} title={podeComprar(estado) ? '' : 'Simule primeiro (e não pode haver compra ativa).'}>Comprar vale-pedágio</button>
+            </div>
+            <h4 className={titulo}>Resultado</h4>
+            <div className="flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs" style={{ background: 'var(--rbr-muted-bg)' }}>
+              {avisos}
+              {!erro && !info && !resumoSim && estado === 'nao_simulado' && <span className="text-[color:var(--rbr-muted)]">Ainda sem simulação. Comece por Simular. A compra leva de 1 a 3 minutos em homologação.</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button className={botao} disabled={!!ocupado || estado !== 'comprado'} onClick={() => void baixarReciboPdf()}>Baixar recibo (PDF)</button>
+              <button className={botao} disabled={!!ocupado || estado !== 'comprado'} onClick={() => void recibo()}>Reemitir recibo</button>
+              {podeCancelar(estado) && (
+                <button className={`${botao} col-span-2`} style={{ borderColor: 'var(--rbr-danger)', color: 'var(--rbr-danger)' }} disabled={!!ocupado} onClick={cancelar}>Cancelar vale</button>
+              )}
+            </div>
+            <div className="mt-auto border-t pt-2.5 flex flex-col gap-2" style={linha}>
+              <div className="flex gap-1.5 flex-wrap">
+                <button className={botao} disabled={!passos.length} onClick={() => void baixarJson()}>Baixar JSON</button>
+                <button className={botao} disabled={!passos.length} onClick={imprimirPdf}>Salvar em PDF</button>
+              </div>
+              {passos.length === 0 ? (
+                <div className="text-xs text-slate-500">Registro de passos: nenhum ainda. Comece por Simular.</div>
+              ) : (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-semibold">Registro de passos ({passos.length})</summary>
+                  {listaPassos}
+                </details>
+              )}
+            </div>
+          </section>
+        </div>
+        {modais}
+      </>
+    )
+  }
+
   return (
     <>
       <FaixaFixa texto="HOMOLOGAÇÃO: nenhum vale-pedágio real" />
@@ -299,44 +464,7 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
           <div className="text-sm font-bold text-[color:var(--rbr-navy-dark)]">Vale-Pedágio (VPO){placa ? ` · ${placa}` : ''}</div>
           <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100" data-estado={estado}>{demo ? seloVale(estado, resumoSim != null || (reqs ?? []).some((r) => r.acao === 'simular' && deuCerto(r))) : ROTULO_ESTADO_VPO[estado]}</span>
         </div>
-        {simulado && <div className="text-xs font-bold px-2 py-1 rounded bg-amber-100 text-amber-900">SIMULADO, não é real: as credenciais do NSPEDAGIO não estão configuradas.</div>}
-        {!ehTeste && <div className="text-xs text-amber-800">Nesta fase o vale-pedágio real só roda em operação de teste.</div>}
-        {erro && <div className="text-xs text-red-700" role="alert">{erro}</div>}
-        {info && <div className="text-xs text-green-800" role="status">{info}</div>}
-        {resumoSim && <div className="text-xs">Simulação: {resumoSim}</div>}
-        {estado === 'comprado' && (() => {
-          const c = [...(reqs ?? [])].reverse().find((r) => r.acao === 'comprar' && deuCerto(r) && r.id_vpo_antt)
-          if (!c) return null
-          return (
-            <div className="text-xs rounded-lg px-3 py-2 flex flex-col gap-0.5" style={{ background: '#E8F5EC', color: 'var(--rbr-positive)' }} role="status">
-              <b>Vale-pedágio comprado (homologação)</b>
-              <span>Número do vale {c.id_vpo_antt}{c.numero_viagem ? ` · viagem ${c.numero_viagem}` : ''}{c.id_recibo ? ` · recibo ${c.id_recibo}` : ''}{c.total_viagem != null ? ` · valor ${c.total_viagem.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</span>
-              <span className="text-[color:var(--rbr-muted)]">Fica gravado na operação e vai para o MDF-e. Use "Reemitir recibo" para ver o recibo e "Cancelar vale" para desfazer.</span>
-            </div>
-          )
-        })()}
-        {estado === 'cancelado' && (() => {
-          const c = [...(reqs ?? [])].reverse().find((r) => r.acao === 'cancelar' && deuCerto(r))
-          if (!c) return null
-          return (
-            <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FBF3E4', color: '#8A5A00' }} role="status">
-              <b>Vale cancelado em {new Date(c.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</b>{c.id_recibo ? ` (protocolo ${c.id_recibo})` : ''}. Você pode comprar de novo.
-            </div>
-          )
-        })()}
-        {(estado === 'comprando' || ocupado === 'comprar') && (
-          <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">{demo ? 'Comprando o vale-pedágio. Em homologação isso leva de 1 a 3 minutos.' : 'Comprando o vale-pedágio, isso pode levar alguns minutos. Não feche esta tela e não compre de novo.'}</div>
-        )}
-        {(estado === 'cancelando' || ocupado === 'cancelar') && (
-          <div className="text-xs font-bold px-2 py-1.5 rounded bg-sky-50 text-sky-900" role="status">Cancelando o vale-pedágio, isso pode levar alguns minutos.</div>
-        )}
-        {estado === 'nao_confirmado' && (
-          <div className="text-xs px-2 py-1.5 rounded bg-amber-50 text-amber-900 flex items-center gap-2 flex-wrap" role="status">
-            <span className="font-bold">Não confirmado. Consulte de novo.</span>
-            <span>{pendencia?.acao === 'cancelar' ? 'O cancelamento ainda não foi confirmado.' : 'O recibo ainda não apareceu; nada foi comprado de novo.'}</span>
-            <button className="text-xs font-bold px-3 py-1 rounded-lg border" disabled={!!ocupado} onClick={() => void consultarDeNovo()}>{ocupado === 'conferir' ? 'Consultando…' : 'Consultar de novo'}</button>
-          </div>
-        )}
+        {avisos}
 
         <details className="text-xs" open={demo ? true : undefined}>
           <summary className="cursor-pointer font-semibold">Dados da rota e do veículo</summary>
@@ -387,49 +515,10 @@ function CartaoVpoAtivo({ operacaoId, ehTeste, placa, onMudou, demo, onSimulacao
               <button className={botao} disabled={!passos.length} onClick={imprimirPdf}>Salvar em PDF</button>
             </div>
           </div>
-          {passos.length === 0 ? (
-            <div className="text-xs text-slate-500 mt-1">Nenhum passo ainda. Comece por Simular.</div>
-          ) : (
-            <ol className="mt-1.5 flex flex-col gap-1">
-              {passos.map((p) => (
-                <li key={p.id} className="text-xs flex gap-2">
-                  <span className="text-slate-500 whitespace-nowrap">{new Date(p.quando).toLocaleString('pt-BR')}</span>
-                  <span className="font-semibold">{p.titulo}</span>
-                  <span className={p.resultado === 'erro' ? 'text-red-700' : p.resultado === 'ok' ? 'text-green-800' : 'text-slate-500'}>
-                    {p.resultado === 'ok' ? 'OK' : p.resultado === 'erro' ? 'Erro' : 'Sem resposta'}
-                  </span>
-                  <span className="break-words min-w-0">{p.detalhe}</span>
-                </li>
-              ))}
-            </ol>
-          )}
+          {passos.length === 0 ? <div className="text-xs text-slate-500 mt-1">Nenhum passo ainda. Comece por Simular.</div> : listaPassos}
         </div>
       </div>
-      {confirmandoCompra && (
-        <Modal titulo="Comprar o vale-pedágio agora?" onFechar={() => setConfirmandoCompra(false)}>
-          <div className="text-xs text-[color:var(--rbr-muted)]">
-            Placa {f.placa} · {f.eixos} eixos · vigência {f.inicio} a {f.fim}. <b className="block mt-1">Homologação: nenhum vale-pedágio real. Em homologação a compra leva de 1 a 3 minutos.</b>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => setConfirmandoCompra(false)} className={`${botao}`}>Voltar</button>
-            <button type="button" onClick={() => { setConfirmandoCompra(false); executarCompra() }} className={botao} style={{ background: 'var(--rbr-navy)', color: '#fff' }}>Confirmar compra</button>
-          </div>
-        </Modal>
-      )}
-      {cancelandoVale && (
-        <Modal titulo="Cancelar o vale-pedágio?" onFechar={() => setCancelandoVale(false)}>
-          <div className="text-xs text-[color:var(--rbr-muted)]">O vale-pedágio desta operação será cancelado no NSPEDÁGIO e o número dele sai da operação. Depois disso é possível comprar de novo. Conte o motivo (mínimo 15 caracteres).</div>
-          <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="Motivo do cancelamento" autoFocus />
-          <div className="text-[11px] text-[color:var(--rbr-muted)]">{motivoValido(motivo) ? 'Motivo suficiente.' : `Faltam ${faltamCaracteres(motivo)} caracteres.`}</div>
-          {erro && <div className="text-xs" style={{ color: 'var(--rbr-danger)' }}>{erro}</div>}
-          <div className="flex gap-2 justify-end">
-            <button type="button" disabled={!!ocupado} onClick={() => { setCancelandoVale(false); setMotivo('') }} className={botao}>Voltar</button>
-            <button type="button" disabled={!!ocupado || !motivoValido(motivo)} onClick={() => void confirmarCancelamentoDemo()} className={botao} style={{ background: 'var(--rbr-danger)', color: '#fff' }}>
-              {ocupado === 'cancelar' ? 'Cancelando…' : 'Confirmar cancelamento'}
-            </button>
-          </div>
-        </Modal>
-      )}
+      {modais}
     </>
   )
 }
