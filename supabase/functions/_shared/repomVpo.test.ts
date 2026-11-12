@@ -38,7 +38,7 @@ test('flag desligada: front não monta o botão e a função recusa (503) sem a 
   const { readFileSync } = await import('node:fs')
   const comp = readFileSync(new URL('../../../shared/CalcularPedagioRepom.tsx', import.meta.url), 'utf8')
   assert.match(comp, /VITE_REPOM_ROTEIRIZACAO_HABILITADO === 'true'/)
-  assert.match(comp, /if \(!REPOM_FRONT_LIGADO\) return null/)
+  assert.match(comp, /if \(!REPOM_FRONT_LIGADO \|\| !liberada\) return null/)
   const fn = readFileSync(new URL('../repom-pedagio-rota/index.ts', import.meta.url), 'utf8')
   assert.match(fn, /REPOM_ROTEIRIZACAO_LIBERADA/)
   assert.match(fn, /decidirTrava\(travaLiberada/)
