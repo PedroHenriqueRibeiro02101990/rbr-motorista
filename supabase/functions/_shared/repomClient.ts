@@ -171,6 +171,8 @@ export interface ClienteRepom {
   readonly ambiente: AmbienteRepom
   cadastrarRota(p: PedidoRotaRepom): Promise<ResultadoRepom<RotaRepom>>
   consultarPedagio(p: PedidoPedagioRepom): Promise<ResultadoRepom<PedagioRepom>>
+  /** UMA chamada de token (não consulta rota nem pedágio). Só para o diagnóstico do repom-status. */
+  verificarToken(): Promise<{ ok: boolean; erro?: string }>
 }
 
 function credenciaisCompletas(c: Partial<ConfigRepom>): c is ConfigRepom {
@@ -218,6 +220,15 @@ export function criarRepomClient(config: ConfigRepom, fetchFn: Fetch = (u, i) =>
 
   return {
     ambiente: config.ambiente,
+    async verificarToken() {
+      if (!credenciaisCompletas(config)) return { ok: false, erro: 'Credenciais da Repom não configuradas.' }
+      try {
+        await obterToken(true)
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, erro: (e as Error).message }
+      }
+    },
     async cadastrarRota(p) {
       const inval = validarPedidoRota(p)
       if (inval) return { ok: false, http: 0, erro: inval, bruto: null }

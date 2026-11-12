@@ -2339,6 +2339,8 @@ export type Database = {
           origem_endereco: string | null
           pedagio: number | null
           pedagio_pracas: Json | null
+          pedagio_origem: string | null
+          pedagio_consultado_em: string | null
           perdida_em: string | null
           peso_bruto_kg: number | null
           piso_antt_calculado: number | null
@@ -2427,6 +2429,8 @@ export type Database = {
           origem_endereco?: string | null
           pedagio?: number | null
           pedagio_pracas?: Json | null
+          pedagio_origem?: string | null
+          pedagio_consultado_em?: string | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null
@@ -2515,6 +2519,8 @@ export type Database = {
           origem_endereco?: string | null
           pedagio?: number | null
           pedagio_pracas?: Json | null
+          pedagio_origem?: string | null
+          pedagio_consultado_em?: string | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
           piso_antt_calculado?: number | null

@@ -19,7 +19,7 @@ import { Aviso, Botao } from '../components/financeiro/ui'
 import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
 import PedagioSugerido from '../components/cotacao/PedagioSugerido'
-import CalcularPedagioRepom from '@rbr/shared/CalcularPedagioRepom'
+import CalcularPedagioRepom, { REPOM_FRONT_LIGADO } from '@rbr/shared/CalcularPedagioRepom'
 import { CancelarCotacaoModal, ConfirmarConversaoModal, ProgramarOperacoesModal, rotuloOperacao, type ResumoConversao } from '../components/cotacao/ConversaoModais'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
 import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao, lerParametro, whatsappLink } from '../lib/financeiro'
@@ -606,6 +606,7 @@ export default function Cotacao() {
   const [rotaResultado, setRotaResultado] = useState<RotaCalculada | null>(null)
 
   const [form, setForm] = useState<CotacaoFormState | null>(null)
+  const pedagioRepomRef = useRef<{ valor: string; consultadoEm: string } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState<StatusCotacao>('rascunho')
   const [papelUsuario, setPapelUsuario] = useState<string | null>(null)
@@ -1671,6 +1672,13 @@ export default function Cotacao() {
       flag_peso_acima_limiar: flagPeso,
       flag_valor_acima_teto_seguro: f.flag_valor_acima_teto_seguro,
       pedagio: numOrNull(f.pedagio),
+      // Origem do pedágio: repom só se o valor aceito do cálculo automático continua igual ao do campo; senão manual.
+      // Só com a flag do Repom ligada (as colunas vêm da migração 20261112-1200; com a flag desligada nada novo é enviado ao banco).
+      ...(!REPOM_FRONT_LIGADO
+        ? {}
+        : pedagioRepomRef.current && pedagioRepomRef.current.valor === String(f.pedagio)
+        ? { pedagio_origem: 'repom', pedagio_consultado_em: pedagioRepomRef.current.consultadoEm }
+        : { pedagio_origem: numOrNull(f.pedagio) != null ? 'manual' : null, pedagio_consultado_em: null }),
       pedagio_pracas: pracasPedagio.length > 0 ? (pracasPedagio as unknown as Json) : null,
       piso_antt_calculado: pisoInfo != null ? round2(pisoInfo.calculado) : pisoSalvo,
       xml_danfe_url: f.xml_danfe_url.trim() || null,
@@ -3994,7 +4002,7 @@ export default function Cotacao() {
                   />
                 )}
                 {pracasPedagio.length === 0 && (
-                  <CalcularPedagioRepom cotacaoId={editingId} onAceitar={(v) => setForm((f) => (f ? { ...f, pedagio: String(v) } : f))} />
+                  <CalcularPedagioRepom cotacaoId={editingId} onAceitar={(v, em) => { pedagioRepomRef.current = { valor: String(v), consultadoEm: em }; setForm((f) => (f ? { ...f, pedagio: String(v) } : f)) }} />
                 )}
               </div>
             </div>
