@@ -16,9 +16,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ambienteRepom, criarRepomClient, higienizar, ufDoIbge } from "../_shared/repomClient.ts";
 import { pedagioPorRota, sha256Hex, type Repositorio } from "../_shared/repomPedagio.ts";
+import { corsPara } from "../_shared/repomHttp.ts";
 import { decidirLimite, decidirTrava, inicioDoDia, limiteDiario, travaLiberada } from "../_shared/repomTrava.ts";
 
-const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-repom-chave-interna" };
+// CORS restrito ao domínio do app (repomHttp.ts); a chave interna do motor de preço é servidor a servidor e não depende de CORS.
+let CORS: Record<string, string> = {};
 const LIMITE_POR_MINUTO = 10;
 
 const url = Deno.env.get("SUPABASE_URL")!;
@@ -72,6 +74,7 @@ const repo: Repositorio = {
 };
 
 Deno.serve(async (req) => {
+  CORS = corsPara(req.headers.get("origin"), Deno.env.get("REPOM_CORS_ORIGENS"));
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const quem = await quemChama(req);
@@ -119,7 +122,7 @@ Deno.serve(async (req) => {
     // Limite diário: roda só quando o cache não resolve, antes da primeira chamada à Repom. Conta apenas consultas que foram (ou vão) à Repom.
     const antesDeChamar = async (): Promise<string | null> => {
       const limite = limiteDiario(await segredo("REPOM_LIMITE_DIARIO"));
-      let q = admin.from("repom_requisicoes").select("id", { count: "exact", head: true }).eq("acao", "pedagio-rota").in("status", ["pendente", "ok", "erro"]).gte("criado_em", inicioDoDia());
+      let q = admin.from("repom_requisicoes").select("id", { count: "exact", head: true }).in("status", ["pendente", "ok", "erro"]).gte("criado_em", inicioDoDia()); // global: todas as ações que vão à Repom
       if (linha?.id) q = q.neq("id", linha.id);
       const { count } = await q;
       const v = decidirLimite(count ?? 0, limite);

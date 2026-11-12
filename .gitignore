@@ -8,3 +8,4 @@ supabase/.temp/
 
 # Material privado (kit da NSTech etc.): nunca versionar
 docs-privado/
+docs/repom/*.pdf
