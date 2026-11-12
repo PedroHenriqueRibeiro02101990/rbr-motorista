@@ -426,7 +426,8 @@ export interface DadosOperacaoCiot {
     distanciaKm: number | null
   }
   carga: { tipoCarga: string | null; ncm: string | null; complexa: boolean; tabelaAntt: string | null }
-  condicao: { valorTotal: number | null; adiantamento: number | null; pedagio: number | null } | null
+  // pedagio = valor que vai no pedido (já decidido por decidirPedagio); pedagioDecisao = de onde veio, para a conferência.
+  condicao: { valorTotal: number | null; adiantamento: number | null; pedagio: number | null; pedagioDecisao?: PedagioDecidido } | null
   datas: { inicio: Date | null; fim: Date | null }
   notas: { chave: string; numero: string | null; serie: string | null; valor: number | null; pesoKg: number | null; ncm: string | null; destinatarioCnpj: string | null; destinatarioNome: string | null }[]
   destinatarioEndereco: EnderecoEfrete | null
@@ -437,10 +438,29 @@ export interface DadosOperacaoCiot {
 
 export interface PreviaCiot {
   pedido: PedidoCiotPadrao | null
+  pedagio: PedagioDecidido | null
   piso: ResultadoPiso
   diferencaPiso: number | null // frete - piso
   bloqueios: string[]
   avisos: string[]
+}
+
+// Pedágio declarado no CIOT: o valor REAL do vale-pedágio comprado (operacao_ciot_vpo.vpo_valor, com vpo_idvpo preenchido) quando existe;
+// senão a estimativa da cotação (cotacoes.pedagio). Vale cancelado (vpo_idvpo/vpo_valor nulos), valor zero ou nulo caem na cotação.
+export interface PedagioDecidido {
+  valor: number
+  origem: 'vale' | 'cotacao'
+  estimativa: number
+  valorVale: number | null
+  divergente: boolean // vale comprado com valor mais de 10% diferente da estimativa da cotação
+}
+export function decidirPedagio(vpoIdvpo: string | null | undefined, vpoValor: number | null | undefined, estimativaCotacao: number | null | undefined): PedagioDecidido {
+  const estimativa = dinheiro(Number(estimativaCotacao ?? 0) || 0)
+  const vale = vpoValor != null && Number(vpoValor) > 0 ? dinheiro(Number(vpoValor)) : null
+  const comVale = !!(vpoIdvpo && String(vpoIdvpo).trim()) && vale != null
+  if (!comVale) return { valor: estimativa, origem: 'cotacao', estimativa, valorVale: null, divergente: false }
+  const divergente = estimativa > 0 ? Math.abs(vale! - estimativa) / estimativa > 0.1 : true
+  return { valor: vale!, origem: 'vale', estimativa, valorVale: vale, divergente }
 }
 
 export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
@@ -479,6 +499,10 @@ export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
       bloqueios.push(`Frete pago ao motorista R$ ${frete.toFixed(2)} abaixo do piso mínimo da ANTT R$ ${piso.piso.toFixed(2)} (faltam R$ ${(-diferencaPiso).toFixed(2)}).`)
     }
   }
+  const pedagio: PedagioDecidido = d.condicao?.pedagioDecisao ?? { valor: d.condicao?.pedagio ?? 0, origem: 'cotacao', estimativa: d.condicao?.pedagio ?? 0, valorVale: null, divergente: false }
+  if (pedagio.origem === 'vale' && pedagio.divergente) {
+    avisos.push(`Pedágio do CIOT: o vale comprado é R$ ${pedagio.valor.toFixed(2)} e a estimativa da cotação era R$ ${pedagio.estimativa.toFixed(2)} (diferença de mais de 10%). O CIOT vai com o valor do vale.`)
+  }
   if (d.carga.complexa) avisos.push('A operação/NF indica carga complexa (perigosa, indivisível ou excedente): confira se o tipo de carga do piso está certo.')
 
   // Divergência entre o CIOT e os documentos fiscais já emitidos: bloqueia.
@@ -503,7 +527,7 @@ export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
   if (d.datas.inicio && d.datas.inicio.getTime() <= d.agora.getTime()) avisos.push('Início previsto já passou: o CIOT vai com início daqui a 15 minutos.')
 
   if (bloqueios.length || !d.tracao || !d.rota.origem || !d.rota.destino || !d.contratado || !d.motorista || frete == null) {
-    return { pedido: null, piso, diferencaPiso, bloqueios, avisos }
+    return { pedido: null, pedagio, piso, diferencaPiso, bloqueios, avisos }
   }
   const pix = tipoChavePix(d.contratado.pix!)
   const destinatario = d.notas.find((n) => n.destinatarioCnpj)
@@ -550,5 +574,5 @@ export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
     pisoMinimo: piso.ok ? piso.piso : null,
   }
   for (const e of validarPedidoPadrao(pedido, d.agora)) bloqueios.push(e)
-  return { pedido: bloqueios.length ? null : pedido, piso, diferencaPiso, bloqueios, avisos }
+  return { pedido: bloqueios.length ? null : pedido, pedagio, piso, diferencaPiso, bloqueios, avisos }
 }

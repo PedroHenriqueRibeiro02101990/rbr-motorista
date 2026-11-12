@@ -25,6 +25,7 @@ import {
   traduzirErroEfrete,
   type CoeficientePiso,
   type DadosOperacaoCiot,
+  decidirPedagio,
   type EnderecoEfrete,
   type PreviaCiot,
   type RepositorioPedidos,
@@ -142,9 +143,9 @@ async function carregar(operacaoId: string, tentativa = 1): Promise<Contexto> {
     admin.from("piso_antt_coeficientes").select("tabela, tipo_carga, eixos, ccd_por_km, cc_fixo, data_vigencia, fonte"),
     admin.from("parametros_fiscais").select("cnpj, razao_social, endereco_logradouro, endereco_numero, endereco_bairro, endereco_cep, endereco_codigo_municipio").eq("ativo", true).maybeSingle(),
     admin.from("documentacao_operacao").select("tipo, status, payload_enviado").eq("operacao_id", operacaoId).in("tipo", ["cte", "mdfe"]),
-    admin.from("operacao_ciot_vpo").select("ciot_origem").eq("operacao_id", operacaoId).maybeSingle(),
+    admin.from("operacao_ciot_vpo").select("ciot_origem, vpo_idvpo, vpo_valor").eq("operacao_id", operacaoId).maybeSingle(),
   ]);
-  void ciotVpo;
+  const pedagioDecisao = decidirPedagio(ciotVpo.data?.vpo_idvpo as string | null, ciotVpo.data?.vpo_valor != null ? Number(ciotVpo.data.vpo_valor) : null, Number((cot.data as Record<string, unknown> | null)?.pedagio ?? 0));
   const c = cot.data as Record<string, unknown> | null;
   const tracao = vtr.data as Record<string, unknown> | null;
   const implementos = ((reb.data ?? []) as unknown as { veiculos: Record<string, unknown> | null }[]).map((r) => r.veiculos).filter(Boolean) as Record<string, unknown>[];
@@ -187,7 +188,7 @@ async function carregar(operacaoId: string, tentativa = 1): Promise<Contexto> {
       complexa: Boolean(op.carga_complexa || op.carga_complexa_eixo1_perigosa || op.carga_complexa_eixo2_superdimensionada),
       tabelaAntt: (c?.tabela_antt as string | null) ?? null,
     },
-    condicao: cond.data ? { valorTotal: cond.data.valor_total_contrato != null ? Number(cond.data.valor_total_contrato) : null, adiantamento: Number(cond.data.valor_adiantamento ?? 0), pedagio: Number(c?.pedagio ?? 0) } : null,
+    condicao: cond.data ? { valorTotal: cond.data.valor_total_contrato != null ? Number(cond.data.valor_total_contrato) : null, adiantamento: Number(cond.data.valor_adiantamento ?? 0), pedagio: pedagioDecisao.valor, pedagioDecisao } : null,
     datas: { inicio: op.coleta_prevista ? new Date(op.coleta_prevista) : null, fim: op.entrega_prevista ? new Date(op.entrega_prevista) : null },
     notas: ((nfes.data ?? []) as Record<string, unknown>[]).map((n) => ({
       chave: String(n.chave_acesso),
@@ -307,6 +308,7 @@ function repositorio(operacaoId: string, previa: PreviaCiot, ator: Ator, confirm
           data_inicio_viagem: p.dataInicio.toISOString(),
           data_fim_viagem: p.dataFim.toISOString(),
           piso_minimo: previa.piso.ok ? previa.piso.piso : null,
+          pedagio_declarado: p.pedagio,
           piso_detalhe: previa.piso,
           confirmado_por: ator.pessoaId,
           confirmado_por_nome: confirmadoPorNome,
@@ -373,12 +375,16 @@ function repositorio(operacaoId: string, previa: PreviaCiot, ator: Ator, confirm
 async function pedidoAtual(operacaoId: string) {
   const { data } = await admin
     .from("efrete_ciot_pedidos")
-    .select("id, id_operacao_cliente, status, ciot, ciot_verificador, protocolo, valor_frete, piso_minimo, emitido_em, cancelado_em, encerrado_em, cancelamento_protocolo, encerramento_protocolo, confirmado_por_nome, confirmado_em, ultimo_erro, tentativas, data_inicio_viagem, data_fim_viagem")
+    .select("id, id_operacao_cliente, status, ciot, ciot_verificador, protocolo, valor_frete, pedagio_declarado, piso_minimo, emitido_em, cancelado_em, encerrado_em, cancelamento_protocolo, encerramento_protocolo, confirmado_por_nome, confirmado_em, ultimo_erro, tentativas, data_inicio_viagem, data_fim_viagem")
     .eq("operacao_id", operacaoId)
     .order("criado_em", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return data;
+  if (!data) return data;
+  // Valor do vale hoje (nulo se não há vale ativo): a tela avisa se for diferente do pedágio declarado no CIOT emitido.
+  const { data: v } = await admin.from("operacao_ciot_vpo").select("vpo_idvpo, vpo_valor").eq("operacao_id", operacaoId).maybeSingle();
+  const d = decidirPedagio(v?.vpo_idvpo as string | null, v?.vpo_valor != null ? Number(v.vpo_valor) : null, 0);
+  return { ...data, pedagio_vale_atual: d.origem === 'vale' ? d.valorVale : null };
 }
 
 function resumoPrevia(p: PreviaCiot) {
@@ -386,6 +392,7 @@ function resumoPrevia(p: PreviaCiot) {
   return {
     piso: p.piso,
     diferencaPiso: p.diferencaPiso,
+    pedagio: p.pedagio,
     bloqueios: p.bloqueios,
     avisos: p.avisos,
     pedido: x && {

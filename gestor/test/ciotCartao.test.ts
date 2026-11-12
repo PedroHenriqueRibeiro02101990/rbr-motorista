@@ -71,3 +71,19 @@ test('piso sem pedido montado: mostra só o piso, não "R$ 0,00 contra piso"', (
   assert.doesNotMatch(piso.detalhe, /0,00 contra/)
   assert.match(piso.detalhe, /Piso mínimo da ANTT/)
 })
+
+import { avisoPedagioEmitido, textoPedagio } from '../src/lib/ciotCartao.ts'
+test('pedágio na conferência: origem do valor e aviso de divergência', () => {
+  const vale = { valor: 140.64, origem: 'vale' as const, estimativa: 90, valorVale: 140.64, divergente: true }
+  assert.match(textoPedagio(vale)!, /valor do vale comprado/)
+  assert.match(textoPedagio({ ...vale, origem: 'cotacao', valor: 90, valorVale: null, divergente: false })!, /estimativa da cotação, sem vale comprado/)
+  const l = montarConferencia({ ok: true, bloqueios: [], pedagio: vale, pedido })
+  const x = l.find((i) => i.id === 'pedagio')!
+  assert.ok(x.ok && x.detalhe.includes('Atenção') && pendencias(l) === 0)
+  assert.equal(montarConferencia({ ok: true, bloqueios: [], pedido }).some((i) => i.id === 'pedagio'), false)
+})
+test('CIOT emitido: aviso discreto quando o vale de hoje difere do pedágio declarado', () => {
+  assert.equal(avisoPedagioEmitido(0, 140.64), 'CIOT emitido com pedágio R$ 0,00; vale atual R$ 140,64')
+  assert.equal(avisoPedagioEmitido(140.64, 140.64), null)
+  assert.equal(avisoPedagioEmitido(null, 140.64), null)
+})

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { aaaammddDeIso, esteiraDemonstracao, linhasDadosCiot, linhasDadosVpo, type DadosDemo, type EstadoCaixa, type FormularioVale, type LinhaDado } from '../../lib/modoDemonstracao'
-import type { DocLeve, Previa } from '../../lib/ciotCartao'
+import { textoPedagio, type DocLeve, type Previa } from '../../lib/ciotCartao'
 import type { RequisicaoVpo } from '../../lib/vpoPassos'
 import { formatMoney } from '@rbr/shared/format'
 import CartaoVpo from './CartaoVpo'
@@ -185,7 +185,7 @@ export default function DemoFiscal({ operacaoId, docs, resumo, onMudou }: PropsD
 
   const dados = estado?.dados ?? VAZIO
   const esteira = useMemo(() => esteiraDemonstracao(estado?.reqs ?? [], estado?.ciot.status, Date.now(), { emitidoEm: estado?.ciot.emitidoEm, canceladoEm: estado?.ciot.canceladoEm }), [estado])
-  const linhasCiot = useMemo(() => linhasDadosCiot(dados, previa?.piso ?? null, pisoPedido), [dados, previa, pisoPedido])
+  const linhasCiot = useMemo(() => linhasDadosCiot(dados, previa?.piso ?? null, pisoPedido, textoPedagio(previa?.pedagio)), [dados, previa, pisoPedido])
   // Valores de partida do formulário do vale: vêm da operação (a MESMA fonte que a tabela mostra).
   const inicialVale = useMemo<Partial<FormularioVale>>(
     () => ({
