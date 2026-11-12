@@ -120,7 +120,7 @@ export const aaaammddDeIso = (iso: string | null | undefined): string =>
 
 export type PisoResumo = { ok: boolean; piso?: number; tabela?: string; eixos?: number; distanciaKm?: number }
 
-export function linhasDadosCiot(d: DadosDemo, piso: PisoResumo | null | undefined, pisoDoPedido?: number | null): LinhaDado[] {
+export function linhasDadosCiot(d: DadosDemo, piso: PisoResumo | null | undefined, pisoDoPedido?: number | null, pedagio?: string | null): LinhaDado[] {
   const placas = d.veiculos.length ? d.veiculos.map((v) => `${v.placa}${v.eixos != null ? ` (${v.eixos} eixos)` : ''}`).join(' + ') : null
   const saldo = d.frete.total != null && d.frete.adiantamento != null ? d.frete.total - d.frete.adiantamento : null
   // O piso é o mesmo da conferência/confirmação do CIOT: o da prévia quando há, senão o gravado no pedido.
@@ -136,6 +136,7 @@ export function linhasDadosCiot(d: DadosDemo, piso: PisoResumo | null | undefine
     { dado: 'Frete, adiantamento e saldo', valor: d.frete.total != null ? `${brl(d.frete.total)} · adiant. ${moedaOu(d.frete.adiantamento)} · saldo ${moedaOu(saldo)}` : NAO_INFORMADO, origem: 'Operação' },
     { dado: 'Chave Pix', valor: d.titular.pix ? `${mascarar(d.titular.pix)} (do transportador)` : NAO_INFORMADO, origem: 'Cadastro' },
     { dado: 'Piso mínimo da ANTT', valor: valorPiso != null ? `${brl(valorPiso)}${detalhePiso}` : NAO_INFORMADO, origem: 'Fiscal (tabela ANTT)' },
+    ...(pedagio ? [{ dado: 'Pedágio do CIOT', valor: pedagio, origem: 'Operação' as const }] : []),
     { dado: 'Número do vale-pedágio', valor: textoOu(d.vpo.idvpo), origem: 'Operação' },
   ]
 }

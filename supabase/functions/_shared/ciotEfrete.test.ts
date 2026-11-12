@@ -372,3 +372,41 @@ test('C10: Tabela B com 2 ou 3 eixos orienta a usar a Tabela A', () => {
   assert.equal(r.ok, false)
   assert.match(String((r as { motivo: string }).motivo), /Use a Tabela A/)
 })
+
+// ---- Pedágio do CIOT: valor real do vale-pedágio ----
+import { decidirPedagio } from './ciotEfrete.ts'
+
+test('pedágio: vale comprado usa vpo_valor', () => {
+  const p = decidirPedagio('669', 140.64, 150)
+  assert.equal(p.valor, 140.64)
+  assert.equal(p.origem, 'vale')
+  assert.equal(p.divergente, false)
+})
+test('pedágio: sem vale usa a cotação', () => {
+  const p = decidirPedagio(null, null, 150)
+  assert.deepEqual([p.valor, p.origem], [150, 'cotacao'])
+})
+test('pedágio: vale cancelado (id e valor nulos) volta para a cotação', () => {
+  assert.deepEqual([decidirPedagio(null, null, 90).valor, decidirPedagio(null, null, 90).origem], [90, 'cotacao'])
+  assert.equal(decidirPedagio(null, 140.64, 90).origem, 'cotacao') // valor sem id do vale não vale
+})
+test('pedágio: vpo_valor zero ou nulo cai na cotação', () => {
+  assert.equal(decidirPedagio('669', 0, 90).origem, 'cotacao')
+  assert.equal(decidirPedagio('669', null, 90).valor, 90)
+})
+test('pedágio: divergência acima de 10% da estimativa gera aviso, sem bloquear', () => {
+  const p = decidirPedagio('669', 140.64, 90)
+  assert.equal(p.divergente, true)
+  const op = OP({ condicao: { valorTotal: 8000, adiantamento: 3000, pedagio: p.valor, pedagioDecisao: p } })
+  const r = pedidoDaOperacao(op)
+  assert.ok(r.avisos.some((a) => a.includes('Pedágio do CIOT') && a.includes('140.64') && a.includes('90.00')))
+  assert.equal(r.pedido?.pedagio, 140.64)
+  assert.equal(decidirPedagio('669', 95, 90).divergente, false)
+})
+test('pedágio: só o pedágio muda no pedido (frete, pagamentos e demais campos iguais)', () => {
+  const sem = pedidoDaOperacao(OP({ condicao: { valorTotal: 8000, adiantamento: 3000, pedagio: 0 } })).pedido!
+  const p = decidirPedagio('669', 140.64, 0)
+  const com = pedidoDaOperacao(OP({ condicao: { valorTotal: 8000, adiantamento: 3000, pedagio: p.valor, pedagioDecisao: p } })).pedido!
+  assert.equal(com.pedagio, 140.64)
+  assert.deepEqual({ ...com, pedagio: 0 }, { ...sem, pedagio: 0 })
+})

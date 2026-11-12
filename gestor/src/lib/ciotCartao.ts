@@ -14,8 +14,22 @@ export type PreviaPedido = {
   ncm: string
   distanciaKm: number
 }
+// Pedágio do CIOT: vale comprado (origem 'vale') ou estimativa da cotação (origem 'cotacao'). Vem pronto da função.
+export type PedagioPrevia = { valor: number; origem: 'vale' | 'cotacao'; estimativa: number; valorVale: number | null; divergente: boolean }
+export function textoPedagio(p: PedagioPrevia | null | undefined): string | null {
+  if (!p) return null
+  return p.origem === 'vale' ? `${brl(p.valor)} (valor do vale comprado)` : `${brl(p.valor)} (estimativa da cotação, sem vale comprado)`
+}
+// CIOT emitido não muda sozinho (lotação não tem retificação): se o vale de hoje é outro, só avisa. Sem botão automático.
+export function avisoPedagioEmitido(declarado: number | null | undefined, valeAtual: number | null | undefined): string | null {
+  if (declarado == null || Math.abs(Number(declarado) - Number(valeAtual ?? 0)) < 0.005) return null
+  if (valeAtual == null) return null
+  return `CIOT emitido com pedágio ${brl(Number(declarado))}; vale atual ${brl(Number(valeAtual))}`
+}
+
 export type Previa = {
   ok: boolean
+  pedagio?: PedagioPrevia | null
   motivo?: string
   piso?: Piso
   diferencaPiso?: number | null
@@ -65,6 +79,11 @@ export function montarConferencia(previa: Previa | null): Linha[] {
     const msgs = bloqueios.filter((b) => !usadas.has(b) && a.casa.test(b))
     msgs.forEach((m) => usadas.add(m))
     linhas.push({ id: a.id, titulo: a.titulo, ok: msgs.length === 0, detalhe: msgs.length ? msgs.join(' ') : detalheOk[a.id], origem: a.origem, corrigir: msgs.length ? a.corrigir : undefined })
+  }
+  if (previa.pedagio) {
+    const d = previa.pedagio
+    const aviso = d.origem === 'vale' && d.divergente ? ` Atenção: a estimativa da cotação era ${brl(d.estimativa)} (diferença de mais de 10%).` : ''
+    linhas.push({ id: 'pedagio', titulo: 'Pedágio do CIOT', ok: true, detalhe: `${textoPedagio(d)}.${aviso}`, origem: d.origem === 'vale' ? 'Operação' : 'Cotação' })
   }
   const outras = bloqueios.filter((b) => !usadas.has(b))
   if (outras.length) linhas.push({ id: 'outros', titulo: 'Outros pontos', ok: false, detalhe: outras.join(' '), origem: 'Operação' })

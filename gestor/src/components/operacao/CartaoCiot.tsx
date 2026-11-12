@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { formatMoney } from '@rbr/shared/format'
 import { mensagemClara } from '../../lib/mensagemClara'
 import { textoConfirmacao } from '../../lib/modoDemonstracao'
-import { faltamCaracteres, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
+import { avisoPedagioEmitido, faltamCaracteres, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
 
 // Cartão visual do CIOT (4 estados). Só apresenta: quem chama a função é CiotEfrete; /demo-ciot usa o mesmo cartão com dados de mentira.
 
@@ -12,6 +12,8 @@ export type PedidoCiot = {
   ciot_verificador: string | null
   protocolo: string | null
   valor_frete: number | null
+  pedagio_declarado?: number | null
+  pedagio_vale_atual?: number | null
   piso_minimo: number | null
   emitido_em: string | null
   data_inicio_viagem?: string | null
@@ -260,6 +262,9 @@ export default function CartaoCiot(p: PropsCartao) {
           <div className="text-xs text-[color:var(--rbr-muted)]">
             Frete {formatMoney(ped.valor_frete)} · piso ANTT {formatMoney(ped.piso_minimo)} · {textoConfirmacao(ped.confirmado_por_nome, ped.confirmado_em, dataHora)}
           </div>
+          {emitido && avisoPedagioEmitido(ped.pedagio_declarado, ped.pedagio_vale_atual) && (
+            <div className="text-xs text-[color:var(--rbr-muted)]">{avisoPedagioEmitido(ped.pedagio_declarado, ped.pedagio_vale_atual)}</div>
+          )}
           {cancelado && (
             <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--rbr-muted-bg)' }}>
               Cancelado em {dataHora(ped.cancelado_em)} (protocolo {ped.cancelamento_protocolo ?? '—'}){ped.cancelamento_motivo ? `. Motivo: ${ped.cancelamento_motivo}` : ''}
