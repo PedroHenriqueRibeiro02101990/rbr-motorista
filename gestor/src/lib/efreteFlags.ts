@@ -6,3 +6,7 @@ export const CIOT_EFRETE_HABILITADO = import.meta.env?.VITE_EFRETE_CIOT_HABILITA
 // Vale-pedágio pelo NSPEDAGIO (cartão "Vale-Pedágio (VPO)" na aba Fiscal). Padrão desligado; produção fica desligada.
 // Para ligar na homologação, defina VITE_NSPEDAGIO_HABILITADO=true no ambiente de build.
 export const NSPEDAGIO_HABILITADO = import.meta.env?.VITE_NSPEDAGIO_HABILITADO === 'true'
+
+// Seletor "Empresa que emite" (CIOT e vale-pedágio) na aba Fiscal. Padrão DESLIGADO; nunca aparece na demonstração.
+// Só ligar depois de aplicar a migração 20261112-1100-fornecedores-fiscais.sql (VITE_SELETOR_FORNECEDOR=true no build).
+export const SELETOR_FORNECEDOR_HABILITADO = import.meta.env?.VITE_SELETOR_FORNECEDOR === 'true'

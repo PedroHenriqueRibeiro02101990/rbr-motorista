@@ -30,6 +30,7 @@ import {
   type PreviaCiot,
   type RepositorioPedidos,
 } from "../_shared/ciotEfrete.ts";
+import { guardaFornecedor } from "../_shared/fornecedoresFiscais.ts";
 import { travaEfreteOperacao } from "../_shared/travaEfreteOperacao.ts";
 
 const CORS_HEADERS = {
@@ -435,6 +436,13 @@ Deno.serve(async (req: Request) => {
       const { data: op } = await admin.from("operacoes").select("eh_teste").eq("id", operacaoId).maybeSingle();
       const trava = travaEfreteOperacao({ baseUrl: cfg.baseUrl, operacaoEhTeste: op ? op.eh_teste === true : null });
       if (!trava.ok) return json({ ok: false, motivo: trava.motivo }, 412);
+    }
+
+    // Empresa que emite o CIOT desta operação: só a nstech (efrete) tem adaptador. Outra escolhida => erro claro, sem chamar ninguém.
+    if (acao !== "status") {
+      const { data: opf } = await admin.from("operacoes").select("modo_demonstracao").eq("id", operacaoId).maybeSingle();
+      const forn = await guardaFornecedor(admin as unknown as Parameters<typeof guardaFornecedor>[0], operacaoId, "ciot", opf?.modo_demonstracao === true);
+      if (!forn.ok) return json({ ok: false, motivo: forn.erro }, 409);
     }
 
     if (acao === "status") {
