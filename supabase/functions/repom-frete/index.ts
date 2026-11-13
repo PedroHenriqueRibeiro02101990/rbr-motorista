@@ -1,6 +1,6 @@
 // Edge Function: repom-frete  (verify_jwt = true; só gestor_rbr)  NÃO PUBLICADA: deploy só depois de revisão.
 // Repom Frete (guia 3.0, cliente 9520): cadastros (contratado, motorista, veículo), validações, prévia e emissão de contrato/CIOT,
-// consulta, cancelamento, interrupção, CIOT TAC-Agregado, autorização de pagamento e quitação. Saldo do cliente: NÃO IMPLEMENTADO (D-F15).
+// consulta, cancelamento, interrupção, CIOT TAC-Agregado, autorização de pagamento e quitação. Saldo do cliente: acao 'consultar_saldo' { dados: { inicio, fim } } (caminho informado pela Repom fora do guia; resposta devolvida como veio, D-F15).
 // Corpo: { acao, operacao_id?, contrato?, valor?, confirmacao?: { nome, em, previa_hash }, recurso?, metodo?, chave?, corpo?, dados? } (ver repomFluxos.ts).
 // Travas (nascem DESLIGADAS): REPOM_API_LIBERADA = sim (503); emissão e pagamento exigem confirmação humana da prévia (400);
 // valor acima de REPOM_VALOR_MAXIMO_OPERACAO (padrão 3000) = 422 sem chamar a Repom; limite diário global REPOM_LIMITE_DIARIO = 429.

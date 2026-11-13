@@ -46,7 +46,7 @@ Evidência = arquivo em `docs/repom/evidencias/` (JSON sanitizado pode ser versi
 | B16 | Praças do VPR do contrato (`TollList`) | response | não feito |
 | B17 | Autorização de pagamento, consulta (ByBatchId/ByIdentifier/ByShippingId) e cancelamento (parâmetro 57) | response | não feito |
 | B18 | Quitação com documentos (Delivered/Dismissed/Lost/Reshipping), comprovante, cancelamento e alteração de documento | response | não feito |
-| B19 | Saldo do cliente | response | não feito (método sem especificação, D-F15) |
+| B19 | Saldo do cliente | response | não feito (caminho informado pela Repom em 13/11, implementado; formato da resposta em aberto, D-F15) |
 | B20 | Conciliação financeira e contábil e faturas (se a Repom calcular os impostos) | response | não feito (fora desta entrega) |
 
 ## C. Do nosso lado (condições para ligar)
