@@ -158,7 +158,7 @@ test('cancelar, interromper, TAC-agregado, pagamento e quitação: caminhos e co
 })
 test('o que o guia deixa ambíguo ou sem detalhe é NÃO IMPLEMENTADO e cita a dúvida', async () => {
   const c = criarRepomFreteClient(cfg, async () => ok({}) as never)
-  for (const [m, d] of [['consultarSaldoCliente', 'D-F15'], ['adiantarSaldoFrete', 'D-F11'], ['alterarDocumentoQuitacao', 'D-F13'], ['consultarContratosPorStatus', 'D-F09'], ['listarOperacoes', 'D-F05']] as const) {
+  for (const [m, d] of [['adiantarSaldoFrete', 'D-F11'], ['alterarDocumentoQuitacao', 'D-F13'], ['consultarContratosPorStatus', 'D-F09'], ['listarOperacoes', 'D-F05']] as const) {
     await assert.rejects(() => (c[m] as () => Promise<never>)(), (e: Error) => e instanceof RepomFreteNaoImplementado && e.message.includes(d))
   }
 })
@@ -167,4 +167,16 @@ test('nenhum segredo em erro ou resposta', async () => {
   const r = await criarRepomFreteClient(cfg, m.fetchFn).emitirContrato(contrato)
   const t = JSON.stringify(r)
   for (const s of ['SENHA_9520_SECRETA', 'USER_9520_SECRETO', 'TOKEN_VAZADO', '00000000000100']) assert.ok(!t.includes(s), s)
+})
+test('saldo do cliente: GET no host do Relatório com datas AAAA-MM-DD; datas ruins nem chamam a Repom', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : ok({ qualquer: 'formato' })))
+  const c = criarRepomFreteClient(cfg, m.fetchFn)
+  const r = await c.consultarSaldoCliente('2026-11-01', '2026-11-13')
+  assert.ok(r.ok, JSON.stringify(r))
+  const x = m.chamadas.find((y) => !ehToken(y))!
+  assert.equal(x.init.method, 'GET')
+  assert.equal(x.url, 'https://qa.repom.com.br/Repom.Relatorio.WebAPI/Balance/Financial/GetByDateInicialDateFinal/2026-11-01/2026-11-13')
+  const antes = m.chamadas.length
+  for (const [a, b] of [['01/11/2026', '2026-11-13'], ['2026-11-13', '2026-11-01'], ['2026-13-40', '2026-11-13']]) assert.equal((await c.consultarSaldoCliente(a!, b!)).ok, false)
+  assert.equal(m.chamadas.length, antes)
 })

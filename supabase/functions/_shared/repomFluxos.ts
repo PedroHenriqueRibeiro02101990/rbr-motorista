@@ -138,7 +138,7 @@ export type AcaoFrete =
   | 'previa_contrato' | 'emitir_contrato' | 'consultar_contrato' | 'cancelar_contrato' | 'interromper_contrato'
   | 'autorizar_pagamento' | 'quitar' | 'consultar_pagamento' | 'cancelar_autorizacao' | 'cancelar_quitacao'
   | 'ciot_retificar' | 'ciot_cancelar' | 'ciot_encerrar'
-  | 'cadastro' | 'validar'
+  | 'cadastro' | 'validar' | 'consultar_saldo'
 
 export interface EntradaFrete {
   acao: AcaoFrete
@@ -187,6 +187,12 @@ export async function fluxoFrete(e: EntradaFrete, frete: ClienteRepomFrete, deps
   }
   const resp = (r: { ok: boolean; http: number; erro?: string; dados?: unknown; incerto?: boolean }): SaidaFluxo =>
     r.ok ? { status: 200, corpo: { ok: true, dados: r.dados, ambiente: deps.ambiente } } : recusa(r.incerto ? 202 : r.http === 0 ? 422 : 502, r.erro ?? 'Erro na Repom.', { incerto: r.incerto ?? false })
+
+  if (e.acao === 'consultar_saldo') {
+    const l = await limitar()
+    if (l) return l
+    return resp(await frete.consultarSaldoCliente(String(e.dados?.inicio ?? ''), String(e.dados?.fim ?? '')))
+  }
 
   if (e.acao === 'cadastro' || e.acao === 'validar') {
     const l = await limitar()

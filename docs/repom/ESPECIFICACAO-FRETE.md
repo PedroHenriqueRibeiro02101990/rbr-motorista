@@ -155,7 +155,7 @@ Após a finalização da viagem; contratado recebe os créditos pendentes e o co
 - `PATCH /ShippingPayment/Cancel/{shippingID}` — só se o cliente usa Autorização de Pagamento. `PATCH /ShippingPayment/DocumentLost/{shippingID}` — altera documento na quitação (corpo não documentado). Ambos devolvem `[{Message, ErrorCode}]`.
 
 ## 15. Saldo do cliente
-Só aparece na tabela inicial: `GET /Balance/Financial/GetByDateInicialDateFinal` ("consultar o saldo do cliente da Repom"). **Sem seção de detalhe** (parâmetros, formato, resposta): fica NÃO IMPLEMENTADO (D-F15).
+Na tabela inicial do guia só aparece o nome `GET /Balance/Financial/GetByDateInicialDateFinal`, sem seção de detalhe. **A Repom (Karen, 13/11) informou o caminho fora da documentação:** `GET {base do Relatório}/Balance/Financial/GetByDateInicialDateFinal/{AAAA-MM-DD}/{AAAA-MM-DD}` (base do Relatório = `Repom.Relatorio.WebAPI`). Implementado como leitura, resposta devolvida como veio; formato da resposta e significado do saldo seguem em aberto (D-F15).
 
 ## 16. Faturas e conciliação (só resumo, não implementado)
 - Detalhamento da fatura: `GET /Statement/Billing/GetByCustomerOrder/{orderId}` (só faturamento automático). Faturas abertas até 90 dias: `GET /Statement/Billing/GetByCustomerStartDateEndDate/{start}/{end}` (status 0 aberto, 1 pago, 2 pago parcial, 3 atraso, 4/vazio todas) e variante com status.

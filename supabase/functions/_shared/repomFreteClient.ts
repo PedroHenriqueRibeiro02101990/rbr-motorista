@@ -267,7 +267,8 @@ export interface ClienteRepomFrete {
   consultarQuitacao(shippingId: number | string): Promise<ResultadoFrete<unknown>>
   cancelarQuitacao(shippingId: number | string): Promise<ResultadoFrete<unknown>>
   // NAO IMPLEMENTADO (guia ambíguo ou sem detalhe; ver DUVIDAS-PARA-REPOM.md)
-  consultarSaldoCliente(): Promise<never>
+  /** Saldo do cliente: caminho informado pela Repom (Karen, 13/11), FORA do guia. Formato da resposta desconhecido (D-F15): devolve o que vier. */
+  consultarSaldoCliente(inicio: string, fim: string): Promise<ResultadoFrete<unknown>>
   adiantarSaldoFrete(): Promise<never>
   alterarDocumentoQuitacao(): Promise<never>
   consultarContratosPorStatus(): Promise<never>
@@ -446,7 +447,11 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     consultarQuitacao: (id) => (idViagem(id) ? rodar('GET', `/ShippingPayment/DownloadPaymentFile/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     cancelarQuitacao: (id) => (idViagem(id) ? rodar('PATCH', `/ShippingPayment/Cancel/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
 
-    consultarSaldoCliente: nao('saldo do cliente', 'D-F15'),
+    consultarSaldoCliente(inicio, fim) {
+      const dia = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
+      if (!dia.test(inicio) || !dia.test(fim) || Number.isNaN(new Date(inicio).getTime()) || Number.isNaN(new Date(fim).getTime()) || inicio > fim) return invalido('Informe as datas no formato AAAA-MM-DD, início até o fim.')
+      return rodar('GET', `/Balance/Financial/GetByDateInicialDateFinal/${inicio}/${fim}`, { relatorio: true }) // base do Relatório (Repom.Relatorio.WebAPI)
+    },
     adiantarSaldoFrete: nao('adiantar saldo de frete', 'D-F11'),
     alterarDocumentoQuitacao: nao('alterar documento na quitação', 'D-F13'),
     consultarContratosPorStatus: nao('consulta por data e status (caminho truncado no guia)', 'D-F09'),
