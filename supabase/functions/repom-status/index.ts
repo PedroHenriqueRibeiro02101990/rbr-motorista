@@ -10,7 +10,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ambienteRepom } from "../_shared/repomClient.ts";
-import { criarRepomFreteClient } from "../_shared/repomFreteClient.ts";
+import { criarRepomFreteClient, lerFormatoToken } from "../_shared/repomFreteClient.ts";
 import { corsPara } from "../_shared/repomHttp.ts";
 import { criarRepomVprClient } from "../_shared/repomVprClient.ts";
 import { inicioDoDia, limiteDiario, travaLiberada, valorMaximoOperacao } from "../_shared/repomTrava.ts";
@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
           ambiente,
           credenciais: { user: fUser ?? "", version: fVersao ?? "", password: fSenha ?? "", partner: fPartner ?? "" },
           urlToken: fToken ?? undefined,
+          tokenFormato: lerFormatoToken(await segredo("REPOM_FRETE_TOKEN_FORMATO")),
           urlBase: (await segredo("REPOM_FRETE_URL_BASE")) ?? undefined,
         });
         saida.tokenObtido = (await frete.verificarToken()).ok;

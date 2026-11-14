@@ -8,7 +8,7 @@ host do IdentityServer do 9520 (diz "{{host_IdentityServer}} fornecido pela equi
 
 ## Convenções
 - Host QA (único que o guia cita): `https://qa.repom.com.br/Repom.Frete.WebAPI/` (o guia grafa `Webapi`/`WebAPI`/`webapi`; é o mesmo).
-  Relatórios: `https://qa.repom.com.br/Repom.Relatorio.WebAPI/` (versão 1.0). **PRD: não consta.**
+  Relatórios: `https://qa.repom.com.br/Repom.Relatorio.WebAPI/` (versão 1.0). **PRD no guia: não consta.** Base de PRD do Frete confirmada em 14/11: `https://www.repom.com.br/Repom.Frete.Webapi`.
 - Versão da API por query `?x-api-version=`: 2.4 (RouteRequestAutomatic), 3.0 (Shipping), 3 / 3.0 (CIOTAggregate). Adiantamento flexível exige emissão a partir da 2.3.
 - Tipos nas tabelas: A alfanumérico, N numérico, D data (`2000-08-20T19:28:12.474Z`), B booleano. Países aceitam `Brazil` ou o código `55` (o guia usa os dois).
 - Resposta padrão: `{"Response":{"StatusCode":200},"Result":...}` ou `{"StatusCode":201,"Message":""}`; erro: `{"StatusCode":400},"Errors":[{"Message":"repomfrete: ...","ErrorCode":113}]`. Alguns métodos devolvem só `[{"Message","ErrorCode"}]`; alterações (PUT) devolvem **204** sem corpo.
@@ -18,7 +18,8 @@ host do IdentityServer do 9520 (diz "{{host_IdentityServer}} fornecido pela equi
 ## 1. Token — `POST /Token` (tabela "POST/Auth")
 Parâmetros: `User` (código do cliente na Repom, enviado pela Integração), `Version` (versão utilizada), `Password`, `Partner` (CNPJ do cliente
 cadastrado na Repom). Resposta: `access_token` (guardar para as demais chamadas; JWT). Endpoint na figura 2 aparece como `connect/token`.
-**Ambíguo:** host, formato do corpo, validade. → DUVIDAS (D-F01..D-F03).
+**Confirmado por teste real (14/11, produção):** base `https://www.repom.com.br/Repom.Frete.Webapi`, login em `{base}/Token` (outros caminhos dão 404). É endpoint OAuth: JSON com `User`/`Password`/`Partner` sem `grant_type` responde 400 `unsupported_grant_type`. A Repom disse "JSON - Body" com `User`, `Password`, `Partner` e não citou `Version`. **A confirmar:** formulário OAuth (`grant_type=password`) ou JSON com `grant_type`; existência de `Version`; validade. → DUVIDAS (D-F01, D-F02, D-F03).
+Código: formato do corpo configurável por `REPOM_FRETE_TOKEN_FORMATO` (`form` padrão: `grant_type=password`, `username`, `password`, `partner`; `form_pascal`: `grant_type=password`, `User`, `Password`, `Partner`; `json`: `grant_type`, `User`, `Password`, `Partner`). `Version` só entra se `REPOM_FRETE_VERSION` estiver preenchido. O token é lido de `access_token`, `token`, `Token` ou `accessToken`, cacheado até expirar (margem de 60 s; 3600 s se a validade não vier). Ações somente leitura em `repom-frete`: `verificar_token` (UMA tentativa no formato configurado) e `diagnosticar_token` (no máximo 3 tentativas: form, form_pascal, json; para no primeiro 2xx). Devolvem só formato, http_status, chaves da resposta e erro curto (até 200 caracteres); nunca token, senha nem corpo de sucesso. Passam pela trava `REPOM_API_LIBERADA` e pelo limite diário; não exigem confirmação humana porque não geram custo nem documento.
 
 ## 2. Contratado (Hired) — cadastro por PF ou PJ
 `POST /Hired` (síncrono; sucesso `{"StatusCode":201,"Message":""}`). Cadastro junto à ANTT; um por chamada; antes da emissão.
