@@ -9,7 +9,7 @@ import type { Fetch } from './repomClient.ts'
 
 export interface CredenciaisRepomFrete {
   user: string // código do cliente na Repom (9520)
-  version: string // "Version utilizada" (D-F02)
+  version?: string // "Version": a Repom NAO citou este campo (D-F02); so e enviado se vier preenchido (REPOM_FRETE_VERSION)
   password: string
   partner: string // CNPJ do cliente cadastrado na Repom
 }
@@ -23,6 +23,50 @@ export interface ConfigRepomFrete {
   urlBase?: string
   urlRelatorio?: string
   limiteMs?: number
+  /** Formato do corpo do login (REPOM_FRETE_TOKEN_FORMATO). Padrão "form" (OAuth: grant_type=password). */
+  tokenFormato?: FormatoToken
+}
+
+export type FormatoToken = 'form' | 'form_pascal' | 'json'
+export const FORMATOS_TOKEN: FormatoToken[] = ['form', 'form_pascal', 'json']
+export const lerFormatoToken = (v: unknown): FormatoToken => {
+  const x = String(v ?? '').trim().toLowerCase()
+  return (FORMATOS_TOKEN as string[]).includes(x) ? (x as FormatoToken) : 'form'
+}
+
+/** Resultado de UMA tentativa de login. Nunca carrega token, senha nem corpo bruto de sucesso. */
+export interface TentativaToken {
+  formato: FormatoToken
+  http_status: number
+  chaves_da_resposta: string[]
+  erro_curto: string | null
+  ok: boolean
+}
+
+/** Corpo e content-type do login por formato. Version só entra se preenchida. */
+export function montarCorpoToken(formato: FormatoToken, c: CredenciaisRepomFrete): { contentType: string; corpo: string } {
+  const version: Record<string, string> = c.version?.trim() ? { Version: c.version.trim() } : {}
+  if (formato === 'json') return { contentType: 'application/json', corpo: JSON.stringify({ grant_type: 'password', User: c.user, Password: c.password, Partner: c.partner, ...version }) }
+  const campos: Record<string, string> = formato === 'form' ? { grant_type: 'password', username: c.user, password: c.password, partner: c.partner } : { grant_type: 'password', User: c.user, Password: c.password, Partner: c.partner }
+  return { contentType: 'application/x-www-form-urlencoded', corpo: new URLSearchParams({ ...campos, ...version }).toString() }
+}
+
+/** Lê o token aceitando access_token, token, Token ou accessToken; e a validade (segundos) se vier. */
+export function lerTokenResposta(bruto: unknown): { valor: string; expiraEmSeg: number | null } | null {
+  if (!bruto || typeof bruto !== 'object') return null
+  const o = bruto as Record<string, unknown>
+  const valor = [o.access_token, o.token, o.Token, o.accessToken].find((v) => typeof v === 'string' && v.trim())
+  if (typeof valor !== 'string') return null
+  const exp = Number(o.expires_in ?? o.expiresIn ?? o.ExpiresIn)
+  return { valor: valor.trim(), expiraEmSeg: Number.isFinite(exp) && exp > 0 ? exp : null }
+}
+
+/** Mensagem curta (máx. 200) do erro de login. Só lê error/error_description/Message e apaga qualquer credencial que a Repom ecoe. */
+export function erroCurtoToken(bruto: unknown, status: number, c: CredenciaisRepomFrete): string {
+  const o = bruto && typeof bruto === 'object' && !Array.isArray(bruto) ? (bruto as Record<string, unknown>) : {}
+  let m = [o.error, o.error_description, o.Message, o.message].filter((v) => typeof v === 'string' && v).join(': ') || mensagemHttpFrete(status)
+  for (const seg of [c.user, c.password, c.partner, c.version]) if (seg && seg.length >= 3) m = m.split(seg).join('***')
+  return m.slice(0, 200)
 }
 
 export const URL_BASE_QA = 'https://qa.repom.com.br/Repom.Frete.WebAPI'
@@ -211,6 +255,10 @@ export interface ClienteRepomFrete {
   readonly ambiente: 'qa' | 'prd'
   /** UMA chamada de token. Só para o diagnóstico do repom-status. */
   verificarToken(): Promise<{ ok: boolean; erro?: string }>
+  /** Somente leitura: UMA tentativa no formato configurado. Não reenvia sozinho em 400 unsupported_grant_type nem em 401. */
+  verificarTokenDetalhado(): Promise<TentativaToken>
+  /** Somente leitura: no MÁXIMO 3 tentativas (form, form_pascal, json), para no primeiro 2xx. */
+  diagnosticarToken(): Promise<{ tentativas: TentativaToken[]; vencedor: FormatoToken | null }>
   // cadastros (um por chamada, antes da emissão)
   criarContratado(corpo: Record<string, unknown>): Promise<ResultadoFrete<unknown>>
   consultarContratadoPorNome(nome: string): Promise<ResultadoFrete<unknown>>
@@ -285,7 +333,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
   const configurado = (): string | null => {
     if (!base) return 'A URL da API Frete de produção não foi configurada.'
     if (!config.urlToken) return 'A URL do token da Repom Frete não foi configurada.'
-    if (!c.user || !c.password || !c.partner || !c.version) return 'Credenciais da Repom Frete não configuradas.'
+    if (!c.user || !c.password || !c.partner) return 'Credenciais da Repom Frete não configuradas.'
     return null
   }
 
@@ -301,14 +349,30 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     }
   }
 
+  /** UMA tentativa de login no formato dado (D-F02: formato exato a confirmar com a Repom). Não loga nem devolve o corpo de sucesso; guarda o token em cache. */
+  async function tentarLogin(formato: FormatoToken): Promise<TentativaToken> {
+    const { contentType, corpo } = montarCorpoToken(formato, c)
+    const vazio: TentativaToken = { formato, http_status: 0, chaves_da_resposta: [], erro_curto: null, ok: false }
+    let r: Awaited<ReturnType<typeof http>>
+    try {
+      r = await http(config.urlToken as string, { method: 'POST', headers: { 'content-type': contentType, accept: 'application/json' }, body: corpo })
+    } catch (e) {
+      return { ...vazio, erro_curto: (e as Error).message === 'TIMEOUT' ? 'A Repom demorou demais para responder.' : 'Não consegui falar com a Repom agora.' }
+    }
+    const j = (await r.json().catch(() => null)) as unknown
+    const chaves = j && typeof j === 'object' && !Array.isArray(j) ? Object.keys(j as object) : []
+    const lido = r.ok ? lerTokenResposta(j) : null
+    if (r.ok && lido) {
+      token = { valor: lido.valor, expira: Date.now() + (lido.expiraEmSeg ?? 3600) * 1000 }
+      return { formato, http_status: r.status, chaves_da_resposta: chaves, erro_curto: null, ok: true }
+    }
+    return { formato, http_status: r.status, chaves_da_resposta: chaves, erro_curto: r.ok ? 'A Repom respondeu sem o token.' : erroCurtoToken(j, r.status, c), ok: false }
+  }
+
   async function obterToken(forcar = false): Promise<string> {
     if (!forcar && token && token.expira > Date.now() + 60_000) return token.valor
-    // CONFIRMAR (D-F02): formulário com User, Version, Password, Partner. O guia não mostra o corpo (só a figura).
-    const corpo = new URLSearchParams({ User: c.user, Version: c.version, Password: c.password, Partner: c.partner }).toString()
-    const r = await http(config.urlToken as string, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: corpo })
-    const j = (await r.json().catch(() => null)) as { access_token?: string; expires_in?: number } | null
-    if (!r.ok || !j?.access_token) throw new Error('TOKEN:' + r.status)
-    token = { valor: j.access_token, expira: Date.now() + ((Number(j.expires_in) || 3600) - 300) * 1000 }
+    const t = await tentarLogin(config.tokenFormato ?? 'form')
+    if (!t.ok || !token) throw new Error('TOKEN:' + t.http_status)
     return token.valor
   }
 
@@ -446,6 +510,23 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
         : rodar('POST', '/ShippingPayment', { corpo: { BranchCode: p.branchCode, ShippingID: String(p.shippingId), ...(p.pesoDescarregado != null ? { TotalUnloadWeight: p.pesoDescarregado } : {}), Documents: p.documentos.map((d) => ({ Number: d.numero, Series: d.serie, BranchCode: d.branchCode, DocumentType: d.tipo, DocumentStatus: d.status })) } }, undefined, true), // dinheiro: timeout/5xx = INCERTO
     consultarQuitacao: (id) => (idViagem(id) ? rodar('GET', `/ShippingPayment/DownloadPaymentFile/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     cancelarQuitacao: (id) => (idViagem(id) ? rodar('PATCH', `/ShippingPayment/Cancel/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
+
+    async verificarTokenDetalhado() {
+      const falta = configurado()
+      if (falta) return { formato: config.tokenFormato ?? 'form', http_status: 0, chaves_da_resposta: [], erro_curto: falta, ok: false }
+      return tentarLogin(config.tokenFormato ?? 'form')
+    },
+    async diagnosticarToken() {
+      const falta = configurado()
+      if (falta) return { tentativas: [{ formato: config.tokenFormato ?? 'form', http_status: 0, chaves_da_resposta: [], erro_curto: falta, ok: false }], vencedor: null }
+      const tentativas: TentativaToken[] = []
+      for (const f of FORMATOS_TOKEN) {
+        const t = await tentarLogin(f)
+        tentativas.push(t)
+        if (t.ok) return { tentativas, vencedor: f }
+      }
+      return { tentativas, vencedor: null }
+    },
 
     consultarSaldoCliente(inicio, fim) {
       const dia = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/

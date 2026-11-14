@@ -39,7 +39,7 @@ test('sem URL do token, URL de PRD ou credenciais: responde "não configurado" e
   assert.equal((await semCred.tiposDeCarga()).ok, false)
   assert.equal(m.chamadas.length, 0)
 })
-test('token com User, Version, Password e Partner; cacheado; 401 renova UMA vez', async () => {
+test('token (formato padrão form OAuth); cacheado; 401 renova UMA vez', async () => {
   let tokens = 0
   const m = mock((c) => {
     if (ehToken(c)) return ok({ access_token: 'tok' + ++tokens, expires_in: 3600 })
@@ -51,9 +51,10 @@ test('token com User, Version, Password e Partner; cacheado; 401 renova UMA vez'
   assert.ok(a.ok && b.ok)
   assert.equal(tokens, 2)
   const corpo = new URLSearchParams(m.chamadas[0]!.init.body)
-  assert.equal(corpo.get('User'), 'USER_9520_SECRETO')
-  assert.equal(corpo.get('Version'), '3.0')
-  assert.equal(corpo.get('Partner'), '00000000000100')
+  assert.equal(corpo.get('grant_type'), 'password')
+  assert.equal(corpo.get('username'), 'USER_9520_SECRETO')
+  assert.equal(corpo.get('partner'), '00000000000100')
+  assert.equal(corpo.get('Version'), '3.0') // Version só vai quando preenchida
   assert.match(m.chamadas.find((c) => !ehToken(c))!.url, /^https:\/\/qa\.repom\.com\.br\/Repom\.Frete\.WebAPI\/AnttTypes\/LoadTypes$/)
   // 401 permanente: duas tentativas e para
   const m2 = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : { status: 401, corpo: null }))

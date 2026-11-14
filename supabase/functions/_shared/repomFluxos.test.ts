@@ -366,3 +366,20 @@ test('funções novas: só gestor_rbr, verify_jwt documentado e sem leitura de t
   assert.ok(!/create or replace function[^;]*security definer/i.test(sql)) // nenhuma função nova que leia segredo
   assert.match(readFileSync(new URL('../../rollback/rollback-20261112-1400-repom-operacoes.sql', import.meta.url), 'utf8'), /drop table if exists public\.repom_operacoes/)
 })
+
+test('frete: verificar_token e diagnosticar_token respeitam a trava e o limite diario, sem confirmacao humana e sem devolver segredo', async () => {
+  const { repo } = repoMemoria()
+  const m = mock((c) => (ehTokenFrete(c) ? { status: 200, corpo: { access_token: 'SEGREDO_TOKEN_XYZ' } } : { status: 200, corpo: {} }))
+  const frete = criarRepomFreteClient(freteCfg, m.fetchFn)
+  for (const acao of ['verificar_token', 'diagnosticar_token'] as const) {
+    assert.equal((await fluxoFrete({ acao }, frete, deps(repo, { apiLiberada: false }))).status, 503)
+    assert.equal((await fluxoFrete({ acao }, frete, deps(repo, { antesDeChamar: async () => 'Limite diario atingido.' }))).status, 429)
+  }
+  assert.equal(m.chamadas.length, 0)
+  const v = await fluxoFrete({ acao: 'verificar_token' }, frete, deps(repo))
+  assert.equal(v.status, 200)
+  const d = await fluxoFrete({ acao: 'diagnosticar_token' }, frete, deps(repo))
+  assert.equal(d.status, 200)
+  assert.equal(JSON.stringify([v, d]).includes('SEGREDO_TOKEN_XYZ'), false)
+  assert.equal(JSON.stringify([v, d]).includes('SENHA_9520_SECRETA'), false)
+})

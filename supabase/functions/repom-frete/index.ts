@@ -6,10 +6,10 @@
 // valor acima de REPOM_VALOR_MAXIMO_OPERACAO (padrão 3000) = 422 sem chamar a Repom; limite diário global REPOM_LIMITE_DIARIO = 429.
 // Contrato é assíncrono: fica "enviado" até a consulta confirmar; timeout/5xx NUNCA reenvia, confere por Identifier/OperationKey antes.
 // Esta função NÃO substitui a efrete (CIOT continua pela efrete; a Repom entra como fornecedor selecionável).
-// Segredos (Vault, cadastrados pelo Pedro no painel; nunca no chat): REPOM_FRETE_USER, REPOM_FRETE_VERSION, REPOM_FRETE_PASSWORD,
+// Segredos (Vault, cadastrados pelo Pedro no painel; nunca no chat): REPOM_FRETE_USER, REPOM_FRETE_VERSION (opcional), REPOM_FRETE_TOKEN_FORMATO (form|form_pascal|json), REPOM_FRETE_PASSWORD,
 // REPOM_FRETE_PARTNER (CNPJ), REPOM_FRETE_URL_TOKEN, REPOM_FRETE_URL_BASE (obrigatória em prd; em qa tem padrão).
 import { servir } from "../_shared/repomEdge.ts";
-import { criarRepomFreteClient } from "../_shared/repomFreteClient.ts";
+import { criarRepomFreteClient, lerFormatoToken } from "../_shared/repomFreteClient.ts";
 import { fluxoFrete, type EntradaFrete } from "../_shared/repomFluxos.ts";
 
 servir("frete", async (corpo, ctx) => {
@@ -23,6 +23,7 @@ servir("frete", async (corpo, ctx) => {
       partner: (await s("REPOM_FRETE_PARTNER")) ?? "",
     },
     urlToken: (await s("REPOM_FRETE_URL_TOKEN")) ?? undefined,
+    tokenFormato: lerFormatoToken(await s("REPOM_FRETE_TOKEN_FORMATO")), // form (padrão) | form_pascal | json
     urlBase: (await s("REPOM_FRETE_URL_BASE")) ?? undefined,
   });
   return fluxoFrete(corpo as unknown as EntradaFrete, frete, ctx.deps);
