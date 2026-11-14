@@ -167,3 +167,10 @@ Vale-combustível integrado à TicketLog; máximo 80%. Jornada: `POST /Hired` co
 
 ## 18. Portal dos testes integrados (página 155)
 A Repom abre um portal de acompanhamento dos testes (login e senha entregues na abertura do projeto). Mostra: progresso dos testes, linha do tempo do projeto, progresso geral, data de início e expectativa de término, painel com percentual de testes feitos, pendentes e validados, e o **menu Cenários** (quais já foram executados e quais pendentes). **Os cenários são configurados pelos analistas de integração da Repom** e o guia não os lista: só a Repom diz quais são. O guia serve para o desenvolvimento e para a homologação de uma nova conta. Ver `CHECKLIST-HOMOLOGACAO.md`.
+
+## Status informados pela Repom (Karen, 13/11)
+Lista recebida: `InTransit` (Em Trânsito), `Accountability` (Prestado Contas), `Cleared` (Quitado), `Authorized` (Autorizado), `Paid` (Pago), `Interrupted` (Interrompido), `Cancelled` (Cancelado), `Locked` (Bloqueado).
+**Ainda NÃO sabemos** a que cada status se refere (viagem/contrato, pagamento ou CIOT), nem a lista de status de processamento da emissão (só vimos `Finished`, `CompletedAutomatically` e números soltos). **Não há ordem de fluxo presumida** entre eles: o código só trata `Finished` sem erros como emitido. Dúvida aberta: D-F24 (DUVIDAS-PARA-REPOM.md).
+
+## Saldo e base do Relatório
+O saldo já está implementado (ação `consultar_saldo`, `consultarSaldoCliente`, PR #77). A base do Relatório é derivada da base do Frete trocando `Repom.Frete.Webapi` por `Repom.Relatorio.WebAPI` (a troca ignora maiúsculas/minúsculas). **A confirmar em produção** com a Repom (D-F15): que o host de Relatório de produção seja mesmo esse e que a mesma rota valha.
