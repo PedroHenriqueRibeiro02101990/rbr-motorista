@@ -27,6 +27,7 @@ import RelatorioComercial from './pages/RelatorioComercial'
 import Alteracoes from './pages/Alteracoes'
 import MeusClientes from './pages/MeusClientes'
 import PropostaPublica from './pages/PropostaPublica'
+import Prospeccao from './pages/Prospeccao'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
 const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
@@ -97,6 +98,7 @@ export default function App() {
           <Route path="/relatorio-comercial" element={<RelatorioComercial />} />
           <Route path="/alteracoes" element={<Alteracoes />} />
           <Route path="/meus-clientes" element={<MeusClientes />} />
+          <Route path="/prospeccao" element={auth.pessoa.papel === 'gestor_rbr' ? <Prospeccao /> : <Navigate to="/" replace />} />
           <Route path="/risco" element={<Risco />} />
           <Route path="/cadastros" element={<Cadastros />} />
           <Route path="*" element={<Navigate to="/" replace />} />
