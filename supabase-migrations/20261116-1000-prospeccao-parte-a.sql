@@ -127,6 +127,8 @@ create table public.prospeccao_bloqueio (
   tipo text not null check (tipo in ('email', 'dominio')),
   valor text not null check (valor = lower(valor)),
   motivo text not null check (motivo in ('sair', 'reclamacao', 'devolvido', 'manual')),
+  constraint prospeccao_bloqueio_dominio_publico_ck check (tipo <> 'dominio' or valor not in
+    ('gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 'yahoo.com', 'yahoo.com.br', 'uol.com.br', 'bol.com.br', 'terra.com.br', 'icloud.com')),
   criado_em timestamptz not null default now()
 );
 create unique index prospeccao_bloqueio_valor_uq on public.prospeccao_bloqueio (valor);
@@ -267,8 +269,15 @@ on conflict (chave) do nothing;
 
 create function public.prospeccao_eh_pedro() returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select exists (select 1 from public.pessoas p
-                  where p.id = public.current_pessoa_id() and p.papel = 'gestor_rbr' and p.nome ilike 'Pedro%');
+  -- Compara a pessoa logada com o parametro PROSPECCAO_ADMIN_PESSOA_ID (jsonb string com um uuid, preenchido pelo Pedro ao aplicar).
+  -- Falha fechado: parametro ausente, vazio ou diferente = false.
+  select coalesce(
+           (select (pr.valor #>> '{}') = public.current_pessoa_id()::text
+              from public.parametros_sistema pr
+             where pr.chave = 'PROSPECCAO_ADMIN_PESSOA_ID'
+               and jsonb_typeof(pr.valor) = 'string'),
+           false)
+     and exists (select 1 from public.pessoas p where p.id = public.current_pessoa_id() and p.papel = 'gestor_rbr');
 $$;
 
 create function public.trg_fn_prospeccao_flag_guarda() returns trigger

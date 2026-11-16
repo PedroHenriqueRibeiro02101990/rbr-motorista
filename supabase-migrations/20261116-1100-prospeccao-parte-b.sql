@@ -52,7 +52,7 @@ create table public.prospeccao_jornada (
   atraso_dias int not null check (atraso_dias >= 0),
   modelo_tipo text not null references public.prospeccao_modelos(tipo)
 );
-insert into public.prospeccao_jornada (toque, atraso_dias, modelo_tipo) values (1, 0, 'toque1'), (2, 3, 'toque2'), (3, 7, 'toque3'), (4, 14, 'toque4');
+-- (a carga inicial da jornada fica depois da carga de prospeccao_modelos: a FK exige os modelos antes)
 comment on table public.prospeccao_jornada is 'Prospeccao: dias depois do toque anterior. Depois do toque 4 a empresa vai para repouso por 90 dias.';
 
 create table public.prospeccao_log (
@@ -89,17 +89,12 @@ alter table public.prospeccao_respostas
   add column escalado_em timestamptz;
 create unique index prospeccao_respostas_uid_uq on public.prospeccao_respostas (uid_imap) where uid_imap is not null;
 create index prospeccao_mensagens_msgid_idx on public.prospeccao_mensagens (message_id) where message_id is not null;
+-- Um unico toque ativo por contato (impede mensagem duplicada para o mesmo contato/toque)
+create unique index prospeccao_mensagens_contato_toque_uq on public.prospeccao_mensagens (contato_id, toque) where status <> 'descartado';
 
 -- Lead que veio da prospeccao ativa
-do $$
-declare v_nome text;
-begin
-  select conname into v_nome from pg_constraint
-   where conrelid = 'public.leads'::regclass and contype = 'c' and pg_get_constraintdef(oid) ilike '%origem%in%site%';
-  if v_nome is not null then execute format('alter table public.leads drop constraint %I', v_nome); end if;
-  alter table public.leads add constraint leads_origem_check
-    check (origem in ('site', 'whatsapp', 'indicacao', 'manual', 'outro', 'prospeccao'));
-end $$;
+alter table public.leads drop constraint if exists leads_origem_check;
+alter table public.leads add constraint leads_origem_check check (origem in ('site','whatsapp','indicacao','manual','outro','prospeccao'));
 
 -- ---------------------------------------------------------------------------------------------------------
 -- 3) Modelos: validacao (sem HTML, sem variavel desconhecida) e carga inicial
@@ -151,6 +146,8 @@ Se preferir não receber mais mensagens, responda "sair".', true),
   ('resp_agora_nao', 'Re: agradecimento', 'A DEFINIR (agradecimento por "agora não").', false),
   ('resp_indicacao', 'Re: indicação', 'A DEFINIR (agradecimento pela indicação).', false),
   ('resp_recebimento', 'Recebemos sua mensagem', 'A DEFINIR (aviso de recebimento: o José Carlos retorna em breve, sem preço e sem prazo).', false);
+
+insert into public.prospeccao_jornada (toque, atraso_dias, modelo_tipo) values (1, 0, 'toque1'), (2, 3, 'toque2'), (3, 7, 'toque3'), (4, 14, 'toque4');
 
 -- ---------------------------------------------------------------------------------------------------------
 -- 4) Segredos: so os NOMES (o Pedro cadastra os valores no Vault) + leitura restrita a service_role

@@ -1,7 +1,7 @@
 -- Rollback da Parte B da Prospeccao (nao mexe na Parte A).
 select cron.unschedule(jobname) from cron.job where jobname in ('prospeccao-enviar', 'prospeccao-ler');
 delete from public.parametros_sistema where chave in ('PROSPECCAO_LEITURA_LIBERADA', 'PROSPECCAO_APROVACAO_OBRIGATORIA', 'PROSPECCAO_RESPOSTA_AUTOMATICA_LIBERADA', 'PROSPECCAO_MODO_TESTE');
-drop index if exists public.prospeccao_respostas_uid_uq, public.prospeccao_mensagens_msgid_idx;
+drop index if exists public.prospeccao_respostas_uid_uq, public.prospeccao_mensagens_msgid_idx, public.prospeccao_mensagens_contato_toque_uq;
 alter table public.prospeccao_mensagens drop column if exists tentativas, drop column if exists teste_enviado_em;
 alter table public.prospeccao_respostas drop column if exists uid_imap, drop column if exists message_id_origem, drop column if exists classificacao_confianca,
   drop column if exists indicacao_email, drop column if exists para_pessoa, drop column if exists aviso_recebimento_em, drop column if exists lembrete_em, drop column if exists escalado_em;
