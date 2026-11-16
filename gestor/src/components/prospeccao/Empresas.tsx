@@ -3,7 +3,7 @@ import { Aviso, Botao, Campo, Card, Modal, Vazio, inputClass, inputStyle } from 
 import { useConfirmacao } from '../Confirmacao'
 import { db, auditar, type Bloqueio, type Contato, type Empresa, type Mensagem } from '../../lib/prospeccaoDb'
 import {
-  SEGMENTOS, SEGMENTO_LABEL, STATUS_EMPRESA_LABEL, VALIDACAO_LABEL, VEICULOS, analisarImportacao, calcularPontuacao, parseCsv,
+  SEGMENTOS, SEGMENTO_FRASE, SEGMENTO_LEGIVEL, SEGMENTO_LABEL, STATUS_EMPRESA_LABEL, preencher, VALIDACAO_LABEL, VEICULOS, analisarImportacao, calcularPontuacao, parseCsv,
   podeGerarRascunho, rascunhoToque1, soDigitos, type LinhaImport, type Peso, type Segmento,
 } from '../../lib/prospeccao'
 
@@ -70,7 +70,13 @@ export default function Empresas() {
       if (!c || !podeGerarRascunho(e.classe, c.validacao_status)) throw new Error('Precisa de empresa classe A ou B e contato com e-mail de sintaxe válida.')
       const { data: ja } = await db.from('prospeccao_mensagens').select('id').eq('empresa_id', e.id).eq('contato_id', c.id).eq('toque', 1).in('status', ['rascunho', 'aprovado', 'enviado']).limit(1)
       if (ja && ja.length > 0) throw new Error('Já existe um 1º toque para este contato (rascunho, aprovado ou enviado).')
-      const m = rascunhoToque1({ segmento: e.segmento as Segmento, cidade: e.cidade })
+      // Parte B: o texto vem do modelo editavel (toque1, ativo); se a tabela nao existir ainda, usa o modelo fixo da Parte A.
+      const { data: mod } = await db.from('prospeccao_modelos').select('assunto, corpo, ativo').eq('tipo', 'toque1').maybeSingle()
+      let m = rascunhoToque1({ segmento: e.segmento as Segmento, cidade: e.cidade })
+      if (mod && (mod as { ativo: boolean }).ativo) {
+        const v = { segmento_legivel: SEGMENTO_LEGIVEL[e.segmento as Segmento], segmento_frase: SEGMENTO_FRASE[e.segmento as Segmento], cidade: e.cidade?.trim() || 'sua região', nome: c.nome ?? '', empresa: e.nome_fantasia ?? e.razao_social, veiculo: e.veiculo_provavel ?? '' }
+        m = { assunto: preencher((mod as { assunto: string }).assunto, v), corpo: preencher((mod as { corpo: string }).corpo, v) }
+      }
       const { error } = await db.from('prospeccao_mensagens').insert({ empresa_id: e.id, contato_id: c.id, toque: 1, assunto: m.assunto, corpo: m.corpo, status: 'rascunho' })
       if (error) throw new Error(error.message)
       await db.from('prospeccao_empresas').update({ status: 'em_aprovacao' }).eq('id', e.id).eq('status', 'novo')

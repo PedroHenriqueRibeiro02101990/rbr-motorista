@@ -111,3 +111,17 @@ test('so gera rascunho para classe A/B com sintaxe ok', () => {
   assert.ok(!podeGerarRascunho('A', 'invalido'))
   assert.ok(!podeGerarRascunho('A', null))
 })
+
+import { diaDaRampa, limiteDoDia, modeloPendente, validarModelo } from '../src/lib/prospeccao.ts'
+test('Parte B (tela): modelos, rampa e limite', () => {
+  assert.equal(validarModelo('a {cidade}', 'oi {nome} da {empresa}'), null)
+  assert.match(validarModelo('a', '<b>x</b>')!, /HTML/)
+  assert.match(validarModelo('a', '{cpf}')!, /desconhecida/)
+  assert.ok(modeloPendente({ corpo: 'A DEFINIR (toque 2).', ativo: true }))
+  assert.ok(modeloPendente({ corpo: 'texto', ativo: false }))
+  assert.ok(!modeloPendente({ corpo: 'texto', ativo: true }))
+  const R = [{ dia_inicio: 1, limite: 10 }, { dia_inicio: 6, limite: 15 }, { dia_inicio: 16, limite: 30 }]
+  assert.equal(diaDaRampa('2026-11-16', '2026-11-21'), 6)
+  assert.deepEqual(limiteDoDia(10, R, 20), { limite: 10, origem: 'parâmetro' })
+  assert.deepEqual(limiteDoDia(50, R, 6), { limite: 15, origem: 'rampa' })
+})

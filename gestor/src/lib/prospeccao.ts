@@ -215,3 +215,34 @@ export function linkWhatsapp(n: string | null | undefined): string | null {
 
 // Texto puro: sem HTML.
 export const temHtml = (s: string) => /<\/?[a-z][\s\S]*>/i.test(s)
+
+// ---- Parte B: modelos, rampa e limite (espelho das regras dos robos em supabase/functions/_shared/prospeccaoRegras.ts) ----
+export const VARIAVEIS_MODELO = ['segmento_legivel', 'segmento_frase', 'cidade', 'nome', 'empresa', 'veiculo'] as const
+export function validarModelo(assunto: string, corpo: string): string | null {
+  for (const txt of [assunto, corpo]) {
+    if (/<\/?[a-z][\s\S]*?>/i.test(txt)) return 'O texto não pode conter HTML.'
+    for (const m of txt.matchAll(/\{([^{}]*)\}/g)) if (!(VARIAVEIS_MODELO as readonly string[]).includes(m[1])) return `Variável desconhecida: {${m[1]}}.`
+  }
+  return null
+}
+export const modeloPendente = (m: { corpo: string; ativo: boolean }) => !m.ativo || /A DEFINIR/.test(m.corpo)
+export const EXEMPLO_MODELO: Record<string, string> = {
+  segmento_legivel: 'bebidas', segmento_frase: 'distribuição de bebidas', cidade: 'Sorocaba', nome: 'Carlos', empresa: 'Distribuidora Exemplo', veiculo: 'baú',
+}
+export const MODELO_ROTULO: Record<string, string> = {
+  toque1: '1º toque', toque2: '2º toque', toque3: '3º toque', toque4: '4º toque', resp_sair: 'Resposta: sair (confirmação)',
+  resp_agora_nao: 'Resposta: agora não', resp_indicacao: 'Resposta: indicação', resp_recebimento: 'Resposta: aviso de recebimento (lead quente)',
+}
+export function diaDaRampa(primeiroEnvio: string | null, hojeYmd: string): number {
+  if (!primeiroEnvio) return 1
+  const ms = Date.parse(`${hojeYmd}T00:00:00Z`) - Date.parse(`${primeiroEnvio.slice(0, 10)}T00:00:00Z`)
+  return Math.max(1, Math.floor(ms / 86_400_000) + 1)
+}
+export function limiteDoDia(parametro: number | null | undefined, rampa: { dia_inicio: number; limite: number }[], dia: number): { limite: number; origem: 'parâmetro' | 'rampa' | 'teto de 100' } {
+  const p = parametro != null && Number.isFinite(Number(parametro)) && Number(parametro) >= 0 ? Math.floor(Number(parametro)) : 10
+  const linha = rampa.filter((r) => r.dia_inicio <= dia).sort((a, b) => b.dia_inicio - a.dia_inicio)[0]
+  const r = linha ? linha.limite : 0
+  const menor = Math.min(p, r)
+  if (menor > 100) return { limite: 100, origem: 'teto de 100' }
+  return { limite: menor, origem: p <= r ? 'parâmetro' : 'rampa' }
+}
