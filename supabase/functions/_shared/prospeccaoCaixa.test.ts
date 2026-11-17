@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   acaoParaErroSmtp, cabecalhosCaixa, descobrirPastas, ehDsn, enviarComCopia, escolherCaixa, fatorDeRitmo, intervaloDaCaixaSeg, interpretarDiagnostico, lerPastaIncremental,
-  limiteDaCaixa, parseDsn, proximoNivelRecuo, recuoSegundos, type CaixaCfg, type Diagnostico, type ImapLike, type MsgCab,
+  limiteDaCaixa, parseDsn, proximoNivelRecuo, recuoSegundos, uidGlobal, type CaixaCfg, type Diagnostico, type ImapLike, type MsgCab,
 } from "./prospeccaoCaixa.ts";
 import { classificarRelevancia } from "./prospeccaoRegras.ts";
 
@@ -169,4 +169,10 @@ test("diagnostico em linguagem simples: verde, amarelo e vermelho", () => {
   assert.equal(nuvem.resumo, "vermelho"); assert.match(nuvem.achados[0].explicacao, /nuvem/);
   assert.equal(interpretarDiagnostico({ ...bom, smtp_ok: false }).resumo, "vermelho");
   assert.equal(interpretarDiagnostico({ ...bom, append_ok: null }).resumo, "amarelo");
+});
+
+test("uid global: o mesmo UID em caixas diferentes nao colide", () => {
+  assert.notEqual(uidGlobal(1, 5), uidGlobal(2, 5));
+  assert.equal(uidGlobal(1, 5), 1_000_000_005);
+  assert.equal(new Set([1, 2, 3].map((o) => uidGlobal(o, 42))).size, 3);
 });

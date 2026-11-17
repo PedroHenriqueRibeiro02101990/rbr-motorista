@@ -3,6 +3,7 @@ import { Aviso, Botao, Campo, Card, Kpi, Modal, Vazio, inputClass, inputStyle } 
 import { useConfirmacao } from '../Confirmacao'
 import { db, auditar, type Bloqueio } from '../../lib/prospeccaoDb'
 import { diaDaRampa, limiteDoDia, validarSintaxeEmail } from '../../lib/prospeccao'
+import Caixas from './Caixas'
 
 type Dia = { data: string; enviados: number; devolvidos: number; descadastros: number; respostas: number }
 type Rampa = { dia_inicio: number; limite: number }
@@ -92,6 +93,8 @@ export default function SaudeEnvio() {
           </div>
         </div>
       </Card>
+
+      <Card titulo="Caixas de e-mail"><Caixas /></Card>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Kpi label="Enviados hoje" valor={`${dHoje.enviados} / ${lim.limite}`} sub={`limite vem do(a) ${lim.origem} · dia ${diaDaRampa(estado?.primeiro_envio_em ?? null, hoje)} da rampa`} />

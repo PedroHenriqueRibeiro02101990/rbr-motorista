@@ -140,6 +140,9 @@ export function ehDsn(h: { from: string; contentType?: string }): boolean {
   return /multipart\/report/i.test(h.contentType ?? "") || /(mailer-daemon|postmaster)@/i.test(h.from) || /mailer-daemon/i.test(h.from);
 }
 
+/** O UID do IMAP se repete entre caixas; prospeccao_respostas.uid_imap tem indice unico global. Esta codificacao (caixa 1..3 x 1 bilhao + uid) evita colisao sem mexer na tabela. */
+export const uidGlobal = (ordemCaixa: number, uid: number): number => Math.max(0, Math.floor(ordemCaixa)) * 1_000_000_000 + uid;
+
 // ---- leitura incremental por UID (IMAP simulavel) -------------------------------------------------------
 export interface MsgCab { uid: number; cab: CabecalhoMsg & { contentType?: string; messageId?: string; data?: string } }
 export interface ImapLike {

@@ -8,7 +8,7 @@
 select vault.create_secret('PREENCHER', 'PROSPECCAO_CRON_CHAVE', 'Prospeccao: chave service_role usada pelo agendador (Pedro cadastra)')
  where not exists (select 1 from vault.secrets where name = 'PROSPECCAO_CRON_CHAVE');
 
--- Projeto: kwscmegsfbtvlnyxougt. O envio roda nos minutos 0,5,10...; a leitura nos minutos 3,13,23... (nunca no mesmo instante).
+-- Projeto: kwscmegsfbtvlnyxougt. O envio roda nos minutos 0,5,10...; a leitura nos minutos 3,8,13... (nunca no mesmo instante).
 select cron.schedule('prospeccao-enviar', '*/5 * * * *', $$
   select net.http_post(
     url := 'https://kwscmegsfbtvlnyxougt.supabase.co/functions/v1/prospeccao-enviar',
@@ -17,7 +17,7 @@ select cron.schedule('prospeccao-enviar', '*/5 * * * *', $$
     body := '{}'::jsonb, timeout_milliseconds := 55000);
 $$);
 
-select cron.schedule('prospeccao-ler', '3-59/10 * * * *', $$
+select cron.schedule('prospeccao-ler', '3-59/5 * * * *', $$
   select net.http_post(
     url := 'https://kwscmegsfbtvlnyxougt.supabase.co/functions/v1/prospeccao-ler',
     headers := jsonb_build_object('Content-Type', 'application/json',
