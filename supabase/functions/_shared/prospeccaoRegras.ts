@@ -7,9 +7,10 @@ export const DOMINIO = "rbrcargo.com.br";
 export const ALIAS_DESCADASTRO = `descadastrar@${DOMINIO}`;
 
 // ---- hora de Sao Paulo ---------------------------------------------------------------------------------
+// Criado UMA vez (criar um Intl.DateTimeFormat a cada chamada custa caro e estourava o limite de CPU dos robos).
+const FORMATADOR_SP = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false });
 export function partesSP(d: Date): { ymd: string; dow: number; hora: number; minuto: number } {
-  const f = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false });
-  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
+  const p = Object.fromEntries(FORMATADOR_SP.formatToParts(d).map((x) => [x.type, x.value]));
   const dow = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[p.weekday] ?? 0;
   return { ymd: `${p.year}-${p.month}-${p.day}`, dow, hora: Number(p.hour) % 24, minuto: Number(p.minute) };
 }
@@ -25,11 +26,20 @@ export function dentroDaJanelaLeitura(d: Date): boolean {
   return p.hora >= 7 && p.hora < 20;
 }
 
-/** Horas uteis (janela de envio) entre dois instantes, contadas minuto a minuto (usado nos lembretes do lead quente). */
+/**
+ * Horas uteis (janela de envio) entre dois instantes (usado nos lembretes do lead quente).
+ * Soma em blocos de ate 15 minutos alinhados ao relogio: as bordas da janela (07:00, 18:00) e a virada do dia caem em multiplos de 15 min
+ * (Sao Paulo tem deslocamento de horas inteiras), entao cada bloco esta inteiro dentro ou inteiro fora e o resultado e EXATO, com ~15x menos passos.
+ */
 export function horasUteisEntre(de: Date, ate: Date, feriados: ReadonlySet<string>): number {
-  let min = 0;
-  for (let t = de.getTime(); t < ate.getTime(); t += 60_000) if (dentroDaJanelaEnvio(new Date(t), feriados)) min++;
-  return min / 60;
+  const BLOCO = 15 * 60_000;
+  let ms = 0;
+  for (let t = de.getTime(); t < ate.getTime();) {
+    const fimBloco = Math.min((Math.floor(t / BLOCO) + 1) * BLOCO, ate.getTime());
+    if (dentroDaJanelaEnvio(new Date(t), feriados)) ms += fimBloco - t;
+    t = fimBloco;
+  }
+  return ms / 3_600_000;
 }
 
 // ---- limite diario e rampa -----------------------------------------------------------------------------
@@ -67,7 +77,12 @@ export function emailBloqueado(email: string, bloqueios: readonly Bloqueio[]): b
 }
 
 // Provedores gratuitos: descadastro bloqueia so o e-mail, nunca o dominio inteiro (senao bloquearia todo mundo do gmail).
-const PROVEDORES_GRATUITOS = new Set(["gmail.com", "hotmail.com", "outlook.com", "live.com", "yahoo.com", "yahoo.com.br", "uol.com.br", "bol.com.br", "terra.com.br", "icloud.com", "ig.com.br", "globo.com", "msn.com", "protonmail.com"]);
+// ATENCAO: a mesma lista esta na constraint prospeccao_bloqueio_dominio_publico_ck (migration 20261116-1200); um teste confere as duas.
+export const LISTA_PROVEDORES_GRATUITOS = [
+  "gmail.com", "gmail.com.br", "hotmail.com", "hotmail.com.br", "outlook.com", "outlook.com.br", "live.com", "live.com.br", "msn.com",
+  "yahoo.com", "yahoo.com.br", "uol.com.br", "bol.com.br", "terra.com.br", "ig.com.br", "icloud.com", "globo.com", "protonmail.com",
+] as const;
+const PROVEDORES_GRATUITOS = new Set<string>(LISTA_PROVEDORES_GRATUITOS);
 export const dominioBloqueavel = (dominio: string) => !!dominio && !PROVEDORES_GRATUITOS.has(dominio.trim().toLowerCase());
 /** Entradas de bloqueio para um descadastro/reclamacao: sempre o e-mail; o dominio so se nao for provedor gratuito nem o nosso. */
 export function bloqueiosParaEmail(email: string): Bloqueio[] {
@@ -96,6 +111,8 @@ export interface ContextoEnvio {
   bloqueios: readonly Bloqueio[];
   paradaAtiva: boolean;
   proximoEnvioApos: Date | null;
+  /** true = PROSPECCAO_MODO_TESTE. Em modo real so contato "verificado" recebe; "mx_ok" e "catch_all" valem so em teste. */
+  modoTeste: boolean;
 }
 /** Devolve null se PODE enviar; senao o motivo (vai para o log). */
 export function motivoDeNaoEnviar(c: ContextoEnvio): string | null {
@@ -105,6 +122,7 @@ export function motivoDeNaoEnviar(c: ContextoEnvio): string | null {
   if (!c.aprovacaoObrigatoria && !["aprovado", "rascunho"].includes(c.mensagemStatus)) return "mensagem nao esta pendente";
   if (emailBloqueado(c.contatoEmail, c.bloqueios)) return "contato na lista de bloqueio";
   if (["invalido", "devolvido", "pendente"].includes(c.contatoValidacao)) return `e-mail nao validado (${c.contatoValidacao})`;
+  if (!c.modoTeste && c.contatoValidacao !== "verificado") return `modo real exige e-mail verificado (${c.contatoValidacao})`;
   if (["descartado", "descadastrado"].includes(c.empresaStatus)) return `empresa ${c.empresaStatus}`;
   if (c.empresaStatus === "repouso" && (!c.empresaRepousoAte || c.empresaRepousoAte > c.hojeYmd)) return "empresa em repouso";
   if (["respondeu", "quente"].includes(c.empresaStatus) || c.jaRespondeuOuDevolveu) return "contato ja respondeu ou devolveu";
@@ -128,10 +146,10 @@ export interface Candidato {
  * Prioridade: (1) seguimentos vencidos, (2) classe A novas, (3) classe B. Elegibilidade do contato: verificado/mx_ok e generico;
  * pessoal so se a empresa for A e o dominio bater com o site; catch-all por ultimo e so em dia de poucas devolucoes.
  */
-export function escolherProximo(cands: readonly Candidato[], devolvidosHoje: number): Candidato | null {
+export function escolherProximo(cands: readonly Candidato[], devolvidosHoje: number, modoTeste: boolean): Candidato | null {
   const pontua = (c: Candidato): number | null => {
-    const bom = c.validacao === "verificado" || c.validacao === "mx_ok";
-    const catchAll = c.validacao === "catch_all";
+    const bom = c.validacao === "verificado" || (modoTeste && c.validacao === "mx_ok");
+    const catchAll = modoTeste && c.validacao === "catch_all";
     if (!bom && !(catchAll && devolvidosHoje <= 1)) return null;
     if (c.tipoEmail === "pessoal" && !(c.classe === "A" && c.dominioBateComSite)) return null;
     if (c.classe === "C" && !c.seguimentoVencido) return null;
@@ -143,11 +161,22 @@ export function escolherProximo(cands: readonly Candidato[], devolvidosHoje: num
 }
 
 // ---- falhas de SMTP ------------------------------------------------------------------------------------
-const PALAVRAS_BLOQUEIO = /(limit|spam|block|bloque|suspend|policy|abuse|blacklist|denied by|quota|rate)/i;
+// Palavras inteiras (\b): "rate" nao pode casar dentro de "operate" ou "separate".
+const PALAVRAS_BLOQUEIO = /(\blimit\w*|\bspam\w*|\bblock\w*|\bbloque\w*|\bsuspen\w*|\bpolicy\b|\babuse\w*|\bblacklist\w*|\bdenied by\b|\bquota\b|\brate\b)/i;
 export function erroSmtpEhBloqueio(msg: string): boolean { return PALAVRAS_BLOQUEIO.test(msg); }
-export type DestinoErro = "parada_automatica" | "tentar_de_novo" | "falhou";
+// Recusa do SMTP por causa do DESTINATARIO (usuario inexistente etc.): codigos 550/551/553/554 com texto claro.
+const TEXTO_DESTINATARIO = /(user unknown|unknown user|no such (user|recipient|mailbox)|does not exist|doesn'?t exist|nao existe|inexistente|invalid (recipient|mailbox|address)|recipient (address )?(rejected|not found|unknown)|mailbox (unavailable|not found)|unrouteable address|address rejected)/i;
+export function erroDeDestinatario(codigo: number | null, msg: string): boolean {
+  return codigo !== null && [550, 551, 553, 554].includes(codigo) && TEXTO_DESTINATARIO.test(msg);
+}
+/** O servidor RECUSOU a mensagem de forma explicita (resposta SMTP com codigo) ou nem chegou a autenticar: certeza de que nada foi entregue. */
+export function certezaDeNaoEnviado(codigoSmtp: number | null, codigoErro: string | null): boolean {
+  return codigoSmtp !== null || codigoErro === "EAUTH" || codigoErro === "EDNS";
+}
+export type DestinoErro = "parada_automatica" | "destinatario_invalido" | "tentar_de_novo" | "falhou";
 export function tratarErroEnvio(codigo: number | null, msg: string, tentativas: number): DestinoErro {
   if (erroSmtpEhBloqueio(msg)) return "parada_automatica";
+  if (erroDeDestinatario(codigo, msg)) return "destinatario_invalido";
   if (codigo !== null && codigo >= 400 && codigo < 500) return tentativas + 1 < 3 ? "tentar_de_novo" : "falhou";
   return "falhou";
 }
@@ -166,11 +195,19 @@ export function motivoParadaAutomatica(s: SinaisParada): string | null {
   if (s.erroSmtpBloqueio) return "erro de SMTP de bloqueio, limite, spam ou suspensao";
   if (s.avisoAbusoHostinger) return "aviso de abuso ou suspensao da Hostinger";
   const { enviados, devolvidos } = s.ultimosEnvios;
-  if (enviados > 0 && devolvidos / enviados > 0.05) return "taxa de devolucao acima de 5% nos ultimos 40 envios";
+  // Amostra pequena engana: 1 devolucao em 10 envios ja seria 10%. A taxa so vale com pelo menos 20 envios na janela.
+  if (enviados >= 20 && devolvidos / enviados > 0.05) return "taxa de devolucao acima de 5% nos ultimos 40 envios";
   return null;
 }
+/** Aviso de abuso/suspensao: remetente DA PROPRIA hospedagem (hostinger.com, .com.br, .io e subdominios) E assunto com palavra de alerta. Fatura/promocao nao conta. */
 export function avisoDeAbuso(remetente: string, assunto: string): boolean {
-  return /(hostinger|abuse|suspend|violation)/i.test(`${remetente} ${assunto}`);
+  const dom = (remetente.match(/@([a-z0-9.-]+)/i)?.[1] ?? "").toLowerCase();
+  const daHostinger = /(^|\.)hostinger\.(com|com\.br|io)$/.test(dom);
+  return daHostinger && /(\babuse\w*|\babuso\w*|\bsuspen\w*|\bviolation\w*|\bviola\u00e7\w*|\bviolacao\w*)/i.test(assunto);
+}
+/** Tipos de modelo que podem sair com PROSPECCAO_ENVIO_LIBERADO = nao: so a confirmacao de descadastro (alertas internos nao passam por aqui). */
+export function respostaAutomaticaPodeSair(tipoModelo: string, envioLiberado: boolean): boolean {
+  return tipoModelo === "resp_sair" || envioLiberado;
 }
 
 // ---- leitura filtrada (IMAP) ---------------------------------------------------------------------------
@@ -208,7 +245,7 @@ export function classificarPorRegras(corpo: string, assunto = "", remetente = ""
   const t = norm(textoNovo(corpo));
   const a = norm(assunto);
   if (/(auto.?reply|resposta automatica|fora do escritorio|out of office|ausente|estarei ausente|de ferias|em ferias)/.test(`${a} ${t}`) || /(no-?reply|noreply)/.test(norm(remetente)) && /automatic/.test(`${a} ${t}`)) return "fora_do_escritorio";
-  if (/(spam|denunci|vou reportar|abuso|processo|lgpd.*(reclam|denunc)|parem de (me )?(enviar|mandar)|nao autorizei|como (voces )?(conseguiram|obtiveram) (meu|o meu) (e-?mail|contato))/.test(t)) return "reclamacao";
+  if (/(\bspam\b|denunci|vou reportar|\babuso\b|processar|processo judicial|acao judicial|\bprocon\b|advogad|lgpd.*(reclam|denunc)|parem de (me )?(enviar|mandar)|nao autorizei|como (voces )?(conseguiram|obtiveram) (meu|o meu) (e-?mail|contato))/.test(t)) return "reclamacao";
   if (/(^|\W)(sair|descadastr\w*|remover|remova|cancelar (o )?envio|nao quero (mais )?receber|nao envie mais|pare de enviar|unsubscribe|me tire da lista|retirar meu)/.test(t)) return "sair";
   if (/(quanto (custa|fica|sai|cobram)|qual (o )?(valor|preco|prazo)|\bpreco\b|\bvalor\b|\bprazo\b|tabela de (preco|frete)|orcamento de preco)/.test(t)) return "preco_prazo";
   if (/(cotacao|cotar|orcamento|proposta|tenho interesse|queremos (cotar|conhecer)|podem (me )?(enviar|mandar)|pode (me )?(enviar|mandar)|vamos conversar|me liga|ligue|(\d+|\w+) cargas?)/.test(t)) return "cotacao";
@@ -265,4 +302,16 @@ export function cabecalhosEnvio(opts: { messageId: string; assunto: string; toqu
     inReplyTo: seguimento ? opts.messageIdPrimeiroToque : undefined,
     references: seguimento ? opts.messageIdPrimeiroToque : undefined,
   };
+}
+
+// ---- verificacao de MX (DNS) --------------------------------------------------------------------------
+export type ResultadoMx = { ok: true; registros: number } | { ok: false; nome: string; mensagem: string };
+/**
+ * Decide o status do contato a partir da consulta MX. So marca "invalido" quando o dominio claramente nao existe ou nao tem MX
+ * (NotFound/NXDOMAIN, ou lista vazia). Timeout, SERVFAIL, resolvedor indisponivel no runtime etc. devolvem null = NAO alterar o contato.
+ */
+export function statusPorMx(r: ResultadoMx): "mx_ok" | "invalido" | null {
+  if (r.ok) return r.registros > 0 ? "mx_ok" : "invalido";
+  if (r.nome === "NotFound" || /\b(nxdomain|nodata|enotfound|enodata|no (such )?(domain|records?)|not ?found)\b/i.test(r.mensagem)) return "invalido";
+  return null;
 }

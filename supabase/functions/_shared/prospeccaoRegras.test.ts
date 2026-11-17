@@ -1,12 +1,15 @@
 // node --test supabase/functions/_shared/prospeccaoRegras.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
-  bloqueiosParaEmail, classificarPorRegras, classificarRelevancia, cabecalhosEnvio, decidirClassificacao, devolucaoPermanente, dentroDaJanelaEnvio, dentroDaJanelaLeitura,
-  diaDaRampa, emailBloqueado, emailDeIndicacao, erroSmtpEhBloqueio, escolherProximo, horasUteisEntre, intervaloEntreEnviosMin, limiteDoDia,
-  motivoDeNaoEnviar, motivoParadaAutomatica, proximoToque, tratarErroEnvio, validarModelo, type Candidato, type ContextoEnvio,
+  avisoDeAbuso, bloqueiosParaEmail, certezaDeNaoEnviado, classificarPorRegras, classificarRelevancia, cabecalhosEnvio, decidirClassificacao, devolucaoPermanente, dentroDaJanelaEnvio, dentroDaJanelaLeitura,
+  diaDaRampa, dominioBloqueavel, emailBloqueado, emailDeIndicacao, erroDeDestinatario, erroSmtpEhBloqueio, escolherProximo, horasUteisEntre, intervaloEntreEnviosMin, limiteDoDia,
+  LISTA_PROVEDORES_GRATUITOS, motivoDeNaoEnviar, motivoParadaAutomatica, proximoToque, respostaAutomaticaPodeSair, statusPorMx, tratarErroEnvio, validarModelo,
+  type Candidato, type ContextoEnvio,
 } from "./prospeccaoRegras.ts";
 
+const escolher = (l: readonly Candidato[], dev: number, teste = true) => escolherProximo(l, dev, teste);
 const RAMPA = [{ dia_inicio: 1, limite: 10 }, { dia_inicio: 6, limite: 15 }, { dia_inicio: 11, limite: 20 }, { dia_inicio: 16, limite: 30 }];
 const FERIADOS = new Set(["2026-11-20"]); // Consciencia Negra (sexta)
 // 2026-11-16 e segunda-feira. Sao Paulo = UTC-3 (sem horario de verao).
@@ -60,7 +63,7 @@ test("intervalo entre envios fica sempre entre 8 e 25 minutos", () => {
 const base = (): ContextoEnvio => ({
   envioLiberado: true, aprovacaoObrigatoria: true, mensagemStatus: "aprovado", contatoEmail: "logistica@a.com", contatoValidacao: "mx_ok",
   empresaStatus: "em_contato", empresaRepousoAte: null, hojeYmd: "2026-11-16", jaRespondeuOuDevolveu: false, enviadosHoje: 0, limiteHoje: 10,
-  agora: sp("2026-11-16", "10:00"), feriados: FERIADOS, bloqueios: [], paradaAtiva: false, proximoEnvioApos: null,
+  agora: sp("2026-11-16", "10:00"), feriados: FERIADOS, bloqueios: [], paradaAtiva: false, proximoEnvioApos: null, modoTeste: true,
 });
 
 test("reconferencia: caminho feliz e cada trava", () => {
@@ -104,22 +107,23 @@ test("descadastro bloqueia o dominio so quando nao e provedor gratuito", () => {
 const cand = (p: Partial<Candidato>): Candidato => ({ id: "x", toque: 1, classe: "A", tipoEmail: "generico", validacao: "mx_ok", dominioBateComSite: false, seguimentoVencido: false, ...p });
 test("escolha: seguimento vencido > classe A > classe B; pessoal so em A com dominio igual ao site; catch-all por ultimo", () => {
   const lista = [cand({ id: "B", classe: "B" }), cand({ id: "A", classe: "A" }), cand({ id: "S", classe: "B", seguimentoVencido: true, toque: 2 })];
-  assert.equal(escolherProximo(lista, 0)?.id, "S");
-  assert.equal(escolherProximo(lista.slice(0, 2), 0)?.id, "A");
-  assert.equal(escolherProximo([cand({ id: "P", tipoEmail: "pessoal" })], 0), null);
-  assert.equal(escolherProximo([cand({ id: "P", tipoEmail: "pessoal", dominioBateComSite: true })], 0)?.id, "P");
-  assert.equal(escolherProximo([cand({ id: "P", classe: "B", tipoEmail: "pessoal", dominioBateComSite: true })], 0), null);
-  assert.equal(escolherProximo([cand({ id: "C", validacao: "catch_all" }), cand({ id: "OK", classe: "B" })], 0)?.id, "OK");
-  assert.equal(escolherProximo([cand({ id: "C", validacao: "catch_all" })], 0)?.id, "C");
-  assert.equal(escolherProximo([cand({ id: "C", validacao: "catch_all" })], 3), null, "catch-all so em dia de poucas devolucoes");
-  assert.equal(escolherProximo([cand({ id: "I", validacao: "invalido" }), cand({ id: "Q", validacao: "pendente" })], 0), null);
-  assert.equal(escolherProximo([cand({ classe: "C" })], 0), null);
+  assert.equal(escolher(lista, 0)?.id, "S");
+  assert.equal(escolher(lista.slice(0, 2), 0)?.id, "A");
+  assert.equal(escolher([cand({ id: "P", tipoEmail: "pessoal" })], 0), null);
+  assert.equal(escolher([cand({ id: "P", tipoEmail: "pessoal", dominioBateComSite: true })], 0)?.id, "P");
+  assert.equal(escolher([cand({ id: "P", classe: "B", tipoEmail: "pessoal", dominioBateComSite: true })], 0), null);
+  assert.equal(escolher([cand({ id: "C", validacao: "catch_all" }), cand({ id: "OK", classe: "B" })], 0)?.id, "OK");
+  assert.equal(escolher([cand({ id: "C", validacao: "catch_all" })], 0)?.id, "C");
+  assert.equal(escolher([cand({ id: "C", validacao: "catch_all" })], 3), null, "catch-all so em dia de poucas devolucoes");
+  assert.equal(escolher([cand({ id: "I", validacao: "invalido" }), cand({ id: "Q", validacao: "pendente" })], 0), null);
+  assert.equal(escolher([cand({ classe: "C" })], 0), null);
 });
 
 test("erros de SMTP: 4xx tenta de novo ate 3x; 5xx falha; bloqueio/limite/spam para tudo", () => {
   assert.equal(tratarErroEnvio(451, "try again later", 0), "tentar_de_novo");
   assert.equal(tratarErroEnvio(451, "try again later", 2), "falhou");
-  assert.equal(tratarErroEnvio(550, "user unknown", 0), "falhou");
+  assert.equal(tratarErroEnvio(550, "user unknown", 0), "destinatario_invalido");
+  assert.equal(tratarErroEnvio(550, "mensagem recusada", 0), "falhou", "550 generico continua falhou");
   for (const m of ["550 sending limit exceeded", "554 blocked as spam", "Account suspended", "policy violation", "Rate limit"]) {
     assert.ok(erroSmtpEhBloqueio(m), m);
     assert.equal(tratarErroEnvio(550, m, 0), "parada_automatica");
@@ -134,6 +138,7 @@ test("parada automatica: cada gatilho e a ausencia deles", () => {
   assert.match(motivoParadaAutomatica({ ...ok, erroSmtpBloqueio: true })!, /SMTP/);
   assert.match(motivoParadaAutomatica({ ...ok, avisoAbusoHostinger: true })!, /Hostinger/);
   assert.match(motivoParadaAutomatica({ ...ok, ultimosEnvios: { enviados: 40, devolvidos: 3 } })!, /5%/);
+  assert.match(motivoParadaAutomatica({ ...ok, ultimosEnvios: { enviados: 20, devolvidos: 2 } })!, /5%/, "20 envios ja conta");
   assert.equal(motivoParadaAutomatica({ ...ok, ultimosEnvios: { enviados: 0, devolvidos: 0 } }), null);
 });
 
@@ -221,4 +226,126 @@ test("cabecalhos: List-Unsubscribe mailto, Message-ID proprio e Re: nos seguimen
 test("horas uteis contam so a janela de envio (lembrete do lead quente)", () => {
   assert.equal(horasUteisEntre(sp("2026-11-16", "16:00"), sp("2026-11-17", "08:00"), FERIADOS), 3, "2h ate 18h + 1h depois das 7h");
   assert.equal(horasUteisEntre(sp("2026-11-20", "08:00"), sp("2026-11-20", "12:00"), FERIADOS), 0, "feriado");
+});
+
+
+// ======================= Etapa 2 (noite 16 para 17/11): correcoes dos robos =======================
+
+test("item 2: MX so marca invalido quando o dominio claramente nao existe; erro transitorio nao mexe no contato", () => {
+  assert.equal(statusPorMx({ ok: true, registros: 2 }), "mx_ok");
+  assert.equal(statusPorMx({ ok: true, registros: 0 }), "invalido", "lista vazia");
+  assert.equal(statusPorMx({ ok: false, nome: "NotFound", mensagem: "no record found" }), "invalido");
+  assert.equal(statusPorMx({ ok: false, nome: "Error", mensagem: "queryMx ENOTFOUND x" }), "invalido", "NXDOMAIN em texto");
+  assert.equal(statusPorMx({ ok: false, nome: "Error", mensagem: "NXDOMAIN" }), "invalido");
+  assert.equal(statusPorMx({ ok: false, nome: "TimedOut", mensagem: "request timed out" }), null);
+  assert.equal(statusPorMx({ ok: false, nome: "Error", mensagem: "SERVFAIL" }), null);
+  assert.equal(statusPorMx({ ok: false, nome: "TypeError", mensagem: "Deno.resolveDns is not a function" }), null, "resolvedor indisponivel no runtime");
+});
+
+test("item 3: 'processo' sozinho NAO e reclamacao; expressoes juridicas e de abuso sao", () => {
+  const c = (t: string) => classificarPorRegras(t);
+  assert.notEqual(c("Nosso processo de cotação passa pelo setor de compras, pode enviar a proposta"), "reclamacao");
+  assert.equal(c("Nosso processo de cotação passa pelo setor de compras, pode enviar a proposta"), "cotacao");
+  assert.equal(c("Qual o processo para homologar fornecedor?"), "outro");
+  assert.equal(c("O processo de compras é por e-mail."), "outro");
+  for (const t of ["Vou processar vocês", "Vou entrar com processo judicial", "Já acionei meu advogado", "Vou ao Procon", "Isso é abuso", "Vou fazer uma denúncia", "Ação judicial a caminho", "Isso é spam", "Não autorizei esse contato", "Parem de enviar"])
+    assert.equal(c(t), "reclamacao", t);
+});
+
+test("item 4: taxa de devolucao so vale com 20+ envios; abaixo disso vale a regra de 3 devolucoes no dia", () => {
+  const b = { devolucoesPermanentesHoje: 1, reclamacaoNova: false, erroSmtpBloqueio: false, avisoAbusoHostinger: false };
+  assert.equal(motivoParadaAutomatica({ ...b, ultimosEnvios: { enviados: 10, devolvidos: 1 } }), null, "1 em 10 nao para");
+  assert.equal(motivoParadaAutomatica({ ...b, ultimosEnvios: { enviados: 19, devolvidos: 2 } }), null);
+  assert.match(motivoParadaAutomatica({ ...b, ultimosEnvios: { enviados: 20, devolvidos: 2 } })!, /5%/);
+  assert.equal(motivoParadaAutomatica({ ...b, ultimosEnvios: { enviados: 20, devolvidos: 1 } }), null, "exatamente 5% nao passa de 5%");
+  assert.match(motivoParadaAutomatica({ ...b, devolucoesPermanentesHoje: 3, ultimosEnvios: { enviados: 5, devolvidos: 3 } })!, /3 ou mais/, "regra das 3 continua valendo");
+});
+
+test("item 5: provedores gratuitos (inclui .com.br) e lista IDENTICA a da constraint da migration 1200", () => {
+  for (const d of ["hotmail.com.br", "outlook.com.br", "live.com.br", "gmail.com.br"]) assert.ok(!dominioBloqueavel(d), d);
+  assert.deepEqual(bloqueiosParaEmail("fulano@hotmail.com.br"), [{ tipo: "email", valor: "fulano@hotmail.com.br" }]);
+  assert.ok(dominioBloqueavel("empresa.com.br"));
+  const sql = readFileSync(new URL("../../../supabase-migrations/20261116-1200-prospeccao-ajustes.sql", import.meta.url), "utf8");
+  const bloco = sql.slice(sql.indexOf("add constraint prospeccao_bloqueio_dominio_publico_ck"));
+  const lista = [...bloco.slice(0, bloco.indexOf("));")).matchAll(/'([^']+)'/g)].map((m) => m[1]).filter((x) => x !== "dominio");
+  assert.deepEqual([...lista].sort(), [...LISTA_PROVEDORES_GRATUITOS].sort());
+});
+
+test("item 6: horasUteisEntre rapido e exato (fim de semana, feriado, varios dias, bordas nao alinhadas)", () => {
+  // quinta 12:00 ate segunda 12:00 (sem feriado): quinta 6h + sexta 11h + segunda 5h
+  assert.equal(horasUteisEntre(sp("2026-11-12", "12:00"), sp("2026-11-16", "12:00"), new Set()), 6 + 11 + 5);
+  // com feriado na sexta 20/11 (consciencia negra): semana de 16 a 23
+  assert.equal(horasUteisEntre(sp("2026-11-16", "07:00"), sp("2026-11-23", "07:00"), FERIADOS), 4 * 11);
+  // bordas fora do multiplo de 15 min
+  assert.equal(horasUteisEntre(sp("2026-11-16", "10:07"), sp("2026-11-16", "10:52"), FERIADOS), 45 / 60);
+  assert.equal(horasUteisEntre(sp("2026-11-16", "17:50"), sp("2026-11-16", "18:10"), FERIADOS), 10 / 60);
+  assert.equal(horasUteisEntre(sp("2026-11-16", "12:00"), sp("2026-11-16", "12:00"), FERIADOS), 0);
+  // referencia minuto a minuto (a versao antiga) bate com a nova
+  const de = sp("2026-11-13", "16:43"), ate = sp("2026-11-24", "09:21");
+  let min = 0;
+  for (let t = de.getTime(); t < ate.getTime(); t += 60_000) if (dentroDaJanelaEnvio(new Date(t), FERIADOS)) min++;
+  assert.ok(Math.abs(horasUteisEntre(de, ate, FERIADOS) - min / 60) < 1e-9);
+  // 30 dias nao pode demorar (limite de CPU de 2 s por requisicao)
+  const t0 = Date.now();
+  horasUteisEntre(sp("2026-10-01", "08:00"), sp("2026-11-01", "08:00"), FERIADOS);
+  assert.ok(Date.now() - t0 < 500, "lento demais");
+});
+
+test("item 7: erro de destinatario inexistente (550/551/553/554 com texto claro) x erros genericos", () => {
+  assert.ok(erroDeDestinatario(550, "550 5.1.1 User unknown"));
+  assert.ok(erroDeDestinatario(550, "550 5.1.1 <x@y.com>: Recipient address rejected: User unknown in virtual mailbox table"));
+  assert.ok(erroDeDestinatario(553, "553 mailbox does not exist"));
+  assert.ok(erroDeDestinatario(551, "551 invalid recipient"));
+  assert.ok(erroDeDestinatario(554, "554 5.1.1 no such user"));
+  assert.ok(erroDeDestinatario(550, "Caixa inexistente"));
+  assert.ok(!erroDeDestinatario(550, "550 message refused"), "550 sem texto de usuario");
+  assert.ok(!erroDeDestinatario(452, "user unknown"), "4xx nao");
+  assert.ok(!erroDeDestinatario(null, "user unknown"), "sem codigo (timeout) nao");
+  assert.equal(tratarErroEnvio(null, "Connection timeout", 0), "falhou");
+  assert.equal(tratarErroEnvio(550, "5.1.1 user unknown", 0), "destinatario_invalido");
+  assert.equal(tratarErroEnvio(554, "554 blocked as spam, user unknown", 0), "parada_automatica", "bloqueio tem prioridade");
+});
+
+test("item 8: 'rate' e palavras parecidas so contam como palavra inteira", () => {
+  for (const m of ["operate", "separate", "generate a report", "accurate address", "moderate"]) assert.ok(!erroSmtpEhBloqueio(m), m);
+  for (const m of ["Rate limit exceeded", "rate-limited", "too many messages, limit reached", "Your account was blocked", "sending quota exceeded"]) assert.ok(erroSmtpEhBloqueio(m), m);
+  assert.equal(tratarErroEnvio(421, "Cannot operate right now, try later", 0), "tentar_de_novo");
+});
+
+test("item 9: aviso de abuso so de remetente Hostinger com assunto de alerta", () => {
+  assert.ok(avisoDeAbuso("Hostinger Abuse <abuse@hostinger.com>", "Notice of abuse report"));
+  assert.ok(avisoDeAbuso("postmaster@mail.hostinger.com.br", "Sua conta foi suspensa (suspend)"));
+  assert.ok(avisoDeAbuso("no-reply@hostinger.io", "Policy violation detected"));
+  assert.ok(!avisoDeAbuso("Hostinger <no-reply@hostinger.com>", "Sua fatura chegou"), "fatura");
+  assert.ok(!avisoDeAbuso("promo@hostinger.com", "Black Friday: 80% de desconto"), "promocao");
+  assert.ok(!avisoDeAbuso("cliente@empresa.com.br", "Suspend the contract? abuse of hostinger"), "remetente nao e da Hostinger");
+  assert.ok(!avisoDeAbuso("x@hostinger.com.evil.com", "abuse"), "dominio falso");
+  assert.ok(!avisoDeAbuso("x@nothostinger.com", "abuse"));
+});
+
+test("item 10: sem a chave de envio so a confirmacao de descadastro sai", () => {
+  for (const t of ["resp_recebimento", "resp_agora_nao", "resp_indicacao", "resp_cotacao", "resp_recusa_carga"]) {
+    assert.equal(respostaAutomaticaPodeSair(t, false), false, t);
+    assert.equal(respostaAutomaticaPodeSair(t, true), true, t);
+  }
+  assert.equal(respostaAutomaticaPodeSair("resp_sair", false), true);
+});
+
+test("item 11: modo real exige e-mail verificado; mx_ok e catch_all so em modo teste", () => {
+  const real = { ...base(), modoTeste: false };
+  assert.match(motivoDeNaoEnviar({ ...real, contatoValidacao: "mx_ok" }) ?? "", /verificado/);
+  assert.match(motivoDeNaoEnviar({ ...real, contatoValidacao: "catch_all" }) ?? "", /verificado/);
+  assert.equal(motivoDeNaoEnviar({ ...real, contatoValidacao: "verificado" }), null);
+  assert.equal(motivoDeNaoEnviar({ ...base(), modoTeste: true, contatoValidacao: "mx_ok" }), null);
+  assert.equal(escolher([cand({ validacao: "mx_ok" })], 0, false), null);
+  assert.equal(escolher([cand({ validacao: "catch_all" })], 0, false), null);
+  assert.equal(escolher([cand({ id: "V", validacao: "verificado" })], 0, false)?.id, "V");
+  assert.equal(escolher([cand({ id: "M", validacao: "mx_ok" })], 0, true)?.id, "M");
+});
+
+test("item 1: so ha certeza de nao-envio com resposta SMTP explicita ou falha de autenticacao/DNS", () => {
+  assert.ok(certezaDeNaoEnviado(451, null));
+  assert.ok(certezaDeNaoEnviado(null, "EAUTH"));
+  assert.ok(!certezaDeNaoEnviado(null, "ETIMEDOUT"), "timeout pode ter enviado");
+  assert.ok(!certezaDeNaoEnviado(null, null));
 });

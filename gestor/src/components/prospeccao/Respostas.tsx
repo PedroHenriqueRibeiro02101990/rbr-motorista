@@ -7,7 +7,7 @@ import { linkWhatsapp, modeloPendente, preencher } from '../../lib/prospeccao'
 
 type Resp = {
   id: string; empresa_id: string; recebido_em: string; de_email: string | null; assunto: string | null; corpo: string | null
-  classificacao: string | null; rascunho_resposta: string | null; assumido_por: string | null; assumido_em: string | null; tratada: boolean
+  classificacao: string | null; agente_categoria?: string | null; agente_acao?: string | null; agente_motivo?: string | null; rascunho_resposta: string | null; assumido_por: string | null; assumido_em: string | null; tratada: boolean
   empresa: Pick<Empresa, 'id' | 'razao_social' | 'nome_fantasia' | 'cnpj' | 'telefone' | 'lead_id' | 'cidade' | 'uf'> | null
 }
 const ROTULO: Record<string, string> = {
@@ -102,6 +102,7 @@ export default function Respostas() {
                 {quente(r) && <span className="text-[10.5px] font-extrabold px-2 py-0.5 rounded-full text-white" style={{ background: '#c0392b' }}>QUENTE</span>}
                 <b className="text-sm">{r.empresa?.nome_fantasia || r.empresa?.razao_social}</b>
                 <span className="text-xs font-bold">{r.classificacao ? ROTULO[r.classificacao] : 'Sem classificação'}</span>
+                {r.agente_categoria && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }} title={r.agente_motivo ?? ''}>IA: {r.agente_categoria}{r.agente_acao === 'escalar_para_pedro' ? ' · assumida pelo Pedro' : r.agente_acao === 'responder' ? ' · rascunho pronto na Caixa de entrada' : ''}</span>}
                 <span className="text-xs text-[color:var(--rbr-muted)]">{r.de_email} · {new Date(r.recebido_em).toLocaleString('pt-BR')}</span>
                 {r.tratada && <span className="text-xs font-bold" style={{ color: '#1a6b3c' }}>✓ tratada</span>}
               </div>

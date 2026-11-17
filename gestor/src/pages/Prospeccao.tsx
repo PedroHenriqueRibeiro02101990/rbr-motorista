@@ -7,15 +7,19 @@ import Respostas from '../components/prospeccao/Respostas'
 import SaudeEnvio from '../components/prospeccao/SaudeEnvio'
 import Modelos from '../components/prospeccao/Modelos'
 import LogAgente from '../components/prospeccao/LogAgente'
+import CaixaEntrada from '../components/prospeccao/CaixaEntrada'
+import PainelGeral from '../components/prospeccao/PainelGeral'
+import Relatorios from '../components/prospeccao/Relatorios'
+import Avisos from '../components/prospeccao/Avisos'
 import { CHAVE_ENVIO, CHAVE_UI, db, lerFlag } from '../lib/prospeccaoDb'
 
-type Aba = 'empresas' | 'fila' | 'respostas' | 'jornada' | 'saude' | 'log'
+type Aba = 'painel' | 'empresas' | 'caixa' | 'relatorios' | 'fila' | 'respostas' | 'jornada' | 'saude' | 'log'
 
 // Prospeccao ativa (agente SDR). Atras da flag PROSPECCAO_UI_LIBERADA. Faixa vermelha quando o envio foi parado automaticamente.
 export default function Prospeccao() {
   const [liberada, setLiberada] = useState<boolean | null>(null)
   const [parada, setParada] = useState<string | null>(null)
-  const [aba, setAba] = useState<Aba>('empresas')
+  const [aba, setAba] = useState<Aba>('painel')
   useEffect(() => {
     void lerFlag(CHAVE_UI).then((v) => setLiberada(v === 'sim'))
     void Promise.all([lerFlag(CHAVE_ENVIO), db.from('prospeccao_estado').select('parada_motivo').eq('id', 1).maybeSingle()]).then(([envio, e]) => {
@@ -26,7 +30,7 @@ export default function Prospeccao() {
   if (liberada === null) return <div className="text-sm text-[color:var(--rbr-muted)]">Carregando…</div>
   if (!liberada) return <Navigate to="/" replace />
   return (
-    <div className="flex flex-col gap-4 max-w-6xl">
+    <div className="flex flex-col gap-4 max-w-[1500px]">
       {parada && (
         <div className="rounded-xl px-4 py-3 text-sm font-extrabold text-white" style={{ background: '#c0392b' }}>
           ENVIO PARADO AUTOMATICAMENTE: {parada}. Veja em Saúde do envio.
@@ -39,11 +43,15 @@ export default function Prospeccao() {
       <Chips<Aba>
         valor={aba} onChange={setAba}
         opcoes={[
-          { valor: 'empresas', label: 'Empresas' }, { valor: 'fila', label: 'Fila de aprovação' }, { valor: 'respostas', label: 'Respostas' },
+          { valor: 'painel', label: 'Visão geral' }, { valor: 'empresas', label: 'Empresas' }, { valor: 'caixa', label: 'Caixa de entrada' }, { valor: 'relatorios', label: 'Relatórios' }, { valor: 'fila', label: 'Fila de aprovação' }, { valor: 'respostas', label: 'Respostas' },
           { valor: 'jornada', label: 'Jornada e textos' }, { valor: 'saude', label: 'Saúde do envio' }, { valor: 'log', label: 'Log do agente' },
         ]}
       />
+      <Avisos />
+      {aba === 'painel' && <PainelGeral irPara={(a) => setAba(a)} />}
+      {aba === 'relatorios' && <Relatorios />}
       {aba === 'empresas' && <Empresas />}
+      {aba === 'caixa' && <CaixaEntrada />}
       {aba === 'fila' && <FilaAprovacao />}
       {aba === 'respostas' && <Respostas />}
       {aba === 'jornada' && <Modelos />}
