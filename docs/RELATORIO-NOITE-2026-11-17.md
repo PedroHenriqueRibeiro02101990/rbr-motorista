@@ -6,12 +6,12 @@ Branch: `feat/prospeccao-noite` (a partir de `feat/prospeccao`, PR #81). Se a se
 | Etapa | Situação |
 |---|---|
 | 1 Migrações 1200 e 1300 | CONCLUÍDA |
-| 2 Correções dos robôs (13 itens) | CONCLUÍDA (commit nesta branch; nada publicado) |
-| 3 Diagnóstico da caixa e base de e-mail | CONCLUÍDA (código; funções ainda NÃO publicadas) |
+| 2 Correções dos robôs (13 itens) | CONCLUÍDA (commit nesta branch; publicada em 17/11) |
+| 3 Diagnóstico da caixa e base de e-mail | CONCLUÍDA (funções publicadas em 17/11) |
 | 4 Caixa de entrada no TMS | CONCLUÍDA (aba nova; anexos de saída pendentes) |
-| 5 Agente de IA | CONCLUÍDA (código e banco; funções de IA NÃO publicadas; desligado sem chave) |
+| 5 Agente de IA | CONCLUÍDA (código e banco; funções de IA publicadas em 17/11; desligado sem chave) |
 | 6 Painel de prospecção | CONCLUÍDA |
-| 7 Testes e fechamento | CONCLUÍDA, com 1 desvio: só 1 das 5 funções foi publicada (ver abaixo) |
+| 7 Testes e fechamento | CONCLUÍDA; as 5 funções estão publicadas (as 4 restantes foram publicadas em 17/11, depois da noite) |
 
 ## Etapa 1 — Migrações
 - Ordem: 1000 e 1100 (já estavam aplicadas) → **1200** (ajustes) → **1300** (modelos). Aplicadas na Etapa 1, depois de validar num bloco que termina em erro proposital (rollback). Rollbacks em `supabase/rollback/`.
@@ -71,7 +71,7 @@ Nova aba inicial **Visão geral** (e abas **Caixa de entrada** e **Relatórios**
 ## Etapa 7 — Testes e fechamento
 - **Testes (rodados por conjunto, todos verdes)**: `prospeccaoRegras.test.ts` 33, `prospeccaoCaixa.test.ts` 12, `prospeccaoAgente.test.ts` 12 (total 57 no lado das funções, rodados com `node --test` porque não há Deno aqui) e gestor: pasta `gestor/test` inteira = 209 testes (inclui `prospeccao` 13, `prospeccaoCaixa` 9, `prospeccaoPainel` 5). `tsc -b` limpo e `npm run build` do gestor OK (duas vezes).
 - **Migrações aplicadas hoje** (todas validadas antes com bloco de erro proposital): 1200, 1300, 1350, 1360, 1400 e 1410. Rollbacks em `supabase/rollback/`. Ordem para recriar do zero: 1000, 1100, 1200, 1300, 1350, 1360, 1400, 1410. Verificação: 20 tabelas `prospeccao_*`, todas com RLS e sem leitura para anônimo; flags continuam todas "não" (modo teste "sim", aprovação obrigatória "sim"); nenhum agendamento criado; nenhuma empresa ou mensagem no banco.
-- **Funções publicadas**: somente `prospeccao-diagnostico-caixa` (verify_jwt = true, versão 1; é a que o botão Testar caixa chama). **NÃO publicadas**: `prospeccao-enviar`, `prospeccao-ler`, `prospeccao-agente`, `prospeccao-analista`. Motivo: a publicação por esta ferramenta exige colar o código inteiro (cerca de 220 KB já empacotado) em cada chamada; fazer isso à mão para 4 funções aumentava muito o risco de erro de transcrição em produção, e nenhuma delas pode rodar antes do agendamento (que ficou para o Pedro). O código está pronto e empacotou sem erro de sintaxe. Para publicar: na raiz do repositório, `npx supabase functions deploy prospeccao-enviar prospeccao-ler prospeccao-agente prospeccao-analista --project-ref kwscmegsfbtvlnyxougt` (com o CLI logado), ou pedir a uma sessão do Claude Code "publique as 4 funções de prospecção".
+- **Funções publicadas**: as 5 (`prospeccao-diagnostico-caixa`, `prospeccao-enviar`, `prospeccao-ler`, `prospeccao-agente`, `prospeccao-analista`), todas com `verify_jwt = true`, versão 1. Na noite só a de diagnóstico foi publicada (colar ~220 KB por chamada arriscava erro de transcrição); as outras 4 foram publicadas em 17/11 com `npx supabase functions deploy ... --remote=kwscmegsfbtvlnyxougt --use-api --yes`. Após a publicação: todas as flags seguem "não" (modo teste "sim", aprovação obrigatória "sim", autonomia "rascunho"), nenhum cron de prospecção existe (os 5 jobs atuais são de outras frentes) e as tabelas de mensagens, e-mails e uso de IA têm 0 linhas. Nenhuma função foi chamada.
 - **PR #81** continua aberto (não mergeado); esta noite foi aberto um PR novo da branch `feat/prospeccao-noite` (sem merge). Nada de PRs 65, 80, 81, 82 foi mergeado e nenhum arquivo fiscal/Repom/NSTech/demo foi tocado.
 
 ## Ligado e desligado
@@ -93,14 +93,14 @@ Nova aba inicial **Visão geral** (e abas **Caixa de entrada** e **Relatórios**
 - Resposta manual aprovada na tela: o clique em "Aprovar e enviar" é a aprovação; o robô envia respeitando chave geral, modo de teste, bloqueio, janela de ritmo da caixa. Fora do horário comercial também pode sair (não é toque frio). Não conta no limite diário de toques.
 - Anexos de saída adiados (sem bucket de arquivos).
 - Para parar o envio duplicado, mensagem com `message_id` gravado e sem confirmação nunca é reenviada sozinha; fica visível como "envio incerto, conferir".
-- Só 1 de 5 funções foi publicada (ver Etapa 7).
+- As 4 funções restantes só foram publicadas em 17/11, depois da noite (ver Etapa 7).
 
 ## O que o Pedro faz ao acordar (passos curtos)
 1. Ler este relatório.
 2. No Hostinger: criar o alias `descadastrar@rbrcargo.com.br` apontando para `pedro@` e um endereço para relatórios DMARC (não mexer no DMARC ainda).
 3. No painel (aba Prospecção, precisa ligar `PROSPECCAO_UI_LIBERADA` = sim em Saúde do envio quando a aba aparecer; ou direto no banco): em **Saúde do envio → Caixas**, digitar a senha da caixa `pedro@` (e, se quiser o segundo agente, de `comercial@`). Vai direto para o Vault; a tela nunca mostra de volta.
 4. Clicar em **Testar caixa** e ler o resultado (verde, amarelo ou vermelho). O primeiro achado diz se a Hostinger aceita conexão de servidor em nuvem; se for vermelho, parar e falar com o suporte antes de seguir.
-5. Pedir para publicar as 4 funções que faltam (comando acima) e cadastrar pelo painel os destinos de teste.
+5. (Funções já publicadas em 17/11.) Cadastrar pelo painel os destinos de teste.
 6. Criar conta e créditos na plataforma Claude e guardar a chave da API em **Saúde do envio → Inteligência artificial**.
 7. Testar em MODO_TESTE: aplicar `docs/prospeccao/agendar-robos.sql` e, depois, `docs/prospeccao/agendar-agente.sql` (cron), importar 2 ou 3 empresas de teste e conferir tudo chegando só nos destinos de teste.
 8. Só depois pensar em ligar flags (envio, leitura, resposta automática, modo teste = não).
