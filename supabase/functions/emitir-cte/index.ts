@@ -156,8 +156,13 @@ Deno.serve(async (req: Request) => {
       supabaseAdmin.from("operacoes").select("eh_teste").eq("id", operacao_id).maybeSingle(),
     ]);
 
+    // Status do RNTRC lido do cadastro: NULL (nunca consultado) vira aviso; só status impeditivo da ANTT bloqueia.
+    const [{ data: vRntrc }, { data: mRntrc }] = await Promise.all([
+      op.veiculo_id ? supabaseAdmin.from("veiculos").select("rntrc_status").eq("id", op.veiculo_id).maybeSingle() : Promise.resolve({ data: null }),
+      op.motorista_id ? supabaseAdmin.from("pessoas").select("rntrc_status").eq("id", op.motorista_id).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
     const { ambiente, bloqueios, avisos, regras, intramunicipal, payload } = montarCte({
-      op,
+      op: { ...op, veiculo_rntrc_status: vRntrc?.rntrc_status ?? null, motorista_rntrc_status: mRntrc?.rntrc_status ?? null },
       pf,
       cotacao,
       cliente,
