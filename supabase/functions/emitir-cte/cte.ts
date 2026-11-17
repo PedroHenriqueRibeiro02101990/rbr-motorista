@@ -5,6 +5,8 @@
 // homologação (tpAmb=2): o nome (xNome) de remetente/destinatário tem que ser o texto literal
 // NOME_HOMOLOGACAO (rejeições 646/647/648/649). Todo o resto — NF-e, endereços, IBGE, tomador — é igual.
 
+import { situacaoRntrc } from "../_shared/regrasExternas.ts";
+
 export const NOME_HOMOLOGACAO = "CT-E EMITIDO EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL";
 
 // Natureza da operação do CT-e: sempre transporte. Não vem da cotação (lá pode estar a natureza da NF-e, ex.: "Venda").
@@ -174,6 +176,16 @@ export function montarCte(d: DadosCte): ResultadoCte {
     regras.push({ tipo: "aviso", origem, mensagem });
   };
 
+  // RNTRC de veículo/motorista: a ANTT valida no CIOT e a SEFAZ no MDF-e. Só bloqueia status explicitamente impeditivo
+  // (inativo/cancelado/suspenso vindo de consulta à ANTT); nunca consultado (NULL) é aviso da RBR.
+  const avisarRntrc = (quem: string, id: unknown, status: unknown, ativoLegado: unknown) => {
+    if (!id) return;
+    const s = status !== undefined ? situacaoRntrc(status) : ativoLegado ? "ativo" : "nao_consultado";
+    if (s === "impeditivo") bloqueio("antt", `RNTRC do ${quem} consta como "${String(status).trim()}" na consulta à ANTT — regularize antes de emitir.`);
+    else if (s === "nao_consultado") aviso("rbr", `RNTRC do ${quem} ainda não foi consultado na ANTT (a validação é feita no CIOT e no MDF-e).`);
+    else if (s === "desconhecido") aviso("rbr", `RNTRC do ${quem} com situação "${String(status).trim()}" no cadastro: confira (a ANTT valida no CIOT e no MDF-e).`);
+  };
+
   const intramunicipal = Boolean(
     op.uf_origem &&
       op.uf_destino &&
@@ -191,9 +203,9 @@ export function montarCte(d: DadosCte): ResultadoCte {
     bloqueio("sefaz", "Inscrição Estadual da RBR ainda não cadastrada em parametros_fiscais.inscricao_estadual — bloqueia o emitente do CT-e.",);
   }
   if (!op.veiculo_id) bloqueio("antt", "Nenhum veículo alocado nesta operação.");
-  if (op.veiculo_id && !op.veiculo_rntrc_ativo) bloqueio("antt", "RNTRC do veículo não está ativo.");
+  avisarRntrc("veículo", op.veiculo_id, op.veiculo_rntrc_status, op.veiculo_rntrc_ativo);
   if (!op.motorista_id) bloqueio("antt", "Nenhum motorista alocado nesta operação.");
-  if (op.motorista_id && !op.motorista_rntrc_ativo) bloqueio("antt", "RNTRC do motorista não está ativo.");
+  avisarRntrc("motorista", op.motorista_id, op.motorista_rntrc_status, op.motorista_rntrc_ativo);
   if (!op.cotacao_id) bloqueio("sefaz", "Operação sem cotação vinculada — não há dados de NF-e/rota pra montar o CT-e.");
   if (!op.cidade_origem || !op.uf_origem || !op.cidade_destino || !op.uf_destino) {
     bloqueio("sefaz", "Cotação sem origem/destino completos.");

@@ -4,7 +4,8 @@ import { resumoNfes } from './NfesCliente'
 import { abaDaPendencia, ROTULO_ABA, type AbaDoPreVoo } from '../../lib/preVooEtapas'
 import { situacaoApolice, type SituacaoApolice } from '@rbr/shared/regrasOperacao'
 
-type Item = { doc: string; item: string; ok: boolean; motivo: string }
+// tipo: 'bloqueio' = o órgão externo rejeitaria; 'aviso' = regra da RBR ou checagem que o próprio emissor/ANTT faz depois (nunca impede).
+type Item = { doc: string; item: string; ok: boolean; motivo: string; tipo?: 'bloqueio' | 'aviso' }
 
 // Pré-voo: o que ainda falta na operação antes de emitir (função checar_pre_voo do banco).
 // Mostra só o que interessa ao documento em emissão + itens gerais; ✓ quando tudo certo.
@@ -58,10 +59,15 @@ export default function PreVoo({ operacaoId, tipo, onIr }: { operacaoId: string;
   const doc = tipo === 'cte' ? 'CT-e' : tipo === 'mdfe' ? 'MDF-e' : null
   const relevantes = tipo === 'todos' ? itens : itens.filter((i) => i.doc === 'Geral' || (doc && i.doc === doc) || (tipo === 'mdfe' && i.doc === 'Risco'))
   const faltam = relevantes.filter((i) => !i.ok)
+  const bloqueiam = faltam.filter((i) => i.tipo !== 'aviso')
 
   return (
     <div className="rounded-lg px-3 py-2 text-xs" style={{ background: faltam.length ? '#FDF1DC' : '#E7F5EC', color: faltam.length ? '#8A5A00' : 'var(--rbr-positive)' }}>
-      <div className="font-bold mb-1">{faltam.length ? `Pré-voo: ${faltam.length} pendência(s) antes de emitir` : '✓ Pré-voo completo: nada pendente'}</div>
+      <div className="font-bold mb-1">{bloqueiam.length
+          ? `Pré-voo: ${bloqueiam.length} pendência(s) antes de emitir`
+          : faltam.length
+            ? `Pré-voo: ${faltam.length} aviso(s) — não impedem a emissão`
+            : '✓ Pré-voo completo: nada pendente'}</div>
       {nfes && tipo !== 'nfse' && <div className="mb-1 tabular-nums">{resumoNfes(Number(nfes.quantidade), Number(nfes.valor_total))}</div>}
       {destinatarios > 1 && tipo !== 'nfse' && (
         <div className="mb-1 font-bold" style={{ color: '#8A5A00' }}>
@@ -77,7 +83,7 @@ export default function PreVoo({ operacaoId, tipo, onIr }: { operacaoId: string;
         <ul className="list-disc pl-4">
           {faltam.map((i) => (
             <li key={i.doc + i.item}>
-              {i.doc}: {i.motivo}
+              {i.tipo === 'aviso' ? 'Aviso · ' : ''}{i.doc}: {i.motivo}
               {onIr && (
                 <button type="button" onClick={() => onIr(abaDaPendencia(i.item))} className="ml-2 font-bold underline">
                   {ROTULO_ABA[abaDaPendencia(i.item)]}

@@ -106,9 +106,10 @@ test("cavalo mecânico com carreta: sem bloqueios, tudo dentro de modal_rodoviar
   assert.equal(m.pagamentos[0].forma_pagamento, "1");
 });
 
-test("cavalo sem carreta vinculada bloqueia", () => {
-  const { bloqueios } = montarMdfe(base({ reboques: [] }));
-  assert.ok(bloqueios.some((b) => b.startsWith("Cavalo mecânico sem reboque")));
+test("cavalo sem carreta vinculada só avisa (a SEFAZ diz se rejeita)", () => {
+  const { bloqueios, avisos } = montarMdfe(base({ reboques: [] }));
+  assert.ok(!bloqueios.some((b) => b.startsWith("Cavalo mecânico sem reboque")));
+  assert.ok(avisos.some((a) => a.startsWith("Cavalo mecânico sem reboque")));
 });
 
 test("reboque sem tara/capacidade/carroceria bloqueia", () => {
@@ -138,15 +139,53 @@ test("veículo de terceiro (TAC) leva proprietário com IE e RNTRC de 8 dígitos
   assert.ok(!r.bloqueios.some((b) => b.includes("RNTRC")));
 });
 
-test("homologação: CIOT ausente vira aviso; pagamento sem destino é aviso da RBR e pagamentos é omitido", () => {
+test("homologação: CIOT ausente vira aviso; pagamento sem nenhum destino bloqueia (SEFAZ exige em lotação)", () => {
   const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null } }));
-  assert.deepEqual(r.bloqueios, []);
   assert.ok(r.avisos.some((a) => a.startsWith("Homologação: CIOT não informado")));
-  assert.ok(r.avisos.includes("Destino de pagamento do motorista não definido (regra da RBR). Defina antes de pagar."));
-  assert.equal(r.payload.modal_rodoviario.pagamentos, undefined);
+  assert.deepEqual(r.bloqueios.length, 1);
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Falta o destino de pagamento do frete")));
 });
 
-test("produção: CIOT do TAC ausente bloqueia (ANTT); pagamento sem destino agora só avisa (regra da RBR) e o MDF-e sai sem pagamentos", () => {
+test("pagamento: CIOT da Repom sem destino do motorista deriva o CNPJ da Repom (IPEF) e avisa", () => {
+  const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null }, ciotVpo: { numero_averbacao: "AVB-123", ciot_origem: "rbr_repom" } }));
+  assert.deepEqual(r.bloqueios, []);
+  assert.equal(r.payload.modal_rodoviario.pagamentos[0].cnpj_instituicao_pagamento, "65697260000103");
+  assert.ok(r.avisos.some((a) => a.startsWith("Destino de pagamento preenchido sozinho")));
+});
+
+test("pagamento: IPEF informado (efrete/NSTech) é usado sem aviso de derivação", () => {
+  const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null }, ciotVpo: { numero_averbacao: "AVB-123", ciot_origem: "efrete", pagto_cnpj_ipef: "11.222.333/0001-81" } }));
+  assert.deepEqual(r.bloqueios, []);
+  assert.equal(r.payload.modal_rodoviario.pagamentos[0].cnpj_instituicao_pagamento, "11222333000181");
+});
+
+test("RNTRC: status nunca consultado (NULL) só avisa; status impeditivo da ANTT bloqueia", () => {
+  const b = base();
+  const nulo = montarMdfe({ ...b, op: { ...b.op, veiculo_rntrc_status: null, veiculo_rntrc_ativo: false, motorista_rntrc_status: null, motorista_rntrc_ativo: false } });
+  assert.ok(!nulo.bloqueios.some((x) => x.includes("RNTRC do")));
+  assert.equal(nulo.regras.filter((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.includes("não foi consultado")).length, 2);
+  const cancelado = montarMdfe({ ...b, op: { ...b.op, veiculo_rntrc_status: "cancelado" } });
+  assert.ok(cancelado.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem.startsWith("RNTRC do veículo")));
+  const ok = montarMdfe({ ...b, op: { ...b.op, veiculo_rntrc_status: "ativo", motorista_rntrc_status: "Ativo" } });
+  assert.ok(!ok.regras.some((x) => x.mensagem.includes("RNTRC do")));
+});
+
+test("rodado: carreta no campo de tração dá mensagem clara (troque pelo cavalo e coloque a carreta em reboques)", () => {
+  const r = montarMdfe(base({ tracao: { ...CARRETA, placa: "JAG9B55" }, reboques: [] }));
+  assert.ok(r.bloqueios.includes("O veículo JAG9B55 (Semirreboque) está no campo de tração; troque pelo cavalo e coloque a carreta em reboques."));
+  assert.ok(!r.bloqueios.some((x) => x.startsWith("Não consegui identificar")));
+});
+
+test("apólice ausente só avisa e o MDF-e vai sem seguros_carga; responsavel_seguro fora do padrão assume emitente", () => {
+  const sem = montarMdfe(base({ apolice: null, ciotVpo: null }));
+  assert.ok(!sem.bloqueios.some((x) => x.includes("apólice") || x.includes("averbação")));
+  assert.equal(sem.payload.seguros_carga, undefined);
+  const fora = montarMdfe(base({ apolice: { seguradora_nome: "X", seguradora_cnpj: "11222333000181", numero_apolice: "1", responsavel_seguro: "segurado" } }));
+  assert.ok(fora.regras.some((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.includes("assumido \"emitente\"")));
+  assert.equal(fora.payload.seguros_carga[0].responsavel_seguro, "1");
+});
+
+test("produção: CIOT do TAC ausente bloqueia (ANTT); pagamento sem destino bloqueia (SEFAZ exige em lotação)", () => {
   const b = base();
   const r = montarMdfe({
     ...b,
@@ -157,12 +196,11 @@ test("produção: CIOT do TAC ausente bloqueia (ANTT); pagamento sem destino ago
   });
   assert.ok(r.bloqueios.some((x) => x.startsWith("CIOT não informado")));
   assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem.startsWith("CIOT não informado")));
-  assert.ok(!r.bloqueios.some((x) => x.includes("destino") || x.includes("Pagamento do frete")));
-  assert.ok(r.regras.some((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.startsWith("Destino de pagamento do motorista")));
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Falta o destino de pagamento")));
   assert.equal(r.payload.modal_rodoviario.pagamentos, undefined);
 });
 
-test("C5: produção, operação real com destino de pagamento vazio e CIOT ok: emite (sem bloqueio) com aviso da RBR", () => {
+test("C5: produção, operação real com destino de pagamento vazio e CIOT ok: bloqueia por exigência da SEFAZ (não é regra da RBR)", () => {
   const b = base();
   const r = montarMdfe({
     ...b,
@@ -172,13 +210,11 @@ test("C5: produção, operação real com destino de pagamento vazio e CIOT ok: 
     motorista: { pix: null, banco_codigo: null, banco_agencia: null },
     ciotVpo: { ciot: "123456789012", numero_averbacao: "AVB-123" },
   });
-  assert.deepEqual(r.bloqueios, []);
-  assert.deepEqual(r.regras.filter((x) => x.origem === "rbr").map((x) => x.mensagem), [
-    "Destino de pagamento do motorista não definido (regra da RBR). Defina antes de pagar.",
-  ]);
+  assert.equal(r.bloqueios.length, 1);
+  assert.equal(r.regras.filter((x) => x.origem === "rbr").length, 0);
 });
 
-test("C5: produção sem condição de pagamento (TAC): aviso da RBR, não bloqueio", () => {
+test("C5: produção sem condição de pagamento (TAC): bloqueia por exigência da SEFAZ", () => {
   const b = base();
   const r = montarMdfe({
     ...b,
@@ -188,8 +224,7 @@ test("C5: produção sem condição de pagamento (TAC): aviso da RBR, não bloqu
     condicao: null,
     ciotVpo: { ciot: "123456789012", numero_averbacao: "AVB-123" },
   });
-  assert.deepEqual(r.bloqueios, []);
-  assert.ok(r.avisos.includes("Condição de pagamento do motorista não definida (regra da RBR). Defina antes de pagar."));
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Falta o valor do contrato de frete")));
 });
 
 for (const [nome, ajuste] of [

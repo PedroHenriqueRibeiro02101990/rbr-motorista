@@ -208,6 +208,9 @@ export function traduzirErroEfrete(mensagem: string): string {
 // não descreve o formato. Guardamos os dois separados e remontamos para as chamadas seguintes.
 // Verificador: 4 dígitos. Só na HOMOLOGAÇÃO a efrete devolve o texto fixo XXXX (visto em 29/10/2026); em produção continua exigindo 4 dígitos.
 export function separarCiot(codigo: string, ambiente: 'homologacao' | 'producao' = 'producao'): { numero: string; verificador: string | null } | null {
+  // 16 dígitos colados (12 + 4), como o Repom mostra, também separam sozinhos.
+  const colado = /^\s*(\d{12})(\d{4})\s*$/.exec(codigo ?? '')
+  if (colado) return { numero: colado[1], verificador: colado[2] }
   const m = (ambiente === 'homologacao' ? /^\s*(\d{12})(?:\s*\/\s*(\d{4}|XXXX))?\s*$/ : /^\s*(\d{12})(?:\s*\/\s*(\d{4}))?\s*$/).exec(codigo ?? '')
   return m ? { numero: m[1], verificador: m[2] ?? null } : null
 }
