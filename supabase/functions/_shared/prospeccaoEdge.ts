@@ -47,7 +47,7 @@ export async function logar(robo: "enviar" | "ler" | "sistema", acao: string, o:
   await admin.from("prospeccao_log").insert({ robo, acao, empresa_id: o.empresa_id ?? null, resultado: o.resultado ?? null, erro: o.erro ? o.erro.slice(0, 500) : null, caixa_id: o.caixa_id ?? null });
 }
 /** Evita 288 linhas por dia dizendo "desligado": so grava de novo depois de 1 hora. */
-export async function logarSemRepetir(robo: "enviar" | "ler", acao: string, resultado?: string) {
+export async function logarSemRepetir(robo: "enviar" | "ler" | "sistema", acao: string, resultado?: string) {
   const desde = new Date(Date.now() - 3_600_000).toISOString();
   const { count } = await admin.from("prospeccao_log").select("id", { count: "exact", head: true }).eq("robo", robo).eq("acao", acao).gte("momento", desde);
   if (!count) await logar(robo, acao, { resultado });

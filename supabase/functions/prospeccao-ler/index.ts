@@ -15,6 +15,7 @@ import {
   avisoDeAbuso, bloqueiosParaEmail, classificarPorRegras, classificarRelevancia, classeQuente, dentroDaJanelaEnvio, dentroDaJanelaLeitura, decidirClassificacao,
   emailDeIndicacao, horasUteisEntre, modeloPendente, partesSP, preencherModelo, respostaAutomaticaPodeSair, textoNovo, type CabecalhoMsg, type Classe,
 } from "../_shared/prospeccaoRegras.ts";
+import { avaliarExperimentos } from "../_shared/prospeccaoIaEdge.ts";
 import { cabecalhosCaixa, descobrirPastas, ehDsn, lerPastaIncremental, parseDsn, uidGlobal, type EstadoPasta, type ImapLike, type MsgCab } from "../_shared/prospeccaoCaixa.ts";
 
 type Orig = { id: string; empresa_id: string; contato_id: string; message_id: string };
@@ -104,7 +105,8 @@ Deno.serve(async (req) => {
     }
 
     const smtpAlerta = await smtpParaAlertas(caixas);
-    await pendencias(f, smtpAlerta, fer, agora);
+    await pendencias(f, smtpAlerta, fer, agora, !!iaChave);
+    try { await avaliarExperimentos(); } catch (e) { await logar("ler", "experimentos_falhou", { erro: e instanceof Error ? e.message : String(e) }); }
     await avaliarParada(hojeYmd, smtpAlerta, f.modoTeste);
     await logar("ler", "ciclo", { resultado: `${lidas} caixa(s), ${processadas} relevante(s), ${ignoradas} ignorada(s)` });
     return json({ ok: true, lido: lidas > 0, caixas: lidas, processadas, ignoradas });
@@ -354,10 +356,11 @@ async function tratar(tipo: "resposta" | "descadastro_alias" | "devolucao", uid:
 }
 
 // Aviso de recebimento ao lead quente (so dentro do expediente) e lembretes/escalonamento de quem nao assumiu.
-async function pendencias(f: Flags, smtp: Smtp | null, fer: Set<string>, agora: Date) {
+async function pendencias(f: Flags, smtp: Smtp | null, fer: Set<string>, agora: Date, iaLigada: boolean) {
   const { data } = await admin.from("prospeccao_respostas").select("id, empresa_id, de_email, recebido_em, classificacao, assumido_por, aviso_recebimento_em, lembrete_em, escalado_em").in("classificacao", ["cotacao", "preco_prazo"]).eq("tratada", false).gte("recebido_em", new Date(agora.getTime() - 14 * 86_400_000).toISOString());
   for (const r of (data ?? []) as { id: string; empresa_id: string; de_email: string; recebido_em: string; assumido_por: string | null; aviso_recebimento_em: string | null; lembrete_em: string | null; escalado_em: string | null }[]) {
-    if (!r.aviso_recebimento_em && dentroDaJanelaEnvio(agora, fer) && await responder(smtp, f, "resp_recebimento", r.de_email, { empresa: "", nome: "", cidade: "", segmento_legivel: "", segmento_frase: "", veiculo: "" })) {
+    // com a IA ligada o agente prepara a resposta (resp_cotacao) e marca aviso_recebimento_em: aqui nao duplica
+    if (!r.aviso_recebimento_em && !iaLigada && dentroDaJanelaEnvio(agora, fer) && await responder(smtp, f, "resp_recebimento", r.de_email, { empresa: "", nome: "", cidade: "", segmento_legivel: "", segmento_frase: "", veiculo: "" })) {
       await admin.from("prospeccao_respostas").update({ aviso_recebimento_em: agora.toISOString() }).eq("id", r.id);
     }
     if (r.assumido_por) continue;

@@ -15,11 +15,13 @@ import {
 import {
   acaoParaErroSmtp, cabecalhosCaixa, escolherCaixa, intervaloDaCaixaSeg, limiteDaCaixa, proximoNivelRecuo, recuoSegundos,
 } from "../_shared/prospeccaoCaixa.ts";
+import { grupoVariantePorEmpresa, usarVariante, validarTextoSaida } from "../_shared/prospeccaoAgente.ts";
+import { experimentosAtivos, type Experimento } from "../_shared/prospeccaoIaEdge.ts";
 
 type Msg = { id: string; empresa_id: string; contato_id: string; toque: number; assunto: string; corpo: string; status: string; tentativas: number; teste_enviado_em: string | null };
 type Emp = { id: string; razao_social: string; nome_fantasia: string | null; classe: "A" | "B" | "C"; segmento: string; cidade: string | null; site: string | null; status: string; repouso_ate: string | null; veiculo_provavel: string | null };
 type Con = { id: string; empresa_id: string; nome: string | null; email: string; tipo_email: "generico" | "pessoal"; validacao_status: string };
-type EmailSaidaRow = { id: string; conversa_id: string; caixa_id: string; para: string; cc: string | null; assunto: string; corpo_texto: string | null; in_reply_to: string | null; referencias: string | null };
+type EmailSaidaRow = { id: string; conversa_id: string; caixa_id: string; para: string; cc: string | null; assunto: string; corpo_texto: string | null; in_reply_to: string | null; referencias: string | null; motivo_ia: string | null };
 
 const SEG_LEGIVEL: Record<string, string> = { alimentos: "alimentos", bebidas: "bebidas", plasticos: "plásticos", metalurgia: "produtos metalúrgicos", maquinas: "máquinas e equipamentos" };
 const SEG_FRASE: Record<string, string> = { alimentos: "distribuição de alimentos", bebidas: "distribuição de bebidas", plasticos: "produtos plásticos", metalurgia: "produtos metalúrgicos", maquinas: "máquinas e equipamentos" };
@@ -51,14 +53,36 @@ async function verificarEmail(c: Con): Promise<string | null> {
 // Prepara mensagens: seguimentos vencidos e 1os toques. Com aprovacao obrigatoria nasce "rascunho"; sem ela, "aprovado".
 async function preparar(f: Flags, hojeYmd: string, jornada: PassoJornada[], modelos: Map<string, { assunto: string; corpo: string; ativo: boolean }>, agora: Date) {
   const statusNovo = f.aprovacaoObrigatoria ? "rascunho" : "aprovado";
-  const criar = async (e: Emp, c: Con, toque: number) => {
+  // experimentos da IA em teste (ate 10% dos envios; a variante so existe dentro do teste; o padrao nunca e tocado)
+  let exps: Experimento[] = [];
+  try { exps = await experimentosAtivos(); } catch { exps = []; }
+  const expCadencia = exps.find((x) => x.tipo === "cadencia");
+  const expSegmento = exps.find((x) => x.tipo === "segmento");
+  const jornadaDe = (empresaId: string): { jornada: PassoJornada[]; exp: Experimento | null } => {
+    const atrasos = (expCadencia?.variante as { atrasos?: number[] } | undefined)?.atrasos;
+    if (!expCadencia || !atrasos || !grupoVariantePorEmpresa(empresaId, expCadencia.pct_envios)) return { jornada, exp: null };
+    return { jornada: jornada.map((j) => (j.toque >= 2 && atrasos[j.toque - 2] != null ? { ...j, atraso_dias: atrasos[j.toque - 2] } : j)), exp: expCadencia };
+  };
+  const criar = async (e: Emp, c: Con, toque: number, expForcado: Experimento | null = null) => {
     const passo = jornada.find((j) => j.toque === toque);
     const m = passo ? modelos.get(passo.modelo_tipo) : undefined;
     if (!m || modeloPendente(m)) { await logarSemRepetir("enviar", `modelo_inativo_toque${toque}`, "jornada aguardando modelo ativo"); return false; }
     const v = variaveis(e, c);
+    let assunto = m.assunto, corpo = m.corpo, experimentoId: string | null = expForcado?.id ?? null;
+    for (const x of exps.filter((y) => (y.tipo === "texto" || y.tipo === "assunto") && y.alvo === passo!.modelo_tipo)) {
+      if (!usarVariante(x.pct_envios, Math.random())) continue;
+      const vv = x.variante as { assunto?: string; corpo?: string };
+      if (x.tipo === "texto" && vv.corpo) corpo = vv.corpo; else if (x.tipo === "assunto" && vv.assunto) assunto = vv.assunto; else continue;
+      experimentoId = x.id;
+    }
+    if (!experimentoId && expCadencia && toque >= 2 && jornadaDe(e.id).exp) experimentoId = expCadencia.id;
+    const assuntoFinal = preencherModelo(assunto, v), corpoFinal = preencherModelo(corpo, v);
+    // regras fixas do texto (sem valor de frete, sem prazo de coleta, sem "time comercial"/"agenciador", sem telefone inventado, com rodape de sair)
+    const val = validarTextoSaida(`${assuntoFinal}\n${corpoFinal}`, { exigeRodape: true, permiteWhatsappRbr: true, emailsPermitidos: [c.email] });
+    if (!val.ok) { await logarSemRepetir("enviar", `validador_reprovou_toque${toque}`, val.motivos.join("; ")); return false; }
     const { error } = await admin.from("prospeccao_mensagens").insert({
-      empresa_id: e.id, contato_id: c.id, toque, assunto: preencherModelo(m.assunto, v), corpo: preencherModelo(m.corpo, v), status: statusNovo,
-      aprovado_em: statusNovo === "aprovado" ? agora.toISOString() : null,
+      empresa_id: e.id, contato_id: c.id, toque, assunto: assuntoFinal, corpo: corpoFinal, status: statusNovo,
+      aprovado_em: statusNovo === "aprovado" ? agora.toISOString() : null, experimento_id: experimentoId, variante: experimentoId !== null,
     });
     if (error) { await logar("enviar", "preparar_falhou", { empresa_id: e.id, erro: error.message }); return false; }
     await logar("enviar", `preparado_toque${toque}`, { empresa_id: e.id, resultado: statusNovo });
@@ -75,7 +99,7 @@ async function preparar(f: Flags, hojeYmd: string, jornada: PassoJornada[], mode
     const { data: ult } = await admin.from("prospeccao_mensagens").select("toque, enviado_em, contato_id").eq("empresa_id", e.id).eq("status", "enviado").order("toque", { ascending: false }).limit(1);
     const u = ult?.[0] as { toque: number; enviado_em: string; contato_id: string } | undefined;
     if (!u) continue;
-    const prox = proximoToque(u.toque, new Date(u.enviado_em), jornada, agora);
+    const prox = proximoToque(u.toque, new Date(u.enviado_em), jornadaDe(e.id).jornada, agora);
     if (!prox) continue;
     if ("fim" in prox) {
       const ate = new Date(agora.getTime() + 90 * 86_400_000).toISOString().slice(0, 10);
@@ -93,13 +117,17 @@ async function preparar(f: Flags, hojeYmd: string, jornada: PassoJornada[], mode
   // (2) 1os toques: empresas A/B novas com contato sem nenhuma mensagem (inclui contato indicado, que nasce em empresa "qualificado")
   const { data: novas } = await admin.from("prospeccao_empresas").select("id, razao_social, nome_fantasia, classe, segmento, cidade, site, status, repouso_ate, veiculo_provavel").in("status", ["novo", "qualificado"]).in("classe", ["A", "B"]).order("pontuacao", { ascending: false }).limit(60);
   let criadas = 0;
-  for (const e of (novas ?? []) as Emp[]) {
+  const segPrior = (expSegmento?.variante as { segmento?: string } | undefined)?.segmento;
+  const ordenadas = (novas ?? []) as Emp[];
+  const aplicaSeg = !!expSegmento && !!segPrior && usarVariante(expSegmento.pct_envios, Math.random());
+  if (aplicaSeg) ordenadas.sort((a, b) => Number(b.segmento === segPrior) - Number(a.segmento === segPrior));
+  for (const e of ordenadas) {
     if (criadas >= 10) break;
     const { data: cs } = await admin.from("prospeccao_contatos").select("*").eq("empresa_id", e.id).in("validacao_status", ["sintaxe_ok", "mx_ok", "verificado", "catch_all"]);
     for (const c of (cs ?? []) as Con[]) {
       const { count } = await admin.from("prospeccao_mensagens").select("id", { count: "exact", head: true }).eq("contato_id", c.id);
       if (count) continue;
-      if (await criar(e, c, 1)) {
+      if (await criar(e, c, 1, aplicaSeg && e.segmento === segPrior ? expSegmento! : null)) {
         criadas++;
         await admin.from("prospeccao_empresas").update({ status: "em_aprovacao" }).eq("id", e.id).in("status", ["novo", "qualificado"]);
       }
@@ -135,15 +163,18 @@ async function efeitoNaCaixa(caixa: CaixaRow, acao: ReturnType<typeof acaoParaEr
 }
 
 /** Respostas escritas na Caixa de entrada e APROVADAS por uma pessoa (status_envio = aprovado). Mesmas travas do robo: chave de envio, bloqueio, modo teste, caixa sem parada. */
-async function enviarManuais(f: Flags, caixas: CaixaRow[], comCred: Set<string>, bloqueios: { tipo: string; valor: string }[], agora: Date) {
-  const { data } = await admin.from("prospeccao_emails").select("id, conversa_id, caixa_id, para, cc, assunto, corpo_texto, in_reply_to, referencias").eq("direcao", "saida").eq("status_envio", "aprovado").is("message_id", null).order("criado_em").limit(3);
+async function enviarManuais(f: Flags, caixas: CaixaRow[], comCred: Set<string>, bloqueios: { tipo: string; valor: string }[], agora: Date, soConfirmacoes = false) {
+  // Com a chave geral desligada so a confirmacao de descadastro sai (ela sempre sai); alertas internos nao passam por aqui.
+  let q = admin.from("prospeccao_emails").select("id, conversa_id, caixa_id, para, cc, assunto, corpo_texto, in_reply_to, referencias, motivo_ia").eq("direcao", "saida").eq("status_envio", "aprovado").is("message_id", null).order("criado_em").limit(3);
+  if (soConfirmacoes) q = q.eq("motivo_ia", "confirmacao_descadastro");
+  const { data } = await q;
   for (const em of (data ?? []) as EmailSaidaRow[]) {
     const caixa = caixas.find((c) => c.id === em.caixa_id);
     if (!caixa || !caixa.ativa || caixa.parada_motivo || !comCred.has(caixa.id)) continue; // continua aprovado, espera a caixa ficar pronta
     if (caixa.proximo_envio_apos && agora < new Date(caixa.proximo_envio_apos)) continue;
     const para = enderecos(em.para), cc = enderecos(em.cc);
     if (para.length === 0) { await admin.from("prospeccao_emails").update({ status_envio: "falhou", erro: "sem destinatario valido" }).eq("id", em.id); continue; }
-    if ([...para, ...cc].some((p) => emailBloqueado(p, bloqueios))) {
+    if (em.motivo_ia !== "confirmacao_descadastro" && [...para, ...cc].some((p) => emailBloqueado(p, bloqueios))) {
       await admin.from("prospeccao_emails").update({ status_envio: "descartado", erro: "destinatario na lista de bloqueio" }).eq("id", em.id);
       await logar("enviar", "resposta_manual_bloqueada", { caixa_id: caixa.id });
       continue;
@@ -181,9 +212,14 @@ Deno.serve(async (req) => {
   const agora = new Date();
   try {
     const f = await lerFlags();
-    if (!f.envio) { await logarSemRepetir("enviar", "desligado"); return json({ ok: true, enviado: false, motivo: "desligado" }); }
     const caixas = await lerCaixas();
     const comCred = await caixasComCredencial(caixas);
+    if (!f.envio) {
+      const { data: bl } = await admin.from("prospeccao_bloqueio").select("tipo, valor");
+      await enviarManuais(f, caixas, comCred, (bl ?? []) as { tipo: string; valor: string }[], agora, true);
+      await logarSemRepetir("enviar", "desligado");
+      return json({ ok: true, enviado: false, motivo: "desligado" });
+    }
     if (comCred.size === 0) { await logarSemRepetir("enviar", "segredos_ausentes", "cadastre a senha de pelo menos uma caixa pelo painel (Vault)"); return json({ ok: true, enviado: false, motivo: "segredos ausentes" }); }
 
     const [fer, { data: estadoRaw }, { data: rampa }, { data: jornadaRaw }, { data: modelosRaw }, { data: bloqueios }] = await Promise.all([

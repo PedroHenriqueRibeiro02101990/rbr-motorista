@@ -98,6 +98,18 @@ export default function Caixas() {
                   {testando === c.id ? 'Testando… (até 1 min)' : 'Testar caixa'}
                 </button>
                 {ehPedro && (
+                  <button className="pr-btn" disabled={ocupado} title="Ligado: a Caixa de entrada mostra também e-mails que NÃO são de prospecção desta caixa." onClick={() => {
+                    if (!c.modo_caixa_completa && !window.confirm(`PRIVACIDADE: com o modo "caixa completa" ligado, a Caixa de entrada passa a guardar e mostrar TODOS os e-mails que chegam em ${c.endereco} (inclusive pessoais e de clientes), não só as respostas da prospecção.
+
+Só ligue se for preciso e se as pessoas dessa caixa souberem. Ligar agora?`)) return
+                    void rodar(c.modo_caixa_completa ? 'Modo caixa completa desligado.' : 'Modo caixa completa ligado: vale a partir dos próximos e-mails.', async () => {
+                      const { error } = await db.from('prospeccao_caixas').update({ modo_caixa_completa: !c.modo_caixa_completa, atualizado_em: new Date().toISOString() }).eq('id', c.id)
+                      if (error) throw new Error(error.message)
+                      await carregar()
+                    })
+                  }}>Caixa completa: {c.modo_caixa_completa ? 'LIGADA' : 'desligada'}</button>
+                )}
+                {ehPedro && (
                   <button className="pr-btn" disabled={ocupado} onClick={() => void rodar(c.ativa ? 'Caixa desativada.' : 'Caixa ativada.', async () => {
                     const { error } = await db.from('prospeccao_caixas').update({ ativa: !c.ativa, atualizado_em: new Date().toISOString() }).eq('id', c.id)
                     if (error) throw new Error(error.message)
