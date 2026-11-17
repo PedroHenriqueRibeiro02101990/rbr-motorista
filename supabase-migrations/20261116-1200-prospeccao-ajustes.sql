@@ -15,4 +15,5 @@ revoke all on function public.trg_fn_prospeccao_pesos_recalcular() from public, 
 alter table public.prospeccao_bloqueio drop constraint if exists prospeccao_bloqueio_dominio_publico_ck;
 alter table public.prospeccao_bloqueio add constraint prospeccao_bloqueio_dominio_publico_ck check (tipo <> 'dominio' or valor not in
   ('gmail.com', 'gmail.com.br', 'hotmail.com', 'hotmail.com.br', 'outlook.com', 'outlook.com.br', 'live.com', 'live.com.br', 'msn.com',
-   'yahoo.com', 'yahoo.com.br', 'uol.com.br', 'bol.com.br', 'terra.com.br', 'ig.com.br', 'icloud.com'));
+   'yahoo.com', 'yahoo.com.br', 'uol.com.br', 'bol.com.br', 'terra.com.br', 'ig.com.br', 'icloud.com', 'globo.com', 'protonmail.com'));
+-- (lista identica a PROVEDORES_GRATUITOS de supabase/functions/_shared/prospeccaoRegras.ts; um teste confere as duas)
