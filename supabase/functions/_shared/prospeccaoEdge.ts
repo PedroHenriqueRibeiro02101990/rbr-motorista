@@ -127,6 +127,12 @@ export async function avaliarParada(hojeYmd: string, smtp: Smtp | null, modoTest
 }
 export { avisoDeAbuso };
 
+/** Bloqueia SO o e-mail (nunca o dominio): usado quando o SMTP recusa um destinatario na hora. Duplicidade (23505) e ignorada. */
+export async function bloquearSoEmail(email: string, motivo: "sair" | "reclamacao" | "devolvido") {
+  const { error } = await admin.from("prospeccao_bloqueio").insert({ tipo: "email", valor: email.trim().toLowerCase(), motivo });
+  if (error && error.code !== "23505") await logar("sistema", "bloqueio_falhou", { erro: error.message });
+}
+
 export async function somarDia(hojeYmd: string, campo: "enviados" | "devolvidos" | "descadastros" | "respostas") {
   const { data } = await admin.from("prospeccao_envio_diario").select("*").eq("data", hojeYmd).maybeSingle();
   const atual = (data as Record<string, number> | null) ?? { enviados: 0, devolvidos: 0, descadastros: 0, respostas: 0 };

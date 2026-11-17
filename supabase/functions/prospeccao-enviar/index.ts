@@ -2,10 +2,10 @@
 // Robo de ENVIO do agente SDR. Envia NO MAXIMO 1 e-mail por rodada, em texto puro, pela caixa pedro@rbrcargo.com.br (SMTP).
 // Tudo nasce desligado: sem PROSPECCAO_ENVIO_LIBERADO = "sim" e sem os segredos cadastrados, so registra "desligado" no log e sai.
 // Antes de cada envio reconfere TUDO (prospeccaoRegras.motivoDeNaoEnviar). Modo teste: envia so para prospeccao_destinos_teste.
-import { admin, autorizado, avaliarParada, enviarEmail, feriados, json, lerFlags, lerSmtp, logar, logarSemRepetir, auditar, pararAutomaticamente, somarDia, type Flags, type Smtp } from "../_shared/prospeccaoEdge.ts";
+import { admin, autorizado, avaliarParada, bloquearSoEmail, enviarEmail, feriados, json, lerFlags, lerSmtp, logar, logarSemRepetir, auditar, pararAutomaticamente, somarDia, type Flags, type Smtp } from "../_shared/prospeccaoEdge.ts";
 import {
-  cabecalhosEnvio, dentroDaJanelaEnvio, diaDaRampa, escolherProximo, intervaloEntreEnviosMin, limiteDoDia, modeloPendente, motivoDeNaoEnviar, novoMessageId,
-  partesSP, preencherModelo, proximoToque, tratarErroEnvio, type Candidato, type PassoJornada,
+  cabecalhosEnvio, certezaDeNaoEnviado, dentroDaJanelaEnvio, diaDaRampa, escolherProximo, intervaloEntreEnviosMin, limiteDoDia, modeloPendente, motivoDeNaoEnviar, novoMessageId,
+  partesSP, preencherModelo, proximoToque, statusPorMx, tratarErroEnvio, type Candidato, type PassoJornada, type ResultadoMx,
 } from "../_shared/prospeccaoRegras.ts";
 
 type Msg = { id: string; empresa_id: string; contato_id: string; toque: number; assunto: string; corpo: string; status: string; tentativas: number; teste_enviado_em: string | null };
@@ -22,14 +22,18 @@ const dominioDe = (email: string) => email.split("@")[1]?.toLowerCase() ?? "";
 const dominioDoSite = (site: string | null) => (site ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
 
 // Verificacao de e-mail antes do 1o toque: sintaxe + MX. (PROSPECCAO_VERIFICADOR_CHAVE: servico ainda nao definido; sem ele, so sintaxe + MX.)
-async function verificarEmail(c: Con): Promise<string> {
+// So marca "invalido" quando o dominio claramente nao existe/sem MX. Erro transitorio (timeout, SERVFAIL, resolveDns indisponivel) = null:
+// o contato NAO e alterado, o log diz "dns_indisponivel" e o candidato e pulado nesta rodada.
+async function verificarEmail(c: Con): Promise<string | null> {
   if (c.validacao_status === "verificado" || c.validacao_status === "mx_ok" || c.validacao_status === "catch_all") return c.validacao_status;
   if (c.validacao_status === "invalido" || c.validacao_status === "devolvido") return c.validacao_status;
-  let status = "invalido";
+  let r: ResultadoMx;
   try {
     const mx = await Deno.resolveDns(dominioDe(c.email), "MX");
-    status = mx.length > 0 ? "mx_ok" : "invalido";
-  } catch { status = "invalido"; }
+    r = { ok: true, registros: mx.length };
+  } catch (e) { r = { ok: false, nome: e instanceof Error ? e.name : "", mensagem: e instanceof Error ? e.message : String(e) }; }
+  const status = statusPorMx(r);
+  if (!status) { await logarSemRepetir("enviar", "dns_indisponivel", "consulta MX falhou de forma transitoria; contatos nao foram alterados"); return null; }
   await admin.from("prospeccao_contatos").update({ validacao_status: status, validado_em: new Date().toISOString() }).eq("id", c.id);
   return status;
 }
@@ -77,7 +81,7 @@ async function preparar(f: Flags, hojeYmd: string, jornada: PassoJornada[], mode
   }
 
   // (2) 1os toques: empresas A/B novas com contato sem nenhuma mensagem (inclui contato indicado, que nasce em empresa "qualificado")
-  const { data: novas } = await admin.from("prospeccao_empresas").select("id, razao_social, nome_fantasia, classe, segmento, cidade, site, status, repouso_ate, veiculo_provavel").in("status", ["novo", "qualificado"]).in("classe", ["A", "B"]).limit(60);
+  const { data: novas } = await admin.from("prospeccao_empresas").select("id, razao_social, nome_fantasia, classe, segmento, cidade, site, status, repouso_ate, veiculo_provavel").in("status", ["novo", "qualificado"]).in("classe", ["A", "B"]).order("pontuacao", { ascending: false }).limit(60);
   let criadas = 0;
   for (const e of (novas ?? []) as Emp[]) {
     if (criadas >= 10) break;
@@ -135,7 +139,8 @@ Deno.serve(async (req) => {
     // candidatos: mensagens prontas (aprovadas; sem aprovacao obrigatoria, tambem rascunhos)
     const status = f.aprovacaoObrigatoria ? ["aprovado"] : ["aprovado", "rascunho"];
     let q = admin.from("prospeccao_mensagens").select("id, empresa_id, contato_id, toque, assunto, corpo, status, tentativas, teste_enviado_em").in("status", status).order("toque", { ascending: false }).order("criado_em").limit(60);
-    if (f.modoTeste) q = q.is("teste_enviado_em", null);
+    // Modo real: so mensagens SEM message_id. Mensagem com message_id e status ainda "aprovado" e "envio incerto" (a Saude do envio mostra) e nunca e reenviada sozinha.
+    q = f.modoTeste ? q.is("teste_enviado_em", null) : q.is("message_id", null);
     const { data: msgsRaw } = await q;
     const msgs = (msgsRaw ?? []) as Msg[];
     if (msgs.length === 0) return json({ ok: true, enviado: false, motivo: "nada para enviar" });
@@ -149,7 +154,7 @@ Deno.serve(async (req) => {
     const devolvidosHoje = (dDia as { devolvidos: number } | null)?.devolvidos ?? 0;
 
     // verifica e-mail (MX) dos primeiros contatos ainda nao validados, antes de escolher
-    for (const m of msgs.slice(0, 8)) { const c = cons.get(m.contato_id); if (c && (c.validacao_status === "sintaxe_ok" || c.validacao_status === "pendente")) c.validacao_status = await verificarEmail(c); }
+    for (const m of msgs.slice(0, 8)) { const c = cons.get(m.contato_id); if (c && (c.validacao_status === "sintaxe_ok" || c.validacao_status === "pendente")) c.validacao_status = (await verificarEmail(c)) ?? "dns_indisponivel"; }
 
     const cands: (Candidato & { msg: Msg })[] = msgs.flatMap((m) => {
       const e = emps.get(m.empresa_id), c = cons.get(m.contato_id);
@@ -160,7 +165,7 @@ Deno.serve(async (req) => {
 
     let restantes = [...cands];
     for (let tentativa = 0; tentativa < 5; tentativa++) {
-      const esc = escolherProximo(restantes, devolvidosHoje);
+      const esc = escolherProximo(restantes, devolvidosHoje, f.modoTeste);
       if (!esc) break;
       restantes = restantes.filter((c) => c.id !== esc.id);
       const m = (esc as Candidato & { msg: Msg }).msg, e = emps.get(m.empresa_id)!, c = cons.get(m.contato_id)!;
@@ -169,7 +174,7 @@ Deno.serve(async (req) => {
       const motivo = motivoDeNaoEnviar({
         envioLiberado: f.envio, aprovacaoObrigatoria: f.aprovacaoObrigatoria, mensagemStatus: m.status, contatoEmail: c.email, contatoValidacao: c.validacao_status,
         empresaStatus: e.status === "em_aprovacao" ? "em_contato" : e.status, empresaRepousoAte: e.repouso_ate, hojeYmd, jaRespondeuOuDevolveu: (respostas ?? 0) > 0,
-        enviadosHoje, limiteHoje: limite, agora, feriados: fer, bloqueios: (bloqueios ?? []) as { tipo: string; valor: string }[], paradaAtiva: false, proximoEnvioApos: proximoApos,
+        enviadosHoje, limiteHoje: limite, agora, feriados: fer, bloqueios: (bloqueios ?? []) as { tipo: string; valor: string }[], paradaAtiva: false, proximoEnvioApos: proximoApos, modoTeste: f.modoTeste,
       });
       if (motivo) {
         // problema desta mensagem (nao do momento): descarta e tenta a proxima
@@ -188,6 +193,11 @@ Deno.serve(async (req) => {
       const cab = cabecalhosEnvio({ messageId, assunto: m.assunto, toque: m.toque, assuntoOriginal: primeiro?.assunto, messageIdPrimeiroToque: primeiro?.message_id ?? undefined });
       if (f.aprovacaoObrigatoria === false && m.status === "rascunho") await admin.from("prospeccao_mensagens").update({ status: "aprovado", aprovado_em: agora.toISOString() }).eq("id", m.id);
 
+      // Reserva o message_id ANTES do SMTP (modo real). Se nao conseguir gravar, NAO envia: sem a reserva nao ha como evitar envio duplicado.
+      if (!f.modoTeste) {
+        const { data: reserva, error: eRes } = await admin.from("prospeccao_mensagens").update({ message_id: messageId }).eq("id", m.id).is("message_id", null).select("id");
+        if (eRes || !reserva?.length) { await logar("enviar", "reserva_message_id_falhou", { empresa_id: e.id, erro: eRes?.message ?? "mensagem ja reservada por outra rodada" }); continue; }
+      }
       try {
         const r = await enviarEmail(smtp, { para: [c.email], assunto: cab.subject, texto: m.corpo, messageId: cab.messageId, inReplyTo: cab.inReplyTo, references: cab.references, headers: cab.headers }, f.modoTeste);
         const espera = intervaloEntreEnviosMin(Math.random());
@@ -196,7 +206,10 @@ Deno.serve(async (req) => {
           await admin.from("prospeccao_mensagens").update({ teste_enviado_em: agora.toISOString() }).eq("id", m.id);
           await logar("enviar", "enviado_teste", { empresa_id: e.id, resultado: `toque ${m.toque} para ${r.destinos.length} destino(s) de teste` });
         } else {
-          await admin.from("prospeccao_mensagens").update({ status: "enviado", enviado_em: agora.toISOString(), message_id: messageId, erro: null }).eq("id", m.id);
+          // O e-mail JA saiu. Se este update falhar, tenta mais uma vez e, se falhar de novo, so registra: o message_id ja esta gravado, entao NUNCA reenvia.
+          let eUp = (await admin.from("prospeccao_mensagens").update({ status: "enviado", enviado_em: agora.toISOString(), message_id: messageId, erro: null }).eq("id", m.id)).error;
+          if (eUp) eUp = (await admin.from("prospeccao_mensagens").update({ status: "enviado", enviado_em: agora.toISOString(), erro: null }).eq("id", m.id)).error;
+          if (eUp) await logar("enviar", "envio_incerto_status_nao_gravado", { empresa_id: e.id, erro: `enviado, mas o status nao foi gravado: ${eUp.message}` });
           await admin.from("prospeccao_empresas").update({ status: "em_contato" }).eq("id", e.id).in("status", ["novo", "qualificado", "em_aprovacao"]);
           if (!estado?.primeiro_envio_em) await admin.from("prospeccao_estado").update({ primeiro_envio_em: hojeYmd }).eq("id", 1);
           await somarDia(hojeYmd, "enviados");
@@ -209,14 +222,36 @@ Deno.serve(async (req) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const codigo = (err as { responseCode?: number }).responseCode ?? null;
+        const codigoErro = (err as { code?: string }).code ?? null;
         const destino = tratarErroEnvio(codigo, msg, m.tentativas);
+        // Sem certeza de que nada foi entregue (ex.: timeout no meio do envio), o message_id fica gravado = "envio incerto, conferir"; nunca reenvia sozinho.
+        const certeza = f.modoTeste || certezaDeNaoEnviado(codigo, codigoErro);
+        const soltaId = !f.modoTeste && certeza ? { message_id: null } : {};
+        if (!certeza) {
+          await admin.from("prospeccao_mensagens").update({ erro: `envio incerto: ${msg.slice(0, 250)}` }).eq("id", m.id);
+          await logar("enviar", "envio_incerto", { empresa_id: e.id, erro: msg });
+          if (destino === "parada_automatica") await pararAutomaticamente(`erro de SMTP de bloqueio/limite: ${msg.slice(0, 120)}`, smtp, f.modoTeste);
+          return json({ ok: false, enviado: false, motivo: "envio incerto" });
+        }
         if (destino === "parada_automatica") {
-          await admin.from("prospeccao_mensagens").update({ erro: msg.slice(0, 300) }).eq("id", m.id);
+          await admin.from("prospeccao_mensagens").update({ erro: msg.slice(0, 300), ...soltaId }).eq("id", m.id);
           await pararAutomaticamente(`erro de SMTP de bloqueio/limite: ${msg.slice(0, 120)}`, smtp, f.modoTeste);
           return json({ ok: false, enviado: false, motivo: "parada automatica" });
         }
-        if (destino === "tentar_de_novo") await admin.from("prospeccao_mensagens").update({ tentativas: m.tentativas + 1, erro: msg.slice(0, 300) }).eq("id", m.id);
-        else await admin.from("prospeccao_mensagens").update({ status: "falhou", erro: msg.slice(0, 300) }).eq("id", m.id);
+        if (destino === "destinatario_invalido" && !f.modoTeste) {
+          // SMTP recusou o destinatario na hora: o contato e invalido de verdade. Em modo teste o destinatario e o de teste, entao isso nao se aplica.
+          await admin.from("prospeccao_mensagens").update({ status: "falhou", erro: msg.slice(0, 300), ...soltaId }).eq("id", m.id);
+          await admin.from("prospeccao_contatos").update({ validacao_status: "devolvido", validado_em: agora.toISOString() }).eq("id", c.id);
+          await bloquearSoEmail(c.email, "devolvido");
+          await somarDia(hojeYmd, "devolvidos");
+          await admin.from("prospeccao_mensagens").update({ status: "descartado", erro: "destinatario recusado pelo servidor" }).eq("empresa_id", e.id).in("status", ["rascunho", "aprovado"]);
+          await auditar("prospeccao_destinatario_recusado", { empresa_id: e.id, contato_id: c.id });
+          await logar("enviar", "destinatario_recusado", { empresa_id: e.id, erro: msg });
+          const parada = await avaliarParada(hojeYmd, smtp, f.modoTeste);
+          return json({ ok: false, enviado: false, motivo: "destinatario recusado", parada });
+        }
+        if (destino === "tentar_de_novo") await admin.from("prospeccao_mensagens").update({ tentativas: m.tentativas + 1, erro: msg.slice(0, 300), ...soltaId }).eq("id", m.id);
+        else await admin.from("prospeccao_mensagens").update({ status: "falhou", erro: msg.slice(0, 300), ...soltaId }).eq("id", m.id);
         await logar("enviar", destino === "tentar_de_novo" ? "falha_temporaria" : "falhou", { empresa_id: e.id, erro: msg });
         return json({ ok: false, enviado: false, motivo: destino });
       }

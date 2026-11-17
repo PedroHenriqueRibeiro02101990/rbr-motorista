@@ -9,7 +9,7 @@ import { simpleParser } from "npm:mailparser@3.7.1";
 import { admin, alertarInterno, auditar, autorizado, avaliarParada, enviarEmail, feriados, json, lerFlags, lerSmtp, logar, logarSemRepetir, PAINEL, segredo, somarDia, type Flags, type Smtp } from "../_shared/prospeccaoEdge.ts";
 import {
   avisoDeAbuso, bloqueiosParaEmail, classificarPorRegras, classificarRelevancia, classeQuente, dentroDaJanelaEnvio, dentroDaJanelaLeitura, decidirClassificacao,
-  devolucaoPermanente, emailDeIndicacao, horasUteisEntre, modeloPendente, partesSP, preencherModelo, textoNovo, type CabecalhoMsg, type Classe,
+  devolucaoPermanente, emailDeIndicacao, horasUteisEntre, modeloPendente, partesSP, preencherModelo, respostaAutomaticaPodeSair, textoNovo, type CabecalhoMsg, type Classe,
 } from "../_shared/prospeccaoRegras.ts";
 
 type Orig = { id: string; empresa_id: string; contato_id: string; message_id: string };
@@ -54,6 +54,8 @@ async function pararJornada(empresaId: string) {
 
 async function responder(smtp: Smtp | null, f: Flags, tipo: string, para: string, vars: Record<string, string>, citado?: string) {
   if (!smtp) return false;
+  // Sem a chave geral de envio so sai a confirmacao de descadastro (resp_sair). Alertas internos nao passam por aqui.
+  if (!respostaAutomaticaPodeSair(tipo, f.envio)) { await logarSemRepetir("ler", `resposta_retida_${tipo}`, "chave de envio desligada: resposta automatica nao enviada"); return false; }
   const { data: m } = await admin.from("prospeccao_modelos").select("assunto, corpo, ativo").eq("tipo", tipo).maybeSingle();
   if (!m || modeloPendente(m as { corpo: string; ativo: boolean })) { await logarSemRepetir("ler", `modelo_inativo_${tipo}`, "resposta nao enviada: modelo inativo/A DEFINIR"); return false; }
   const mm = m as { assunto: string; corpo: string };
@@ -81,7 +83,7 @@ Deno.serve(async (req) => {
     const { data: est } = await admin.from("prospeccao_estado").select("imap_uidvalidity, imap_ultimo_uid").eq("id", 1).maybeSingle();
     const estado = est as { imap_uidvalidity: number | null; imap_ultimo_uid: number } | null;
     const desde = new Date(agora.getTime() - 120 * 86_400_000).toISOString();
-    const { data: nossasRaw } = await admin.from("prospeccao_mensagens").select("id, empresa_id, contato_id, message_id").not("message_id", "is", null).gte("enviado_em", desde).limit(5000);
+    const { data: nossasRaw } = await admin.from("prospeccao_mensagens").select("id, empresa_id, contato_id, message_id").not("message_id", "is", null).or(`enviado_em.gte.${desde},criado_em.gte.${desde}`).limit(5000);
     const nossas = new Map<string, Orig>(((nossasRaw ?? []) as Orig[]).map((m) => [limpa(m.message_id), m]));
     const nossosIds = new Set(nossas.keys());
 

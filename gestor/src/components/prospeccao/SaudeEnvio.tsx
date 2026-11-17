@@ -21,6 +21,7 @@ export default function SaudeEnvio() {
   const [flags, setFlags] = useState<Record<string, string>>({})
   const [dias, setDias] = useState<Dia[]>([])
   const [aprovados, setAprovados] = useState(0)
+  const [incertos, setIncertos] = useState<{ id: string; assunto: string; erro: string | null }[]>([])
   const [rampa, setRampa] = useState<Rampa[]>([])
   const [estado, setEstado] = useState<Estado | null>(null)
   const [bloqueios, setBloqueios] = useState<Bloqueio[]>([])
@@ -34,7 +35,7 @@ export default function SaudeEnvio() {
 
   const carregar = useCallback(async () => {
     const desde = new Date(Date.now() - 13 * 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
-    const [fl, d, a, r, e, b, dt, p] = await Promise.all([
+    const [fl, d, a, r, e, b, dt, p, inc] = await Promise.all([
       db.from('parametros_sistema').select('chave, valor').like('chave', 'PROSPECCAO\\_%'),
       db.from('prospeccao_envio_diario').select('*').gte('data', desde).order('data'),
       db.from('prospeccao_mensagens').select('id', { count: 'exact', head: true }).eq('status', 'aprovado'),
@@ -43,7 +44,9 @@ export default function SaudeEnvio() {
       db.from('prospeccao_bloqueio').select('*').order('criado_em', { ascending: false }),
       db.from('prospeccao_destinos_teste').select('email').order('email'),
       db.rpc('prospeccao_eh_pedro'),
+      db.from('prospeccao_mensagens').select('id, assunto, erro').eq('status', 'aprovado').not('message_id', 'is', null).limit(50),
     ])
+    setIncertos((inc.data ?? []) as { id: string; assunto: string; erro: string | null }[])
     setFlags(Object.fromEntries(((fl.data ?? []) as { chave: string; valor: unknown }[]).map((x) => [x.chave, String(x.valor)])))
     setDias((d.data ?? []) as Dia[])
     setAprovados(a.count ?? 0)
@@ -68,6 +71,12 @@ export default function SaudeEnvio() {
     <div className="flex flex-col gap-3">
       {confirmacao}
       {parado && <div className="rounded-xl px-4 py-3 text-sm font-extrabold text-white" style={{ background: '#c0392b' }}>PARADO AUTOMATICAMENTE: {estado?.parada_motivo}. Religue manualmente (digitando LIGAR) só depois de entender o motivo.</div>}
+      {incertos.length > 0 && (
+        <Aviso tipo="atencao">
+          <b>Envio incerto, conferir ({incertos.length}):</b> o robô começou a enviar, mas não confirmou o resultado. Estas mensagens <b>não serão reenviadas sozinhas</b>. Confira na pasta Enviados da caixa e,
+          se o e-mail não saiu, descarte a mensagem na Fila de aprovação e gere de novo. {incertos.slice(0, 5).map((m) => m.assunto).join(' · ')}
+        </Aviso>
+      )}
       <Aviso tipo={aprovObrig ? 'info' : 'atencao'}>
         {aprovObrig ? 'Modo semi-automático: nada sai sem aprovação humana.' : 'MODO TOTALMENTE AUTOMÁTICO: o agente aprova e envia sozinho.'} Remetente: pedro@rbrcargo.com.br
         {teste ? ' · MODO DE TESTE ligado: os e-mails vão só para os destinos de teste.' : ''}
