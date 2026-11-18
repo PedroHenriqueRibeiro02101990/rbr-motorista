@@ -20,6 +20,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 import { tratarCadastro } from "./cadastro.ts";
+import { normalizarTipoVeiculo, sugerirTara } from "../_shared/regrasExternas.ts";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
@@ -40,7 +41,8 @@ estiver legível e não tiver EAR; null se não der pra ler. CPF só com número
 Extraia os campos do schema. CPF só com números (se o documento tiver). Data de nascimento em YYYY-MM-DD. ${COMUM}`,
   crlv: `Você está lendo uma foto de CRLV / CRLV-e (Certificado de Registro e Licenciamento de Veículo) brasileiro.
 Extraia os campos do schema. "exercicio" é o ano do licenciamento (campo EXERCÍCIO). "cpf_cnpj_proprietario" é o CPF ou
-CNPJ do proprietário, só números/letras. Capacidade de carga em quilogramas (número). ${COMUM}`,
+CNPJ do proprietário, só números/letras. Capacidade de carga em quilogramas (número). "especie_tipo" é o texto do campo ESPÉCIE/TIPO
+(ex.: "CARGA SEMI-REBOQUE", "CARGA/CAMINHÃO TRATOR"). "peso_bruto_total" é o PBT em quilogramas (número), se constar. ${COMUM}`,
   cartao_cnpj: `Você está lendo o Comprovante de Inscrição e de Situação Cadastral (Cartão CNPJ) emitido pela Receita Federal.
 Extraia os campos do schema. "cnpj" só com números e letras (o CNPJ pode ser alfanumérico). "situacao_cadastral" como aparece
 (ex: "ATIVA", "BAIXADA", "INAPTA", "SUSPENSA"). "data_emissao" é a data em que o comprovante foi emitido (YYYY-MM-DD). ${COMUM}`,
@@ -169,6 +171,14 @@ const SCHEMAS = {
       },
       cpf_cnpj_proprietario: {
         type: "string",
+        nullable: true
+      },
+      especie_tipo: {
+        type: "string",
+        nullable: true
+      },
+      peso_bruto_total: {
+        type: "number",
         nullable: true
       },
       nome_proprietario: {
@@ -449,10 +459,16 @@ Deno.serve(async (req)=>{
         erro: upErr.message
       }, 500);
     }
+    // CRLV: sugestões derivadas (o gestor confirma): tipo normalizado do veículo e tara = PBT - capacidade de carga.
+    const sugestoes = tipo === "crlv" ? {
+      tipo_veiculo: normalizarTipoVeiculo(campos?.especie_tipo),
+      tara_kg: sugerirTara(campos?.peso_bruto_total, campos?.capacidade_carga)
+    } : undefined;
     return jsonResponse({
       sucesso: true,
       tipo,
       campos,
+      sugestoes,
       gravado: !!doc
     });
   } catch (e) {

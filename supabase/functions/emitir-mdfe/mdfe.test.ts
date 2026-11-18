@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, cepDescarregamentoDe, referenciaMdfe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const RBR = "69115969000104";
 const CHAVE_CTE = "35261069115969000104570010000000011211536013";
@@ -106,9 +106,10 @@ test("cavalo mecânico com carreta: sem bloqueios, tudo dentro de modal_rodoviar
   assert.equal(m.pagamentos[0].forma_pagamento, "1");
 });
 
-test("cavalo sem carreta vinculada bloqueia", () => {
-  const { bloqueios } = montarMdfe(base({ reboques: [] }));
+test("cavalo sem carreta vinculada BLOQUEIA (a SEFAZ rejeitou na OP-0360; decisao de 18/11)", () => {
+  const { bloqueios, avisos } = montarMdfe(base({ reboques: [] }));
   assert.ok(bloqueios.some((b) => b.startsWith("Cavalo mecânico sem reboque")));
+  assert.ok(!avisos.some((a) => a.startsWith("Cavalo mecânico sem reboque")));
 });
 
 test("reboque sem tara/capacidade/carroceria bloqueia", () => {
@@ -138,15 +139,53 @@ test("veículo de terceiro (TAC) leva proprietário com IE e RNTRC de 8 dígitos
   assert.ok(!r.bloqueios.some((b) => b.includes("RNTRC")));
 });
 
-test("homologação: CIOT ausente vira aviso; pagamento sem destino é aviso da RBR e pagamentos é omitido", () => {
+test("homologação: CIOT ausente vira aviso; pagamento sem nenhum destino bloqueia (SEFAZ exige em lotação)", () => {
   const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null } }));
-  assert.deepEqual(r.bloqueios, []);
   assert.ok(r.avisos.some((a) => a.startsWith("Homologação: CIOT não informado")));
-  assert.ok(r.avisos.includes("Destino de pagamento do motorista não definido (regra da RBR). Defina antes de pagar."));
-  assert.equal(r.payload.modal_rodoviario.pagamentos, undefined);
+  assert.deepEqual(r.bloqueios.length, 1);
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Falta o destino de pagamento do frete")));
 });
 
-test("produção: CIOT do TAC ausente bloqueia (ANTT); pagamento sem destino agora só avisa (regra da RBR) e o MDF-e sai sem pagamentos", () => {
+test("pagamento: CIOT da Repom sem destino do motorista deriva o CNPJ da Repom (IPEF) e avisa", () => {
+  const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null }, ciotVpo: { numero_averbacao: "AVB-123", ciot_origem: "rbr_repom" } }));
+  assert.deepEqual(r.bloqueios, []);
+  assert.equal(r.payload.modal_rodoviario.pagamentos[0].cnpj_instituicao_pagamento, "65697260000103");
+  assert.ok(r.avisos.some((a) => a.startsWith("Destino de pagamento preenchido sozinho")));
+});
+
+test("pagamento: IPEF informado (efrete/NSTech) é usado sem aviso de derivação", () => {
+  const r = montarMdfe(base({ tracao: TAC, reboques: [], motorista: { pix: null, banco_codigo: null, banco_agencia: null }, ciotVpo: { numero_averbacao: "AVB-123", ciot_origem: "efrete", pagto_cnpj_ipef: "11.222.333/0001-81" } }));
+  assert.deepEqual(r.bloqueios, []);
+  assert.equal(r.payload.modal_rodoviario.pagamentos[0].cnpj_instituicao_pagamento, "11222333000181");
+});
+
+test("RNTRC: status nunca consultado (NULL) só avisa; status impeditivo da ANTT bloqueia", () => {
+  const b = base();
+  const nulo = montarMdfe({ ...b, op: { ...b.op, veiculo_rntrc_status: null, veiculo_rntrc_ativo: false, motorista_rntrc_status: null, motorista_rntrc_ativo: false } });
+  assert.ok(!nulo.bloqueios.some((x) => x.includes("RNTRC do")));
+  assert.equal(nulo.regras.filter((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.includes("não foi consultado")).length, 2);
+  const cancelado = montarMdfe({ ...b, op: { ...b.op, veiculo_rntrc_status: "cancelado" } });
+  assert.ok(cancelado.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem.startsWith("RNTRC do veículo")));
+  const ok = montarMdfe({ ...b, op: { ...b.op, veiculo_rntrc_status: "ativo", motorista_rntrc_status: "Ativo" } });
+  assert.ok(!ok.regras.some((x) => x.mensagem.includes("RNTRC do")));
+});
+
+test("rodado: carreta no campo de tração dá mensagem clara (troque pelo cavalo e coloque a carreta em reboques)", () => {
+  const r = montarMdfe(base({ tracao: { ...CARRETA, placa: "JAG9B55" }, reboques: [] }));
+  assert.ok(r.bloqueios.includes("O veículo JAG9B55 (Semirreboque) está no campo de tração; troque pelo cavalo e coloque a carreta em reboques."));
+  assert.ok(!r.bloqueios.some((x) => x.startsWith("Não consegui identificar")));
+});
+
+test("apólice ausente só avisa e o MDF-e vai sem seguros_carga; responsavel_seguro fora do padrão assume emitente", () => {
+  const sem = montarMdfe(base({ apolice: null, ciotVpo: null }));
+  assert.ok(!sem.bloqueios.some((x) => x.includes("apólice") || x.includes("averbação")));
+  assert.equal(sem.payload.seguros_carga, undefined);
+  const fora = montarMdfe(base({ apolice: { seguradora_nome: "X", seguradora_cnpj: "11222333000181", numero_apolice: "1", responsavel_seguro: "segurado" } }));
+  assert.ok(fora.regras.some((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.includes("assumido \"emitente\"")));
+  assert.equal(fora.payload.seguros_carga[0].responsavel_seguro, "1");
+});
+
+test("produção: CIOT do TAC ausente bloqueia (ANTT); pagamento sem destino bloqueia (SEFAZ exige em lotação)", () => {
   const b = base();
   const r = montarMdfe({
     ...b,
@@ -157,12 +196,11 @@ test("produção: CIOT do TAC ausente bloqueia (ANTT); pagamento sem destino ago
   });
   assert.ok(r.bloqueios.some((x) => x.startsWith("CIOT não informado")));
   assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem.startsWith("CIOT não informado")));
-  assert.ok(!r.bloqueios.some((x) => x.includes("destino") || x.includes("Pagamento do frete")));
-  assert.ok(r.regras.some((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.startsWith("Destino de pagamento do motorista")));
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Falta o destino de pagamento")));
   assert.equal(r.payload.modal_rodoviario.pagamentos, undefined);
 });
 
-test("C5: produção, operação real com destino de pagamento vazio e CIOT ok: emite (sem bloqueio) com aviso da RBR", () => {
+test("C5: produção, operação real com destino de pagamento vazio e CIOT ok: bloqueia por exigência da SEFAZ (não é regra da RBR)", () => {
   const b = base();
   const r = montarMdfe({
     ...b,
@@ -172,13 +210,11 @@ test("C5: produção, operação real com destino de pagamento vazio e CIOT ok: 
     motorista: { pix: null, banco_codigo: null, banco_agencia: null },
     ciotVpo: { ciot: "123456789012", numero_averbacao: "AVB-123" },
   });
-  assert.deepEqual(r.bloqueios, []);
-  assert.deepEqual(r.regras.filter((x) => x.origem === "rbr").map((x) => x.mensagem), [
-    "Destino de pagamento do motorista não definido (regra da RBR). Defina antes de pagar.",
-  ]);
+  assert.equal(r.bloqueios.length, 1);
+  assert.equal(r.regras.filter((x) => x.origem === "rbr").length, 0);
 });
 
-test("C5: produção sem condição de pagamento (TAC): aviso da RBR, não bloqueio", () => {
+test("C5: produção sem condição de pagamento (TAC): bloqueia por exigência da SEFAZ", () => {
   const b = base();
   const r = montarMdfe({
     ...b,
@@ -188,8 +224,7 @@ test("C5: produção sem condição de pagamento (TAC): aviso da RBR, não bloqu
     condicao: null,
     ciotVpo: { ciot: "123456789012", numero_averbacao: "AVB-123" },
   });
-  assert.deepEqual(r.bloqueios, []);
-  assert.ok(r.avisos.includes("Condição de pagamento do motorista não definida (regra da RBR). Defina antes de pagar."));
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Falta o valor do contrato de frete")));
 });
 
 for (const [nome, ajuste] of [
@@ -432,4 +467,63 @@ test("operacao manual: vale-pedagio e CIOT vem de operacao_ciot_vpo; payload nao
 test("grupo ciot entra no payload a partir de 23/11/2026 (12 digitos); antes dessa data o CIOT continua opcional para frota propria", () => {
   assert.equal(ciotObrigatorioNoMdfe(new Date("2026-11-22T12:00:00Z")), false);
   assert.equal(ciotObrigatorioNoMdfe(new Date("2026-11-23T12:00:00Z")), true);
+});
+
+// ---- Parte C (18/11/2026): um teste por erro do historico de 16 e 17/11 ----
+const CIOT_REPOM = { ciot: "520048038432", ciot_verificador: "1483", ciot_origem: "rbr_repom", ciot_ambiente: "producao", numero_averbacao: "AVB-123", pagto_cnpj_ipef: "65697260000103" };
+const prodRepom = (s: Partial<DadosMdfe> = {}) => {
+  const b = base();
+  return base({ op: { ...b.op, ambiente_fiscal: "producao" }, tracao: { ...CAVALO, is_veiculo_proprio: false, titular: { nome: "Fulano", cpf: "12345678909", cnpj: null, inscricao_estadual: null, uf: "SP", rntrc_numero: "87654321" } }, ciotVpo: CIOT_REPOM, ...s });
+};
+
+test("etapa 17: CIOT rbr_repom paga pela IPEF da Repom mesmo com Pix cadastrado no motorista", () => {
+  const r = montarMdfe(prodRepom({ motorista: { pix: "chave-pix-do-motorista", banco_codigo: null, banco_agencia: null } }));
+  const pag = r.payload.modal_rodoviario.pagamentos[0];
+  assert.equal(pag.cnpj_instituicao_pagamento, "65697260000103");
+  assert.equal(pag.pix, undefined);
+  assert.ok(!r.avisos.some((a) => /Destino de pagamento do motorista nao definido|Destino de pagamento do motorista não definido/.test(a)));
+});
+test("etapa 17: outras origens de CIOT mantem pix > banco > IPEF", () => {
+  const r = montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot_origem: "parceiro", pagto_cnpj_ipef: "65697260000103" }, motorista: { pix: "chave", banco_codigo: null, banco_agencia: null } }));
+  assert.equal(r.payload.modal_rodoviario.pagamentos[0].pix, "chave");
+});
+test("etapa 18: CEP de descarregamento e o do destinatario da NF-e, nao o do tomador (OP-3ec3: 35180018; OP-0360: 65285000)", () => {
+  assert.equal(cepDescarregamentoDe("11222333000181", { cep: "35180-018" }, "99888777000166", "13295274"), "35180018");
+  assert.equal(cepDescarregamentoDe("11222333000181", { cep: "65285000" }, "99888777000166", "13295274"), "65285000");
+  assert.equal(cepDescarregamentoDe("99888777000166", {}, "99888777000166", "13295-274"), "13295274"); // destinatario = o proprio cliente
+  assert.equal(cepDescarregamentoDe("11222333000181", {}, "99888777000166", "13295274"), null); // nao cai no CEP do tomador
+});
+test("etapa 19: nao envia tipo_vale_pedagio; categoria pelos eixos (cavalo 3 + carreta 3 = 08)", () => {
+  const t3 = { ...prodRepom().tracao!, quantidade_eixos: 3 };
+  const r = montarMdfe(prodRepom({ tracao: t3, ciotVpo: { ...CIOT_REPOM, vpo_idvpo: "96670000000000000001", vpo_valor: 236.27, vpo_cnpj_fornecedora: "11222333000181", vpo_tipo: "01" }, cotacao: { ...base().cotacao, pedagio: 236.27 } }));
+  const vale = r.payload.modal_rodoviario.dispositivos_vale_pedagio[0];
+  assert.equal(vale.tipo_vale_pedagio, undefined); assert.equal(vale.categoria_combinacao_veicular, "08");
+});
+test("etapa 20 (OP-0360): CIOT de 16 digitos gravado vira 12 no payload com aviso, e o grupo de pagamento sai sem tipo_vale_pedagio", () => {
+  const r = montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot: "5200480384321483", ciot_verificador: null } }));
+  assert.equal(r.payload.modal_rodoviario.ciot[0].ciot, "520048038432");
+  assert.ok(r.avisos.some((a) => /16 digitos/.test(a)));
+  assert.ok(r.payload.modal_rodoviario.pagamentos.length === 1);
+});
+test("etapa 20: CIOT com tamanho errado bloqueia (nunca some em silencio); contrato Repom sem CIOT bloqueia; refazer avisa; homologacao bloqueia", () => {
+  assert.ok(montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot: "12345" } })).bloqueios.some((b) => /CIOT com 5 digitos/.test(b)));
+  assert.ok(montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot: null } })).bloqueios.some((b) => /CIOT/.test(b)));
+  assert.ok(montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot_status: "refazer_troca_veiculo" } })).avisos.some((a) => /refazer/.test(a)));
+});
+test("etapa 21: carreta cadastrada como e_reboque=false e cavalo sem carreta: cavalo sem reboque bloqueia com instrucao de vincular", () => {
+  const r = montarMdfe(prodRepom({ reboques: [] }));
+  assert.ok(r.bloqueios.some((b) => /Vincule a carreta/.test(b)));
+});
+test("etapa 22: aviso (nao bloqueio) quando tara do conjunto + carga passa do CMT do CRLV do cavalo", () => {
+  const b = base();
+  const r = montarMdfe(base({ tracao: { ...CAVALO, cmt_kg: 20000 }, cotacao: { ...b.cotacao, peso_bruto_kg: 30000 } }));
+  assert.ok(r.avisos.some((a) => /passa do CMT/.test(a))); assert.ok(!r.bloqueios.some((x) => /CMT/.test(x)));
+});
+
+test("etapa 19: referencia nova da Focus a cada reemissao; pendente e emitido mantem a gravada", () => {
+  assert.equal(referenciaMdfe("op1", null), "rbr-mdfe-op1");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1", status: "erro" }), "rbr-mdfe-op1-r2");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1-r2", status: "erro" }), "rbr-mdfe-op1-r3");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1-r2", status: "pendente" }), "rbr-mdfe-op1-r2");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1", status: "emitido" }), "rbr-mdfe-op1");
 });

@@ -2,6 +2,7 @@ import { Obrig } from '@rbr/shared/camposObrigatorios'
 import RegrasFiscais, { type RegraFiscal } from './RegrasFiscais'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
+import { separarCiotDigitado } from '@rbr/shared/ciot'
 import { formatMoney } from '@rbr/shared/format'
 import PreVoo from './PreVoo'
 import AvisoJanelaEmissao from './AvisoJanelaEmissao'
@@ -115,7 +116,7 @@ const CAMPOS_MDFE: Campo[] = [
   },
   { grupo: 'Percurso', label: 'Carregamento', origem: 'Cotação', valor: (p) => (p.municipios_carregamento?.[0]?.nome ? `${p.municipios_carregamento[0].nome}/${p.uf_inicio}` : null) },
   { grupo: 'Percurso', label: 'Descarregamento', origem: 'Cotação', valor: (p) => (p.municipios_descarregamento?.[0]?.nome ? `${p.municipios_descarregamento[0].nome}/${p.uf_fim}` : null) },
-  { grupo: 'CT-e vinculado', label: 'Chave do CT-e autorizado', caminho: 'conhecimentos_transporte.0.chave_cte', origem: 'CT-e já autorizado' },
+  { grupo: 'CT-e vinculado', label: 'Chave do CT-e autorizado', caminho: 'municipios_descarregamento.0.conhecimentos_transporte.0.chave_cte', origem: 'CT-e já autorizado' },
   { grupo: 'Carga', label: 'Tipo de carga', caminho: 'tipo_carga', origem: 'Cotação' },
   { grupo: 'Carga', label: 'Produto predominante', caminho: 'descricao_produto', origem: 'Cotação — aba NF-e' },
   { grupo: 'Carga', label: 'NCM', caminho: 'codigo_ncm_produto', origem: 'Cotação — aba NF-e', opcional: true },
@@ -419,7 +420,8 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
     const { error } = await supabase.from('operacao_ciot_vpo').upsert(
       {
         operacao_id: operacaoId,
-        ciot: digitos(ciot) || null,
+        ciot: separarCiotDigitado(ciot)?.ciot ?? (digitos(ciot) || null),
+        ...(separarCiotDigitado(ciot)?.verificador ? { ciot_verificador: separarCiotDigitado(ciot)!.verificador } : {}),
         vpo_idvpo: digitos(idvpo) || null,
         vpo_valor: valor ? Number(valor.replace(',', '.')) : null,
         vpo_cnpj_fornecedora: digitos(cnpjForn) || null,
@@ -448,7 +450,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
       </div>
       <div className="p-3 grid gap-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
-          <span>CIOT (12 dígitos)<Obrig entidade="operacao_ciot_vpo" campo="ciot" /></span>
+          <span>CIOT (12 ou 16 dígitos)<Obrig entidade="operacao_ciot_vpo" campo="ciot" /></span>
           <input className={campo} style={estilo} value={ciot} onChange={(e) => setCiot(e.target.value)} inputMode="numeric" />
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">

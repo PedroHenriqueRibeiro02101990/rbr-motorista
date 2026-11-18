@@ -302,11 +302,13 @@ test("frete na mesma cidade continua indo para NFS-e", () => {
 
 test("C1: cada bloqueio do CT-e sai em regras com a origem (RNTRC = ANTT, chave da NF-e = SEFAZ)", () => {
   const b = base();
-  const r = montarCte({ ...b, op: { ...b.op, veiculo_rntrc_ativo: false, nf_chave_acesso: null } });
-  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem === "RNTRC do veículo não está ativo."));
+  const r = montarCte({ ...b, op: { ...b.op, veiculo_rntrc_status: "cancelado", motorista_rntrc_status: null, nf_chave_acesso: null } });
+  assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "antt" && x.mensagem.startsWith("RNTRC do veículo consta como")));
   assert.ok(r.regras.some((x) => x.tipo === "bloqueio" && x.origem === "sefaz" && x.mensagem.startsWith("Cotação sem chave de acesso da NF-e")));
   assert.equal(r.regras.filter((x) => x.tipo === "bloqueio").length, r.bloqueios.length);
-  assert.ok(!r.regras.some((x) => x.origem === "rbr"));
+  // motorista nunca consultado: só aviso da RBR, não bloqueio
+  assert.ok(r.regras.some((x) => x.tipo === "aviso" && x.origem === "rbr" && x.mensagem.startsWith("RNTRC do motorista ainda não foi consultado")));
+  assert.ok(!r.bloqueios.some((x) => x.includes("RNTRC do motorista")));
 });
 
 // ---- Passo 4: NF-e do CLIENTE na operação (operacao_nfes) ---------------------------------------------
