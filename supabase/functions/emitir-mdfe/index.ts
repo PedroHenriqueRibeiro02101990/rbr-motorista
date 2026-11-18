@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     const camposVeiculo =
-      "placa, renavam, tara_kg, capacidade_carga, tipo_veiculo, tipo_carroceria, uf_licenciamento, titular_id, is_veiculo_proprio, quantidade_eixos";
+      "placa, renavam, tara_kg, capacidade_carga, tipo_veiculo, tipo_carroceria, uf_licenciamento, titular_id, is_veiculo_proprio, quantidade_eixos, e_reboque";
     // deno-lint-ignore no-explicit-any
     async function carregarVeiculo(v: Record<string, any> | null): Promise<VeiculoMdfe | null> {
       if (!v) return null;
@@ -113,7 +113,13 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         titular = t;
       }
-      return { ...v, titular } as VeiculoMdfe;
+      // PBT do CRLV (coluna da migracao 20261118-0100): leitura defensiva; se a coluna ainda nao existe, segue sem ela.
+      let pbt_kg: number | null = null;
+      try {
+        const { data: x, error: ex } = await supabaseAdmin.from("veiculos").select("pbt_kg").eq("placa", v.placa).maybeSingle();
+        if (!ex && x && typeof x.pbt_kg === "number") pbt_kg = x.pbt_kg;
+      } catch (_e) { /* coluna ausente: ignora */ }
+      return { ...v, pbt_kg, titular } as VeiculoMdfe;
     }
 
     let tracao: VeiculoMdfe | null = null;
