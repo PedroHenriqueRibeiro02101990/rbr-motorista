@@ -19,6 +19,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
+import { tratarCadastro } from "./cadastro.ts";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
@@ -288,7 +289,10 @@ Deno.serve(async (req)=>{
       }
     });
   try {
-    const { tipo, path, documento_id } = await req.json();
+    const corpo = await req.json();
+    // Modo novo (cadastro por documentos / CIOT e VPO): varios arquivos, classificacao e confianca por campo. O fluxo antigo abaixo nao muda.
+    if (corpo?.modo === "cadastro") return await tratarCadastro(req, corpo, jsonResponse);
+    const { tipo, path, documento_id } = corpo;
     if (!PROMPTS[tipo]) {
       return jsonResponse({
         sucesso: false,
