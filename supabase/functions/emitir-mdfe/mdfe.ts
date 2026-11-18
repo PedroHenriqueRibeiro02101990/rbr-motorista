@@ -18,6 +18,7 @@
 
 // deno-lint-ignore no-explicit-any
 import { ciotObrigatorioNoMdfe } from "../_shared/prazos.ts";
+import { categoriaCombinacao } from "../_shared/combinacaoVeicular.ts";
 import { MENSAGEM_TARA_NAO_ENCONTRADA, resolverTara } from "../_shared/tara-aproximada.ts";
 
 type Linha = Record<string, any>;
@@ -217,10 +218,8 @@ export function mapearTipoCarga(texto: string | null | undefined): string | null
   return null;
 }
 
-export function categoriaCombinacao(eixos: number | null | undefined): string | null {
-  const mapa: Record<number, string> = { 2: "02", 3: "04", 4: "06", 5: "07", 6: "08", 7: "10", 8: "11" };
-  return eixos != null ? (mapa[eixos] ?? null) : null;
-}
+// Mapa unico em _shared/combinacaoVeicular.ts (inclui 9, 10 e acima de 10 eixos).
+export { categoriaCombinacao };
 
 function mapearResponsavelSeguro(texto: string | null | undefined): string | null {
   const t = (texto ?? "").toLowerCase();
