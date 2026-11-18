@@ -18,7 +18,7 @@ import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/ope
 import NfesCliente from '../components/operacao/NfesCliente'
 import CiotEfrete from '../components/operacao/CiotEfrete'
 import CartaoVpo from '../components/operacao/CartaoVpo'
-import EsteiraV3 from '../components/operacao/EsteiraV3'
+import FiscalV3Painel from '../components/operacao/FiscalV3Painel'
 import CartaoFiscalManual from '../components/operacao/CartaoFiscalManual'
 import { FISCAL_V3_HABILITADO } from '../lib/fiscalV3'
 import DemoFiscal from '../components/operacao/DemoFiscal'
@@ -744,6 +744,33 @@ export default function Fiscal() {
       // Aba Fiscal v3 (flag desligada por padrao): operacao REAL com CIOT/VPO manuais mostra so o cartao manual; DEMO e teste ficam como estao.
       const fiscalManualV3 = FISCAL_V3_HABILITADO && !modoDemonstracaoAtivo(op, docs) && op.eh_teste !== true
       const ofereceNfse = tipoDoc === 'nfse'
+
+      // Aba Fiscal v3 igual a previa aprovada: 4 cartoes clicaveis e uma visao por cartao. Mesmas rotinas de emitir/cancelar/evento da tela (so o desenho muda).
+      if (fiscalManualV3 && ofereceCteMdfe) {
+        return (
+          <div key={op.id} className="bg-white border rounded-[20px] p-[18px]" style={cardStyle}>
+            <FiscalV3Painel
+              operacaoId={op.id}
+              status={op.status as string}
+              entregueEm={op.entregue_em ?? null}
+              clienteNome={op.clienteNome ?? null}
+              valorTotal={op.valorTotal ?? null}
+              cidadeOrigem={op.cidadeOrigem} ufOrigem={op.ufOrigem} cidadeDestino={op.cidadeDestino} ufDestino={op.ufDestino}
+              rcv={rcvPorOperacao.get(op.id) ?? null}
+              respostaAverba={respostaAverba[op.id]}
+              ocupado={(chave) => emAndamento.has(chave)}
+              onEmitir={(tipo) => setConferencia({ op, tipo })}
+              onCancelar={(tipo, ambiente, chave) => setCancelamento({ op, tipo, ambiente: (ambiente ?? 'producao') as never, chave })}
+              onCartaCorrecao={() => setEvento({ op, acao: 'carta_correcao_cte' })}
+              onTrocarCondutor={() => setEvento({ op, acao: 'incluir_condutor_mdfe' })}
+              onAverbar={() => void averbarCte(op)}
+              onVerRespostaAverba={() => void verRespostaAverba(op)}
+              onMudou={() => void carregarDocumentos([op.id])}
+              onDevolvida={() => void load()}
+            />
+          </div>
+        )
+      }
 
       const chaveCte = `${op.id}:cte`
       const chaveMdfe = `${op.id}:mdfe`
@@ -1657,15 +1684,9 @@ export default function Fiscal() {
             {renderCard(
               opAberta,
               <>
-                {FISCAL_V3_HABILITADO && !modoDemonstracaoAtivo(opAberta, docsPorOperacao.get(opAberta.id)) && opAberta.eh_teste !== true ? (
-                  <EsteiraV3 operacaoId={opAberta.id} status={opAberta.status as string} onDevolvida={() => void load()} />
-                ) : (
-                  <>
-                    <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
-                    <DesfazerEPrazos />
-                    <TrocaMotoristaVeiculo />
-                  </>
-                )}
+                <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
+                <DesfazerEPrazos />
+                <TrocaMotoristaVeiculo />
               </>,
             )}
           </Fragment>

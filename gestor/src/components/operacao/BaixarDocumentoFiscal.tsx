@@ -37,6 +37,23 @@ function salvarArquivo(blob: Blob, nome: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
+// Mesmo download, usado tambem pela aba Fiscal v3. Devolve a mensagem de erro (ou null quando baixou).
+export async function baixarArquivoFiscal(operacaoId: string, tipo: TipoDocumentoBaixavel, chave: string | null, formato: Formato): Promise<string | null> {
+  try {
+    const { data, error, response } = await supabase.functions.invoke<Blob | string>('baixar-documento-fiscal', {
+      body: { operacao_id: operacaoId, tipo, formato },
+    })
+    if (error || data == null) return error ? await extrairErro(error) : 'A função não devolveu o arquivo.'
+    const mime = formato === 'pdf' ? 'application/pdf' : 'application/xml'
+    const blob = data instanceof Blob ? data : new Blob([String(data)], { type: mime })
+    const nome = nomeDoHeader(response) ?? `${ROTULO_ARQUIVO[tipo]}-${(chave ?? '').replace(/\D/g, '') || operacaoId}.${formato}`
+    salvarArquivo(blob, nome)
+    return null
+  } catch (e) {
+    return mensagemClara(e, 'Não consegui baixar o arquivo agora. Tente de novo.')
+  }
+}
+
 export default function BaixarDocumentoFiscal({
   operacaoId,
   tipo,
@@ -52,24 +69,9 @@ export default function BaixarDocumentoFiscal({
   async function baixar(formato: Formato) {
     setBaixando(formato)
     setErro(null)
-    try {
-      const { data, error, response } = await supabase.functions.invoke<Blob | string>('baixar-documento-fiscal', {
-        body: { operacao_id: operacaoId, tipo, formato },
-      })
-      if (error || data == null) {
-        setErro(error ? await extrairErro(error) : 'A função não devolveu o arquivo.')
-        return
-      }
-      const mime = formato === 'pdf' ? 'application/pdf' : 'application/xml'
-      const blob = data instanceof Blob ? data : new Blob([String(data)], { type: mime })
-      const nome =
-        nomeDoHeader(response) ?? `${ROTULO_ARQUIVO[tipo]}-${(chave ?? '').replace(/\D/g, '') || operacaoId}.${formato}`
-      salvarArquivo(blob, nome)
-    } catch (e) {
-      setErro(mensagemClara(e, 'Não consegui baixar o arquivo agora. Tente de novo.'))
-    } finally {
-      setBaixando(null)
-    }
+    const msg = await baixarArquivoFiscal(operacaoId, tipo, chave, formato)
+    if (msg) setErro(msg)
+    setBaixando(null)
   }
 
   return (
