@@ -18,6 +18,9 @@ import ConferenciaEmissaoModal, { type TipoConferencia } from '../components/ope
 import NfesCliente from '../components/operacao/NfesCliente'
 import CiotEfrete from '../components/operacao/CiotEfrete'
 import CartaoVpo from '../components/operacao/CartaoVpo'
+import EsteiraV3 from '../components/operacao/EsteiraV3'
+import CartaoFiscalManual from '../components/operacao/CartaoFiscalManual'
+import { FISCAL_V3_HABILITADO } from '../lib/fiscalV3'
 import DemoFiscal from '../components/operacao/DemoFiscal'
 import { modoDemonstracaoAtivo } from '../lib/modoDemonstracao'
 import EventoFiscalModal, { type AcaoEventoFiscal } from '../components/operacao/EventoFiscalModal'
@@ -738,6 +741,8 @@ export default function Fiscal() {
       // Tarefa 6: só o botão do documento detectado pela origem/destino (IBGE).
       const tipoDoc = op.tipo_documento_cliente
       const ofereceCteMdfe = tipoDoc === 'cte_mdfe'
+      // Aba Fiscal v3 (flag desligada por padrao): operacao REAL com CIOT/VPO manuais mostra so o cartao manual; DEMO e teste ficam como estao.
+      const fiscalManualV3 = FISCAL_V3_HABILITADO && !modoDemonstracaoAtivo(op, docs) && op.eh_teste !== true
       const ofereceNfse = tipoDoc === 'nfse'
 
       const chaveCte = `${op.id}:cte`
@@ -1308,9 +1313,11 @@ export default function Fiscal() {
           )}
 
           {ofereceCteMdfe && <NfesCliente operacaoId={op.id} />}
-          {ofereceCteMdfe && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs.map((d) => ({ tipo: d.tipo, status: d.status }))} />}
-          {ofereceCteMdfe && <CartaoVpo operacaoId={op.id} ehTeste={op.eh_teste === true} />}
+          {ofereceCteMdfe && fiscalManualV3 && <CartaoFiscalManual operacaoId={op.id} onMudou={() => void carregarDocumentos([op.id])} />}
+          {ofereceCteMdfe && !fiscalManualV3 && <CiotEfrete operacaoId={op.id} ehTeste={op.eh_teste === true} docs={docs.map((d) => ({ tipo: d.tipo, status: d.status }))} />}
+          {ofereceCteMdfe && !fiscalManualV3 && <CartaoVpo operacaoId={op.id} ehTeste={op.eh_teste === true} />}
 
+          {fiscalManualV3 && <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>ACOES FISCAIS</div>}
           <div className="flex gap-2 flex-wrap">
             {ofereceCteMdfe && (
             <button
@@ -1407,7 +1414,7 @@ export default function Fiscal() {
               </button>
             )}
             {/* A função só cancela a NF-e de teste da RBR (ref rbr-nfe-teste-/rbr-nfe-prod-<cotação>), no ambiente atual. */}
-            {ambienteFiscal && op.nfChaveAcesso && (
+            {ambienteFiscal && op.nfChaveAcesso && !fiscalManualV3 && (
               <button
                 onClick={() =>
                   setCancelamento({ op, tipo: 'nfe', ambiente: ambienteFiscal, chave: op.nfChaveAcesso ?? null })
@@ -1650,9 +1657,15 @@ export default function Fiscal() {
             {renderCard(
               opAberta,
               <>
-                <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
-                <DesfazerEPrazos />
-                <TrocaMotoristaVeiculo />
+                {FISCAL_V3_HABILITADO && !modoDemonstracaoAtivo(opAberta, docsPorOperacao.get(opAberta.id)) && opAberta.eh_teste !== true ? (
+                  <EsteiraV3 operacaoId={opAberta.id} status={opAberta.status as string} onDevolvida={() => void load()} />
+                ) : (
+                  <>
+                    <EsteiraEmissao operacaoId={opAberta.id} status={opAberta.status as string} docs={docsPorOperacao.get(opAberta.id) ?? []} onDevolvida={() => void load()} />
+                    <DesfazerEPrazos />
+                    <TrocaMotoristaVeiculo />
+                  </>
+                )}
               </>,
             )}
           </Fragment>
