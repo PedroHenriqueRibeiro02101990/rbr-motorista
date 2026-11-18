@@ -1,4 +1,6 @@
 import BotaoLinkAceite from '../components/cotacao/BotaoLinkAceite'
+import CampoMoeda from '../components/campos/CampoMoeda'
+import CampoPeso from '../components/campos/CampoPeso'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, DragEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -3066,9 +3068,7 @@ export default function Cotacao() {
 
             <div>
               <label className={labelClass}>Valor da mercadoria (R$)<Obrig entidade="cotacoes" campo="valor_nf" /></label>
-              <input
-                type="number"
-                min={0}
+              <CampoMoeda
                 value={form.valor_nf}
                 onChange={(e) => setForm((f) => (f ? { ...f, valor_nf: e.target.value } : f))}
                 placeholder="sem XML — digite"
@@ -3540,10 +3540,7 @@ export default function Cotacao() {
                             Pedágio (R$)
                           </label>
                         </div>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
+                        <CampoMoeda
                           value={d.pedagio}
                           onChange={(e) => editarDestino(d.key, 'pedagio', e.target.value)}
                           className={inputClass}
@@ -3564,10 +3561,7 @@ export default function Cotacao() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       <div>
                         <label className={labelClass}>Frete motorista (R$)</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
+                        <CampoMoeda
                           value={d.frete_motorista}
                           onChange={(e) => editarDestino(d.key, 'frete_motorista', e.target.value)}
                           className={inputClass}
@@ -3646,8 +3640,7 @@ export default function Cotacao() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>Peso bruto (kg)<Obrig entidade="cotacoes" campo="peso_bruto_kg" /></label>
-                <input
-                  type="number"
+                <CampoPeso rotulo="Peso bruto"
                   value={form.peso_bruto_kg}
                   onChange={(e) => setForm((f) => (f ? { ...f, peso_bruto_kg: e.target.value } : f))}
                   className={inputClass}
@@ -3980,10 +3973,7 @@ export default function Cotacao() {
                   </label>
                   {pracasPedagio.length > 0 && <span style={badgeCalculadoStyle}>calculado</span>}
                 </div>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                <CampoMoeda
                   value={form.pedagio}
                   disabled={pracasPedagio.length > 0}
                   onChange={(e) => setForm((f) => (f ? { ...f, pedagio: e.target.value } : f))}
@@ -4015,10 +4005,7 @@ export default function Cotacao() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>Frete do motorista (R$) *</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                <CampoMoeda
                   value={form.valor_frete_motorista}
                   onChange={(e) => setForm((f) => (f ? { ...f, valor_frete_motorista: e.target.value } : f))}
                   className={inputClass}

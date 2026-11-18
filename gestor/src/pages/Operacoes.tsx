@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import CampoPeso from '../components/campos/CampoPeso'
 import { Link, useSearchParams } from 'react-router-dom'
 import { mensagemClara } from '../lib/mensagemClara'
 import { supabase } from '@rbr/shared/supabaseClient'
@@ -1247,9 +1248,8 @@ export default function Operacoes({ gestor }: { gestor: Pessoa }) {
                                 className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"
                                 style={{ borderColor: 'var(--rbr-border)' }}
                               />
-                              <input
+                              <CampoPeso rotulo="Tara"
                                 placeholder="Tara (kg)"
-                                type="number"
                                 defaultValue={veiculo.tara_kg ?? ''}
                                 onChange={(e) => setVeiculoForm((f) => ({ ...f, tara_kg: e.target.value }))}
                                 className="border rounded-lg px-2.5 py-1.5 text-xs outline-none"

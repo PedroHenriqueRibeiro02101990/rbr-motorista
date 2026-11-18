@@ -18,6 +18,7 @@
 
 // deno-lint-ignore no-explicit-any
 import { ciotObrigatorioNoMdfe } from "../_shared/prazos.ts";
+import { MENSAGEM_TARA_NAO_ENCONTRADA, resolverTara } from "../_shared/tara-aproximada.ts";
 
 type Linha = Record<string, any>;
 
@@ -45,6 +46,9 @@ export interface VeiculoMdfe {
   uf_licenciamento: string | null;
   is_veiculo_proprio: boolean | null;
   quantidade_eixos: number | null;
+  // Opcionais (cadastro por documentos, 18/11/2026): ausentes em cadastro antigo ou antes da migracao; tratados como vazios.
+  e_reboque?: boolean | null;
+  pbt_kg?: number | string | null;
   titular: {
     nome: string | null;
     cpf: string | null;
@@ -241,6 +245,31 @@ function inteiro(v: unknown): number | null {
   return v != null && v !== "" && Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+// Tara e capacidade para o MDF-e (regra G3, 18/11/2026): tres niveis, sem reescrever o cadastro.
+// Capacidade menor que 100 e tratada como toneladas e multiplicada por 1000 SO no payload, com aviso.
+function pesosParaMdfe(
+  v: VeiculoMdfe,
+  rotulo: string,
+  aviso: (origem: OrigemRegra, mensagem: string) => void,
+  bloqueio: Bloquear,
+  capacidadeObrigatoria: boolean,
+): { tara: number | null; capacidade: number | null } {
+  const cap0 = inteiro(v.capacidade_carga);
+  let capacidade = cap0;
+  if (cap0 !== null && cap0 < 100) {
+    capacidade = Math.round(Number(v.capacidade_carga) * 1000);
+    aviso("rbr", `${rotulo}: capacidade ${v.capacidade_carga} parece estar em toneladas; enviada como ${capacidade} kg (cadastro nao alterado).`);
+  }
+  const r = resolverTara(
+    { tipo_veiculo: v.tipo_veiculo, tipo_carroceria: v.tipo_carroceria, e_reboque: v.e_reboque ?? null, quantidade_eixos: v.quantidade_eixos, tara_kg: v.tara_kg },
+    { pbt_kg: inteiro(v.pbt_kg), capacidade_kg: capacidade },
+  );
+  if (r.aviso) aviso("rbr", `${rotulo}: ${r.aviso}.`);
+  if (r.valor === null) bloqueio("sefaz", `${rotulo}: sem tara (kg) cadastrada. ${MENSAGEM_TARA_NAO_ENCONTRADA}.`);
+  if (capacidadeObrigatoria && capacidade === null) bloqueio("sefaz", `${rotulo}: sem capacidade (kg) cadastrada.`);
+  return { tara: r.valor, capacidade };
+}
+
 // Proprietario: so quando o veiculo NAO e da frota da RBR. tpProp: 1 = TAC independente (PF), 2 = outros (PJ).
 function proprietario(v: VeiculoMdfe, rotulo: string, bloqueio: Bloquear) {
   if (v.is_veiculo_proprio) return null;
@@ -299,8 +328,9 @@ export function montarMdfe(
   let tipoRodado: string | null = null;
   let carroceriaTracao: string | null = null;
   let propTracao: ReturnType<typeof proprietario> = null;
+  let pesosTracao: { tara: number | null; capacidade: number | null } = { tara: null, capacidade: null };
   if (v) {
-    if (!inteiro(v.tara_kg)) bloqueio("sefaz", "Veículo de tração sem tara (kg) cadastrada — obrigatória no MDF-e.");
+    pesosTracao = pesosParaMdfe(v, "Veículo de tração", aviso, bloqueio, false);
     if (!v.uf_licenciamento) bloqueio("sefaz", "Veículo de tração sem UF de licenciamento cadastrada.");
     tipoRodado = mapearTipoRodado(v.tipo_veiculo);
     if (!tipoRodado) {
@@ -320,8 +350,7 @@ export function montarMdfe(
   const veiculosReboque = d.reboques.slice(0, 3).map((r, i) => {
     const rotulo = `Reboque ${i + 1} (${r.placa ?? "sem placa"})`;
     if (!r.placa) bloqueio("sefaz", `${rotulo}: sem placa.`);
-    if (!inteiro(r.tara_kg)) bloqueio("sefaz", `${rotulo}: sem tara (kg) cadastrada.`);
-    if (!inteiro(r.capacidade_carga)) bloqueio("sefaz", `${rotulo}: sem capacidade (kg) cadastrada.`);
+    const pesos = pesosParaMdfe({ ...r, e_reboque: true }, rotulo, aviso, bloqueio, true);
     if (!r.uf_licenciamento) bloqueio("sefaz", `${rotulo}: sem UF de licenciamento.`);
     const carroceria = mapearTipoCarroceria(r.tipo_carroceria);
     if (!carroceria) bloqueio("sefaz", `${rotulo}: tipo de carroceria não reconhecido ("${r.tipo_carroceria ?? "vazio"}").`);
@@ -329,8 +358,8 @@ export function montarMdfe(
     return {
       placa: r.placa,
       renavam: digitos(r.renavam) || undefined,
-      tara: inteiro(r.tara_kg),
-      capacidade_kg: inteiro(r.capacidade_carga),
+      tara: pesos.tara,
+      capacidade_kg: pesos.capacidade,
       ...(prop
         ? {
           [prop.doc.tipo === "cnpj" ? "cnpj_proprietario" : "cpf_proprietario"]: prop.doc.valor,
@@ -587,8 +616,8 @@ export function montarMdfe(
 
       placa_veiculo: v?.placa,
       renavam_veiculo: digitos(v?.renavam) || undefined,
-      tara_veiculo: inteiro(v?.tara_kg),
-      capacidade_kg_veiculo: inteiro(v?.capacidade_carga) ?? undefined,
+      tara_veiculo: pesosTracao.tara,
+      capacidade_kg_veiculo: pesosTracao.capacidade ?? undefined,
       ...(propTracao
         ? {
           [propTracao.doc.tipo === "cnpj" ? "cnpj_proprietario_veiculo" : "cpf_proprietario_veiculo"]: propTracao.doc.valor,

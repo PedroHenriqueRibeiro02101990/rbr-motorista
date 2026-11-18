@@ -385,3 +385,31 @@ test("CIOT: com 12 dígitos vai no MDF-e; sem ele, veículo de TAC em produção
   const curto = montarMdfe(base({ tracao: { ...CAVALO, is_veiculo_proprio: false }, ciotVpo: { ciot: "12345", ciot_ambiente: "producao", numero_averbacao: "AVB-123" } }));
   assert.equal(curto.payload.modal_rodoviario.ciot, undefined);
 });
+
+// ---- Etapa 6b (18/11/2026): tara em tres niveis no emissor, sem reescrever o cadastro ----
+test("tara absurda (25.5) do cavalo de 3 eixos: usa a aproximada 9.500 com aviso, nao bloqueia, e o cadastro fica como esta", () => {
+  const cavalo = { ...CAVALO, tara_kg: 25.5, quantidade_eixos: 3 };
+  const r = montarMdfe(base({ tracao: cavalo, reboques: [CARRETA] }));
+  assert.equal(r.payload.modal_rodoviario.tara_veiculo, 9500);
+  assert.ok(r.avisos.some((a) => /Veículo de tração: .*ignorada/.test(a) && /aproximada/.test(a)));
+  assert.ok(!r.bloqueios.some((b) => /tara/.test(b)));
+  assert.equal(cavalo.tara_kg, 25.5);
+});
+test("carreta com tara 9.8 e CRLV (PBT 25500, capacidade 16330): usa a derivada 9.170", () => {
+  const car = { ...CARRETA, tara_kg: 9.8, capacidade_carga: 16330, e_reboque: true, pbt_kg: 25500 };
+  const r = montarMdfe(base({ reboques: [car] }));
+  assert.equal(r.payload.modal_rodoviario.veiculos_reboque[0].tara, 9170);
+  assert.ok(r.avisos.some((a) => /derivada do CRLV/.test(a)));
+});
+test("capacidade em toneladas (25.5) vai como 25.500 kg so no payload, com aviso", () => {
+  const car = { ...CARRETA, capacidade_carga: 25.5 };
+  const r = montarMdfe(base({ reboques: [car] }));
+  assert.equal(r.payload.modal_rodoviario.veiculos_reboque[0].capacidade_kg, 25500);
+  assert.ok(r.avisos.some((a) => /toneladas/.test(a)));
+  assert.equal(car.capacidade_carga, 25.5);
+});
+test("caminhao de chassi sem tara: so bloqueia aqui, apontando o veiculo e pedindo a tara em kg", () => {
+  const truck = { ...CAVALO, tipo_veiculo: "Truck", tara_kg: null, quantidade_eixos: 3 };
+  const r = montarMdfe(base({ tracao: truck, reboques: [] }));
+  assert.ok(r.bloqueios.some((b) => /Veículo de tração: sem tara .*informe a tara em kg/.test(b)));
+});
