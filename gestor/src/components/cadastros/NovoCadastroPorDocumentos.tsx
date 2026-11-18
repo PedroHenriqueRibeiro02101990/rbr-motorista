@@ -3,8 +3,9 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import { Modal, Botao, Aviso } from '../financeiro/ui'
 import { LinhaStatus, useStatusAcao } from '../StatusAcao'
 import CampoPeso from '../campos/CampoPeso'
-import { achadosDoPayload, montarPayload, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
+import { achadosDoPayload, montarPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
 import { TIPOS_DOCUMENTO, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
+import { montarCorpoMotoristaRepom, montarCorpoVeiculoRepom, preChecagemRepom } from '../../../../supabase/functions/_shared/repomCadastro.ts'
 import { formatarKg } from '../../../../supabase/functions/_shared/unidades-br.ts'
 
 // Novo cadastro por documentos (Parte A, etapa 4). Atras da flag VITE_CADASTRO_POR_DOCUMENTOS (padrao desligada).
@@ -32,6 +33,18 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
   const docs: DocumentoLido[] = itens.map((i) => ({ path: i.path, tipo: i.tipo, normalizado: i.normalizado, edicoes: i.edicoes }))
   const payload = useMemo(() => montarPayload(docs), [itens]) // eslint-disable-line react-hooks/exhaustive-deps
   const achados = useMemo(() => achadosDoPayload(payload, hoje), [payload, hoje])
+  // Preparo da Repom (so leitura; nenhuma chamada): o que falta no cadastro para a Repom aceitar
+  const faltaRepom = useMemo(() => {
+    const m = payload.motorista as Record<string, string | null> | undefined
+    const out: string[] = []
+    if (m) out.push(...montarCorpoMotoristaRepom({ nome: m.nome, cpf: m.cpf, cnh_numero_registro: m.cnh_numero_registro, data_nascimento: m.data_nascimento, cep: m.cep, logradouro: m.logradouro, numero_endereco: m.numero_endereco, bairro: m.bairro }).faltando.map((f) => `motorista: ${f}`))
+    for (const [rot, v, reb] of [['cavalo', payload.cavalo, false], ['carreta', payload.carreta, true]] as const) {
+      if (!v) continue
+      out.push(...montarCorpoVeiculoRepom({ placa: v.placa as string, quantidade_eixos: v.quantidade_eixos as number, e_reboque: reb }, { documento: v.proprietario_documento as string }).faltando.map((f) => `${rot}: ${f}`))
+    }
+    out.push(...preChecagemRepom({ motoristaCadastradoNaRepom: false, veiculoNoPrestador: false, eCavalo: !!payload.cavalo, temImplemento: !!payload.carreta }).map((p) => p.mensagem))
+    return out
+  }, [payload])
   const bloqueado = temBloqueio(achados) || (!payload.motorista && !payload.cavalo && !payload.carreta)
 
   async function lerArquivos(arquivos: { path: string; tipo?: string }[]) {
@@ -195,7 +208,14 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
           <div className="font-semibold">Vai criar: {resumoDoQueSeraCriado(payload)}</div>
           {achados.map((a, i) => <div key={i} style={{ color: a.nivel === 'bloqueio' ? 'var(--rbr-danger)' : COR_CONFIANCA.media }}>{a.nivel === 'bloqueio' ? 'Corrija: ' : 'Aviso: '}{a.mensagem}</div>)}
         </div>
+        {REPOM_CADASTRO_HABILITADO && faltaRepom.length > 0 && (
+          <div className="rounded border p-2 text-xs" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="font-semibold">Para cadastrar na Repom ainda falta:</div>
+            {faltaRepom.map((f) => <div key={f}>- {f}</div>)}
+          </div>
+        )}
         <div className="flex justify-end gap-2">
+          {REPOM_CADASTRO_HABILITADO && <Botao variante="secundario" disabled title="Desligado: o envio para a Repom so entra depois da liberacao">Cadastrar na Repom</Botao>}
           <Botao variante="secundario" onClick={onFechar}>Fechar</Botao>
           <Botao onClick={() => void confirmar()} disabled={bloqueado || st.enviando}>Confirmar cadastro</Botao>
         </div>

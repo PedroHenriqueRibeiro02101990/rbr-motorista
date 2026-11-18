@@ -7,6 +7,9 @@ import { eReboquePorTipoCrlv, validarCnh, validarProprietario, validarVeiculo, t
 // Flag do fluxo novo: padrao DESLIGADO (so liga com VITE_CADASTRO_POR_DOCUMENTOS=true no build da Vercel).
 export const CADASTRO_POR_DOCUMENTOS_HABILITADO = import.meta.env?.VITE_CADASTRO_POR_DOCUMENTOS === 'true'
 
+// Botao "Cadastrar na Repom": padrao DESLIGADO (VITE_REPOM_CADASTRO_HABILITADO=true so quando o Pedro e a Karen liberarem).
+export const REPOM_CADASTRO_HABILITADO = import.meta.env?.VITE_REPOM_CADASTRO_HABILITADO === 'true'
+
 export interface DocumentoLido {
   path: string
   tipo: string
