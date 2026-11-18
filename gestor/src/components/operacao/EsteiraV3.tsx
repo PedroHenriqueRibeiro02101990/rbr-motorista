@@ -4,6 +4,7 @@ import DevolverOperacao from './DevolverOperacao'
 import AvisoJanelaEmissao from './AvisoJanelaEmissao'
 import { DesfazerEPrazos, TrocaMotoristaVeiculo } from './EsteiraEmissao'
 import { Modal } from '../financeiro/ui'
+import { faltaParaRepom, type ItemFalta } from '../../../../supabase/functions/_shared/repomPreVoo.ts'
 import { etapaCiot, etapaVpo, preVooMdfe, resumoFaltaMdfe, temBloqueio, type EstadoPreVoo, type Item, type LinhaCiotVpo } from '../../../../supabase/functions/_shared/lancamentoManual.ts'
 
 // Esteira da aba Fiscal v3 (Parte B etapas 9b, 11 e 15), so com VITE_FISCAL_V3 e em operacao real. 4 blocos (CT-e, Vale-pedagio, CIOT, MDF-e);
@@ -12,7 +13,25 @@ import { etapaCiot, etapaVpo, preVooMdfe, resumoFaltaMdfe, temBloqueio, type Est
 type Doc = { tipo: string; status: string; numero_documento?: string | null; chave_acesso?: string | null; mensagem_erro?: string | null; emitido_em?: string | null }
 const COR_NIVEL = { ok: '#15803d', aviso: '#b45309', bloqueio: '#b91c1c' } as const
 
-async function carregarEstado(operacaoId: string): Promise<{ docs: Doc[]; estado: EstadoPreVoo }> {
+async function carregarFaltaRepom(operacaoId: string): Promise<ItemFalta[] | null> {
+  // Defensivo: colunas novas (migracao 20261118-0400) podem nao existir ainda; nesse caso o bloco some.
+  const { data: o, error } = await supabase.from('operacoes').select('pessoa_alocada_id, veiculo_id, entrega_prevista, ncm, tipo_carga_antt' as never).eq('id', operacaoId).maybeSingle()
+  if (error || !o) return null
+  const op = o as unknown as { pessoa_alocada_id: string | null; veiculo_id: string | null; entrega_prevista: string | null; ncm: string | null; tipo_carga_antt: number | null }
+  const { data: m, error: em } = op.pessoa_alocada_id ? await supabase.from('pessoas').select('nome, cpf, cnh_numero_registro, data_nascimento, celular, cep, logradouro, rntrc_numero, genero, rg_numero, rg_orgao_emissor, rg_uf, numero_dependentes, optante_simples_nacional' as never).eq('id', op.pessoa_alocada_id).maybeSingle() : { data: null, error: null }
+  if (em) return null
+  const { data: rb } = await supabase.from('operacao_reboques').select('veiculo_id').eq('operacao_id', operacaoId)
+  const ids = [op.veiculo_id, ...(rb ?? []).map((r) => r.veiculo_id)].filter(Boolean) as string[]
+  const { data: vs } = ids.length ? await supabase.from('veiculos').select('placa, quantidade_eixos, e_reboque, tipo_veiculo').in('id', ids) : { data: [] }
+  const { data: cfg } = await supabase.from('repom_config' as never).select('valor').eq('chave', 'filial_codigo').maybeSingle()
+  const mm = (m ?? null) as unknown as (Record<string, unknown> & { cpf?: string; rntrc_numero?: string; optante_simples_nacional?: boolean | null }) | null
+  return faltaParaRepom({
+    motorista: mm as never, prestador: mm ? { documento: mm.cpf, rntrc: mm.rntrc_numero, optante_simples_nacional: mm.optante_simples_nacional ?? null } : null,
+    veiculos: (vs ?? []) as never, operacao: { tipo_carga_antt: op.tipo_carga_antt, entrega_prevista: op.entrega_prevista, ncm: op.ncm, filial_repom: (cfg as { valor?: string } | null)?.valor ?? null },
+  })
+}
+
+async function carregarEstado(operacaoId: string): Promise<{ docs: Doc[]; estado: EstadoPreVoo; repom: ItemFalta[] | null }> {
   const [d, l, o] = await Promise.all([
     supabase.from('documentacao_operacao').select('tipo, status, numero_documento, chave_acesso, mensagem_erro, emitido_em').eq('operacao_id', operacaoId),
     supabase.from('operacao_ciot_vpo').select('*').eq('operacao_id', operacaoId).maybeSingle(),
@@ -42,11 +61,11 @@ async function carregarEstado(operacaoId: string): Promise<{ docs: Doc[]; estado
     cepCarregamento: cepC, cepDescarregamento: cepD, ncm, tracao: tracao ? { ...tracao, eixos: eixosTotal || tracao.eixos } : null,
     reboques: (vs ?? []).map((r) => ({ tara_kg: r.tara_kg != null ? Number(r.tara_kg) : null, e_reboque: r.e_reboque })), ufInicio: ufI, ufFim: ufF,
   }
-  return { docs, estado }
+  return { docs, estado, repom: await carregarFaltaRepom(operacaoId).catch(() => null) }
 }
 
 export default function EsteiraV3({ operacaoId, status, onDevolvida }: { operacaoId: string; status: string; onDevolvida: () => void }) {
-  const [dados, setDados] = useState<{ docs: Doc[]; estado: EstadoPreVoo } | null>(null)
+  const [dados, setDados] = useState<{ docs: Doc[]; estado: EstadoPreVoo; repom: ItemFalta[] | null } | null>(null)
   const [erro, setErro] = useState(false)
   const [regras, setRegras] = useState(false)
   const recarregar = useCallback(async () => { try { setDados(await carregarEstado(operacaoId)); setErro(false) } catch { setErro(true) } }, [operacaoId])
@@ -62,7 +81,7 @@ export default function EsteiraV3({ operacaoId, status, onDevolvida }: { operaca
 
   if (erro) return <div className="text-xs">Nao consegui ler o estado fiscal. <button type="button" className="underline font-bold" onClick={() => void recarregar()}>Tentar de novo</button></div>
   if (!dados) return <div className="text-xs">Carregando a esteira...</div>
-  const { docs, estado } = dados
+  const { docs, estado, repom } = dados
   const itens: Item[] = preVooMdfe(estado)
   const doc = (t: string) => docs.find((d) => d.tipo === t)
   const cte = doc('cte'), mdfe = doc('mdfe'), atm = doc('atm')
@@ -95,6 +114,12 @@ export default function EsteiraV3({ operacaoId, status, onDevolvida }: { operaca
           {itens.map((i) => <div key={i.campo + i.mensagem} className="text-[12px]" style={{ color: COR_NIVEL[i.nivel] }}>{i.nivel === 'ok' ? '✓' : i.nivel === 'aviso' ? '!' : '✕'} {i.mensagem}</div>)}
           <div className="text-[11px] mt-1" style={{ color: 'var(--rbr-muted)' }}>Depois do MDF-e: averbacao RC-V (Sompo) e encerramento.</div>
         </div>
+        {repom && repom.length > 0 && (
+          <div className="bg-white border rounded-2xl p-5 flex flex-col gap-1" style={{ borderColor: 'var(--rbr-border)' }}>
+            <div className="text-[11px] font-extrabold tracking-[0.08em]" style={{ color: 'var(--rbr-muted)' }}>PRE-VOO DA REPOM · O QUE FALTA</div>
+            {repom.map((i) => <div key={i.campo} className="text-[12px]" style={{ color: COR_NIVEL.aviso }}>! {i.mensagem}</div>)}
+          </div>
+        )}
         <AvisoJanelaEmissao operacaoId={operacaoId} />
         {/* Bloco "Algo errado? Devolver esta operacao": mantido exatamente como esta hoje (fora do desenho; decisao do Pedro). */}
         <div className="bg-white border rounded-2xl p-5 flex flex-col gap-2" style={{ borderColor: 'var(--rbr-border)' }}>

@@ -107,6 +107,10 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
       acao: async () => {
         const { data, error } = await (supabase as unknown as { rpc: (n: string, a: unknown) => Promise<{ data: unknown; error: { message: string } | null }> }).rpc('confirmar_cadastro_por_documentos', { p_payload: payload })
         if (error) throw new Error(error.message)
+        // Complemento (RG e genero confirmados) para a Repom: tolerante a funcao ainda nao aplicada (nao derruba o cadastro).
+        if (payload.complemento && payload.motorista?.cpf) {
+          await (supabase as unknown as { rpc: (n: string, a: unknown) => Promise<unknown> }).rpc('complementar_motorista_por_documentos', { p_cpf: payload.motorista.cpf, p_dados: payload.complemento }).catch(() => undefined)
+        }
         return data as { motorista_id?: string; cavalo_id?: string; carreta_id?: string }
       },
       // so mostra ok depois de reler o que foi gravado
