@@ -325,6 +325,7 @@ test("CIOT ausente: aviso antes de 23/11/2026, bloqueio depois (só em produçã
 
 // --- 03/11/2026: regras publicadas na v26 (percurso, pagamento sem VPO, CIOT de 12 dígitos) ---
 import { ufsPercurso } from "./mdfe.ts";
+import { ciotObrigatorioNoMdfe } from "../_shared/prazos.ts";
 
 test("ufsPercurso: UFs iguais ou limítrofes não precisam de percurso", () => {
   assert.deepEqual(ufsPercurso("SP", "SP"), []);
@@ -412,4 +413,23 @@ test("caminhao de chassi sem tara: so bloqueia aqui, apontando o veiculo e pedin
   const truck = { ...CAVALO, tipo_veiculo: "Truck", tara_kg: null, quantidade_eixos: 3 };
   const r = montarMdfe(base({ tracao: truck, reboques: [] }));
   assert.ok(r.bloqueios.some((b) => /Veículo de tração: sem tara .*informe a tara em kg/.test(b)));
+});
+
+// ---- Etapa 13 (Parte B): MDF-e le o vale e o CIOT do cartao manual (operacao_ciot_vpo), sem efrete/NSPEDAGIO ----
+test("operacao manual: vale-pedagio e CIOT vem de operacao_ciot_vpo; payload nao leva tipo_vale_pedagio (731) e leva a categoria", () => {
+  const { payload, bloqueios } = montarMdfe(base({
+    ciotVpo: { ciot: "520048038432", ciot_verificador: "1483", ciot_origem: "rbr_repom", ciot_ambiente: "producao", numero_averbacao: "AVB-123", vpo_idvpo: "96670000000000000001", vpo_valor: 236.27, vpo_cnpj_fornecedora: "11222333000181", vpo_tipo: "01", vpo_categoria_combinacao: "08" },
+    cotacao: { ...base().cotacao, pedagio: 236.27 },
+  }));
+  const vale = payload.modal_rodoviario.dispositivos_vale_pedagio[0];
+  assert.equal(vale.numero_comprovante_compra, "96670000000000000001");
+  assert.equal(vale.valor_vale_pedagio, "236.27");
+  assert.equal(vale.categoria_combinacao_veicular, "08");
+  assert.equal("tipo_vale_pedagio" in vale && vale.tipo_vale_pedagio !== undefined, false);
+  assert.equal(payload.modal_rodoviario.ciot[0].ciot, "520048038432");
+  assert.ok(!bloqueios.some((b) => /efrete|NSPEDAGIO/i.test(b)));
+});
+test("grupo ciot entra no payload a partir de 23/11/2026 (12 digitos); antes dessa data o CIOT continua opcional para frota propria", () => {
+  assert.equal(ciotObrigatorioNoMdfe(new Date("2026-11-22T12:00:00Z")), false);
+  assert.equal(ciotObrigatorioNoMdfe(new Date("2026-11-23T12:00:00Z")), true);
 });

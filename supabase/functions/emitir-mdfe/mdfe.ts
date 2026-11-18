@@ -602,7 +602,7 @@ export function montarMdfe(
             cnpj_responsavel_pagamento: cnpjEmitente,
             numero_comprovante_compra: idvpo,
             valor_vale_pedagio: vpoValor != null ? dinheiro(vpoValor) : vpoValor,
-            tipo_vale_pedagio: ciotVpo?.vpo_tipo || undefined,
+            // NAO enviar tipo_vale_pedagio: junto da categoria a Focus descarta categCombVeic e a SEFAZ rejeita (731).
             categoria_combinacao_veicular: ciotVpo?.vpo_categoria_combinacao || categoriaCombinacao(eixosCombinacao) ||
               undefined,
           },
