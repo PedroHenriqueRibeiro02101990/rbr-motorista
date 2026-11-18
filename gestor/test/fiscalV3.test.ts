@@ -16,19 +16,18 @@ test('campo tipo_vale_pedagio nao existe no formulario novo nem no que ele envia
 test('operacao real manual mostra so o cartao novo; os cartoes NSTech/efrete so aparecem sem a flag ou em DEMO/teste', () => {
   const fiscal = le('../src/pages/Fiscal.tsx')
   assert.match(fiscal, /fiscalManualV3 = FISCAL_V3_HABILITADO && !modoDemonstracaoAtivo\(op, docs\) && op\.eh_teste !== true/)
-  assert.match(fiscal, /ofereceCteMdfe && fiscalManualV3 && <CartaoFiscalManual/)
+  assert.match(fiscal, /fiscalManualV3 && ofereceCteMdfe/); assert.match(fiscal, /<FiscalV3Painel/)
   assert.match(fiscal, /ofereceCteMdfe && !fiscalManualV3 && <CiotEfrete/)
   assert.match(fiscal, /ofereceCteMdfe && !fiscalManualV3 && <CartaoVpo/)
 })
 
 test('o bloco "Algo errado? Devolver esta operacao" continua como esta (fora do desenho)', () => {
-  const esteira = le('../src/components/operacao/EsteiraV3.tsx')
-  assert.match(esteira, /ALGO ERRADO\?/); assert.match(esteira, /DevolverOperacao/)
+  const painel = le('../src/components/operacao/FiscalV3Painel.tsx')
+  assert.match(painel, /Algo errado\?/); assert.match(painel, /DevolverOperacao/); assert.match(painel, /aguardando_liberacao_fiscal/)
 })
 
-test('a esteira nova nao conta a averbacao como bloco e le do banco (nao de estado local)', () => {
-  const esteira = le('../src/components/operacao/EsteiraV3.tsx')
-  assert.match(esteira, /DE 4 CONCLUIDAS/)
-  assert.match(esteira, /Averbacao RCTR-C \(automatica\)/); assert.match(esteira, /Aguardando o MDF-e/)
-  assert.match(esteira, /postgres_changes/)
+test('a tela v3 nao conta a averbacao como cartao e le do banco (realtime), nao de estado local', () => {
+  const painel = le('../src/components/operacao/FiscalV3Painel.tsx')
+  assert.match(painel, /Averbação do CT-e/); assert.match(painel, /Averbação do MDF-e/); assert.match(painel, /postgres_changes/)
+  assert.match(le('../src/lib/fiscalV3Modelo.ts'), /de 4 concluídas/)
 })
