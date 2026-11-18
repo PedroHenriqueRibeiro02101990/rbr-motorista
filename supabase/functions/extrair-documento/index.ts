@@ -20,6 +20,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 import { tratarCadastro } from "./cadastro.ts";
+import { chamarGemini, MENSAGEM_OCUPADA, textoDaResposta } from "../_shared/geminiResiliente.ts";
 import { normalizarTipoVeiculo, sugerirTara } from "../_shared/regrasExternas.ts";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -392,55 +393,26 @@ Deno.serve(async (req)=>{
       const mimeType = fileBlob.type && fileBlob.type !== "" ? fileBlob.type : "image/jpeg";
       // gemini-2.5-flash passou a devolver 404 pra chaves free-tier que nunca tinham usado
       // modelos da linha 2.5 (restrição do Google, não bug nosso) — trocado pro modelo atual.
-      const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash";
-      const geminiResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
+      // Chamada resiliente (etapa 32): timeout por tentativa, ate 4 tentativas, orcamento de 100 s; nunca chega ao limite de 150 s (546).
+      const lido = await chamarGemini({
+        chave: geminiApiKey,
+        modelo: Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash",
+        modeloAlternativo: Deno.env.get("GEMINI_MODEL_FALLBACK") || null,
+        corpo: {
+          contents: [{ parts: [{ text: PROMPTS[tipo] }, { inline_data: { mime_type: mimeType, data: encodeBase64(bytes) } }] }],
+          generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMAS[tipo], temperature: 0 },
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: PROMPTS[tipo]
-                },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: encodeBase64(bytes)
-                  }
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: SCHEMAS[tipo],
-            temperature: 0
-          }
-        })
       });
-      if (!geminiResp.ok) {
-        const errText = await geminiResp.text();
-        return jsonResponse({
-          sucesso: false,
-          erro: `IA respondeu ${geminiResp.status}: ${errText.slice(0, 200)}`
-        }, 502);
+      console.log(JSON.stringify({ fn: "extrair-documento", etapa: tipo, ok: lido.ok, tentativas: lido.tentativas, ms: lido.ms, status: lido.ok ? 200 : lido.status }));
+      if (!lido.ok) {
+        return jsonResponse({ sucesso: false, codigo: lido.codigo, erro: lido.mensagem, detalhe: lido.detalhe }, lido.codigo === "ia_indisponivel" ? 503 : 502);
       }
-      const geminiJson = await geminiResp.json();
-      const text = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) return jsonResponse({
-        sucesso: false,
-        erro: "A IA não devolveu conteúdo."
-      }, 502);
+      const text = textoDaResposta(lido.json);
+      if (!text) return jsonResponse({ sucesso: false, codigo: "ia_indisponivel", erro: MENSAGEM_OCUPADA, detalhe: `gemini=200;motivo=resposta_vazia;tentativas=${lido.tentativas}` }, 503);
       try {
         campos = JSON.parse(text);
-      } catch  {
-        return jsonResponse({
-          sucesso: false,
-          erro: "Resposta da IA fora do formato."
-        }, 502);
+      } catch {
+        return jsonResponse({ sucesso: false, codigo: "ia_indisponivel", erro: MENSAGEM_OCUPADA, detalhe: `gemini=200;motivo=resposta_fora_do_formato;tentativas=${lido.tentativas}` }, 503);
       }
       await admin.from("documento_extracoes").upsert({
         path,

@@ -4,6 +4,7 @@
 // Body: { modo: "cadastro", bucket?: "cadastro-documentos"|"operacao-documentos", arquivos: [{ path, tipo? }] }
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
+import { chamarGemini, MENSAGEM_OCUPADA, ORCAMENTO_TOTAL_MS, textoDaResposta } from "../_shared/geminiResiliente.ts";
 import {
   conferenciaCruzada, normalizarExtracao, PROMPT_CLASSIFICACAO, PROMPTS_V2, SCHEMA_CLASSIFICACAO, schemaDoTipo, TIPOS_DOCUMENTO,
   type Normalizado, type TipoDocumento,
@@ -13,21 +14,28 @@ const BUCKETS = ["cadastro-documentos", "operacao-documentos"];
 const MAX_ARQUIVOS = 12;
 const MAX_BYTES = 10 * 1024 * 1024;
 
-async function gemini(key: string, prompt: string, schema: unknown, bytes: Uint8Array, mime: string) {
-  const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash";
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+// Falha da leitura automatica (IA ocupada, lenta ou recusando): vira resultado POR ARQUIVO, sem derrubar os outros.
+class ErroIA extends Error {
+  constructor(public codigo: string, public mensagem: string, public detalhe: string) { super(mensagem); }
+}
+
+async function gemini(key: string, prompt: string, schema: unknown, bytes: Uint8Array, mime: string, rotulo: string, prazoAbsoluto: number) {
+  const r = await chamarGemini({
+    chave: key,
+    modelo: Deno.env.get("GEMINI_MODEL") ?? "gemini-3.8-flash",
+    modeloAlternativo: Deno.env.get("GEMINI_MODEL_FALLBACK") || null, // so se existir; nunca inventado
+    prazoAbsoluto,
+    corpo: {
       contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mime, data: encodeBase64(bytes) } }] }],
       generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0 },
-    }),
+    },
   });
-  if (!r.ok) throw new Error(`IA respondeu ${r.status}`);
-  const j = await r.json();
-  const txt = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!txt) throw new Error("A IA nao devolveu conteudo.");
-  return JSON.parse(txt);
+  // log sem dados pessoais: tipo, tentativas, tempo e status final
+  console.log(JSON.stringify({ fn: "extrair-documento", etapa: rotulo, ok: r.ok, tentativas: r.tentativas, ms: r.ms, status: r.ok ? 200 : r.status }));
+  if (!r.ok) throw new ErroIA(r.codigo, r.mensagem, r.detalhe);
+  const txt = textoDaResposta(r.json);
+  if (!txt) throw new ErroIA("ia_indisponivel", MENSAGEM_OCUPADA, `gemini=200;motivo=resposta_vazia;tentativas=${r.tentativas}`);
+  try { return JSON.parse(txt); } catch { throw new ErroIA("ia_indisponivel", MENSAGEM_OCUPADA, `gemini=200;motivo=resposta_fora_do_formato;tentativas=${r.tentativas}`); }
 }
 
 export async function tratarCadastro(req: Request, body: Record<string, unknown>, resp: (b: unknown, s?: number) => Response): Promise<Response> {
@@ -48,6 +56,7 @@ export async function tratarCadastro(req: Request, body: Record<string, unknown>
   if (ek || !chave) return resp({ sucesso: false, erro: "Leitura automatica indisponivel (chave da IA nao configurada)." }, 503);
 
   const hoje = new Date().toISOString().slice(0, 10);
+  const prazoAbsoluto = Date.now() + ORCAMENTO_TOTAL_MS; // a execucao inteira termina antes do limite de 150 s do Supabase (erro 546)
   const resultados: unknown[] = [];
   const normalizados: Normalizado[] = [];
   for (const a of arquivos) {
@@ -69,18 +78,19 @@ export async function tratarCadastro(req: Request, body: Record<string, unknown>
       let tipo = (a.tipo ?? "") as TipoDocumento;
       let tipoAuto = false;
       if (!TIPOS_DOCUMENTO.includes(tipo)) {
-        const cl = await gemini(chave, PROMPT_CLASSIFICACAO, SCHEMA_CLASSIFICACAO, bytes, mime);
+        const cl = await gemini(chave, PROMPT_CLASSIFICACAO, SCHEMA_CLASSIFICACAO, bytes, mime, "classificar", prazoAbsoluto);
         tipo = TIPOS_DOCUMENTO.includes(cl.tipo) ? cl.tipo : "outro";
         tipoAuto = true;
       }
       if (tipo === "outro") { resultados.push({ path, sucesso: true, tipo, normalizado: null, aviso: "Documento nao reconhecido; escolha o tipo na lista." }); continue; }
-      const bruto = await gemini(chave, PROMPTS_V2[tipo], schemaDoTipo(tipo), bytes, mime);
+      const bruto = await gemini(chave, PROMPTS_V2[tipo], schemaDoTipo(tipo), bytes, mime, tipo, prazoAbsoluto);
       const normalizado = normalizarExtracao(tipo, bruto, hoje);
       normalizados.push(normalizado);
       await admin.from("documento_extracoes").upsert({ path: chaveCache, tipo, campos: { normalizado, legivel: bruto.legivel ?? null, suspeita_fraude: bruto.suspeita_fraude ?? null } });
       resultados.push({ path, sucesso: true, tipo, tipo_automatico: tipoAuto, normalizado, legivel: bruto.legivel ?? null, suspeita_fraude: bruto.suspeita_fraude ?? null });
     } catch (e) {
-      resultados.push({ path, sucesso: false, erro: String((e as Error).message ?? e).slice(0, 200) });
+      if (e instanceof ErroIA) resultados.push({ path, sucesso: false, codigo: e.codigo, erro: e.mensagem, detalhe: e.detalhe });
+      else resultados.push({ path, sucesso: false, codigo: "erro_leitura", erro: String((e as Error).message ?? e).slice(0, 200) });
     }
   }
   return resp({ sucesso: true, resultados, conferencia_cruzada: conferenciaCruzada(normalizados) });
