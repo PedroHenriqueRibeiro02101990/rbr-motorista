@@ -6,6 +6,7 @@ import { formatMoney } from '@rbr/shared/format'
 import PreVoo from './PreVoo'
 import AvisoJanelaEmissao from './AvisoJanelaEmissao'
 import { mensagemClara } from '../../lib/mensagemClara'
+import { FISCAL_V3_HABILITADO } from '../../lib/fiscalV3'
 
 // Card de conferência que abre ANTES de emitir CT-e ou MDF-e. Pede às próprias funções de emissão o
 // "payload de prévia" (o que seria enviado à Focus + o que está faltando, sem gravar nada) e mostra,
@@ -466,6 +467,8 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
           <span>Número da averbação do seguro<Obrig entidade="operacao_ciot_vpo" campo="numero_averbacao" /></span>
           <input className={campo} style={estilo} value={averbacao} onChange={(e) => setAverbacao(e.target.value)} placeholder="Protocolo/número da averbação do CT-e" />
         </label>
+        {/* Aba Fiscal v3: sem campo "tipo de vale-pedagio" (enviar o tipo faz a Focus descartar a categoria: rejeicao 731). */}
+        {!FISCAL_V3_HABILITADO && (
         <label className="flex flex-col gap-1 text-[11px] text-[color:var(--rbr-muted)]">
           Tipo do vale-pedágio
           <select className={campo} style={estilo} value={tipoVpo} onChange={(e) => setTipoVpo(e.target.value)}>
@@ -474,6 +477,7 @@ function FormularioCiotVpo({ operacaoId, onSalvo }: { operacaoId: string; onSalv
             <option value="04">Leitura de placa</option>
           </select>
         </label>
+        )}
         <div className="flex items-end gap-2">
           <button onClick={salvar} disabled={salvando} className="text-xs font-bold px-3.5 py-2 rounded-lg disabled:opacity-60" style={{ background: 'var(--rbr-navy)', color: '#fff' }}>
             {salvando ? 'Salvando…' : 'Salvar e reconferir'}
