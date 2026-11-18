@@ -1,5 +1,5 @@
 // Modo "cadastro" da extrair-documento (Parte A etapa 2 / Parte B etapa 10): varios arquivos por chamada, classificacao automatica,
-// campos com confianca e normalizacao (kg, reais, CIOT 12+4). So gestor_rbr (inclui o perfil de operacao). NAO grava em cadastros:
+// campos com confianca e normalizacao (kg, reais, CIOT 12+4). So a equipe interna (gestor_rbr, operacao, fiscal). NAO grava em cadastros:
 // so registra a leitura em documento_extracoes. Aceita PDF e imagem. Os arquivos ficam nos buckets cadastro-documentos ou operacao-documentos.
 // Body: { modo: "cadastro", bucket?: "cadastro-documentos"|"operacao-documentos", arquivos: [{ path, tipo? }] }
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -37,7 +37,7 @@ export async function tratarCadastro(req: Request, body: Record<string, unknown>
   if (!u?.user) return resp({ sucesso: false, erro: "Nao autenticado" }, 401);
   const admin = createClient(url, service);
   const { data: ator } = await admin.from("pessoas").select("id, papel").eq("auth_user_id", u.user.id).maybeSingle();
-  if (!ator || ator.papel !== "gestor_rbr") return resp({ sucesso: false, erro: "Sem permissao." }, 403);
+  if (!ator || !["gestor_rbr", "operacao", "fiscal"].includes(ator.papel)) return resp({ sucesso: false, erro: "Sem permissao." }, 403);
 
   const bucket = String(body.bucket ?? "cadastro-documentos");
   if (!BUCKETS.includes(bucket)) return resp({ sucesso: false, erro: "bucket nao permitido" }, 400);

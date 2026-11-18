@@ -16,12 +16,12 @@ alter table public.veiculos add column if not exists tara_origem text;          
 alter table public.pessoas add column if not exists documento_origem text;            -- 'documentos' quando veio do cadastro por documentos
 alter table public.pessoas add column if not exists cnh_extracao_id text;
 
--- 3) bucket privado dos documentos do cadastro (so gestor_rbr, que inclui o perfil de operacao)
+-- 3) bucket privado dos documentos do cadastro (gestor_rbr, operacao e fiscal: equipe interna; Eduardo = operacao)
 insert into storage.buckets (id, name, public) values ('cadastro-documentos', 'cadastro-documentos', false) on conflict (id) do nothing;
 drop policy if exists cadastro_documentos_gestor on storage.objects;
 create policy cadastro_documentos_gestor on storage.objects for all to authenticated
-  using (bucket_id = 'cadastro-documentos' and (select current_papel()) = 'gestor_rbr'::papel_pessoa)
-  with check (bucket_id = 'cadastro-documentos' and (select current_papel()) = 'gestor_rbr'::papel_pessoa);
+  using (bucket_id = 'cadastro-documentos' and (select current_papel()) in ('gestor_rbr'::papel_pessoa, 'operacao'::papel_pessoa, 'fiscal'::papel_pessoa))
+  with check (bucket_id = 'cadastro-documentos' and (select current_papel()) in ('gestor_rbr'::papel_pessoa, 'operacao'::papel_pessoa, 'fiscal'::papel_pessoa));
 
 -- 4) auditoria: quem confirmou, quando e de qual documento veio cada campo
 create table if not exists public.cadastro_auditoria (
@@ -42,7 +42,7 @@ create index if not exists cadastro_auditoria_entidade_idx on public.cadastro_au
 alter table public.cadastro_auditoria enable row level security;
 drop policy if exists cadastro_auditoria_gestor on public.cadastro_auditoria;
 create policy cadastro_auditoria_gestor on public.cadastro_auditoria for select to authenticated
-  using ((select current_papel()) = 'gestor_rbr'::papel_pessoa);
+  using ((select current_papel()) in ('gestor_rbr'::papel_pessoa, 'operacao'::papel_pessoa, 'fiscal'::papel_pessoa));
 grant select on public.cadastro_auditoria to authenticated;   -- escrita so pela funcao abaixo (security definer)
 
 -- 5) Criacao vinculada em UMA transacao. p_payload:
@@ -68,7 +68,7 @@ declare
   v jsonb;
   v_reb boolean;
 begin
-  if (select current_papel()) is distinct from 'gestor_rbr'::papel_pessoa then
+  if (select current_papel()) is null or (select current_papel()) not in ('gestor_rbr'::papel_pessoa, 'operacao'::papel_pessoa, 'fiscal'::papel_pessoa) then
     raise exception 'Sem permissao para cadastrar por documentos.' using errcode = '42501';
   end if;
 
