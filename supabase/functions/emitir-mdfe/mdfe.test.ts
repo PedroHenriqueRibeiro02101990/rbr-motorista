@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, cepDescarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, cepDescarregamentoDe, referenciaMdfe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const RBR = "69115969000104";
 const CHAVE_CTE = "35261069115969000104570010000000011211536013";
@@ -518,4 +518,12 @@ test("etapa 22: aviso (nao bloqueio) quando tara do conjunto + carga passa do CM
   const b = base();
   const r = montarMdfe(base({ tracao: { ...CAVALO, cmt_kg: 20000 }, cotacao: { ...b.cotacao, peso_bruto_kg: 30000 } }));
   assert.ok(r.avisos.some((a) => /passa do CMT/.test(a))); assert.ok(!r.bloqueios.some((x) => /CMT/.test(x)));
+});
+
+test("etapa 19: referencia nova da Focus a cada reemissao; pendente e emitido mantem a gravada", () => {
+  assert.equal(referenciaMdfe("op1", null), "rbr-mdfe-op1");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1", status: "erro" }), "rbr-mdfe-op1-r2");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1-r2", status: "erro" }), "rbr-mdfe-op1-r3");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1-r2", status: "pendente" }), "rbr-mdfe-op1-r2");
+  assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1", status: "emitido" }), "rbr-mdfe-op1");
 });

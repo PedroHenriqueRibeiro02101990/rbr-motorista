@@ -24,7 +24,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { mensagemCondutorAusente, opComCondutor, resolverCondutorTitular } from "./condutorTitular.ts";
 import { categoriaCombinacao, eixosDaCombinacao } from "../_shared/combinacaoVeicular.ts";
-import { cepCarregamentoDe, cepDescarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { cepCarregamentoDe, cepDescarregamentoDe, montarMdfe, referenciaMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 import { condicaoDoContratoCiot, resolverTracaoReboques, traduzirRejeicaoMdfe } from "../_shared/regrasExternas.ts";
 
 const CORS_HEADERS = {
@@ -309,7 +309,8 @@ Deno.serve(async (req: Request) => {
     if (testeDaTrava(trava) && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
     if (testeDaTrava(trava) && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
-    const ref = `rbr-mdfe-${operacao_id}`;
+    const { data: mdfeAtual } = await supabaseAdmin.from("documentacao_operacao").select("referencia, status").eq("operacao_id", operacao_id).eq("tipo", "mdfe").maybeSingle();
+    const ref = referenciaMdfe(operacao_id, mdfeAtual);
 
     if (previa === true) {
       return jsonResponse({ sucesso: true, previa: true, ambiente, bloqueios, avisos, regras, payload });

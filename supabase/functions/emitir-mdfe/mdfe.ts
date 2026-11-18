@@ -162,6 +162,18 @@ export function cepCarregamentoDe(
   return remetenteEhRbr && digitos(cepRbr).length === 8 ? digitos(cepRbr) : daNota || null;
 }
 
+// 18/11/2026 (etapa 19): referencia nova da Focus a cada REEMISSAO (apos erro ou cancelamento): rbr-mdfe-<id>, -r2, -r3...
+// Consulta, cancelamento, encerramento e sincronizador ja leem documentacao_operacao.referencia (nunca reconstroem), entao so este ponto muda.
+// MDF-e pendente ou emitido mantem a referencia gravada (reenvio nao cria documento novo).
+export function referenciaMdfe(operacaoId: string, atual: { referencia?: string | null; status?: string | null } | null | undefined): string {
+  const base = `rbr-mdfe-${operacaoId}`;
+  const ref = atual?.referencia;
+  if (!ref) return base;
+  if (atual?.status === "pendente" || atual?.status === "emitido") return ref;
+  const m = ref.match(/-r(\d+)$/);
+  return `${base}-r${(m ? Number(m[1]) : 1) + 1}`;
+}
+
 // 18/11/2026 (etapa 18): CEP de DESCARREGAMENTO = CEP do DESTINATARIO da NF-e (cotacoes.nf_destinatario_endereco), nunca o do tomador.
 // So cai no CEP do cliente quando o destinatario da NF-e e o proprio cliente (mesmo CNPJ). Sem 8 digitos em nenhuma fonte: null (bloqueio da SEFAZ).
 export function cepDescarregamentoDe(
