@@ -157,11 +157,11 @@ begin
   for a in select * from jsonb_array_elements(coalesce(p_payload->'auditoria', '[]'::jsonb)) loop
     v_ent := a->>'entidade';
     insert into cadastro_auditoria (entidade, entidade_id, campo, valor_extraido, valor_confirmado, editado_manualmente, confianca, documento_path, documento_tipo, confirmado_por)
-      values (case when v_ent = 'motorista' then 'pessoa' else 'veiculo' end,
+      select (case when v_ent = 'motorista' then 'pessoa' else 'veiculo' end),
               case v_ent when 'motorista' then v_mot when 'cavalo' then v_cav else v_car end,
               a->>'campo', a->>'valor_extraido', a->>'valor_confirmado', coalesce((a->>'editado')::boolean, false),
-              nullif(a->>'confianca', ''), a->>'documento_path', a->>'documento_tipo', v_ator)
-    where case v_ent when 'motorista' then v_mot when 'cavalo' then v_cav else v_car end is not null;
+              nullif(a->>'confianca', ''), a->>'documento_path', a->>'documento_tipo', v_ator
+      where case v_ent when 'motorista' then v_mot when 'cavalo' then v_cav else v_car end is not null;
   end loop;
 
   return jsonb_build_object('motorista_id', v_mot, 'cavalo_id', v_cav, 'carreta_id', v_car);

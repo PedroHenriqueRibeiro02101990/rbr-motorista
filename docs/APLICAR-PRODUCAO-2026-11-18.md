@@ -2,6 +2,8 @@
 
 Projeto: kwscmegsfbtvlnyxougt. **Nao use `supabase db push`**: o historico de migracoes do banco foi aplicado por outra via. Aplique uma a uma, na ordem, conferindo a verificacao de cada uma antes de seguir. Cada arquivo tem rollback em `supabase/rollback/`.
 
+**ATUALIZADO em 18/11 (aplicado):** as 5 migracoes foram aplicadas em producao; a 0110 foi aplicada na versao reduzida (sem as faixas de tara e capacidade) e a 0100 teve um erro de sintaxe corrigido na RPC. Funcoes publicadas. Ver `docs/RELATORIO-ETAPA-28-2026-11-18.md`.
+
 Resumo: 5 migracoes, nenhuma apaga dado. Todas usam `drop policy/constraint/trigger if exists` seguido de recriacao (padrao do projeto): isso troca regra de acesso/validacao, nao perde dado.
 
 ## 1. `20261118-0100-cadastro-por-documentos.sql`
@@ -169,11 +171,11 @@ begin
   for a in select * from jsonb_array_elements(coalesce(p_payload->'auditoria', '[]'::jsonb)) loop
     v_ent := a->>'entidade';
     insert into cadastro_auditoria (entidade, entidade_id, campo, valor_extraido, valor_confirmado, editado_manualmente, confianca, documento_path, documento_tipo, confirmado_por)
-      values (case when v_ent = 'motorista' then 'pessoa' else 'veiculo' end,
+      select (case when v_ent = 'motorista' then 'pessoa' else 'veiculo' end),
               case v_ent when 'motorista' then v_mot when 'cavalo' then v_cav else v_car end,
               a->>'campo', a->>'valor_extraido', a->>'valor_confirmado', coalesce((a->>'editado')::boolean, false),
-              nullif(a->>'confianca', ''), a->>'documento_path', a->>'documento_tipo', v_ator)
-    where case v_ent when 'motorista' then v_mot when 'cavalo' then v_cav else v_car end is not null;
+              nullif(a->>'confianca', ''), a->>'documento_path', a->>'documento_tipo', v_ator
+      where case v_ent when 'motorista' then v_mot when 'cavalo' then v_cav else v_car end is not null;
   end loop;
 
   return jsonb_build_object('motorista_id', v_mot, 'cavalo_id', v_cav, 'carreta_id', v_car);
@@ -195,19 +197,16 @@ select (select count(*) from information_schema.columns where table_schema='publ
 
 ```sql
 -- Padronizacao de pesos e valores (Parte A, etapa 7b-d). ADITIVA: CHECK ... NOT VALID valida so gravacoes NOVAS; registros antigos
--- (inclusive os com tara errada, ex.: 25.5 e 9.8) permanecem como estao. Sem update, sem delete. NAO APLICADA (so na etapa 28).
+-- permanecem como estao.
+-- VERSAO REDUZIDA (18/11/2026): as faixas de tara (1000 a 30000) e de capacidade (1000 a 80000) foram REMOVIDAS. 9 veiculos ja cadastrados
+-- violam as faixas (Fiorinos com 600 kg, que e correto, e 6 com peso em toneladas) e o CHECK tambem vale em UPDATE: quebraria qualquer
+-- atualizacao dessas linhas, inclusive o gatilho da migracao 0300. A faixa segue valendo na tela (CampoPeso) e no emissor (resolverTara). Sem update, sem delete. NAO APLICADA (so na etapa 28).
 -- Rollback: supabase/rollback/rollback-20261118-0110-padronizacao-pesos-valores.sql
 -- Colunas de valor em reais que ja sao numeric (confirmado em shared/database.types.ts): nada a converter; so garantimos >= 0.
 -- Nenhuma coluna de valor em texto foi encontrada nas tabelas fiscais (operacao_ciot_vpo, condicoes_pagamento_operacao).
 
 do $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'veiculos_tara_kg_faixa_chk') then
-    alter table public.veiculos add constraint veiculos_tara_kg_faixa_chk check (tara_kg is null or (tara_kg between 1000 and 30000)) not valid;
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'veiculos_capacidade_carga_faixa_chk') then
-    alter table public.veiculos add constraint veiculos_capacidade_carga_faixa_chk check (capacidade_carga is null or (capacidade_carga between 1000 and 80000)) not valid;
-  end if;
   if not exists (select 1 from pg_constraint where conname = 'veiculos_tara_origem_chk') then
     alter table public.veiculos add constraint veiculos_tara_origem_chk check (tara_origem is null or tara_origem in ('confirmada', 'derivada_crlv', 'aproximada_tabela')) not valid;
   end if;
@@ -226,7 +225,7 @@ end $$;
 
 Verificacao (somente leitura):
 ```sql
-select conname, convalidated from pg_constraint where conname in ('veiculos_tara_kg_faixa_chk','veiculos_capacidade_carga_faixa_chk','veiculos_tara_origem_chk','operacao_ciot_vpo_vpo_valor_nao_negativo_chk','condicoes_pagto_valor_contrato_nao_negativo_chk','condicoes_pagto_valor_adiantamento_nao_negativo_chk') order by 1; -- esperado: 6 linhas, convalidated = false
+select conname, convalidated from pg_constraint where conname in ('veiculos_tara_kg_faixa_chk','veiculos_capacidade_carga_faixa_chk','veiculos_tara_origem_chk','operacao_ciot_vpo_vpo_valor_nao_negativo_chk','condicoes_pagto_valor_contrato_nao_negativo_chk','condicoes_pagto_valor_adiantamento_nao_negativo_chk') order by 1; -- esperado (versao reduzida): 4 linhas, convalidated = false
 ```
 
 ## 3. `20261118-0200-fiscal-uploads-manual.sql`
