@@ -1,5 +1,6 @@
 import { CampoFiscal } from '@rbr/shared/camposObrigatorios'
 import CampoPeso from '../components/campos/CampoPeso'
+import CadastroPorDocumentosAcesso from '../components/cadastros/CadastroPorDocumentosAcesso'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -1572,6 +1573,7 @@ export default function Cadastros() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-[30px] leading-tight text-[color:var(--rbr-navy-dark)]">Cadastros</h1>
+        <CadastroPorDocumentosAcesso />
       </div>
 
       <PainelPendencias modulo="cadastros" />
