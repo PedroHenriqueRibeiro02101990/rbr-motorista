@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { Botao, Aviso } from '../financeiro/ui'
 import NovoCadastroPorDocumentos from './NovoCadastroPorDocumentos'
@@ -7,6 +8,7 @@ import { formatarKg } from '../../../../supabase/functions/_shared/unidades-br.t
 
 // Ponto de entrada do fluxo novo na tela Cadastros. Com a flag desligada (padrao) NAO renderiza nada: a tela continua como hoje.
 export default function CadastroPorDocumentosAcesso() {
+  const [, setParams] = useSearchParams()
   const [aberto, setAberto] = useState(false)
   const [lista, setLista] = useState<VeiculoParaCorrigir[] | null>(null)
   const [verLista, setVerLista] = useState(false)
@@ -51,7 +53,7 @@ export default function CadastroPorDocumentosAcesso() {
           ))}
         </div>
       )}
-      {aberto && <NovoCadastroPorDocumentos quem={quem} onFechar={() => setAberto(false)} aoConcluir={() => void carregar()} />}
+      {aberto && <NovoCadastroPorDocumentos quem={quem} onFechar={() => setAberto(false)} onPreencherManual={() => { setAberto(false); setParams({ aba: 'motoristas' }) }} aoConcluir={() => void carregar()} />}
     </div>
   )
 }

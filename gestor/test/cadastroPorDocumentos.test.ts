@@ -75,3 +75,24 @@ test('Parte D: RG vem do documento e o genero so entra se a pessoa confirmou', (
   assert.equal(sem.complemento?.rg_numero, '123456'); assert.equal(sem.complemento?.rg_orgao_emissor, 'SSP'); assert.equal(sem.complemento?.genero, null)
   assert.equal(montarPayload([{ path: 'l/rg.pdf', tipo: 'rg', normalizado: rg, edicoes: { genero: 'M' } }]).complemento?.genero, 'M')
 })
+
+// ---- Etapa 32: leitura resistente (front) ----
+import { estadoDaLeitura, ROTULO_ESTADO, textoResumoVazio } from '../src/lib/cadastroPorDocumentos.ts'
+import { readFileSync } from 'node:fs'
+
+test('(vi) falha da IA vira "Nao foi possivel ler agora" (nunca "Outro (nao reconhecido)") e oferece Tentar de novo', () => {
+  const e = estadoDaLeitura({ sucesso: false, codigo: 'ia_indisponivel', erro: 'A leitura automatica esta ocupada agora. Tente de novo em instantes.' })
+  assert.equal(e.estado, 'falhou_ia'); assert.equal(ROTULO_ESTADO[e.estado], 'Nao foi possivel ler agora'); assert.notEqual(ROTULO_ESTADO[e.estado], ROTULO_ESTADO.nao_reconhecido)
+  assert.equal(estadoDaLeitura(null, true).estado, 'falhou_ia')
+  assert.equal(estadoDaLeitura({ sucesso: true, tipo: 'outro', normalizado: null }).estado, 'nao_reconhecido')
+  assert.equal(estadoDaLeitura({ sucesso: true, tipo: 'crlv', normalizado: {} }).estado, 'lido')
+})
+test('(vi) resumo vazio explica a falha de leitura; sem falha mantem o texto antigo', () => {
+  assert.equal(textoResumoVazio(['falhou_ia', 'lendo']), 'Nenhum documento foi lido ainda. Use Tentar de novo ou preencha manualmente.')
+  assert.equal(textoResumoVazio([]), 'nada ainda: envie ao menos um documento')
+})
+test('(vi) a tela envia UM arquivo por chamada, no maximo 2 ao mesmo tempo, tem Tentar de novo e Preencher manualmente', () => {
+  const f = readFileSync(new URL('../src/components/cadastros/NovoCadastroPorDocumentos.tsx', import.meta.url), 'utf8')
+  assert.match(f, /arquivos: \[\{ path, tipo \}\]/); assert.match(f, /rodarComLimite\(paraLer\.map\(\(path\) => \(\) => lerUm\(path\)\), 2\)/)
+  for (const t of ['A leitura automatica esta ocupada.', 'Tentar de novo', 'Preencher manualmente']) assert.ok(f.includes(t), t)
+})

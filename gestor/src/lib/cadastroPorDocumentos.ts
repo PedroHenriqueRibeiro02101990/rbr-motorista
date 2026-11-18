@@ -156,3 +156,28 @@ export function veiculosParaCorrigir(vs: { id?: string; placa: string; tara_kg: 
   }
   return out
 }
+
+// ---- Etapa 32: leitura resistente (estado de cada documento) ----
+export type EstadoLeitura = 'enviando' | 'lendo' | 'lido' | 'falhou_ia' | 'nao_reconhecido' | 'erro_arquivo'
+export interface ResultadoLeitura { sucesso?: boolean; tipo?: string; normalizado?: unknown; codigo?: string; erro?: string; aviso?: string }
+
+/** Traduz o resultado de UM arquivo da funcao em estado do cartao. Falha da IA NUNCA vira "tipo nao reconhecido". */
+export function estadoDaLeitura(r: ResultadoLeitura | null | undefined, falhaDeTransporte = false): { estado: EstadoLeitura; mensagem?: string } {
+  if (falhaDeTransporte || !r) return { estado: 'falhou_ia', mensagem: 'A leitura automatica esta ocupada agora. Tente de novo em instantes.' }
+  if (r.sucesso === false) {
+    if (r.codigo === 'erro_leitura') return { estado: 'erro_arquivo', mensagem: r.erro }
+    return { estado: 'falhou_ia', mensagem: r.erro ?? 'A leitura automatica esta ocupada agora. Tente de novo em instantes.' }
+  }
+  if (!r.normalizado) return { estado: 'nao_reconhecido', mensagem: r.aviso }
+  return { estado: 'lido' }
+}
+
+export const ROTULO_ESTADO: Record<EstadoLeitura, string> = {
+  enviando: 'Enviando...', lendo: 'Lendo...', lido: 'Lido', falhou_ia: 'Nao foi possivel ler agora', nao_reconhecido: 'Outro (nao reconhecido)', erro_arquivo: 'Arquivo com problema',
+}
+
+/** Texto do resumo quando nada sera criado: explica a causa quando e falha de leitura. */
+export function textoResumoVazio(estados: EstadoLeitura[]): string {
+  if (estados.some((e) => e === 'falhou_ia' || e === 'lendo' || e === 'enviando')) return 'Nenhum documento foi lido ainda. Use Tentar de novo ou preencha manualmente.'
+  return 'nada ainda: envie ao menos um documento'
+}

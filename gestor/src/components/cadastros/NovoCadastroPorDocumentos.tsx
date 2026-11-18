@@ -2,9 +2,10 @@ import { useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { Modal, Botao, Aviso } from '../financeiro/ui'
 import { LinhaStatus, useStatusAcao } from '../StatusAcao'
+import { rodarComLimite } from '../../../../supabase/functions/_shared/geminiResiliente.ts'
 import CampoPeso from '../campos/CampoPeso'
-import { achadosDoPayload, montarPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
-import { TIPOS_DOCUMENTO, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
+import { estadoDaLeitura, ROTULO_ESTADO, textoResumoVazio, type EstadoLeitura, type ResultadoLeitura, achadosDoPayload, montarPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
+import { conferenciaCruzada, TIPOS_DOCUMENTO, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
 import { montarCorpoMotoristaRepom, montarCorpoVeiculoRepom, preChecagemRepom } from '../../../../supabase/functions/_shared/repomCadastro.ts'
 import { formatarKg } from '../../../../supabase/functions/_shared/unidades-br.ts'
 
@@ -18,13 +19,12 @@ const ROTULO_TIPO: Record<string, string> = {
 const COR_CONFIANCA = { alta: '#15803d', media: '#b45309', baixa: '#b91c1c' } as const
 const CAMPOS_PESO = new Set(['tara', 'capacidade_carga', 'pbt', 'cmt'])
 
-interface Item { nome: string; path: string; tipo: string; normalizado: Normalizado | null; edicoes: Record<string, string | number | null>; erro?: string; url?: string; ler: boolean }
+interface Item { nome: string; path: string; tipo: string; normalizado: Normalizado | null; edicoes: Record<string, string | number | null>; erro?: string; url?: string; estado: EstadoLeitura }
 const limpa = (n: string) => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80)
 
-export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }: { onFechar: () => void; quem?: string | null; aoConcluir?: () => void }) {
+export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, onPreencherManual }: { onFechar: () => void; quem?: string | null; aoConcluir?: () => void; onPreencherManual?: () => void }) {
   const [itens, setItens] = useState<Item[]>([])
   const [aviso, setAviso] = useState<string | null>(null)
-  const [cruzada, setCruzada] = useState<string[]>([])
   const [sel, setSel] = useState(0)
   const st = useStatusAcao(quem)
   const lote = useRef(`lote-${Date.now()}`)
@@ -45,56 +45,46 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
     out.push(...preChecagemRepom({ motoristaCadastradoNaRepom: false, veiculoNoPrestador: false, eCavalo: !!payload.cavalo, temImplemento: !!payload.carreta }).map((p) => p.mensagem))
     return out
   }, [payload])
+  const cruzada = useMemo(() => conferenciaCruzada(itens.map((i) => i.normalizado).filter(Boolean) as Normalizado[]), [itens])
   const bloqueado = temBloqueio(achados) || (!payload.motorista && !payload.cavalo && !payload.carreta)
 
-  async function lerArquivos(arquivos: { path: string; tipo?: string }[]) {
-    const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'cadastro', bucket: BUCKET, arquivos } })
-    if (error || !data?.sucesso) throw new Error(data?.erro ?? 'A leitura automatica nao esta disponivel agora. Preencha manualmente ou tente de novo.')
-    return data as { resultados: { path: string; tipo?: string; normalizado: Normalizado | null; erro?: string; aviso?: string }[]; conferencia_cruzada: string[] }
+  const setItem = (path: string, mudar: Partial<Item>) => setItens((l) => l.map((o) => (o.path === path ? { ...o, ...mudar } : o)))
+
+  // UM arquivo por chamada: cada documento tem o proprio estado e os outros nao esperam por ele.
+  async function lerUm(path: string, tipo?: string) {
+    setItem(path, { estado: 'lendo', erro: undefined })
+    try {
+      const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'cadastro', bucket: BUCKET, arquivos: [{ path, tipo }] } })
+      const x = (data as { resultados?: ResultadoLeitura[] } | null)?.resultados?.[0]
+      const e = estadoDaLeitura(x, Boolean(error) || !data)
+      setItem(path, { estado: e.estado, tipo: x?.tipo ?? tipo ?? 'outro', normalizado: (x?.normalizado as Normalizado | null) ?? null, erro: e.mensagem })
+    } catch {
+      setItem(path, { estado: 'falhou_ia', erro: estadoDaLeitura(null, true).mensagem })
+    }
   }
 
   async function aoSoltar(files: FileList | File[]) {
     const lista = Array.from(files)
     if (!lista.length) return
     setAviso(null)
-    await st.rodar({
-      verbo: 'Documentos lidos', enviando: `Enviando e lendo ${lista.length} arquivo(s)...`,
-      acao: async () => {
-        const novos: Item[] = []
-        for (const f of lista) {
-          if (!/\.(pdf|png|jpe?g)$/i.test(f.name) || f.size === 0 || f.size > 10 * 1024 * 1024) { novos.push({ nome: f.name, path: '', tipo: 'outro', normalizado: null, edicoes: {}, erro: 'Use PDF, PNG ou JPG com ate 10 MB.', ler: false }); continue }
-          const path = `${lote.current}/${Date.now()}-${limpa(f.name)}`
-          const { error } = await supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type || undefined })
-          if (error) { novos.push({ nome: f.name, path, tipo: 'outro', normalizado: null, edicoes: {}, erro: 'Nao consegui enviar o arquivo. Tente de novo.', ler: false }); continue }
-          const { data: url } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600)
-          novos.push({ nome: f.name, path, tipo: 'outro', normalizado: null, edicoes: {}, url: url?.signedUrl, ler: true })
-        }
-        const paraLer = novos.filter((n) => n.ler)
-        if (paraLer.length) {
-          const r = await lerArquivos(paraLer.map((n) => ({ path: n.path })))
-          for (const x of r.resultados) {
-            const it = novos.find((n) => n.path === x.path)!
-            it.tipo = x.tipo ?? 'outro'; it.normalizado = x.normalizado; if (x.erro) it.erro = x.erro; if (x.aviso) it.erro = x.aviso
-          }
-          setCruzada(r.conferencia_cruzada ?? [])
-        }
-        setItens((atual) => [...atual, ...novos])
-        return novos.length
-      },
-    })
+    const paraLer: string[] = []
+    for (const f of lista) {
+      if (!/\.(pdf|png|jpe?g)$/i.test(f.name) || f.size === 0 || f.size > 10 * 1024 * 1024) { setItens((a) => [...a, { nome: f.name, path: '', tipo: 'outro', normalizado: null, edicoes: {}, erro: 'Use PDF, PNG ou JPG com ate 10 MB.', estado: 'erro_arquivo' }]); continue }
+      const path = `${lote.current}/${Date.now()}-${limpa(f.name)}`
+      const { error } = await supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type || undefined })
+      if (error) { setItens((a) => [...a, { nome: f.name, path, tipo: 'outro', normalizado: null, edicoes: {}, erro: 'Nao consegui enviar o arquivo. Tente de novo.', estado: 'erro_arquivo' }]); continue }
+      const { data: url } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600)
+      setItens((a) => [...a, { nome: f.name, path, tipo: 'outro', normalizado: null, edicoes: {}, url: url?.signedUrl, estado: 'lendo' }])
+      paraLer.push(path)
+    }
+    // no maximo 2 chamadas ao mesmo tempo (limite por minuto do Gemini)
+    await rodarComLimite(paraLer.map((path) => () => lerUm(path)), 2)
   }
 
   async function trocarTipo(idx: number, tipo: string) {
     const it = itens[idx]
     if (!it.path) return
-    await st.rodar({
-      verbo: 'Documento relido', enviando: 'Relendo com o tipo escolhido...',
-      acao: async () => {
-        const r = await lerArquivos([{ path: it.path, tipo }])
-        const x = r.resultados[0]
-        setItens((l) => l.map((o, i) => (i === idx ? { ...o, tipo, normalizado: x?.normalizado ?? null, edicoes: {}, erro: x?.erro } : o)))
-      },
-    })
+    await lerUm(it.path, tipo)
   }
 
   function editar(idx: number, campo: string, valor: string | number | null) {
@@ -159,7 +149,7 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
                 <li key={i.path || i.nome}>
                   <button type="button" onClick={() => setSel(idx)} className="w-full text-left rounded px-2 py-1.5 text-xs" style={{ background: idx === sel ? 'var(--rbr-surface-2, #eef2f7)' : 'transparent', border: '1px solid var(--rbr-border)' }}>
                     <div className="font-semibold truncate">{i.nome}</div>
-                    <div>{ROTULO_TIPO[i.tipo] ?? i.tipo}{i.erro ? ' - atencao' : ''}</div>
+                    <div>{i.estado === 'lido' ? (ROTULO_TIPO[i.tipo] ?? i.tipo) : ROTULO_ESTADO[i.estado]}</div>
                   </button>
                 </li>
               ))}
@@ -175,7 +165,17 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
                       {TIPOS_DOCUMENTO.map((t) => <option key={t} value={t}>{ROTULO_TIPO[t]}</option>)}
                     </select>
                   </label>
-                  {atual.erro && <Aviso tipo="atencao">{atual.erro}</Aviso>}
+                  {atual.estado === 'falhou_ia' && (
+                    <div role="alert" className="rounded border p-2 flex flex-col gap-1" style={{ borderColor: COR_CONFIANCA.media }}>
+                      <div className="font-semibold">A leitura automatica esta ocupada.</div>
+                      <div className="flex gap-3 items-center">
+                        <Botao onClick={() => void lerUm(atual.path, atual.tipo === 'outro' ? undefined : atual.tipo)}>Tentar de novo</Botao>
+                        <button type="button" className="underline font-semibold" onClick={onPreencherManual ?? onFechar}>Preencher manualmente</button>
+                      </div>
+                    </div>
+                  )}
+                  {atual.estado === 'lendo' && <div style={{ color: 'var(--rbr-muted)' }}>Lendo o documento...</div>}
+                  {atual.erro && atual.estado !== 'falhou_ia' && <Aviso tipo="atencao">{atual.erro}</Aviso>}
                   {atual.normalizado?.avisos.map((a) => <Aviso key={a} tipo="atencao">{a}</Aviso>)}
                   {atual.normalizado && Object.entries(atual.normalizado.campos).map(([k, c]) => {
                     const editado = k in atual.edicoes
@@ -209,7 +209,7 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir }
         )}
 
         <div className="rounded border p-2 text-xs flex flex-col gap-1" style={{ borderColor: 'var(--rbr-border)' }}>
-          <div className="font-semibold">Vai criar: {resumoDoQueSeraCriado(payload)}</div>
+          <div className="font-semibold">Vai criar: {payload.motorista || payload.cavalo || payload.carreta ? resumoDoQueSeraCriado(payload) : textoResumoVazio(itens.map((i) => i.estado))}</div>
           {achados.map((a, i) => <div key={i} style={{ color: a.nivel === 'bloqueio' ? 'var(--rbr-danger)' : COR_CONFIANCA.media }}>{a.nivel === 'bloqueio' ? 'Corrija: ' : 'Aviso: '}{a.mensagem}</div>)}
         </div>
         {REPOM_CADASTRO_HABILITADO && faltaRepom.length > 0 && (
