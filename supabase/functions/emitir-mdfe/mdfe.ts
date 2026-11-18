@@ -1,4 +1,7 @@
 // Regras e montagem do payload do MDF-e (Focus NFe /v2/mdfe), sem I/O.
+// v29 (2026-11-16): bloqueia so o que o orgao externo rejeitaria. RNTRC (status NULL/nao consultado) vira aviso: so bloqueia status explicitamente impeditivo;
+//   cavalo sem reboque, apolice ausente e responsavel_seguro fora do padrao viram aviso (a SEFAZ/ANTT diz se rejeita); rodado de carreta no campo de tracao
+//   tem mensagem propria; grupo de pagamento (lotacao) e derivado (IPEF da Repom) e, sem nenhum destino, BLOQUEIA (rejeicao certa da SEFAZ).
 // v25 (2026-11-03): pagamento: o VPO nao entra mais no valor do contrato nem nos componentes (rejeicao 738: parcelas + adiantamento = valor do contrato). VPO segue no grupo proprio dispositivos_vale_pedagio.
 // v24 (2026-11-03): percursos[].uf_percurso (UFs de percurso) quando inicio e fim nao sao limitrofes (rejeicao 'Percurso informado invalido').
 // v18 (2026-10-16): tipo de carga vazio na cotacao assume "Carga geral" (05) e avisa (origem rbr), em vez de bloquear. Tipo preenchido e nao reconhecido continua bloqueando.
@@ -20,6 +23,7 @@
 import { ciotObrigatorioNoMdfe } from "../_shared/prazos.ts";
 import { categoriaCombinacao } from "../_shared/combinacaoVeicular.ts";
 import { MENSAGEM_TARA_NAO_ENCONTRADA, resolverTara } from "../_shared/tara-aproximada.ts";
+import { ehTipoReboque, ipefDerivado, situacaoRntrc } from "../_shared/regrasExternas.ts";
 
 type Linha = Record<string, any>;
 
@@ -38,6 +42,8 @@ export interface ItemRegra {
 type Bloquear = (origem: "sefaz" | "antt", mensagem: string) => void;
 
 export interface VeiculoMdfe {
+  id?: string | null;
+  rntrc_status?: string | null;
   placa: string | null;
   renavam: string | null;
   tara_kg: number | string | null;
@@ -307,6 +313,15 @@ export function montarMdfe(
     avisos.push(mensagem);
     regras.push({ tipo: "aviso", origem, mensagem });
   };
+  // RNTRC de veículo/motorista: a ANTT valida no CIOT e a SEFAZ no MDF-e. Só bloqueia status explicitamente impeditivo
+  // (inativo/cancelado/suspenso vindo de consulta à ANTT); nunca consultado (NULL) é aviso.
+  const avisarRntrc = (quem: string, id: unknown, status: unknown, ativoLegado: unknown) => {
+    if (!id) return;
+    const s = status !== undefined ? situacaoRntrc(status) : ativoLegado ? "ativo" : "nao_consultado";
+    if (s === "impeditivo") bloqueio("antt", `RNTRC do ${quem} consta como "${String(status).trim()}" na consulta à ANTT — regularize antes de emitir.`);
+    else if (s === "nao_consultado") aviso("rbr", `RNTRC do ${quem} ainda não foi consultado na ANTT (a validação é feita no CIOT e no MDF-e).`);
+    else if (s === "desconhecido") aviso("rbr", `RNTRC do ${quem} com situação "${String(status).trim()}" no cadastro: confira (a ANTT valida no CIOT e no MDF-e).`);
+  };
   const cnpjEmitente = digitos(op.emitente_cnpj);
   // Dois conceitos separados: homologação (sem validade fiscal) e teste em produção (só pela trava_teste_fiscal).
   const homologacao = ambiente === "homologacao";
@@ -317,9 +332,9 @@ export function montarMdfe(
   }
   if (!op.ie_configurada) bloqueio("sefaz", "Inscrição Estadual da RBR ainda não cadastrada em parametros_fiscais.inscricao_estadual.");
   if (!op.veiculo_id) bloqueio("sefaz", "Nenhum veículo alocado nesta operação.");
-  if (op.veiculo_id && !op.veiculo_rntrc_ativo) bloqueio("antt", "RNTRC do veículo não está ativo.");
+  avisarRntrc("veículo", op.veiculo_id, op.veiculo_rntrc_status, op.veiculo_rntrc_ativo);
   if (!op.motorista_id) bloqueio("sefaz", "Nenhum motorista alocado nesta operação.");
-  if (op.motorista_id && !op.motorista_rntrc_ativo) bloqueio("antt", "RNTRC do motorista não está ativo.");
+  avisarRntrc("motorista", op.motorista_id, op.motorista_rntrc_status, op.motorista_rntrc_ativo);
   if (op.motorista_id && digitos(op.motorista_cpf).length !== 11) bloqueio("sefaz", "Motorista sem CPF (11 dígitos) — obrigatório no condutor do MDF-e.");
   if (!op.uf_origem || !op.uf_destino) bloqueio("sefaz", "Cotação sem UF de origem/destino preenchidas.");
 
@@ -333,17 +348,22 @@ export function montarMdfe(
     if (!v.uf_licenciamento) bloqueio("sefaz", "Veículo de tração sem UF de licenciamento cadastrada.");
     tipoRodado = mapearTipoRodado(v.tipo_veiculo);
     if (!tipoRodado) {
-      bloqueio("sefaz", `Não consegui identificar o tipo de rodado do veículo a partir do cadastro ("${v.tipo_veiculo ?? "vazio"}") — ajuste o cadastro do veículo (truck, toco, cavalo, van, utilitário).`,);
+      if (ehTipoReboque(v.tipo_veiculo)) {
+        bloqueio("sefaz", `O veículo ${v.placa ?? "sem placa"} (${v.tipo_veiculo}) está no campo de tração; troque pelo cavalo e coloque a carreta em reboques.`);
+      } else {
+        bloqueio("sefaz", `Não consegui identificar o tipo de rodado do veículo a partir do cadastro ("${v.tipo_veiculo ?? "vazio"}") — ajuste o cadastro do veículo (truck, toco, cavalo, van, utilitário).`,);
+      }
     }
     carroceriaTracao = tipoRodado === "03" ? "00" : mapearTipoCarroceria(v.tipo_carroceria);
-    if (!carroceriaTracao) {
+    if (!carroceriaTracao && !(tipoRodado == null && ehTipoReboque(v.tipo_veiculo))) {
       bloqueio("sefaz", `Não consegui identificar o tipo de carroceria do veículo a partir do cadastro ("${v.tipo_carroceria ?? "vazio"}") — ajuste o cadastro (aberta, baú/fechada, sider, graneleira, container).`,);
     }
     propTracao = proprietario(v, "Veículo de tração", bloqueio);
   }
 
   if (tipoRodado === "03" && d.reboques.length === 0) {
-    bloqueio("sefaz", "Cavalo mecânico sem reboque/semirreboque vinculado à operação — o MDF-e exige a carreta (veiculos_reboque).");
+    // A confirmar na SEFAZ se rejeita: tentamos emitir e mostramos a rejeição real, em vez de bloquear antes.
+    aviso("info", "Cavalo mecânico sem reboque/semirreboque vinculado à operação. Confira se a carreta deveria estar na operação; se a SEFAZ rejeitar, a mensagem dela aparece aqui.");
   }
   if (d.reboques.length > 3) bloqueio("sefaz", "O MDF-e aceita no máximo 3 reboques por veículo de tração.");
   const veiculosReboque = d.reboques.slice(0, 3).map((r, i) => {
@@ -414,21 +434,23 @@ export function montarMdfe(
   const apolice = d.apolice;
   let respSeguro: string | null = null;
   if (!apolice) {
-    bloqueio("antt", "Nenhuma apólice RCTR-C vigente cadastrada — obrigatória pro grupo seguros_carga do MDF-e.");
+    // A confirmar na prática se a ausência barra na SEFAZ ou só na ANTT: o MDF-e vai sem o grupo de seguro e a rejeição real aparece.
+    aviso("info", "Nenhuma apólice RCTR-C vigente cadastrada: o MDF-e vai sem o grupo de seguro. Se a SEFAZ ou a ANTT exigir, a rejeição aparece aqui.");
   } else {
     if (!apolice.numero_apolice || !apolice.seguradora_cnpj) {
       bloqueio("sefaz", "Apólice RCTR-C vigente sem número ou CNPJ da seguradora preenchidos.");
     }
     respSeguro = mapearResponsavelSeguro(apolice.responsavel_seguro);
     if (!respSeguro) {
-      bloqueio("sefaz", `Campo responsavel_seguro da apólice RCTR-C ("${apolice.responsavel_seguro ?? "vazio"}") não reconhecido — use "emitente" ou "contratante".`);
+      respSeguro = "1";
+      aviso("rbr", `Campo responsavel_seguro da apólice RCTR-C ("${apolice.responsavel_seguro ?? "vazio"}") fora do padrão: assumido "emitente". Ajuste na apólice ("emitente" ou "contratante").`);
     }
   }
 
   // Averbação do seguro: a SEFAZ (rej. 699) exige o número no grupo de seguros do MDF-e rodoviário.
   const numeroAverbacao = String(d.ciotVpo?.numero_averbacao ?? "").trim();
   // SEFAZ (rejeição 699): bloqueia sempre, inclusive no teste e em homologação.
-  if (!numeroAverbacao) {
+  if (!numeroAverbacao && apolice) {
     bloqueio(
       "sefaz",
       "Número da averbação do seguro (RCTR-C) não informado — averbe o CT-e e preencha o número; a SEFAZ exige no MDF-e rodoviário.",
@@ -497,7 +519,12 @@ export function montarMdfe(
     const pix = ciotVpo?.pagto_pix || d.motorista?.pix || undefined;
     const banco = ciotVpo?.pagto_banco || d.motorista?.banco_codigo || undefined;
     const agencia = ciotVpo?.pagto_agencia || d.motorista?.banco_agencia || undefined;
-    const cnpjIpef = digitos(ciotVpo?.pagto_cnpj_ipef) || undefined;
+    // SEFAZ exige o grupo de pagamento em carga lotação. Sem destino do motorista, deriva do CIOT (IPEF informado ou CNPJ da Repom).
+    const ipef = ipefDerivado(ciotVpo?.ciot_origem, ciotVpo?.pagto_cnpj_ipef);
+    const cnpjIpef = ipef?.cnpj;
+    if (ipef?.origem === "repom" && !pix && !(banco && agencia)) {
+      aviso("info", `Destino de pagamento preenchido sozinho: conta digital da Repom (CNPJ ${ipef.cnpj}). Confira antes de emitir.`);
+    }
     const destinoPagamento = pix
       ? { pix }
       : banco && agencia
@@ -505,9 +532,9 @@ export function montarMdfe(
       : cnpjIpef
       ? { cnpj_instituicao_pagamento: cnpjIpef }
       : null;
-    // Regra da RBR (C2.1): avisa e o MDF-e sai sem o grupo de pagamento; se a SEFAZ exigir, a rejeição dela aparece.
+    // Não é regra da RBR: a SEFAZ rejeita MDF-e de lotação sem o grupo de pagamento ("As informações de pagamento devem ser informadas para carga lotação").
     if (!destinoPagamento) {
-      aviso("rbr", "Destino de pagamento do motorista não definido (regra da RBR). Defina antes de pagar.");
+      bloqueio("sefaz", "Falta o destino de pagamento do frete (a SEFAZ exige em carga lotação). Preencha a chave Pix do motorista, ou banco e agência, ou o CNPJ da instituição de pagamento (IPEF) em CIOT e Vale-Pedágio.");
     }
     pagamentos = !destinoPagamento
       ? undefined
@@ -526,8 +553,8 @@ export function montarMdfe(
         },
       ];
   } else if (ehTac) {
-    // Regra da RBR (C2.2): avisa; o MDF-e sai sem o grupo de pagamento.
-    aviso("rbr", "Condição de pagamento do motorista não definida (regra da RBR). Defina antes de pagar.");
+    // A SEFAZ exige o grupo de pagamento em lotação; o valor do contrato vem da condição de pagamento ou do contrato do CIOT.
+    bloqueio("sefaz", "Falta o valor do contrato de frete (condição de pagamento ou contrato do CIOT) — a SEFAZ exige o grupo de pagamento em carga lotação.");
   }
 
   if (homologacao) {
@@ -579,7 +606,7 @@ export function montarMdfe(
     codigo_unidade_medida_peso_bruto: "01",
     peso_bruto: pesoBrutoKg,
 
-    seguros_carga: [
+    seguros_carga: !apolice ? undefined : [
       {
         responsavel_seguro: respSeguro,
         cnpj_responsavel: cnpjEmitente,

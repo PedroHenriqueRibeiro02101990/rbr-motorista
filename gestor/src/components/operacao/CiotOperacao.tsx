@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '@rbr/shared/supabaseClient'
+import { separarCiotDigitado } from '@rbr/shared/ciot'
 import type { DetalheOperacao } from '../../lib/operacaoDetalhe'
 
 // Tarefa 2: origem do CIOT na operação (RBR na Repom ou CIOT do próprio parceiro ETC com mais de 3 veículos).
@@ -106,13 +107,17 @@ export default function CiotOperacao({
         const { error: ep } = await supabase.from('operacoes').update({ piso_minimo_valor: pisoNum }).eq('id', d.operacao.id)
         if (ep) throw ep
       }
-      const n = numero.replace(/\D/g, '')
-      if (n && n.length !== 12) throw new Error('O CIOT tem 12 dígitos.')
+      // Aceita os 16 dígitos do Repom (12 + 4 do verificador) e separa sozinho.
+      const dig = numero.replace(/\D/g, '')
+      const sep = dig ? separarCiotDigitado(dig) : null
+      if (dig && !sep) throw new Error('O CIOT tem 12 dígitos (ou 16, com os 4 do verificador).')
+      const n = sep?.ciot ?? ''
       if (origem === 'parceiro' && !n) throw new Error('Digite o número do CIOT gerado pelo parceiro.')
       const { error } = await supabase.from('operacao_ciot_vpo').upsert(
         {
           operacao_id: d.operacao.id,
           ciot: n || null,
+          ...(sep?.verificador ? { ciot_verificador: sep.verificador } : {}),
           ciot_origem: origem || null,
           ciot_inicio_previsto: doInput(inicio),
           ciot_fim_previsto: doInput(fim),

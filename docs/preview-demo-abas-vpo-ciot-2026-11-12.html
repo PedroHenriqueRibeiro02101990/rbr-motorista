@@ -1,0 +1,149 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prévia: abas Vale-pedágio e CIOT</title>
+<style>
+:root{--navy:#1E2761;--navy2:#12173D;--gold:#B8863B;--gold-t:#8F6A2A;--bg:#EEF0F6;--card:#fff;--line:#E1E4EE;--soft:#F4F5F9;--fg:#1B2140;--mut:#5A6180;--ok:#1F7A4D;--okbg:#E4F3EA;--warn:#8F6A2A;--warnbg:#F7EBD3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 Inter,system-ui,sans-serif;padding:18px}
+.modal{max-width:1180px;margin:0 auto;background:var(--card);border-radius:18px;border:1px solid var(--line);padding:22px 24px}
+h1{font-size:15px;margin:0 0 2px}.sub{color:var(--mut);margin:0 0 14px;font-size:13px}
+.note{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:14px}
+/* esteira */
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:6px 0 16px}
+.step{border:1.5px dashed #C9CEDF;border-radius:12px;padding:10px 14px;background:#fff;color:#8A90A8;text-align:left;font:inherit}
+.step b{display:block;color:inherit;font-size:14px}.step span{font-size:12.5px}
+.step.live{border-style:solid;border-color:var(--line);color:var(--fg);cursor:pointer;background:#fff}
+.step.live:hover{border-color:var(--navy)}
+.step.sel{border:2px solid var(--navy);box-shadow:0 0 0 3px rgba(30,39,97,.08)}
+.step.done{background:var(--okbg);border-color:#9AD0B1}.step.done span{color:var(--ok);font-weight:600}
+.step.next{animation:p 1.6s ease-in-out infinite}
+@keyframes p{50%{box-shadow:0 0 0 5px rgba(184,134,59,.25)}}
+@media(prefers-reduced-motion:reduce){.step.next{animation:none;box-shadow:0 0 0 3px rgba(184,134,59,.35)}}
+.count{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-top:4px}
+/* painel */
+.head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:2px 0 10px}
+.head h2{margin:0;font-size:18px}
+.tag{font-size:11px;font-weight:700;letter-spacing:.05em;padding:3px 9px;border-radius:99px;background:var(--warnbg);color:var(--warn)}
+.flow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.flow i{font-style:normal;background:var(--soft);border-radius:99px;padding:3px 12px;font-size:12.5px;color:var(--mut)}.flow i.on{background:var(--navy);color:#fff}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px;align-items:stretch}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.panel{border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:12px;background:#fff}
+.panel h3{margin:0;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold-t)}
+table{width:100%;border-collapse:collapse}
+th{white-space:nowrap;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);text-align:left;padding:4px 8px 6px;font-weight:600}
+td{padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}
+td.v{color:var(--fg)}td.o{white-space:nowrap;text-align:right}
+.et{font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:99px;background:var(--soft);border:1px solid var(--line);color:var(--navy)}
+details{border-top:1px solid var(--line);padding-top:10px;margin-top:auto}
+summary{cursor:pointer;font-weight:600;color:var(--navy)}
+.fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}
+@media(max-width:700px){.fields{grid-template-columns:repeat(2,1fr)}}
+label{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--mut)}
+input{font:inherit;padding:7px 9px;border:1px solid #C9CEDF;border-radius:8px;color:var(--fg)}
+.btn{font:inherit;font-weight:600;border-radius:9px;padding:9px 14px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);cursor:pointer}
+.btn.p{background:var(--navy);color:#fff}.btn:disabled{opacity:.4;cursor:not-allowed}.btn.sm{padding:6px 10px;font-size:13px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.acts .full{grid-column:1/-1}
+.res{background:var(--soft);border-radius:10px;padding:10px 12px;color:var(--mut)}
+.res.okk{background:var(--okbg);color:var(--fg)}.res b{color:var(--ok)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px;margin:0}.kv dt{color:var(--mut)}.kv dd{margin:0;font-weight:600}
+.foot{margin-top:auto;border-top:1px solid var(--line);padding-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.foot small{color:var(--mut)}
+.cta{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--okbg);border:1px solid #9AD0B1;border-radius:12px;padding:12px 16px;margin-top:14px}
+.cta[hidden]{display:none}
+.chk{list-style:none;margin:0;padding:0;display:grid;gap:6px}.chk li{display:flex;gap:8px;align-items:baseline}.chk .y{color:var(--ok);font-weight:700}
+.demo{margin-top:14px;font-size:12px;color:var(--mut)}.demo button{font:inherit;background:none;border:0;color:var(--navy);text-decoration:underline;cursor:pointer;padding:0}
+.view[hidden]{display:none}
+</style></head><body><div class="modal">
+<h1>Prévia: aba Fiscal da demonstração, com Vale-pedágio e CIOT em abas</h1>
+<p class="sub">Clique em "Vale-pedágio" ou "CIOT" na esteira. Dados reais da OP-d755. Prévia visual: os botões não chamam nenhuma API.</p>
+<div class="note">Homologação: nenhum CIOT e nenhum vale real.</div>
+
+<div class="steps" role="tablist" aria-label="Esteira fiscal">
+ <div class="step"><b>CT-e</b><span>Fora desta demonstração</span></div>
+ <div class="step"><b>Averbação do CT-e</b><span>Fora desta demonstração</span></div>
+ <button class="step live sel" id="sVpo" role="tab" aria-selected="true"><b>Vale-pedágio (VPO)</b><span id="sVpoT">A comprar</span></button>
+ <button class="step live" id="sCiot" role="tab" aria-selected="false"><b>CIOT</b><span id="sCiotT">A emitir</span></button>
+ <div class="step"><b>MDF-e</b><span>Fora desta demonstração</span></div>
+</div>
+<div class="count"><span>Esteira fiscal</span><span id="cnt">0 de 2 concluídas</span></div>
+
+<!-- VPO -->
+<section class="view" id="vVpo" style="margin-top:10px">
+ <div class="head"><h2>1. Vale-pedágio (NSPEDÁGIO)</h2><span class="tag">HOMOLOGAÇÃO</span></div>
+ <div class="flow"><i class="on">Dados do sistema</i><i>Conferência</i><i>Envio ao NSPEDÁGIO</i><i>Resposta gravada na operação</i></div>
+ <div class="grid">
+  <div class="panel">
+   <h3>O que enviamos e de onde vem</h3>
+   <table><tr><th>Dado enviado</th><th>Valor nesta operação</th><th style="text-align:right">De onde vem</th></tr>
+    <tr><td>Placa do cavalo</td><td class="v">GYI1732 (placa de teste com TAG ativa)</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Eixos</td><td class="v">6 (cavalo + carretas)</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Pontos da rota</td><td class="v">São Paulo/SP (3550308) → Campinas/SP (3509502)</td><td class="o"><span class="et">Cotação</span></td></tr>
+    <tr><td>Vigência</td><td class="v">20/11/2026 a 21/11/2026</td><td class="o"><span class="et">Operação</span></td></tr>
+    <tr><td>Transportadora</td><td class="v">RBR Cargo · 69.115.969/0001-04</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Subcontratado</td><td class="v">48.386.492/0001-21</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Documento de transporte</td><td class="v">Operação nº 100010</td><td class="o"><span class="et">Operação</span></td></tr>
+    <tr><td>Valor do vale</td><td class="v" style="color:var(--mut)">aparece depois de Simular</td><td class="o"><span class="et">NSPEDÁGIO</span></td></tr>
+   </table>
+   <details><summary>Ajustar dados da rota e do veículo</summary>
+    <div class="fields">
+     <label>IBGE origem<input value="3550308"></label><label>IBGE destino<input value="3509502"></label>
+     <label>Placa do cavalo<input value="GYI1732"></label><label>Eixos (cavalo + carreta)<input value="6"></label>
+     <label>Início (AAAAMMDD)<input value="20261120"></label><label>Fim (até 15 dias)<input value="20261121"></label>
+     <label>CNPJ da transportadora<input value="69115969000104"></label><label>CPF/CNPJ do subcontratado<input value="48386492000121"></label>
+    </div><div style="margin-top:10px"><button class="btn sm">Usar a placa de teste com TAG ativa (GYI1732)</button></div>
+   </details>
+  </div>
+  <div class="panel">
+   <h3>Ações</h3>
+   <div class="acts"><button class="btn">Simular</button><button class="btn">Consultar tag</button><button class="btn p full" id="bComprar">Comprar vale-pedágio</button></div>
+   <h3>Resultado</h3>
+   <div class="res" id="rVpo">Ainda sem simulação. Comece por Simular. A compra leva de 1 a 3 minutos em homologação.</div>
+   <div class="acts"><button class="btn sm" disabled>Baixar recibo (PDF)</button><button class="btn sm" disabled>Reemitir recibo</button><button class="btn sm full" disabled>Cancelar vale</button></div>
+   <div class="foot"><button class="btn sm">Baixar JSON</button><button class="btn sm">Salvar em PDF</button><small>Registro de passos: nenhum ainda</small></div>
+  </div>
+ </div>
+ <div class="cta" id="cta" hidden><div><b>Vale-pedágio comprado.</b> Próximo passo da esteira: emitir o CIOT.</div><button class="btn p" id="goCiot">Continuar para o CIOT →</button></div>
+</section>
+
+<!-- CIOT -->
+<section class="view" id="vCiot" hidden style="margin-top:10px">
+ <div class="head"><h2>2. CIOT (efrete)</h2><span class="tag">HOMOLOGAÇÃO</span></div>
+ <div class="flow"><i class="on">Dados do sistema</i><i>Conferência</i><i>Envio à efrete</i><i>Resposta gravada na operação</i></div>
+ <div class="grid">
+  <div class="panel">
+   <h3>O que enviamos e de onde vem</h3>
+   <table><tr><th>Dado enviado</th><th>Valor nesta operação</th><th style="text-align:right">De onde vem</th></tr>
+    <tr><td>Contratante</td><td class="v">RBR Cargo · 69.115.969/0001-04</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Contratado e RNTRC</td><td class="v">Transportador efrete · RNTRC 56802388</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Motorista, CPF e CNH</td><td class="v">Motorista fictício efrete · CPF ●●●2422</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Placas e eixos</td><td class="v">RQW4D58 (3) + RRD5B39 (3)</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Origem, destino e distância</td><td class="v">São Paulo/SP → Campinas/SP · 100 km</td><td class="o"><span class="et">Rota</span></td></tr>
+    <tr><td>Carga, NCM e peso</td><td class="v">NCM 39231090 · 1.000 kg</td><td class="o"><span class="et">Cotação</span></td></tr>
+    <tr><td>Frete, adiantamento e saldo</td><td class="v">R$ 8.000,00 · R$ 3.000,00 + R$ 5.000,00</td><td class="o"><span class="et">Operação</span></td></tr>
+    <tr><td>Chave Pix</td><td class="v">●●●●●●0121 (do transportador)</td><td class="o"><span class="et">Cadastro</span></td></tr>
+    <tr><td>Piso mínimo da ANTT</td><td class="v">R$ 1.407,40 · tabela A · 6 eixos · 100 km</td><td class="o"><span class="et">Fiscal</span></td></tr>
+    <tr><td>Pedágio</td><td class="v"><span id="ped">R$ 180,00 (estimativa da cotação, sem vale comprado)</span></td><td class="o"><span class="et" id="pedO">Cotação</span></td></tr>
+   </table>
+  </div>
+  <div class="panel">
+   <h3>Conferência antes de emitir</h3>
+   <ul class="chk"><li><span class="y">✓</span><span>CT-e: dispensado nesta demonstração</span></li><li><span class="y">✓</span><span>Averbação: dispensada nesta demonstração</span></li><li><span class="y">✓</span><span>Dados conferidos (8 itens)</span></li></ul>
+   <h3>Emitir</h3>
+   <dl class="kv"><dt>Ambiente</dt><dd>Homologação</dd><dt>Caminhão</dt><dd>RQW4D58</dd><dt>Frete</dt><dd>R$ 8.000,00</dd><dt>Pagamentos</dt><dd>2 parcelas</dd></dl>
+   <button class="btn p">Emitir CIOT</button>
+   <div class="res">Ainda não emitido. O protocolo é gravado antes de ler a resposta; clicar de novo não gera outro CIOT.</div>
+   <div class="acts"><button class="btn sm" disabled>Baixar PDF</button><button class="btn sm" disabled>Consultar</button><button class="btn sm full" disabled>Cancelar CIOT</button></div>
+   <div class="foot"><button class="btn sm">Baixar JSON</button><button class="btn sm">Salvar em PDF</button><small>Se a efrete estiver fora do ar, digite o CIOT à mão no bloco "CIOT" da operação.</small></div>
+  </div>
+ </div>
+</section>
+
+<p class="demo">Só para testar a prévia: <button id="fake">simular vale comprado</button> · <button id="fake2">voltar ao início</button></p>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+function show(w){const v=w==='vpo';$('vVpo').hidden=!v;$('vCiot').hidden=v;$('sVpo').classList.toggle('sel',v);$('sCiot').classList.toggle('sel',!v);$('sVpo').setAttribute('aria-selected',v);$('sCiot').setAttribute('aria-selected',!v)}
+$('sVpo').onclick=()=>show('vpo');$('sCiot').onclick=()=>show('ciot');$('goCiot').onclick=()=>show('ciot');
+$('fake').onclick=()=>{show('vpo');$('sVpo').classList.add('done');$('sVpoT').textContent='Comprado · R$ 143,20';$('sCiot').classList.add('next');$('cta').hidden=false;$('cnt').textContent='1 de 2 concluídas';
+$('rVpo').className='res okk';$('rVpo').innerHTML='<b>Vale comprado.</b><dl class="kv" style="margin-top:6px"><dt>Nº do vale</dt><dd>00043134980188081131</dd><dt>Viagem</dt><dd>530338</dd><dt>Valor</dt><dd>R$ 143,20</dd></dl>';
+document.querySelectorAll('#vVpo .acts .btn.sm').forEach(b=>b.disabled=false);$('bComprar').disabled=true;
+$('ped').textContent='R$ 143,20 (valor do vale comprado)';$('pedO').textContent='NSPEDÁGIO'};
+$('fake2').onclick=()=>location.reload();
+</script></body></html>

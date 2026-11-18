@@ -15,7 +15,7 @@ const TIPO_DOC: Record<string, string> = { cnh: 'CNH', rg: 'RG', crlv: 'CRLV', c
 const CAMPO_LABEL: Record<string, string> = {
   nome: 'Nome', cpf: 'CPF', numero_registro: 'Nº registro', categoria: 'Categoria', validade: 'Validade', ear: 'EAR',
   placa: 'Placa', renavam: 'RENAVAM', chassi: 'Chassi', marca_modelo: 'Marca/modelo', ano: 'Ano', exercicio: 'Exercício',
-  cpf_cnpj_proprietario: 'Doc. proprietário', nome_proprietario: 'Proprietário', uf: 'UF', capacidade_carga: 'Capacidade (kg)',
+  cpf_cnpj_proprietario: 'Doc. proprietário', nome_proprietario: 'Proprietário', uf: 'UF', capacidade_carga: 'Capacidade (kg)', especie_tipo: 'Espécie/tipo', peso_bruto_total: 'PBT (kg)',
   cnpj: 'CNPJ', razao_social: 'Razão social', nome_fantasia: 'Nome fantasia', situacao_cadastral: 'Situação', data_emissao: 'Emitido em',
   numero_rg: 'Nº RG', data_nascimento: 'Nascimento', legivel: 'Legível', suspeita_fraude: 'Suspeita de fraude', motivo_suspeita: 'Motivo da suspeita',
 }

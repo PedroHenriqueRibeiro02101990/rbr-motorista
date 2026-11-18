@@ -1,4 +1,7 @@
-// Edge Function: emitir-mdfe (v23)
+// Edge Function: emitir-mdfe (v29)
+// v29 (2026-11-16): so bloqueia o que o orgao externo rejeitaria. Le rntrc_status (veiculo/motorista) e cavalo_veiculo_id; carreta no campo de tracao
+//   com cavalo_veiculo_id vira reboque; condicao de pagamento vem do contrato do CIOT (efrete); rejeicao da SEFAZ vem traduzida com o campo a corrigir;
+//   todo aviso da RBR fica nos eventos fiscais. Ver mdfe.ts e _shared/regrasExternas.ts.
 // v23 (2026-11-03, B4): condutor (operacoes.condutor_id) e titular/recebedor (operacoes.titular_id) separados do motorista alocado.
 //   MDF-e usa nome e CPF do condutor; pagamento vai para o titular. Sem os campos, nada muda. Ver condutorTitular.ts.
 // v22 (2026-11-03): UFs de percurso (percursos[].uf_percurso) quando a UF de inicio e fim nao sao limitrofes (rejeicao 'Percurso informado invalido'). Le documentacao_operacao vpo.payload_resposta.percurso_ufs; ver mdfe.ts.
@@ -21,6 +24,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { mensagemCondutorAusente, opComCondutor, resolverCondutorTitular } from "./condutorTitular.ts";
 import { cepCarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { condicaoDoContratoCiot, resolverTracaoReboques, traduzirRejeicaoMdfe } from "../_shared/regrasExternas.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -100,7 +104,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     const camposVeiculo =
-      "placa, renavam, tara_kg, capacidade_carga, tipo_veiculo, tipo_carroceria, uf_licenciamento, titular_id, is_veiculo_proprio, quantidade_eixos, e_reboque";
+      "id, placa, renavam, tara_kg, capacidade_carga, tipo_veiculo, tipo_carroceria, uf_licenciamento, titular_id, is_veiculo_proprio, quantidade_eixos, e_reboque, rntrc_status";
     // deno-lint-ignore no-explicit-any
     async function carregarVeiculo(v: Record<string, any> | null): Promise<VeiculoMdfe | null> {
       if (!v) return null;
@@ -122,21 +126,37 @@ Deno.serve(async (req: Request) => {
       return { ...v, pbt_kg, titular } as VeiculoMdfe;
     }
 
-    let tracao: VeiculoMdfe | null = null;
+    let tracaoOp: VeiculoMdfe | null = null;
     if (op.veiculo_id) {
       const { data: v } = await supabaseAdmin.from("veiculos").select(camposVeiculo).eq("id", op.veiculo_id).maybeSingle();
-      tracao = await carregarVeiculo(v);
+      tracaoOp = await carregarVeiculo(v);
+    }
+    // Dado antigo: carreta em veiculo_id e o cavalo em cavalo_veiculo_id. Fonte unica daqui pra frente: tracao = veiculo_id, reboques = operacao_reboques.
+    const { data: opVeic } = await supabaseAdmin.from("operacoes").select("cavalo_veiculo_id").eq("id", operacao_id).maybeSingle();
+    let cavaloOp: VeiculoMdfe | null = null;
+    if (opVeic?.cavalo_veiculo_id && opVeic.cavalo_veiculo_id !== op.veiculo_id) {
+      const { data: v } = await supabaseAdmin.from("veiculos").select(camposVeiculo).eq("id", opVeic.cavalo_veiculo_id).maybeSingle();
+      cavaloOp = await carregarVeiculo(v);
     }
     const { data: vinculos } = await supabaseAdmin
       .from("operacao_reboques")
       .select("veiculo_id, ordem")
       .eq("operacao_id", operacao_id)
       .order("ordem");
-    const reboques: VeiculoMdfe[] = [];
+    const reboquesVinculados: VeiculoMdfe[] = [];
     for (const r of vinculos ?? []) {
       const { data: v } = await supabaseAdmin.from("veiculos").select(camposVeiculo).eq("id", r.veiculo_id).maybeSingle();
       const carregado = await carregarVeiculo(v);
-      if (carregado) reboques.push(carregado);
+      if (carregado) reboquesVinculados.push(carregado);
+    }
+    const resolvido = resolverTracaoReboques(tracaoOp, cavaloOp, reboquesVinculados);
+    const tracao = resolvido.tracao;
+    const reboques = resolvido.reboques;
+    // Status do RNTRC lido direto do cadastro (a view so diz "ativo ou nao", e NULL virava bloqueio).
+    let motoristaRntrcStatus: string | null = null;
+    if (op.motorista_id) {
+      const { data: pm } = await supabaseAdmin.from("pessoas").select("rntrc_status").eq("id", op.motorista_id).maybeSingle();
+      motoristaRntrcStatus = pm?.rntrc_status ?? null;
     }
 
     let cot = null;
@@ -230,8 +250,21 @@ Deno.serve(async (req: Request) => {
       ? cepColetaManual
       : cepCarregamentoDe(cot?.nf_remetente_cnpj, op.emitente_cnpj, cot?.nf_remetente_endereco, pf?.endereco_cep);
 
+    // Contrato do CIOT (efrete, emitido) manda na condicao de pagamento: a SEFAZ confere parcelas + adiantamento = valor do contrato.
+    let condBase = cond
+      ? { valor_total_contrato: cond.valor_total_contrato != null ? Number(cond.valor_total_contrato) : null, valor_adiantamento: cond.valor_adiantamento != null ? Number(cond.valor_adiantamento) : null, saldo_prazo_dias: cond.saldo_prazo_dias != null ? Number(cond.saldo_prazo_dias) : null }
+      : null;
+    let divergenciaCondicao: string | null = null;
+    if (ciotVpo?.ciot_origem === "efrete") {
+      const { data: pedido } = await supabaseAdmin.from("efrete_ciot_pedidos").select("valor_frete").eq("operacao_id", operacao_id).eq("status", "emitido").order("atualizado_em", { ascending: false }).limit(1).maybeSingle();
+      const r = condicaoDoContratoCiot(condBase, pedido);
+      condBase = r.condicao;
+      divergenciaCondicao = r.divergencia;
+    }
+
+    const opComStatus = { ...opFinal, veiculo_rntrc_status: tracao?.rntrc_status ?? null, motorista_rntrc_status: motoristaRntrcStatus };
     const { ambiente, bloqueios, avisos, regras, payload } = montarMdfe({
-      op: notas.length && notas.every((n) => n.valor != null) ? { ...opFinal, valor_nf: Math.round(somaNotas("valor") * 100) / 100 } : opFinal,
+      op: notas.length && notas.every((n) => n.valor != null) ? { ...opComStatus, valor_nf: Math.round(somaNotas("valor") * 100) / 100 } : opComStatus,
       pf,
       municipioEmitente,
       cte: cteDoc ?? null,
@@ -254,17 +287,21 @@ Deno.serve(async (req: Request) => {
       cliente,
       ciotVpo,
       percursoInformado,
-      condicao: cond
-        ? {
-          valor_total_contrato: cond.valor_total_contrato != null ? Number(cond.valor_total_contrato) : null,
-          valor_adiantamento: cond.valor_adiantamento != null ? Number(cond.valor_adiantamento) : null,
-          saldo_prazo_dias: cond.saldo_prazo_dias != null ? Number(cond.saldo_prazo_dias) : null,
-        }
-        : null,
+      condicao: condBase,
       agora: new Date(),
     });
 
     if (condutorAusente) bloqueios.push(condutorAusente);
+    if (resolvido.erro && !bloqueios.some((b) => b.includes("está no campo de tração"))) bloqueios.push(resolvido.erro);
+    if (resolvido.corrigido) {
+      const m = `A carreta ${tracaoOp?.placa} estava no campo de tração: usei o cavalo ${tracao?.placa} como tração e a carreta como reboque.`;
+      avisos.push(m);
+      regras.push({ tipo: "aviso", origem: "rbr", mensagem: m });
+    }
+    if (divergenciaCondicao) {
+      avisos.push(divergenciaCondicao);
+      regras.push({ tipo: "aviso", origem: "rbr", mensagem: divergenciaCondicao });
+    }
     if (testeDaTrava(trava) && Array.isArray(trava.bloqueios)) bloqueios.push(...trava.bloqueios);
     if (testeDaTrava(trava) && Array.isArray(trava.avisos)) avisos.push(...trava.avisos);
 
@@ -276,6 +313,7 @@ Deno.serve(async (req: Request) => {
 
     if (bloqueios.length > 0) {
       const mensagem = bloqueios.join(" ");
+      const traducoes = bloqueios.map((b) => traduzirRejeicaoMdfe(b)).filter((t) => t != null);
       await supabaseAdmin.from("documentacao_operacao").upsert(
         {
           operacao_id,
@@ -287,7 +325,7 @@ Deno.serve(async (req: Request) => {
         },
         { onConflict: "operacao_id,tipo" },
       );
-      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, regras, erro: mensagem }, 422);
+      return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, regras, erro: mensagem, corrigir: traducoes }, 422);
     }
 
     const { data: token, error: tokenError } = await supabaseAdmin.rpc("get_focus_nfe_token", {
@@ -332,7 +370,8 @@ Deno.serve(async (req: Request) => {
         },
         { onConflict: "operacao_id,tipo" },
       );
-      return jsonResponse({ sucesso: false, erro: mensagemErro, detalhe: focusJson }, 502);
+      const traduzida = traduzirRejeicaoMdfe(focusJson?.mensagem ?? "");
+      return jsonResponse({ sucesso: false, erro: traduzida ? `${traduzida.mensagem} (SEFAZ: ${focusJson?.mensagem})` : mensagemErro, corrigir: traduzida ? [traduzida] : [], detalhe: focusJson }, 502);
     }
 
     await supabaseAdmin.from("documentacao_operacao").upsert(
