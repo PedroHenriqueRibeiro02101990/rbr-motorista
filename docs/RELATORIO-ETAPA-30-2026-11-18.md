@@ -28,3 +28,5 @@ Compra e simulacao de vale-pedagio e emissao de CIOT pela API em operacao real; 
 - Capturas de tela nos 4 estados: o Playwright nao esta instalado no projeto e nao instalei nada. Conferir pelo link de preview do PR.
 - A tela nao foi aberta em navegador aqui (so tsc, lint, testes e build).
 - Sem merge, como pedido.
+
+Aprovado pelo Pedro em 18/11/2026 e mesclado, commit 57cea5b, deploy rbr-gestor-5azi0ee6s-rbr4.
