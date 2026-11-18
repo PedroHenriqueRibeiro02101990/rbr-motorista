@@ -56,6 +56,7 @@ export interface VeiculoMdfe {
   // Opcionais (cadastro por documentos, 18/11/2026): ausentes em cadastro antigo ou antes da migracao; tratados como vazios.
   e_reboque?: boolean | null;
   pbt_kg?: number | string | null;
+  cmt_kg?: number | string | null;
   titular: {
     nome: string | null;
     cpf: string | null;
@@ -159,6 +160,21 @@ export function cepCarregamentoDe(
   if (daNota.length === 8) return daNota;
   const remetenteEhRbr = digitos(remetenteCnpj).length === 14 && digitos(remetenteCnpj) === digitos(emitenteCnpj);
   return remetenteEhRbr && digitos(cepRbr).length === 8 ? digitos(cepRbr) : daNota || null;
+}
+
+// 18/11/2026 (etapa 18): CEP de DESCARREGAMENTO = CEP do DESTINATARIO da NF-e (cotacoes.nf_destinatario_endereco), nunca o do tomador.
+// So cai no CEP do cliente quando o destinatario da NF-e e o proprio cliente (mesmo CNPJ). Sem 8 digitos em nenhuma fonte: null (bloqueio da SEFAZ).
+export function cepDescarregamentoDe(
+  destinatarioCnpj: unknown,
+  enderecoDestinatario: { cep?: unknown } | null | undefined,
+  clienteCnpj: unknown,
+  cepCliente: unknown,
+): string | null {
+  const daNota = digitos(enderecoDestinatario?.cep);
+  if (daNota.length === 8) return daNota;
+  const dest = digitos(destinatarioCnpj);
+  const mesmo = dest.length === 14 && dest === digitos(clienteCnpj);
+  return mesmo && digitos(cepCliente).length === 8 ? digitos(cepCliente) : null;
 }
 
 // B09: CIOT emitido pela efrete só vale no MDF-e enquanto estiver 'emitido' (cancelado, encerrado ou com erro não vale).
@@ -362,8 +378,8 @@ export function montarMdfe(
   }
 
   if (tipoRodado === "03" && d.reboques.length === 0) {
-    // A confirmar na SEFAZ se rejeita: tentamos emitir e mostramos a rejeição real, em vez de bloquear antes.
-    aviso("info", "Cavalo mecânico sem reboque/semirreboque vinculado à operação. Confira se a carreta deveria estar na operação; se a SEFAZ rejeitar, a mensagem dela aparece aqui.");
+    // 18/11/2026 (etapa 21b): na OP-0360 a SEFAZ rejeitou o MDF-e de cavalo sem reboque: e bloqueio SEFAZ real (decisao posterior a de 16/11).
+    bloqueio("sefaz", "Cavalo mecânico sem reboque/semirreboque vinculado à operação: a SEFAZ exige a carreta no MDF-e. Vincule a carreta em Operações > Veículos (operacao_reboques) antes de emitir.");
   }
   if (d.reboques.length > 3) bloqueio("sefaz", "O MDF-e aceita no máximo 3 reboques por veículo de tração.");
   const veiculosReboque = d.reboques.slice(0, 3).map((r, i) => {
@@ -402,6 +418,14 @@ export function montarMdfe(
   }
   const pesoBrutoKg = d.cotacao.peso_bruto_kg;
   if (!pesoBrutoKg || pesoBrutoKg <= 0) bloqueio("sefaz", "Cotação sem peso bruto da carga (kg) — totalizador do MDF-e.");
+  // 18/11/2026 (etapa 22): CMT do CRLV do cavalo = limite do conjunto (cavalo + carretas + carga). So AVISO (nao e regra da SEFAZ).
+  const cmt = inteiro(v?.cmt_kg);
+  if (cmt && pesoBrutoKg && pesoBrutoKg > 0) {
+    const taraConjunto = (pesosTracao.tara ?? 0) + veiculosReboque.reduce((t, r) => t + (Number(r.tara) || 0), 0);
+    if (taraConjunto + pesoBrutoKg > cmt) {
+      aviso("rbr", `Tara do conjunto (${taraConjunto} kg) + peso da carga (${pesoBrutoKg} kg) passa do CMT do CRLV do cavalo (${cmt} kg). Confira a carga.`);
+    }
+  }
   const valorCarga = op.valor_nf != null ? Number(op.valor_nf) : null;
   if (!valorCarga || valorCarga <= 0) bloqueio("sefaz", "Cotação sem valor da carga (valor da NF) — totalizador do MDF-e.");
   // Tipo de carga: vazio na cotacao assume Carga geral (05) e avisa (regra da RBR); preenchido e nao reconhecido bloqueia (SEFAZ).
@@ -476,7 +500,23 @@ export function montarMdfe(
   if (ciotDeHomologacao && digitos(ciotVpo?.ciot)) {
     aviso("antt", "O CIOT registrado foi emitido na HOMOLOGAÇÃO da efrete (sem validade): não vale para MDF-e em produção.");
   }
-  const ciotNum = ciotDeHomologacao ? "" : digitos(ciotVpo?.ciot);
+  // 18/11/2026 (etapa 20): o CIOT de 16 digitos (12 + verificador de 4) e separado aqui, na hora de emitir; o grupo ciot NUNCA e descartado em silencio.
+  const ciotBruto = ciotDeHomologacao ? "" : digitos(ciotVpo?.ciot);
+  const ciotNum = ciotBruto.length === 16 ? ciotBruto.slice(0, 12) : ciotBruto;
+  if (ciotBruto.length === 16) {
+    aviso("rbr", `CIOT gravado com 16 digitos: usei os 12 primeiros (${ciotNum}) e o verificador ${ciotBruto.slice(12)} (normalizado so no envio; o cadastro sera corrigido).`);
+  } else if (ciotBruto && ciotBruto.length !== 12) {
+    bloqueio("antt", `CIOT com ${ciotBruto.length} digitos: precisa ter 12 (ou 16 com o verificador). Corrija o numero na aba CIOT/Vale-Pedagio.`);
+  }
+  const contratoExigeCiot = ciotVpo?.ciot_origem === "rbr_repom" || ehTac;
+  const ciotStatus = String(ciotVpo?.ciot_status ?? "");
+  if (ciotStatus.startsWith("refazer")) aviso("rbr", `O CIOT esta em "${ciotStatus}": refaca o CIOT antes de emitir o MDF-e.`);
+  if (contratoExigeCiot && ciotNum.length === 12 && ciotVpo?.ciot_ambiente && ciotVpo.ciot_ambiente !== "producao" && !homologacao && !teste) {
+    bloqueio("antt", "O CIOT esta em ambiente de homologacao: nao vale para MDF-e de producao.");
+  }
+  if (contratoExigeCiot && ciotNum.length !== 12 && !ehTac && !teste && !homologacao) {
+    bloqueio("antt", "Contrato Repom sem CIOT (12 digitos): lance o CIOT antes de emitir o MDF-e.");
+  }
   if (ehTac && ciotNum.length !== 12) {
     const msgCiot =
       "CIOT não informado (12 dígitos) — emita o CIOT pela efrete (ou preencha aqui o do portal do emissor). Obrigatório quando o veículo é de transportador autônomo (TAC).";
@@ -522,10 +562,17 @@ export function montarMdfe(
     // SEFAZ exige o grupo de pagamento em carga lotação. Sem destino do motorista, deriva do CIOT (IPEF informado ou CNPJ da Repom).
     const ipef = ipefDerivado(ciotVpo?.ciot_origem, ciotVpo?.pagto_cnpj_ipef);
     const cnpjIpef = ipef?.cnpj;
-    if (ipef?.origem === "repom" && !pix && !(banco && agencia)) {
+    // 18/11/2026 (etapa 17): CIOT da Repom (rbr_repom) paga pela IPEF da Repom, com PRIORIDADE sobre o Pix e o banco do cadastro do motorista
+    // (caso OP-3ec3: o destino caia no Pix do motorista). Outras origens de CIOT mantem a ordem pix > banco > IPEF.
+    const ipefPrioritaria = ciotVpo?.ciot_origem === "rbr_repom" && Boolean(cnpjIpef);
+    if (ipefPrioritaria && (pix || (banco && agencia))) {
+      aviso("info", `Destino do pagamento: IPEF da Repom (CNPJ ${cnpjIpef}); o Pix/banco do cadastro do motorista nao foi usado.`);
+    } else if (ipef?.origem === "repom" && !pix && !(banco && agencia)) {
       aviso("info", `Destino de pagamento preenchido sozinho: conta digital da Repom (CNPJ ${ipef.cnpj}). Confira antes de emitir.`);
     }
-    const destinoPagamento = pix
+    const destinoPagamento = ipefPrioritaria
+      ? { cnpj_instituicao_pagamento: cnpjIpef }
+      : pix
       ? { pix }
       : banco && agencia
       ? { numero_banco: banco, numero_agencia: agencia }

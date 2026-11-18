@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { ciotAusenteBloqueia, ciotEfreteSemValidade, cepCarregamentoDe, cepDescarregamentoDe, type DadosMdfe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 
 const RBR = "69115969000104";
 const CHAVE_CTE = "35261069115969000104570010000000011211536013";
@@ -106,10 +106,10 @@ test("cavalo mecânico com carreta: sem bloqueios, tudo dentro de modal_rodoviar
   assert.equal(m.pagamentos[0].forma_pagamento, "1");
 });
 
-test("cavalo sem carreta vinculada só avisa (a SEFAZ diz se rejeita)", () => {
+test("cavalo sem carreta vinculada BLOQUEIA (a SEFAZ rejeitou na OP-0360; decisao de 18/11)", () => {
   const { bloqueios, avisos } = montarMdfe(base({ reboques: [] }));
-  assert.ok(!bloqueios.some((b) => b.startsWith("Cavalo mecânico sem reboque")));
-  assert.ok(avisos.some((a) => a.startsWith("Cavalo mecânico sem reboque")));
+  assert.ok(bloqueios.some((b) => b.startsWith("Cavalo mecânico sem reboque")));
+  assert.ok(!avisos.some((a) => a.startsWith("Cavalo mecânico sem reboque")));
 });
 
 test("reboque sem tara/capacidade/carroceria bloqueia", () => {
@@ -467,4 +467,55 @@ test("operacao manual: vale-pedagio e CIOT vem de operacao_ciot_vpo; payload nao
 test("grupo ciot entra no payload a partir de 23/11/2026 (12 digitos); antes dessa data o CIOT continua opcional para frota propria", () => {
   assert.equal(ciotObrigatorioNoMdfe(new Date("2026-11-22T12:00:00Z")), false);
   assert.equal(ciotObrigatorioNoMdfe(new Date("2026-11-23T12:00:00Z")), true);
+});
+
+// ---- Parte C (18/11/2026): um teste por erro do historico de 16 e 17/11 ----
+const CIOT_REPOM = { ciot: "520048038432", ciot_verificador: "1483", ciot_origem: "rbr_repom", ciot_ambiente: "producao", numero_averbacao: "AVB-123", pagto_cnpj_ipef: "65697260000103" };
+const prodRepom = (s: Partial<DadosMdfe> = {}) => {
+  const b = base();
+  return base({ op: { ...b.op, ambiente_fiscal: "producao" }, tracao: { ...CAVALO, is_veiculo_proprio: false, titular: { nome: "Fulano", cpf: "12345678909", cnpj: null, inscricao_estadual: null, uf: "SP", rntrc_numero: "87654321" } }, ciotVpo: CIOT_REPOM, ...s });
+};
+
+test("etapa 17: CIOT rbr_repom paga pela IPEF da Repom mesmo com Pix cadastrado no motorista", () => {
+  const r = montarMdfe(prodRepom({ motorista: { pix: "chave-pix-do-motorista", banco_codigo: null, banco_agencia: null } }));
+  const pag = r.payload.modal_rodoviario.pagamentos[0];
+  assert.equal(pag.cnpj_instituicao_pagamento, "65697260000103");
+  assert.equal(pag.pix, undefined);
+  assert.ok(!r.avisos.some((a) => /Destino de pagamento do motorista nao definido|Destino de pagamento do motorista não definido/.test(a)));
+});
+test("etapa 17: outras origens de CIOT mantem pix > banco > IPEF", () => {
+  const r = montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot_origem: "parceiro", pagto_cnpj_ipef: "65697260000103" }, motorista: { pix: "chave", banco_codigo: null, banco_agencia: null } }));
+  assert.equal(r.payload.modal_rodoviario.pagamentos[0].pix, "chave");
+});
+test("etapa 18: CEP de descarregamento e o do destinatario da NF-e, nao o do tomador (OP-3ec3: 35180018; OP-0360: 65285000)", () => {
+  assert.equal(cepDescarregamentoDe("11222333000181", { cep: "35180-018" }, "99888777000166", "13295274"), "35180018");
+  assert.equal(cepDescarregamentoDe("11222333000181", { cep: "65285000" }, "99888777000166", "13295274"), "65285000");
+  assert.equal(cepDescarregamentoDe("99888777000166", {}, "99888777000166", "13295-274"), "13295274"); // destinatario = o proprio cliente
+  assert.equal(cepDescarregamentoDe("11222333000181", {}, "99888777000166", "13295274"), null); // nao cai no CEP do tomador
+});
+test("etapa 19: nao envia tipo_vale_pedagio; categoria pelos eixos (cavalo 3 + carreta 3 = 08)", () => {
+  const t3 = { ...prodRepom().tracao!, quantidade_eixos: 3 };
+  const r = montarMdfe(prodRepom({ tracao: t3, ciotVpo: { ...CIOT_REPOM, vpo_idvpo: "96670000000000000001", vpo_valor: 236.27, vpo_cnpj_fornecedora: "11222333000181", vpo_tipo: "01" }, cotacao: { ...base().cotacao, pedagio: 236.27 } }));
+  const vale = r.payload.modal_rodoviario.dispositivos_vale_pedagio[0];
+  assert.equal(vale.tipo_vale_pedagio, undefined); assert.equal(vale.categoria_combinacao_veicular, "08");
+});
+test("etapa 20 (OP-0360): CIOT de 16 digitos gravado vira 12 no payload com aviso, e o grupo de pagamento sai sem tipo_vale_pedagio", () => {
+  const r = montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot: "5200480384321483", ciot_verificador: null } }));
+  assert.equal(r.payload.modal_rodoviario.ciot[0].ciot, "520048038432");
+  assert.ok(r.avisos.some((a) => /16 digitos/.test(a)));
+  assert.ok(r.payload.modal_rodoviario.pagamentos.length === 1);
+});
+test("etapa 20: CIOT com tamanho errado bloqueia (nunca some em silencio); contrato Repom sem CIOT bloqueia; refazer avisa; homologacao bloqueia", () => {
+  assert.ok(montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot: "12345" } })).bloqueios.some((b) => /CIOT com 5 digitos/.test(b)));
+  assert.ok(montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot: null } })).bloqueios.some((b) => /CIOT/.test(b)));
+  assert.ok(montarMdfe(prodRepom({ ciotVpo: { ...CIOT_REPOM, ciot_status: "refazer_troca_veiculo" } })).avisos.some((a) => /refazer/.test(a)));
+});
+test("etapa 21: carreta cadastrada como e_reboque=false e cavalo sem carreta: cavalo sem reboque bloqueia com instrucao de vincular", () => {
+  const r = montarMdfe(prodRepom({ reboques: [] }));
+  assert.ok(r.bloqueios.some((b) => /Vincule a carreta/.test(b)));
+});
+test("etapa 22: aviso (nao bloqueio) quando tara do conjunto + carga passa do CMT do CRLV do cavalo", () => {
+  const b = base();
+  const r = montarMdfe(base({ tracao: { ...CAVALO, cmt_kg: 20000 }, cotacao: { ...b.cotacao, peso_bruto_kg: 30000 } }));
+  assert.ok(r.avisos.some((a) => /passa do CMT/.test(a))); assert.ok(!r.bloqueios.some((x) => /CMT/.test(x)));
 });

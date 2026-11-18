@@ -116,7 +116,7 @@ const CAMPOS_MDFE: Campo[] = [
   },
   { grupo: 'Percurso', label: 'Carregamento', origem: 'Cotação', valor: (p) => (p.municipios_carregamento?.[0]?.nome ? `${p.municipios_carregamento[0].nome}/${p.uf_inicio}` : null) },
   { grupo: 'Percurso', label: 'Descarregamento', origem: 'Cotação', valor: (p) => (p.municipios_descarregamento?.[0]?.nome ? `${p.municipios_descarregamento[0].nome}/${p.uf_fim}` : null) },
-  { grupo: 'CT-e vinculado', label: 'Chave do CT-e autorizado', caminho: 'conhecimentos_transporte.0.chave_cte', origem: 'CT-e já autorizado' },
+  { grupo: 'CT-e vinculado', label: 'Chave do CT-e autorizado', caminho: 'municipios_descarregamento.0.conhecimentos_transporte.0.chave_cte', origem: 'CT-e já autorizado' },
   { grupo: 'Carga', label: 'Tipo de carga', caminho: 'tipo_carga', origem: 'Cotação' },
   { grupo: 'Carga', label: 'Produto predominante', caminho: 'descricao_produto', origem: 'Cotação — aba NF-e' },
   { grupo: 'Carga', label: 'NCM', caminho: 'codigo_ncm_produto', origem: 'Cotação — aba NF-e', opcional: true },

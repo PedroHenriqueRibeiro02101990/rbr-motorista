@@ -23,7 +23,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { mensagemCondutorAusente, opComCondutor, resolverCondutorTitular } from "./condutorTitular.ts";
-import { cepCarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
+import { categoriaCombinacao, eixosDaCombinacao } from "../_shared/combinacaoVeicular.ts";
+import { cepCarregamentoDe, cepDescarregamentoDe, montarMdfe, testeDaTrava, type VeiculoMdfe } from "./mdfe.ts";
 import { condicaoDoContratoCiot, resolverTracaoReboques, traduzirRejeicaoMdfe } from "../_shared/regrasExternas.ts";
 
 const CORS_HEADERS = {
@@ -119,11 +120,13 @@ Deno.serve(async (req: Request) => {
       }
       // PBT do CRLV (coluna da migracao 20261118-0100): leitura defensiva; se a coluna ainda nao existe, segue sem ela.
       let pbt_kg: number | null = null;
+      let cmt_kg: number | null = null;
       try {
-        const { data: x, error: ex } = await supabaseAdmin.from("veiculos").select("pbt_kg").eq("placa", v.placa).maybeSingle();
+        const { data: x, error: ex } = await supabaseAdmin.from("veiculos").select("pbt_kg, cmt_kg").eq("placa", v.placa).maybeSingle();
         if (!ex && x && typeof x.pbt_kg === "number") pbt_kg = x.pbt_kg;
+        if (!ex && x && typeof x.cmt_kg === "number") cmt_kg = x.cmt_kg;
       } catch (_e) { /* coluna ausente: ignora */ }
-      return { ...v, pbt_kg, titular } as VeiculoMdfe;
+      return { ...v, pbt_kg, cmt_kg, titular } as VeiculoMdfe;
     }
 
     let tracaoOp: VeiculoMdfe | null = null;
@@ -163,7 +166,7 @@ Deno.serve(async (req: Request) => {
     if (op.cotacao_id) {
       const { data } = await supabaseAdmin
         .from("cotacoes")
-        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_cnpj, nf_remetente_endereco, origem_cep")
+        .select("peso_bruto_kg, tipo_carga, nf_produto_predominante, ncms_produtos, pedagio, nf_remetente_cnpj, nf_remetente_endereco, origem_cep, nf_destinatario_cnpj, nf_destinatario_endereco")
         .eq("id", op.cotacao_id)
         .maybeSingle();
       cot = data;
@@ -281,7 +284,8 @@ Deno.serve(async (req: Request) => {
         teste_producao: testeDaTrava(trava),
       },
       cepCarregamento,
-      cepDescarregamento: op.destinatario_cep ?? null,
+      // etapa 18: CEP do destinatario da NF-e (nao o do tomador); a coluna da view continua como esta para as outras telas.
+      cepDescarregamento: cepDescarregamentoDe(cot?.nf_destinatario_cnpj, cot?.nf_destinatario_endereco, cliente?.cnpj ?? cliente?.cpf, op.destinatario_cep),
       apolice,
       motorista,
       cliente,
@@ -328,6 +332,23 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ sucesso: false, bloqueado: true, motivos: bloqueios, avisos, regras, erro: mensagem, corrigir: traducoes }, 422);
     }
 
+    // 18/11/2026 (etapas 17, 19 e 20): grava no cadastro o que o emissor derivou, SO quando estava vazio (nunca sobrescreve): destino IPEF e CNPJ
+    // responsavel do CIOT da Repom, categoria de combinacao pelos eixos e o CIOT de 16 digitos separado em 12 + 4. Melhor esforco: falha aqui nao barra.
+    if (ciotVpo) {
+      try {
+        const upd: Record<string, unknown> = {};
+        const dig = (x: unknown) => String(x ?? "").replace(/\D/g, "");
+        if (ciotVpo.ciot_origem === "rbr_repom" && !dig(ciotVpo.pagto_cnpj_ipef)) upd.pagto_cnpj_ipef = "65697260000103";
+        if (!dig(ciotVpo.ciot_cnpj_responsavel) && dig(op.emitente_cnpj).length === 14) upd.ciot_cnpj_responsavel = dig(op.emitente_cnpj);
+        const eixos = eixosDaCombinacao(tracao, reboques);
+        const cat = categoriaCombinacao(eixos);
+        if (!ciotVpo.vpo_categoria_combinacao && cat && dig(ciotVpo.vpo_idvpo)) upd.vpo_categoria_combinacao = cat;
+        const c16 = dig(ciotVpo.ciot);
+        if (c16.length === 16) { upd.ciot = c16.slice(0, 12); if (!ciotVpo.ciot_verificador) upd.ciot_verificador = c16.slice(12); }
+        if (Object.keys(upd).length) await supabaseAdmin.from("operacao_ciot_vpo").update(upd).eq("operacao_id", operacao_id);
+      } catch (_e) { /* melhor esforco */ }
+    }
+
     const { data: token, error: tokenError } = await supabaseAdmin.rpc("get_focus_nfe_token", {
       p_ambiente: ambiente,
     });
@@ -350,6 +371,12 @@ Deno.serve(async (req: Request) => {
     });
 
     const focusJson = await focusResp.json().catch(() => null);
+    // Resposta do POST a Focus (status HTTP e corpo) guardada a parte da do sincronizador, para saber o que a Focus aceitou ou descartou.
+    await supabaseAdmin.from("eventos_fiscais_operacao").insert({
+      operacao_id, tipo_documento: "mdfe", evento: "resposta_post_focus", origem: "automatico", ator_id: pessoaAtor.id,
+      sucesso: focusResp.status === 202 || focusResp.ok, mensagem: `Focus respondeu HTTP ${focusResp.status}`,
+      requisicao: { referencia: ref, ambiente }, resposta: { http: focusResp.status, corpo: focusJson },
+    });
 
     if (focusResp.status !== 202 && !focusResp.ok) {
       const mensagemErro = focusJson?.mensagem
