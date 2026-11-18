@@ -68,3 +68,10 @@ test('integracao: saida crua da IA (sintetica) -> normalizacao -> payload -> val
   assert.equal(resumoDoQueSeraCriado(p), '1 motorista, 1 cavalo, 1 carreta vinculada ao cavalo')
   assert.ok(p.auditoria.length > 5)
 })
+
+test('Parte D: RG vem do documento e o genero so entra se a pessoa confirmou', () => {
+  const rg = normalizarExtracao('rg', { nome: c('Joao Teste'), numero_rg: c('123456'), orgao_emissor: c('SSP'), uf_emissor: c('MA'), cpf: c('52998224725') }, HOJE)
+  const sem = montarPayload([{ path: 'l/rg.pdf', tipo: 'rg', normalizado: rg }])
+  assert.equal(sem.complemento?.rg_numero, '123456'); assert.equal(sem.complemento?.rg_orgao_emissor, 'SSP'); assert.equal(sem.complemento?.genero, null)
+  assert.equal(montarPayload([{ path: 'l/rg.pdf', tipo: 'rg', normalizado: rg, edicoes: { genero: 'M' } }]).complemento?.genero, 'M')
+})

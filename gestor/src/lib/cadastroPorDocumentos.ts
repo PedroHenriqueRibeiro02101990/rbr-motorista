@@ -28,6 +28,7 @@ export interface PayloadCadastro {
   motorista?: Record<string, unknown>
   cavalo?: Record<string, unknown>
   carreta?: Record<string, unknown>
+  complemento?: Record<string, unknown>
   auditoria: Record<string, unknown>[]
   manual: string[]
 }
@@ -71,6 +72,11 @@ export function montarPayload(docs: DocumentoLido[]): PayloadCadastro {
       cnh_validade: val(cnh?.normalizado ?? undefined, 'validade', cnh?.edicoes),
       data_nascimento: val(cnh?.normalizado ?? undefined, 'data_nascimento', cnh?.edicoes) ?? val(rg?.normalizado ?? undefined, 'data_nascimento', rg?.edicoes) ?? val(cpf?.normalizado ?? undefined, 'data_nascimento', cpf?.edicoes),
       rntrc_numero: val(rntrc?.normalizado ?? undefined, 'numero', rntrc?.edicoes),
+    }
+    // Parte D etapa 26: RG e genero para a Repom. O genero e SUGESTAO: so entra se a pessoa confirmou (edicoes.genero).
+    out.complemento = {
+      rg_numero: val(rg?.normalizado ?? undefined, 'numero_rg', rg?.edicoes), rg_orgao_emissor: val(rg?.normalizado ?? undefined, 'orgao_emissor', rg?.edicoes), rg_uf: val(rg?.normalizado ?? undefined, 'uf_emissor', rg?.edicoes),
+      genero: ((cnh ?? rg ?? cpf)?.edicoes?.genero as string | undefined) ?? null,
     }
     if (cr?.normalizado) {
       const g = (k: string) => val(cr.normalizado!, k, cr.edicoes)
