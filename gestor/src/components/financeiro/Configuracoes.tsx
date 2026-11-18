@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import CampoMoeda from '../campos/CampoMoeda'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Json } from '@rbr/shared/database.types'
 import {
@@ -176,7 +177,7 @@ function ContaForm({ conta, onFechar, onSalvo }: { conta: Partial<Conta>; onFech
           </div>
         </Campo>
         <Campo label="Saldo inicial (R$)">
-          <input inputMode="decimal" value={f.saldo_inicial} onChange={(e) => set('saldo_inicial', e.target.value)} className={inputClass} style={inputStyle} />
+          <CampoMoeda value={f.saldo_inicial} onChange={(e) => set('saldo_inicial', e.target.value)} className={inputClass} style={inputStyle} />
         </Campo>
         <Campo label="Saldo em (data)">
           <input type="date" value={f.saldo_inicial_em} onChange={(e) => set('saldo_inicial_em', e.target.value)} className={inputClass} style={inputStyle} />
@@ -241,7 +242,7 @@ function TransferenciaForm({ apoio, onFechar, onSalvo }: { apoio: Apoio; onFecha
           </select>
         </Campo>
         <Campo label="Valor (R$)">
-          <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} className={inputClass} style={inputStyle} />
+          <CampoMoeda value={valor} onChange={(e) => setValor(e.target.value)} className={inputClass} style={inputStyle} />
         </Campo>
         <Campo label="Data">
           <input type="date" value={data} onChange={(e) => setData(e.target.value)} className={inputClass} style={inputStyle} />
@@ -549,7 +550,7 @@ function RecorrenciaForm({ rec, apoio, onFechar, onSalvo }: { rec: Partial<Recor
           <input value={f.contraparte_nome} onChange={(e) => set('contraparte_nome', e.target.value)} className={inputClass} style={inputStyle} placeholder="Ex.: Google" />
         </Campo>
         <Campo label="Valor (R$)">
-          <input inputMode="decimal" value={f.valor} onChange={(e) => set('valor', e.target.value)} className={inputClass} style={inputStyle} />
+          <CampoMoeda value={f.valor} onChange={(e) => set('valor', e.target.value)} className={inputClass} style={inputStyle} />
         </Campo>
         <Campo label="Frequência">
           <select value={f.frequencia} onChange={(e) => set('frequencia', e.target.value)} className={inputClass} style={inputStyle}>
@@ -796,7 +797,7 @@ function Parametros() {
     <Card titulo="Parâmetros do financeiro">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Campo label="Saldo mínimo de segurança (R$)" dica="Abaixo disso, o painel avisa no fluxo de caixa.">
-          <input inputMode="decimal" value={saldoMin} onChange={(e) => setSaldoMin(e.target.value)} className={inputClass} style={inputStyle} />
+          <CampoMoeda value={saldoMin} onChange={(e) => setSaldoMin(e.target.value)} className={inputClass} style={inputStyle} />
         </Campo>
         <Campo label="Alíquota efetiva do Simples (%)" dica="Usada para estimar o DAS do mês. Confirme com o contador (varia com o faturamento de 12 meses).">
           <input inputMode="decimal" value={aliq} onChange={(e) => setAliq(e.target.value)} className={inputClass} style={inputStyle} />

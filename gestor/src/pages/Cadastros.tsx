@@ -1,4 +1,5 @@
 import { CampoFiscal } from '@rbr/shared/camposObrigatorios'
+import CampoPeso from '../components/campos/CampoPeso'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import type { Database } from '@rbr/shared/database.types'
@@ -2564,9 +2565,8 @@ export default function Cadastros() {
                                 />
                               </CampoFiscal>
                               <CampoFiscal entidade="veiculos" campo="capacidade_carga" rotulo="Capacidade de carga (kg)">
-                                <input
+                                <CampoPeso rotulo="Capacidade"
                                   placeholder="Capacidade de carga (kg)"
-                                  type="number"
                                   value={novoVeiculo.capacidade_carga}
                                   onChange={(e) => setNovoVeiculo((f) => ({ ...f, capacidade_carga: e.target.value }))}
                                   className={miniInputClass}
@@ -2574,9 +2574,8 @@ export default function Cadastros() {
                                 />
                               </CampoFiscal>
                               <CampoFiscal entidade="veiculos" campo="tara_kg" rotulo="Tara (kg)">
-                                <input
+                                <CampoPeso rotulo="Tara"
                                   placeholder="Tara (kg)"
-                                  type="number"
                                   value={novoVeiculo.tara_kg}
                                   onChange={(e) => setNovoVeiculo((f) => ({ ...f, tara_kg: e.target.value }))}
                                   className={miniInputClass}
