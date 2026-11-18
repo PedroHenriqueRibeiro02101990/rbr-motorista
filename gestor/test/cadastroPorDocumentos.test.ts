@@ -50,3 +50,21 @@ test('cadastros para corrigir: MKT6E78 (25.5/17.16) e MLN9A91 (9.8/25.5) aparece
   assert.deepEqual(l.map((x) => x.placa), ['MKT6E78', 'MLN9A91'])
   assert.ok(l[0].motivos.length >= 2)
 })
+
+test('integracao: saida crua da IA (sintetica) -> normalizacao -> payload -> validacoes, do CRLV ao cadastro vinculado', () => {
+  // Simula o JSON que a IA devolveria para dois CRLV e uma CNH (PDFs sinteticos; nenhum dado real)
+  const cr = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, c(v)]))
+  const iaCavalo = cr({ placa: 'MKT-6E78', renavam: '00000000001', especie_tipo: 'CAMINHAO TRATOR', quantidade_eixos: 3, pbt: '16.0', cmt: '60.0', capacidade_carga: '*.*', tara: null, cpf_cnpj_proprietario: '529.982.247-25', uf: 'MA' })
+  const iaCarreta = cr({ placa: 'MLN9A91', renavam: '00000000002', especie_tipo: 'SEMIRREBOQUE', quantidade_eixos: 3, pbt: '25.5', capacidade_carga: '16.33', cpf_cnpj_proprietario: '52998224725', uf: 'MA' })
+  const docs = [
+    { path: 'l/cnh.pdf', tipo: 'cnh', normalizado: cnh },
+    { path: 'l/cavalo.pdf', tipo: 'crlv', normalizado: normalizarExtracao('crlv', iaCavalo, HOJE), edicoes: { tara: 8100 } },
+    { path: 'l/carreta.pdf', tipo: 'crlv', normalizado: normalizarExtracao('crlv', iaCarreta, HOJE), edicoes: { tara_derivada: 1 } },
+  ]
+  const p = montarPayload(docs)
+  assert.equal(p.cavalo?.placa, 'MKT6E78'); assert.equal(p.cavalo?.tara_kg, 8100); assert.equal(p.cavalo?.pbt_kg, 16000)
+  assert.equal(p.carreta?.tara_kg, 9170); assert.equal(p.carreta?.capacidade_carga, 16330)
+  assert.equal(temBloqueio(achadosDoPayload(p, HOJE)), false)
+  assert.equal(resumoDoQueSeraCriado(p), '1 motorista, 1 cavalo, 1 carreta vinculada ao cavalo')
+  assert.ok(p.auditoria.length > 5)
+})
