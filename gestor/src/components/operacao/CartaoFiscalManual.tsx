@@ -47,7 +47,7 @@ async function carregar(operacaoId: string): Promise<Dados> {
   }
 }
 
-export default function CartaoFiscalManual({ operacaoId, quem, onMudou }: { operacaoId: string; quem?: string | null; onMudou?: () => void }) {
+export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 'ambos' }: { operacaoId: string; quem?: string | null; onMudou?: () => void; secao?: 'vpo' | 'ciot' | 'ambos' }) {
   const [dados, setDados] = useState<Dados | null>(null)
   const [erroCarga, setErroCarga] = useState<string | null>(null)
   const [form, setForm] = useState<{ idvpo: string; vpo_valor: string; cnpj_forn: string; categoria: string; ciot: string; ver: string; frete: string; adiant: string; ipef: string; cnpjResp: string }>({ idvpo: '', vpo_valor: '', cnpj_forn: '', categoria: '', ciot: '', ver: '', frete: '', adiant: '', ipef: '', cnpjResp: '' })
@@ -207,6 +207,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou }: { oper
       <div className="text-xs" style={{ color: 'var(--rbr-muted)' }}>{vpo.texto} · {ciot.texto}{l?.ciot_emitido_em ? ` · ${linhaConfirmacao('Lancado', l.ciot_emitido_em, null)}` : ''}</div>
 
       <div className="grid gap-2 md:grid-cols-2">
+        {secao !== 'ciot' && (
         <div className="flex flex-col gap-2">
           <div className="font-bold text-xs">Vale-pedagio</div>
           <label className="text-xs">IDVPO (20 digitos)<input className={campo} style={estilo} inputMode="numeric" value={form.idvpo} onChange={(e) => setForm({ ...form, idvpo: e.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
@@ -214,6 +215,8 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou }: { oper
           <label className="text-xs">CNPJ da empresa fornecedora (padrao da Repom quando vazio)<input className={campo} style={estilo} inputMode="numeric" value={form.cnpj_forn} onChange={(e) => setForm({ ...form, cnpj_forn: e.target.value.replace(/\D/g, '').slice(0, 14) })} /></label>
           <label className="text-xs">Categoria de combinacao veicular (pelos eixos: {categoriaCombinacao(dados.eixos) ?? '?'})<input className={campo} style={estilo} value={form.categoria} placeholder={categoriaCombinacao(dados.eixos) ?? ''} onChange={(e) => setForm({ ...form, categoria: e.target.value.replace(/\D/g, '').slice(0, 2) })} /></label>
         </div>
+        )}
+        {secao !== 'vpo' && (
         <div className="flex flex-col gap-2">
           <div className="font-bold text-xs">CIOT</div>
           <label className="text-xs">Numero (12 digitos + verificador de 4)
@@ -222,6 +225,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou }: { oper
           <label className="text-xs">Adiantamento<CampoMoeda className={campo} style={estilo} value={form.adiant} onChange={(e) => setForm({ ...form, adiant: e.target.value })} /></label>
           <div className="text-xs">Saldo: <b>{numeros.saldo != null ? formatarMoeda(numeros.saldo) : '-'}</b> · Destino do pagamento: IPEF da Repom ({IPEF_REPOM_CNPJ})</div>
         </div>
+        )}
       </div>
       {achados.filter((a) => a.nivel !== 'ok').map((a) => <div key={a.campo + a.mensagem} className="text-xs" style={{ color: a.nivel === 'bloqueio' ? 'var(--rbr-danger)' : COR.media }}>{a.nivel === 'bloqueio' ? 'Corrija: ' : 'Aviso: '}{a.mensagem}</div>)}
       <div className="flex items-center gap-3 flex-wrap">
@@ -229,7 +233,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou }: { oper
         <LinhaStatus estado={stForm.estado} onTentarDeNovo={stForm.tentarDeNovo} rotuloCorrigir="Corrigir" />
       </div>
 
-      <div className="grid gap-2 md:grid-cols-2">{upBloco('ciot_pdf', 'Subir CIOT (contrato da Repom, PDF)')}{upBloco('vpo_pdf', 'Subir VPO (VPR/recibo, PDF ou imagem)')}</div>
+      <div className="grid gap-2 md:grid-cols-2">{secao !== 'vpo' && upBloco('ciot_pdf', 'Subir CIOT (contrato da Repom, PDF)')}{secao !== 'ciot' && upBloco('vpo_pdf', 'Subir VPO (VPR/recibo, PDF ou imagem)')}</div>
       <LinhaStatus estado={stUp.estado} onTentarDeNovo={stUp.tentarDeNovo} />
       {avisosLeitura.map((a) => <Aviso key={a} tipo="atencao">{a}</Aviso>)}
 
