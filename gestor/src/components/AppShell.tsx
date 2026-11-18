@@ -9,6 +9,7 @@ import ToastHost from './ToastHost'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import { podeVerNoMenu } from '../lib/menuPorPapel'
+import { acessoCentral } from '../lib/centralIntegracoes'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 
@@ -56,6 +57,7 @@ const NAV_MAIS = [
   { to: '/notas-parceiros', label: 'Notas parceiros', end: false },
   { to: '/risco', label: 'Risco', end: false },
   { to: '/conformidade', label: 'Conformidade', end: false },
+  { to: '/central-integracoes', label: 'Central de integrações', end: false },
 ]
 
 // F01: sino do menu. Conta os avisos não lidos desta pessoa; atualiza a cada minuto e quando a central marca algo como lido.
@@ -152,7 +154,7 @@ export default function AppShell({
   const { pathname } = useLocation()
   const enxuto = MENU_FUNCAO[pessoa.papel]
   const principal = enxuto ?? NAV_PRINCIPAL.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
-  const mais = enxuto ? [] : NAV_MAIS.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
+  const mais = enxuto ? [] : NAV_MAIS.filter((i) => podeVerNoMenu(pessoa.papel, i.to) && (i.to !== '/central-integracoes' || acessoCentral(pessoa.papel, import.meta.env.VITE_CENTRAL_INTEGRACOES)))
   // "Mais" abre sozinho quando a tela atual é uma das que moram nele.
   const [maisAberto, setMaisAberto] = useState(false)
   const dentroDeMais = mais.some((i) => pathname.startsWith(i.to))

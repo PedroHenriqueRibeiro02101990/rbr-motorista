@@ -27,6 +27,8 @@ import RelatorioComercial from './pages/RelatorioComercial'
 import Alteracoes from './pages/Alteracoes'
 import MeusClientes from './pages/MeusClientes'
 import PropostaPublica from './pages/PropostaPublica'
+import CentralIntegracoes from './pages/CentralIntegracoes'
+import { acessoCentral } from './lib/centralIntegracoes'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
 const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
@@ -99,6 +101,10 @@ export default function App() {
           <Route path="/meus-clientes" element={<MeusClientes />} />
           <Route path="/risco" element={<Risco />} />
           <Route path="/cadastros" element={<Cadastros />} />
+          <Route
+            path="/central-integracoes"
+            element={acessoCentral(auth.pessoa.papel, import.meta.env.VITE_CENTRAL_INTEGRACOES) ? <CentralIntegracoes /> : <p className="p-6 text-center text-[color:var(--rbr-navy-dark)] font-semibold">Página não encontrada.</p>}
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>

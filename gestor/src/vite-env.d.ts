@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_EFRETE_CIOT_HABILITADO?: string
   // Rota /demo-ciot (sem login, dados fictícios). Só no build de preview.
   readonly VITE_DEMO_CIOT?: string
+  readonly VITE_CENTRAL_INTEGRACOES?: string
 }
 
 interface ImportMeta {
