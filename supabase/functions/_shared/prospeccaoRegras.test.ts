@@ -349,3 +349,18 @@ test("item 1: so ha certeza de nao-envio com resposta SMTP explicita ou falha de
   assert.ok(!certezaDeNaoEnviado(null, "ETIMEDOUT"), "timeout pode ter enviado");
   assert.ok(!certezaDeNaoEnviado(null, null));
 });
+
+// ---- Radar: novas classes (regiao, veiculos, seguro) ---------------------------------------------------
+test("classificacao: regiao, veiculos e seguro por palavras-chave; cotacao e preco ganham delas", () => {
+  assert.equal(classificarPorRegras("Vocês atendem o Nordeste?"), "regiao");
+  assert.equal(classificarPorRegras("Fazem Sul?"), "regiao");
+  assert.equal(classificarPorRegras("Tem carreta sider?"), "veiculos");
+  assert.equal(classificarPorRegras("Fazem com munck?"), "veiculos");
+  assert.equal(classificarPorRegras("Quais veículos vocês têm?"), "veiculos");
+  assert.equal(classificarPorRegras("O frete vai segurado?"), "seguro");
+  assert.equal(classificarPorRegras("Qual a cobertura do seguro?"), "seguro");
+  assert.equal(classificarPorRegras("Queremos cotar, vocês têm seguro?"), "cotacao");
+  assert.equal(classificarPorRegras("Quanto custa? Atendem o Sul?"), "preco_prazo");
+  assert.equal(classificarPorRegras("Isso é spam, vou denunciar. Tem seguro?"), "reclamacao");
+  assert.equal(classificarPorRegras("Bom dia, obrigado"), "outro");
+});

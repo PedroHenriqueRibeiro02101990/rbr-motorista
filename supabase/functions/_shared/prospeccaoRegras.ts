@@ -230,7 +230,7 @@ export function classificarRelevancia(h: CabecalhoMsg, nossos: ReadonlySet<strin
 export function devolucaoPermanente(corpoDsn: string): boolean { return /\b5\.\d{1,3}\.\d{1,3}\b/.test(corpoDsn) || /\b55\d\b/.test(corpoDsn); }
 
 // ---- classificacao por palavras-chave ------------------------------------------------------------------
-export type Classe = "cotacao" | "preco_prazo" | "nao_sou_eu" | "agora_nao" | "fora_do_escritorio" | "sair" | "reclamacao" | "outro";
+export type Classe = "cotacao" | "preco_prazo" | "nao_sou_eu" | "agora_nao" | "fora_do_escritorio" | "sair" | "reclamacao" | "regiao" | "veiculos" | "seguro" | "outro";
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 /** Tira o texto citado (">" e "Em ... escreveu:") para classificar so o que a pessoa escreveu. */
 export function textoNovo(corpo: string): string {
@@ -249,6 +249,10 @@ export function classificarPorRegras(corpo: string, assunto = "", remetente = ""
   if (/(^|\W)(sair|descadastr\w*|remover|remova|cancelar (o )?envio|nao quero (mais )?receber|nao envie mais|pare de enviar|unsubscribe|me tire da lista|retirar meu)/.test(t)) return "sair";
   if (/(quanto (custa|fica|sai|cobram)|qual (o )?(valor|preco|prazo)|\bpreco\b|\bvalor\b|\bprazo\b|tabela de (preco|frete)|orcamento de preco)/.test(t)) return "preco_prazo";
   if (/(cotacao|cotar|orcamento|proposta|tenho interesse|queremos (cotar|conhecer)|podem (me )?(enviar|mandar)|pode (me )?(enviar|mandar)|vamos conversar|me liga|ligue|(\d+|\w+) cargas?)/.test(t)) return "cotacao";
+  // novas classes (Radar): perguntas fixas. Cotacao e preco ja foram tratados acima e ganham delas.
+  if (/(seguro|segurad[ao]|cobertura|rctr|averba)/.test(t)) return "seguro";
+  if (/(atendem|atende|fazem|cobrem) .{0,40}(regiao|nordeste|sul\b|sudeste|norte\b|centro.?oeste|estado|cidade|interior|todo o brasil)|(regiao|nordeste|sul\b|norte\b) .{0,20}(atend|fazem)/.test(t)) return "regiao";
+  if (/(que|quais|qual) (tipos? de )?(veiculos?|caminho(es|ao)|frota)|tem (carreta|truck|sider|munck|prancha|bau|graneleiro|toco)|fazem (com )?(carreta|truck|sider|munck|prancha|bau|graneleiro)/.test(t)) return "veiculos";
   if (/(nao sou (a )?(pessoa|responsavel)|nao sou eu|nao e comigo|nao cuido|encaminh\w+ (para|ao|a)|procure (o|a)|fale com|entre em contato com|quem cuida)/.test(t)) return "nao_sou_eu";
   if (/(agora nao|no momento nao|nao (temos|tenho) (interesse|necessidade|demanda)|ja temos (fornecedor|transportadora|parceiro)|nao precisamos|nao e o momento|talvez (mais )?(adiante|futuramente)|futuramente)/.test(t)) return "agora_nao";
   return "outro";

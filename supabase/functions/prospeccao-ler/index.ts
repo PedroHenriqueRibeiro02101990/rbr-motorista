@@ -20,7 +20,7 @@ import { cabecalhosCaixa, descobrirPastas, ehDsn, lerPastaIncremental, parseDsn,
 
 type Orig = { id: string; empresa_id: string; contato_id: string; message_id: string };
 type CabExt = CabecalhoMsg & { contentType: string; messageId: string; data: string };
-const CLASSES: Classe[] = ["cotacao", "preco_prazo", "nao_sou_eu", "agora_nao", "fora_do_escritorio", "sair", "reclamacao", "outro"];
+const CLASSES: Classe[] = ["cotacao", "preco_prazo", "nao_sou_eu", "agora_nao", "fora_do_escritorio", "sair", "reclamacao", "regiao", "veiculos", "seguro", "outro"];
 const limpa = (s: string) => s.replace(/[<>\s]/g, "").toLowerCase();
 const CAMPOS_CABECALHO = ["from", "to", "delivered-to", "x-original-to", "subject", "in-reply-to", "references", "content-type", "message-id", "date"];
 
@@ -166,6 +166,8 @@ async function lerCaixa(caixa: CaixaRow, senha: string, c: Ctx): Promise<{ proce
     }
     const estado: Record<string, EstadoPasta> = { ...(caixa.imap_estado ?? {}) };
     const pastas = [{ path: caixa.pasta_entrada, entrada: true }, ...(pasta_spam ? [{ path: pasta_spam, entrada: false }] : []), ...(pasta_lixo ? [{ path: pasta_lixo, entrada: false }] : [])];
+    // Escopo global da leitura (R7): "prospeccao" (padrao) = so conversas nossas; "tudo" = caixa inteira.
+    const escopoTudo = (await lerEscopo()) === "tudo";
     for (const pasta of pastas) {
       let lock;
       try { lock = await client.getMailboxLock(pasta.path, { readOnly: true }); } catch { await logarSemRepetir("ler", `pasta_indisponivel_${pasta.path}`, `nao consegui abrir a pasta ${pasta.path} da caixa ${caixa.endereco}`); continue; }
@@ -185,7 +187,7 @@ async function lerCaixa(caixa: CaixaRow, senha: string, c: Ctx): Promise<{ proce
           }
           if (!pasta.entrada && tipo !== "devolucao") { ignoradas++; continue; } // Spam e Lixo: so interessam as devolucoes
           if (!tipo) {
-            if (pasta.entrada && caixa.modo_caixa_completa) { await registrarGenerico(caixa, pasta.path, n.uid, cab, bruto || await baixar(client, n.uid)); processadas++; }
+            if (pasta.entrada && (caixa.modo_caixa_completa || escopoTudo)) { await registrarGenerico(caixa, pasta.path, n.uid, cab, bruto || await baixar(client, n.uid)); processadas++; }
             else ignoradas++;
             continue;
           }
@@ -221,8 +223,25 @@ async function registrarEntrada(o: { caixa: CaixaRow; pasta: string; uid: number
       anexos: o.anexos, uid_imap: o.uid, pasta: o.pasta, recebido_em: o.quando.toISOString(), lido: false, classificacao_ia: o.classe, resposta_id: o.respId ?? null,
     });
     if (e2 && e2.code !== "23505") throw new Error(e2.message);
+    await espelharCaixa({ caixa: o.caixa, cab: o.cab, texto: o.texto, anexos: o.anexos, empresaId: o.empresaId, classe: o.classe, respId: o.respId, uid: o.uid, quando: o.quando });
     if (o.classe) await admin.from("prospeccao_conversas").update({ classificacao_ia: o.classe }).eq("id", conv.id);
   } catch (e) { await logar("ler", "registrar_entrada_falhou", { caixa_id: o.caixa.id, erro: e instanceof Error ? e.message : String(e) }); }
+}
+async function lerEscopo(): Promise<string> {
+  const { data } = await admin.from("parametros_sistema").select("valor").eq("chave", "PROSPECCAO_CAIXA_ESCOPO").maybeSingle();
+  return typeof data?.valor === "string" ? data.valor : "prospeccao";
+}
+// Espelho na tabela da caixa de e-mail do Radar (melhor esforco: falha aqui nao derruba a leitura).
+async function espelharCaixa(o: { caixa: CaixaRow; cab: CabExt; texto: string; anexos: unknown[]; empresaId: string | null; classe: string | null; respId?: string; uid: number; quando: Date }) {
+  try {
+    const quente = o.classe === "cotacao" || o.classe === "preco_prazo";
+    const { error } = await admin.from("prospeccao_caixa_mensagens").insert({
+      caixa: o.caixa.endereco, pasta: "entrada", uid_imap: o.uid, message_id: o.cab.messageId || null, in_reply_to: o.cab.inReplyTo || null, references: o.cab.references || null,
+      de: o.cab.from.slice(0, 300), para: o.cab.to.slice(0, 500), assunto: o.cab.subject.slice(0, 300), corpo_texto: o.texto.slice(0, 50_000), recebido_em: o.quando.toISOString(),
+      etiquetas: [...(quente ? ["quente"] : []), ...(o.classe && o.classe !== "outro" ? [o.classe] : [])], anexos: o.anexos, empresa_id: o.empresaId, resposta_id: o.respId ?? null, direcao: "entrada",
+    });
+    if (error && error.code !== "23505") await logar("ler", "espelhar_caixa_falhou", { caixa_id: o.caixa.id, erro: error.message });
+  } catch { /* ignora */ }
 }
 async function registrarGenerico(caixa: CaixaRow, pasta: string, uid: number, cab: CabExt, bruto: string) {
   const parsed = await simpleParser(bruto).catch(() => null);
