@@ -271,6 +271,7 @@ export default function Perfil({
       return
     }
     setCrlvNovoPath(r.path)
+    if (r.erroLeitura) setVeiculoErro(`A foto do CRLV foi enviada, mas não consegui ler: ${r.erroLeitura}. Preencha placa, RENAVAM e demais campos à mão.`)
     const c = (r.campos ?? {}) as {
       placa?: string | null
       renavam?: string | null

@@ -57,3 +57,43 @@ test('campo ausente: null com motivo, nunca inventado; schema tem confianca por 
   assert.equal(n.campos.nome.valor, null); assert.ok(n.campos.nome.motivo_nulo)
   assert.ok((schemaDoTipo('crlv').properties as Record<string, { properties: Record<string, unknown> }>).tara.properties.confianca)
 })
+
+// ---- Auditoria 19/11: datas ISO, placa/renavam/uf/categoria normalizados ----
+import { paraIso } from './extracao-documentos.ts'
+test('paraIso: ISO fica, DD/MM/AAAA vira ISO (nunca MM/DD), impossivel vira null', () => {
+  assert.equal(paraIso('2030-05-01'), '2030-05-01')
+  assert.equal(paraIso('12/05/2030'), '2030-05-12') // 12 de maio, nao 5 de dezembro
+  assert.equal(paraIso('01.02.2031'), '2031-02-01')
+  assert.equal(paraIso('31/02/2030'), null)
+  assert.equal(paraIso('13/13/2030'), null)
+  assert.equal(paraIso('maio de 2030'), null)
+  assert.equal(paraIso(''), null)
+  assert.equal(paraIso(null), null)
+})
+test('CNH com datas em DD/MM/AAAA: gravam em ISO; data impossivel vira null com aviso e confianca baixa', () => {
+  const n = normalizarExtracao('cnh', { nome: c('Joao da Silva'), validade: c('12/05/2030'), data_nascimento: c('31/02/1980'), cpf: c('52998224725') }, HOJE)
+  assert.equal(n.campos.validade.valor, '2030-05-12')
+  assert.equal(n.campos.data_nascimento.valor, null); assert.equal(n.campos.data_nascimento.confianca, 'baixa')
+  assert.ok(n.avisos.some((a) => /data_nascimento/.test(a)))
+  // idempotente: reaplicar na saida nao muda (a tela do lancamento manual normaliza de novo)
+  const campos = Object.fromEntries(Object.entries(n.campos).map(([k, v]) => [k, { valor: v.valor, confianca: v.confianca }]))
+  assert.equal(normalizarExtracao('cnh', campos, HOJE).campos.validade.valor, '2030-05-12')
+})
+test('CPF com digito errado: aviso e confianca baixa (nao bloqueia a leitura)', () => {
+  const n = normalizarExtracao('cnh', { cpf: c('529.982.247-26') }, HOJE)
+  assert.equal(n.campos.cpf.valor, '52998224726'); assert.equal(n.campos.cpf.confianca, 'baixa'); assert.ok(n.avisos.some((a) => /CPF/.test(a)))
+  assert.equal(normalizarExtracao('cnh', { cpf: c('52998224725') }, HOJE).avisos.some((a) => /CPF/.test(a)), false)
+})
+test('CRLV: RENAVAM so digitos, chassi sem pontuacao, UF maiuscula, placa invalida avisa', () => {
+  const n = normalizarExtracao('crlv', { placa: c('mkt-6e78'), renavam: c('0123.456.789-0'), chassi: c('9bw zzz 377vt004251'), uf: c('sp'), especie_tipo: c('CAMINHAO TRATOR') }, HOJE)
+  assert.equal(n.campos.placa.valor, 'MKT6E78'); assert.equal(n.campos.renavam.valor, '01234567890')
+  assert.equal(n.campos.chassi.valor, '9BWZZZ377VT004251'); assert.equal(n.campos.uf.valor, 'SP')
+  assert.equal(n.avisos.some((a) => /Placa lida/.test(a)), false)
+  const ruim = normalizarExtracao('crlv', { placa: c('MKT6E7') }, HOJE)
+  assert.equal(ruim.campos.placa.confianca, 'baixa'); assert.ok(ruim.avisos.some((a) => /Placa lida/.test(a)))
+})
+test('VPR: categoria vira 2 digitos da lista; fora da lista nao entra', () => {
+  assert.equal(normalizarExtracao('vpr_vale_pedagio', { categoria: c('7') }, HOJE).campos.categoria.valor, '07')
+  const f = normalizarExtracao('vpr_vale_pedagio', { categoria: c('99') }, HOJE)
+  assert.equal(f.campos.categoria.valor, null); assert.ok(f.avisos.some((a) => /Categoria/.test(a)))
+})

@@ -27,6 +27,7 @@ import {
 } from '../../lib/financeiro'
 import { Aviso, Botao, Campo, Card, Chips, Modal, Vazio, inputClass, inputStyle } from './ui'
 import { EditorParcelas, PreviaRegra } from './PrazoEditor'
+import { mostrarToast } from '../../lib/toast'
 import { NATUREZA_LABEL, OpcoesCategoria } from './CategoriaOpcoes'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
 
@@ -845,7 +846,9 @@ function Regras({ apoio }: { apoio: Apoio }) {
   }, [])
   async function apagar(id: string) {
     if (!window.confirm('Esquecer esta regra?')) return
-    await supabase.from('regras_categorizacao').delete().eq('id', id)
+    const { error } = await supabase.from('regras_categorizacao').delete().eq('id', id)
+    if (error) return mostrarToast(`Não consegui esquecer a regra: ${error.message}`, 'erro')
+    mostrarToast('Regra esquecida.')
     carregar()
   }
   return (

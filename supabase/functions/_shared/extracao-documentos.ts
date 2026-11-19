@@ -4,7 +4,8 @@
 // deducoes (idade, genero, cidade pelo CEP) sao SEMPRE sugestoes, nunca gravadas sozinhas.
 // Teste: node --test supabase/functions/_shared/extracao-documentos.test.ts
 import { derivarTaraCarreta } from "./tara-aproximada.ts";
-import { eReboquePorTipoCrlv, idadeEm } from "./validacoes-cadastro.ts";
+import { cpfValido, eReboquePorTipoCrlv, idadeEm, placaValida } from "./validacoes-cadastro.ts";
+import { normalizarCategoria } from "./combinacaoVeicular.ts";
 import { paraNumeroBR, pesoDeDocumento } from "./unidades-br.ts";
 
 export const TIPOS_DOCUMENTO = [
@@ -98,6 +99,20 @@ export interface Normalizado {
 const so = (s: unknown) => String(s ?? "").replace(/\D/g, "");
 const alfa = (s: unknown) => String(s ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
 
+/** Data para ISO (YYYY-MM-DD). Aceita ISO e DD/MM/AAAA (padrao brasileiro; NUNCA le como MM/DD). Invalida ou impossivel -> null. */
+export function paraIso(v: unknown): string | null {
+  const t = String(v ?? "").trim();
+  if (!t) return null;
+  let y: number, m: number, d: number;
+  let r = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/.exec(t);
+  if (r) { y = +r[1]; m = +r[2]; d = +r[3]; }
+  else if ((r = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t))) { d = +r[1]; m = +r[2]; y = +r[3]; }
+  else return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function base(tipo: TipoDocumento, bruto: Record<string, unknown>): Normalizado {
   const campos: Record<string, CampoNormalizado> = {};
   const spec = tipo === "outro" ? {} : CAMPOS_POR_TIPO[tipo];
@@ -131,9 +146,30 @@ function diasEntre(a: string, b: string) { return Math.round((Date.parse(b + "T0
 export function normalizarExtracao(tipo: TipoDocumento, bruto: Record<string, unknown>, hoje: string): Normalizado {
   const n = base(tipo, bruto);
   const c = n.campos;
+  // Datas sempre ISO: "12/05/2030" lido como MM/DD gravaria 5 de dezembro sem erro nenhum.
+  const DATAS: Partial<Record<TipoDocumento, string[]>> = {
+    cnh: ["validade", "data_nascimento"], rg: ["data_nascimento"], cpf: ["data_nascimento"], rntrc: ["validade"],
+    comprovante_residencia: ["data_emissao"], contrato_ciot_repom: ["data_emissao"],
+  };
+  for (const k of DATAS[tipo] ?? []) {
+    const bruta = c[k].valor;
+    if (bruta === null) continue;
+    const iso = paraIso(bruta);
+    if (iso === null) { c[k].valor = null; c[k].confianca = "baixa"; c[k].motivo_nulo = `data "${String(bruta)}" nao reconhecida: digite no formato DD/MM/AAAA`; n.avisos.push(`${k}: data lida como "${String(bruta)}" nao foi aceita; confira o documento.`); }
+    else c[k].valor = iso;
+  }
+  // CPF lido com digitos errados: avisa (a leitura da IA erra digito); nao bloqueia, a pessoa confere.
+  if ((tipo === "cnh" || tipo === "rg" || tipo === "cpf") && c.cpf.valor !== null) {
+    const d = so(c.cpf.valor);
+    if (!cpfValido(d)) { c.cpf.confianca = "baixa"; n.avisos.push("CPF lido nao passa na conferencia dos digitos verificadores: confira com o documento."); }
+  }
 
   if (tipo === "crlv") {
     c.placa.valor = c.placa.valor ? alfa(c.placa.valor) : null;
+    if (c.placa.valor !== null && !placaValida(c.placa.valor)) { c.placa.confianca = "baixa"; n.avisos.push(`Placa lida (${c.placa.valor}) nao tem formato valido: confira.`); }
+    if (c.renavam.valor !== null) { const r = so(c.renavam.valor); c.renavam.valor = r || null; if (!r) c.renavam.confianca = "baixa"; }
+    if (c.chassi.valor !== null) c.chassi.valor = alfa(c.chassi.valor) || null;
+    if (c.uf.valor !== null) { const u = String(c.uf.valor).trim().toUpperCase().slice(0, 2); c.uf.valor = /^[A-Z]{2}$/.test(u) ? u : null; }
     for (const campo of ["tara", "capacidade_carga", "pbt", "cmt"] as const) {
       const r = pesoDeDocumento(c[campo].valor);
       c[campo].valor = r.kg;
@@ -199,6 +235,12 @@ export function normalizarExtracao(tipo: TipoDocumento, bruto: Record<string, un
     if (id && id.length !== 20) { n.avisos.push("IDVPO deve ter 20 digitos."); c.idvpo.confianca = "baixa"; }
     const v = paraNumeroBR(c.valor_total.valor); c.valor_total.valor = v; if (v === null) c.valor_total.confianca = "baixa";
     if (c.placa.valor) c.placa.valor = alfa(c.placa.valor);
+    // categoria de combinacao do VPO: 2 digitos da lista valida ("7" -> "07"); fora da lista nao entra
+    if (c.categoria.valor !== null) {
+      const cat = normalizarCategoria(c.categoria.valor as string | number);
+      if (cat === null) { n.avisos.push(`Categoria "${String(c.categoria.valor)}" fora da lista valida: escolha na tela.`); c.categoria.valor = null; c.categoria.confianca = "baixa"; c.categoria.motivo_nulo = "categoria fora da lista valida"; }
+      else c.categoria.valor = cat;
+    }
   }
   if (tipo === "rntrc" && c.numero.valor) c.numero.valor = so(c.numero.valor);
   return n;

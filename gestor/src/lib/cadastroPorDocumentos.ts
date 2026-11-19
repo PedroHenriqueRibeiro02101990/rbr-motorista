@@ -2,7 +2,7 @@
 // resume o que sera criado, junta as validacoes e lista os cadastros para corrigir. Teste: node --test gestor/test/cadastroPorDocumentos.test.ts
 import type { Normalizado } from '../../../supabase/functions/_shared/extracao-documentos.ts'
 import { resolverTara, classeDoVeiculo } from '../../../supabase/functions/_shared/tara-aproximada.ts'
-import { eReboquePorTipoCrlv, validarCnh, validarProprietario, validarVeiculo, type Achado } from '../../../supabase/functions/_shared/validacoes-cadastro.ts'
+import { cpfValido, eReboquePorTipoCrlv, tipoVeiculoDoCrlv, validarCnh, validarProprietario, validarVeiculo, type Achado } from '../../../supabase/functions/_shared/validacoes-cadastro.ts'
 
 // Flag do fluxo novo: padrao DESLIGADO (so liga com VITE_CADASTRO_POR_DOCUMENTOS=true no build da Vercel).
 export const CADASTRO_POR_DOCUMENTOS_HABILITADO = import.meta.env?.VITE_CADASTRO_POR_DOCUMENTOS === 'true'
@@ -37,10 +37,9 @@ function veiculoDoCrlv(doc: DocumentoLido, tara: { valor: number | null; origem:
   const d = doc.normalizado!
   const ed = doc.edicoes
   const g = (k: string) => val(d, k, ed)
-  const reb = eReboquePorTipoCrlv(g('especie_tipo') as string | null)
   return {
     placa: g('placa'), renavam: g('renavam'), chassi: g('chassi'), tipo_crlv: g('especie_tipo'),
-    tipo_veiculo: reb ? 'semirreboque' : 'cavalo mecanico', tipo_carroceria: g('carroceria'),
+    tipo_veiculo: tipoVeiculoDoCrlv(g('especie_tipo') as string | null, g('quantidade_eixos') as number | null).tipo, tipo_carroceria: g('carroceria'),
     quantidade_eixos: g('quantidade_eixos'), tara_kg: tara.valor, tara_origem: tara.origem,
     capacidade_carga: g('capacidade_carga'), pbt_kg: g('pbt'), cmt_kg: g('cmt'), uf_licenciamento: g('uf'), crlv_exercicio: g('exercicio'),
     proprietario_documento: g('cpf_cnpj_proprietario'), marca_modelo: g('marca_modelo'), ano: g('ano_modelo') ?? g('ano_fabricacao'),
@@ -57,7 +56,35 @@ function taraConfirmada(doc: DocumentoLido): { valor: number | null; origem: str
   return { valor: typeof v === 'number' ? v : null, origem: typeof v === 'number' ? 'confirmada' : null }
 }
 
+const soDigitos = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v).replace(/\D/g, '') || null)
+const soAlfa = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v).toUpperCase().replace(/[^0-9A-Z]/g, '') || null)
+
+/** O que o banco recebe: placa maiuscula sem traco, CPF/RENAVAM so digitos, documento do proprietario sem pontuacao, UF maiuscula.
+ *  Vale tambem para o que a pessoa digitou na conferencia (a RPC procura pessoa por CPF e veiculo por placa EXATOS: formato diferente duplica o cadastro). */
+function normalizarPayload(out: PayloadCadastro): PayloadCadastro {
+  if (out.motorista) {
+    out.motorista.cpf = soDigitos(out.motorista.cpf)
+    out.motorista.cep = soDigitos(out.motorista.cep)
+    out.motorista.rntrc_numero = soDigitos(out.motorista.rntrc_numero)
+    if (out.motorista.uf) out.motorista.uf = String(out.motorista.uf).trim().toUpperCase().slice(0, 2)
+  }
+  if (out.complemento?.rg_uf) out.complemento.rg_uf = String(out.complemento.rg_uf).trim().toUpperCase().slice(0, 2)
+  for (const v of [out.cavalo, out.carreta]) {
+    if (!v) continue
+    v.placa = soAlfa(v.placa)
+    v.renavam = soDigitos(v.renavam)
+    v.chassi = soAlfa(v.chassi)
+    v.proprietario_documento = soAlfa(v.proprietario_documento)
+    if (v.uf_licenciamento) v.uf_licenciamento = String(v.uf_licenciamento).trim().toUpperCase().slice(0, 2)
+  }
+  return out
+}
+
 export function montarPayload(docs: DocumentoLido[]): PayloadCadastro {
+  return normalizarPayload(montarPayloadBruto(docs))
+}
+
+function montarPayloadBruto(docs: DocumentoLido[]): PayloadCadastro {
   const out: PayloadCadastro = { auditoria: [], manual: [] }
   const por = (t: string) => docs.filter((d) => d.tipo === t && d.normalizado)
   const cnh = por('cnh')[0], rg = por('rg')[0], cpf = por('cpf')[0], cr = por('comprovante_residencia')[0], rntrc = por('rntrc')[0]
@@ -121,11 +148,20 @@ export function resumoDoQueSeraCriado(p: PayloadCadastro): string {
 export function achadosDoPayload(p: PayloadCadastro, hoje: string): Achado[] {
   const out: Achado[] = []
   const m = p.motorista
+  // A RPC so cria/atualiza o motorista quando ha CPF: sem CPF ele seria IGNORADO em silencio e o veiculo ficaria no nome de quem cadastrou.
+  if (m && !cpfValido(m.cpf)) out.push({ nivel: 'bloqueio', campo: 'cpf', mensagem: 'Motorista sem CPF valido: sem o CPF o cadastro do motorista nao e criado. Digite o CPF (CNH, RG ou CPF).' })
+  if (m && !m.nome) out.push({ nivel: 'bloqueio', campo: 'nome', mensagem: 'Motorista sem nome: digite o nome como esta na CNH.' })
+  if (!m && (p.cavalo || p.carreta)) out.push({ nivel: 'aviso', campo: 'titular', mensagem: 'Sem CNH/RG/CPF nesta leva, o titular do veiculo fica sendo VOCE (quem esta cadastrando). Envie a CNH do dono ou corrija o titular depois em Cadastros.' })
   if (m) out.push(...validarCnh({ validade: m.cnh_validade as string | null, data_nascimento: m.data_nascimento as string | null }, hoje))
   for (const [rotulo, v] of [['Cavalo', p.cavalo], ['Carreta', p.carreta]] as const) {
     if (!v) continue
+    // Sem RENAVAM a RPC grava 'PENDENTE-<placa>' no campo e o emissor/Repom leem esse texto como se fosse o RENAVAM.
+    if (!v.renavam) out.push({ nivel: 'bloqueio', campo: 'renavam', mensagem: `${rotulo}: RENAVAM nao lido. Digite o RENAVAM do CRLV (sem ele o cadastro ficaria com um valor provisorio).` })
+    const tv = tipoVeiculoDoCrlv(v.tipo_crlv as string | null, v.quantidade_eixos as number | null)
+    if (tv.tipo === null) out.push({ nivel: 'aviso', campo: 'tipo_veiculo', mensagem: `${rotulo}: o CRLV nao diz se e truck, toco, van ou utilitario. O tipo fica como estava no cadastro (ou vazio): ajuste em Cadastros antes de emitir o MDF-e.` })
+    else if (tv.inferido) out.push({ nivel: 'aviso', campo: 'tipo_veiculo', mensagem: `${rotulo}: tipo do veiculo definido pelos eixos (${String(v.quantidade_eixos)} eixos = ${tv.tipo}). Confira.` })
     const ach = validarVeiculo({
-      placa: v.placa as string, tipo_crlv: v.tipo_crlv as string, tipo_veiculo: v.tipo_veiculo as string, quantidade_eixos: v.quantidade_eixos as number,
+      placa: v.placa as string, tipo_crlv: v.tipo_crlv as string, tipo_veiculo: (v.tipo_veiculo as string) ?? '', quantidade_eixos: v.quantidade_eixos as number,
       tara_kg: v.tara_kg as number, capacidade_carga: v.capacidade_carga as number, pbt_kg: v.pbt_kg as number, carreta_vinculada: rotulo === 'Cavalo' ? !!p.carreta : true,
     })
     out.push(...ach.filter((a) => a.nivel !== 'ok').map((a) => ({ ...a, mensagem: `${rotulo}: ${a.mensagem}` })))

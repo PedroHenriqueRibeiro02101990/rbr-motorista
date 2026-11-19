@@ -265,7 +265,10 @@ export async function enviarDocumento(file: File, extra: Partial<Documento> = {}
     .insert({ arquivo_path: path, arquivo_nome: file.name, arquivo_mime: file.type || null, ...extra })
     .select()
     .single()
-  if (error) throw new Error(`${file.name}: ${error.message}`)
+  if (error) {
+    await supabase.storage.from('financeiro-documentos').remove([path]) // não deixa arquivo órfão sem registro
+    throw new Error(`${file.name}: ${error.message}`)
+  }
   return data
 }
 

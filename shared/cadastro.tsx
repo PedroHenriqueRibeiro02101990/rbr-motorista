@@ -137,14 +137,15 @@ export async function lerDocumento(tipo: TipoDocPessoal, arquivo: File, pastaPes
   try {
     foto = await prepararImagemDocumento(arquivo)
   } catch (e) {
-    return { erro: e instanceof Error ? e.message : 'Não consegui preparar a foto.', campos: null as Record<string, unknown> | null, path: '' }
+    return { erro: e instanceof Error ? e.message : 'Não consegui preparar a foto.', erroLeitura: null as string | null, campos: null as Record<string, unknown> | null, path: '' }
   }
   const path = caminhoDocumento(pastaPessoaId, tipo)
   const { error: upErr } = await supabase.storage.from('documentos-pessoais').upload(path, foto, { contentType: 'image/jpeg', upsert: false })
-  if (upErr) return { erro: `Não consegui enviar a foto: ${upErr.message}`, campos: null as Record<string, unknown> | null, path }
+  if (upErr) return { erro: `Não consegui enviar a foto: ${upErr.message}`, erroLeitura: null as string | null, campos: null as Record<string, unknown> | null, path }
   const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { tipo, path } })
-  if (error || !data?.sucesso) return { erro: null, campos: null, path }
-  return { erro: null, campos: data.campos as Record<string, unknown>, path }
+  // A foto subiu mas a leitura falhou: devolve o motivo para a tela avisar (antes o formulario ficava vazio sem explicacao).
+  if (error || !data?.sucesso) return { erro: null, erroLeitura: await erroDaFuncao(error, data), campos: null as Record<string, unknown> | null, path }
+  return { erro: null, erroLeitura: null as string | null, campos: data.campos as Record<string, unknown>, path }
 }
 
 // Aviso da situação do cadastro (app do motorista / agenciador).

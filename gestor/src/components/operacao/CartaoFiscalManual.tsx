@@ -101,7 +101,15 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
     await stForm.rodar({
       verbo: 'Lancado', enviando: 'Gravando...',
       acao: () => gravar(numeros),
-      verificar: async () => { await recarregar(); return true },
+      // so diz "Lancado" se o banco devolver o que foi enviado (releitura do registro, nao do estado local)
+      verificar: async () => {
+        const { data: g } = await supabase.from('operacao_ciot_vpo').select('vpo_idvpo, ciot').eq('operacao_id', operacaoId).maybeSingle()
+        await recarregar()
+        const ciotEnviado = numeros.ciot ? separarCiot(numeros.ciot)?.ciot ?? null : null
+        if (numeros.idvpo && g?.vpo_idvpo !== numeros.idvpo) return false
+        if (ciotEnviado && g?.ciot !== ciotEnviado) return false
+        return true
+      },
     })
     onMudou?.()
   }
@@ -117,7 +125,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
         const hash = await hashArquivo(bytes)
         const existente = (dados?.docs ?? []).find((d) => d.tipo === regra.tipoDoc) ?? null
         const plano = planejarGravacao(existente, hash)
-        if (plano.acao === 'duplicado') { setAvisosLeitura([plano.mensagem]); return null }
+        if (plano.acao === 'duplicado') throw new Error(plano.mensagem) // nao mostra "enviado" para um envio que nao aconteceu
         const path = caminhoArquivo(campo, operacaoId, file.name)
         const up = await supabase.storage.from(regra.bucket).upload(path, file, { contentType: file.type || undefined })
         if (up.error) throw new Error('Nao consegui enviar o arquivo. Tente de novo.')
@@ -236,8 +244,8 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
           <label className="text-xs">IDVPO (20 digitos){selo('idvpo')}<input className={campo} style={estilo} inputMode="numeric" value={form.idvpo} onChange={(e) => setForm({ ...form, idvpo: edita('idvpo', e.target.value.replace(/\D/g, '').slice(0, 20)) })} /></label>
           <label className="text-xs">Valor do vale{selo('vpo_valor')}<CampoMoeda className={campo} style={estilo} value={form.vpo_valor} onChange={(e) => setForm({ ...form, vpo_valor: edita('vpo_valor', e.target.value) })} /></label>
           <label className="text-xs">CNPJ da empresa fornecedora (padrao da Repom quando vazio)<input className={campo} style={estilo} inputMode="numeric" value={form.cnpj_forn} onChange={(e) => setForm({ ...form, cnpj_forn: e.target.value.replace(/\D/g, '').slice(0, 14) })} /></label>
-          <label className="text-xs">Categoria de combinação veicular ({rotuloCategoriaPorEixos(dados.eixos)})
-            <select className={campo} style={estilo} value={normalizarCategoria(form.categoria) ?? ''} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+          <label className="text-xs">Categoria de combinação veicular ({rotuloCategoriaPorEixos(dados.eixos)}){selo('categoria')}
+            <select className={campo} style={estilo} value={normalizarCategoria(form.categoria) ?? ''} onChange={(e) => setForm({ ...form, categoria: edita('categoria', e.target.value) })}>
               <option value="">Automática pelos eixos{categoriaCombinacao(dados.eixos) ? ` (${categoriaCombinacao(dados.eixos)})` : ''}</option>
               {CATEGORIAS_VALIDAS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>

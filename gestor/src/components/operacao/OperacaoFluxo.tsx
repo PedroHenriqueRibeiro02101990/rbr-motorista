@@ -1165,7 +1165,10 @@ function AcoesDocumento({
           aceite_manual_motivo: null,
         })
         .eq('id', doc.id)
-      if (updErr) throw updErr
+      if (updErr) {
+        await supabase.storage.from('operacao-documentos').remove([path]) // não deixa arquivo órfão sem vínculo
+        throw updErr
+      }
       await recarregar()
       const { data, error } = await supabase.functions.invoke('conferir-documento-operacao', { body: { documento_id: doc.id } })
       if (error || !data?.sucesso) {
