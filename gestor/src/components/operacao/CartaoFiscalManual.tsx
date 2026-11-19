@@ -133,10 +133,10 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
         if (up.error) throw new Error('Nao consegui enviar o arquivo. Tente de novo.')
         const atorId = await pessoaAtualId()
         setAvisoHistorico(null)
-        const linha = { operacao_id: operacaoId, tipo: regra.tipoDoc!, arquivo_path: path, arquivo_nome: file.name, arquivo_hash: hash, arquivo_enviado_em: new Date().toISOString(), origem_acao: 'manual', versao: plano.versao, arquivo_historico: plano.historico, status: 'emitido' as const }
+        const linha = { operacao_id: operacaoId, tipo: regra.tipoDoc!, arquivo_path: path, arquivo_nome: file.name, arquivo_hash: hash, arquivo_enviado_em: new Date().toISOString(), origem_acao: 'manual', versao: plano.versao, arquivo_historico: plano.historico }
         const gr = existente?.id
           ? await supabase.from('documentacao_operacao').update(linha as never).eq('id', existente.id)
-          : await supabase.from('documentacao_operacao').insert(linha as never)
+          : await supabase.from('documentacao_operacao').insert({ ...linha, status: 'pendente' } as never) // 'pendente' ate ter numero: a confirmacao do CIOT/IDVPO (RPC) vira 'emitido'
         if (gr.error) {
           await supabase.storage.from(regra.bucket).remove([path]) // falha no banco: desfaz o arquivo
           await gravarEventoFiscal(montarEvento({ operacaoId, campo, evento: 'erro', atorId, sucesso: false, mensagem: 'Falha ao gravar o documento; arquivo desfeito.' }))

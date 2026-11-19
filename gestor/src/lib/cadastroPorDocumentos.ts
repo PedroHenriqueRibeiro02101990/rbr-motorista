@@ -33,6 +33,8 @@ export interface PayloadCadastro {
   cavalo?: Record<string, unknown>
   carreta?: Record<string, unknown>
   complemento?: Record<string, unknown>
+  /** Dados bancarios lidos: a RPC so grava se a pessoa nao tem banco/PIX (senao avisa). */
+  banco?: Record<string, unknown>
   auditoria: Record<string, unknown>[]
   manual: string[]
   /** D1: arquivos que a RPC grava em documentos_pessoais_imagens (+ colunas da pessoa) para aparecerem no cadastro. */
@@ -127,6 +129,11 @@ function montarPayloadBruto(docs: DocumentoLido[]): PayloadCadastro {
       rg_numero: val(rg?.normalizado ?? undefined, 'numero_rg', rg?.edicoes), rg_orgao_emissor: val(rg?.normalizado ?? undefined, 'orgao_emissor', rg?.edicoes), rg_uf: val(rg?.normalizado ?? undefined, 'uf_emissor', rg?.edicoes),
       genero: ((cnh ?? rg ?? cpf)?.edicoes?.genero as string | undefined) ?? null,
     }
+    const bc = por('dados_bancarios')[0]
+    if (bc?.normalizado) {
+      const g = (k: string) => val(bc.normalizado!, k, bc.edicoes)
+      out.banco = { banco_codigo: g('banco_codigo'), agencia: g('agencia'), conta: g('conta'), tipo_conta: g('tipo_conta'), pix: g('pix'), documento_titular: soDigitos(g('cpf_cnpj')) }
+    }
     if (cr?.normalizado) {
       const g = (k: string) => val(cr.normalizado!, k, cr.edicoes)
       Object.assign(out.motorista, { cep: g('cep'), logradouro: g('logradouro'), numero_endereco: g('numero'), complemento: g('complemento'), bairro: g('bairro'), cidade: g('cidade'), uf: g('uf') })
@@ -195,6 +202,9 @@ export function achadosDoPayload(p: PayloadCadastro, hoje: string): Achado[] {
   // A RPC so cria/atualiza o motorista quando ha CPF: sem CPF ele seria IGNORADO em silencio e o veiculo ficaria no nome de quem cadastrou.
   if (m && !cpfValido(m.cpf)) out.push({ nivel: 'bloqueio', campo: 'cpf', mensagem: 'Motorista sem CPF valido: sem o CPF o cadastro do motorista nao e criado. Digite o CPF (CNH, RG ou CPF).' })
   if (m && !m.nome) out.push({ nivel: 'bloqueio', campo: 'nome', mensagem: 'Motorista sem nome: digite o nome como esta na CNH.' })
+  // Conta de outra pessoa: avisa (a RPC grava so em quem ainda nao tem dado bancario).
+  const docBanco = p.banco?.documento_titular as string | null | undefined
+  if (m && docBanco && m.cpf && docBanco !== m.cpf) out.push({ nivel: 'aviso', campo: 'dados_bancarios', mensagem: 'Os dados bancarios sao de outro CPF/CNPJ que nao o do motorista. Confira antes de confirmar.' })
   for (const x of p.excedentes) out.push({ nivel: x.bloqueia ? 'bloqueio' : 'aviso', campo: x.tipo, mensagem: `${x.bloqueia ? 'Remova da lista: ' : ''}${x.descricao}.` })
   if (m) out.push(...validarCnh({ validade: m.cnh_validade as string | null, data_nascimento: m.data_nascimento as string | null }, hoje))
   for (const [rotulo, v] of [['Cavalo', p.cavalo], ['Carreta', p.carreta]] as const) {
