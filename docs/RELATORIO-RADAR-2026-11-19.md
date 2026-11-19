@@ -23,7 +23,16 @@ Consequências, valendo para todos os itens abaixo:
 ## R1. Pendências antigas do banco e dos robôs
 - "where true" no gatilho de pesos e os 10 domínios públicos no bloqueio: **já estavam na migração `20261116-1200-prospeccao-ajustes.sql`** (feita na noite de 16/11) e há teste que confere a lista contra `PROVEDORES_GRATUITOS`. Nada novo a escrever; precisa apenas estar aplicada.
 - Caixas: `prospeccao_caixas` **já existe** (migração 1350) com pedro@ = agente_1, comercial@ = agente_2, operacional@ = reserva inativa. Não recriei.
-- Revisão de `prospeccao-enviar`/`-ler` contra as regras decididas: ver subseção abaixo (preenchida no item).
+- **Revisão de `prospeccao-enviar` e `prospeccao-ler` contra as regras decididas** (lida no código, regra por regra):
+  - janela seg a sex 7h às 18h em São Paulo, fora de feriado: `dentroDaJanelaEnvio` (OK, já coberto por teste);
+  - intervalo aleatório 8 a 25 min: `intervaloEntreEnviosMin` + intervalo por caixa (OK);
+  - rampa 10/15/20/30 com teto 100: semente `prospeccao_rampa` (1,10),(6,15),(11,20),(16,30) e `TETO_ABSOLUTO_DIA = 100` (OK);
+  - texto puro (sem HTML, sem rastreador), Message-ID próprio reservado antes do SMTP, `List-Unsubscribe` (OK);
+  - modo teste só para `prospeccao_destinos_teste` com `[TESTE]` no assunto: feito dentro de `enviarEmail` (OK);
+  - leitor ignora e-mails não relacionados (`classificarRelevancia`); copia a caixa inteira só se `modo_caixa_completa` (OK);
+  - paradas automáticas (3 devoluções/dia, 1 reclamação, >5% nos últimos 40 com mínimo de 20 envios, erro SMTP de bloqueio, aviso da Hostinger): `motivoParadaAutomatica` (OK).
+  - **Faltava e foi corrigido**: (1) o leitor só conhecia 8 classes; agora conhece também `regiao`, `veiculos` e `seguro` (palavras-chave + lista da IA), com teste; cotação e preço ganham das novas classes e reclamação ganha de todas; (2) `PROSPECCAO_CAIXA_ESCOPO` (`tudo` sincroniza a caixa inteira; o padrão `prospeccao` não muda nada); (3) o leitor passa a espelhar cada e-mail em `prospeccao_caixa_mensagens` (melhor esforço, não derruba a leitura).
+  - Classes novas caem no caminho padrão do leitor (viram "precisa de você" com rascunho). O envio de resposta automática dessas classes depende da config da Jornada e continua travado por `RESPOSTA_AUTOMATICA_LIBERADA = nao`.
 
 ## Itens
 (preenchidos conforme ficam prontos)

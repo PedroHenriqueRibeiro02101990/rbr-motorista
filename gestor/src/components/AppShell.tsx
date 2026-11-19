@@ -9,7 +9,7 @@ import ToastHost from './ToastHost'
 import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import { podeVerNoMenu } from '../lib/menuPorPapel'
-import { CHAVE_UI, lerFlag } from '../lib/prospeccaoDb'
+import { useRadarAcesso } from '../radar/useRadarAcesso'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 
@@ -151,16 +151,14 @@ export default function AppShell({
   const avisos = useAvisosNaoLidos()
   const nav = useNavigate()
   const { pathname } = useLocation()
-  // Prospecção: a aba só aparece para o gestor e com a flag PROSPECCAO_UI_LIBERADA = "sim".
-  const [prospeccaoLiberada, setProspeccaoLiberada] = useState(false)
-  useEffect(() => {
-    if (pessoa.papel === 'gestor_rbr') void lerFlag(CHAVE_UI).then((v) => setProspeccaoLiberada(v === 'sim'))
-  }, [pessoa.papel])
+  // Radar: com PROSPECCAO_UI_LIBERADA = nao só o usuário do Pedro vê; com sim, todo gestor_rbr.
+  const radar = useRadarAcesso(pessoa.papel)
+  const prospeccaoLiberada = radar.visivel
   const enxuto = MENU_FUNCAO[pessoa.papel]
   const principal = enxuto ?? NAV_PRINCIPAL.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
   const mais = enxuto
     ? []
-    : [...NAV_MAIS, ...(prospeccaoLiberada ? [{ to: '/prospeccao', label: 'Prospecção', end: false }] : [])].filter((i) => podeVerNoMenu(pessoa.papel, i.to))
+    : [...NAV_MAIS, ...(prospeccaoLiberada ? [{ to: '/radar', label: radar.emTeste ? 'Radar (em teste)' : 'Radar', end: false }] : [])].filter((i) => podeVerNoMenu(pessoa.papel, i.to))
   // "Mais" abre sozinho quando a tela atual é uma das que moram nele.
   const [maisAberto, setMaisAberto] = useState(false)
   const dentroDeMais = mais.some((i) => pathname.startsWith(i.to))

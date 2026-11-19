@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   aprovarLote, bloqueioDoTexto, caminhoCurva, checagensEmail, contarEtapas, decidirEnvioManual, emBlocos, estadoCaixa, etapaDoStatus, filtrarBase, FILTROS_PADRAO, kpisBusca,
   LICOES, modoEfetivo, modosPermitidos, NOS_MAPA, podeAlterarChave, podeAprovarMensagem, prepararImportacaoBase, progressoCurso, restricaoDoCnae, riscoEnvio, slugClasse,
-  slugDoSegmento, somarTotais, statusAposAcao, validarTextoResposta, visibilidadeRadar, SEGMENTOS_RADAR, type EmpresaBase,
+  quandoSai, slugDoSegmento, somarTotais, statusAposAcao, validarTextoResposta, visibilidadeRadar, SEGMENTOS_RADAR, type EmpresaBase,
 } from '../src/lib/radar.ts'
 
 const emp = (o: Partial<EmpresaBase>): EmpresaBase => ({
@@ -205,4 +205,12 @@ test('curso: 7 licoes e progresso', () => {
   assert.equal(progressoCurso([]), 0)
   assert.equal(progressoCurso([0, 0, 1]), 29)
   assert.equal(progressoCurso([0, 1, 2, 3, 4, 5, 6, 99]), 100)
+})
+
+test('quando sai: dentro da janela, antes, depois e fim de semana (horario de Sao Paulo)', () => {
+  assert.match(quandoSai(new Date('2026-11-18T15:00:00Z')), /próxima rodada/) // qua 12h
+  assert.match(quandoSai(new Date('2026-11-18T08:00:00Z')), /hoje a partir das 7h/) // qua 05h
+  assert.match(quandoSai(new Date('2026-11-18T23:00:00Z')), /amanhã/) // qua 20h
+  assert.match(quandoSai(new Date('2026-11-20T23:00:00Z')), /segunda/) // sex 20h
+  assert.match(quandoSai(new Date('2026-11-21T15:00:00Z')), /segunda/) // sab
 })

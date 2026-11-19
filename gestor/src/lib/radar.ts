@@ -310,3 +310,17 @@ export const LICOES: readonly Licao[] = [
   { titulo: 'Segurança e paradas', duracao: '3 min', texto: 'O agente para sozinho se algo der errado: 3 devoluções no dia, 1 reclamação, 5% de devolução nos últimos 40 envios ou aviso da Hostinger. Depois disso, só volta quando você religar.', pontos: ['Comece com 10 por dia e suba devagar.', 'Teto de IA: R$ 3 por dia.', 'Ligar o envio pede confirmação digitando LIGAR.'], pergunta: 'O que acontece depois de uma parada automática?', opcoes: ['Volta sozinho em 1 hora', 'Só volta quando você religar', 'Troca de caixa'], certa: 1 },
 ]
 export const progressoCurso = (concluidas: readonly number[]) => Math.round((new Set(concluidas.filter((i) => i >= 0 && i < LICOES.length)).size / LICOES.length) * 100)
+
+// ---- janela de envio em texto (R6) -----------------------------------------------------------------------
+/** "Quando" do e-mail aprovado: seg a sex, 7h às 18h em São Paulo (feriados não entram aqui; o robô confere). */
+export function quandoSai(agora: Date): string {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short', hour: 'numeric', hour12: false }).formatToParts(agora)
+  const dia = p.find((x) => x.type === 'weekday')?.value ?? 'Mon'
+  const hora = Number(p.find((x) => x.type === 'hour')?.value ?? 0) % 24
+  const util = !['Sat', 'Sun'].includes(dia)
+  if (util && hora >= 7 && hora < 18) return 'na próxima rodada de envio, hoje (intervalo de 8 a 25 min entre e-mails)'
+  if (util && hora < 7) return 'hoje a partir das 7h'
+  if (dia === 'Fri' || dia === 'Sat') return 'segunda-feira a partir das 7h'
+  if (dia === 'Sun') return 'segunda-feira a partir das 7h'
+  return 'amanhã a partir das 7h'
+}
