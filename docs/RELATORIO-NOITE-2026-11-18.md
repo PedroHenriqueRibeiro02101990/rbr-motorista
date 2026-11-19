@@ -76,3 +76,17 @@ Consulta feita em 18/11/2026, sem nomes de pessoas. Papel do titular entre paren
 | UEM6A44 | Toco (titular PJ) | titular_motorista |
 
 Sugestao de correcao em massa (NAO aplicada): `update veiculos set is_veiculo_proprio = false where is_veiculo_proprio is true and titular_id is not null;` (e `e_reboque = true` para EFF2I58). Excecao a decidir: veiculos que a RBR de fato opere em comodato no RNTRC dela (o teste do emissor trata AHP3H35 como comodato na frota da RBR).
+
+## A8 — Pendencias antigas — CONCLUIDO
+1. CEP de descarregamento do destinatario da NF-e: ja na v29 (cepDescarregamentoDe em mdfe.ts) e coberto por teste em mdfe.test.ts ("etapa 18: CEP de descarregamento e o do destinatario da NF-e..."). Passa. Nada a fazer.
+2. Pre-voo lendo tabelas legadas: PENDENTE REAL e corrigido. Lido no banco: checar_pre_voo em producao ainda era a versao antiga (so v_checklist_prontidao: ciot_registros / averbacoes_negociacao); a migracao de 16/11 (supabase-migrations/20261116-1000-bloqueios-so-externos.sql) nunca foi aplicada. Aplicada hoje a migracao 20261118-2320-pre-voo-fontes-atuais (so troca a funcao): CIOT passa a olhar operacao_ciot_vpo (12 digitos, nao cancelado/encerrado/erro) e documentacao_operacao 'ciot' emitido; averbacao olha operacao_ciot_vpo (numero_averbacao/averbacao_rcv_numero) e documentacao_operacao 'atm' emitido; legado continua somando. Semantica mantida (todo item continua bloqueando, mesmos nomes de item). Rollback em supabase/rollback/rollback-20261118-2320-pre-voo-fontes-atuais.sql. Verificado: checar_pre_voo da OP-3771 roda (pode_emitir = true, sem pendencias).
+   - A migracao de 16/11 continua NAO aplicada (ela tambem muda bloqueio -> aviso e 2 gatilhos): decisao do Pedro.
+3. Aviso "Destino de pagamento do motorista nao definido" com IPEF da Repom: o texto ja nao e gerado em lugar nenhum (removido na v29/etapa 17; o teste "etapa 17: CIOT rbr_repom paga pela IPEF..." garante). Conferi tambem as funcoes do banco: nenhuma contem o texto. Nada a fazer.
+
+## Resumo do que ficou pendente / precisa de decisao
+- DEPLOY de edge function (nao feito, regra 5): efrete-ciot-operacao (juntarCiot ignora '0000'). A emitir-mdfe v30 ja esta no ar e o repositorio agora e identico a ela.
+- Correcao em massa de is_veiculo_proprio (26 veiculos listados na A7): decisao do Pedro. Tambem e_reboque = true para EFF2I58.
+- OP-3771 pode seguir com ciot_status = 'refazer_troca_veiculo' do evento antigo (nao corrigi o dado).
+- Alocacao com cavalo: a tela de alocacao (OperacaoFluxo.tsx) nao bloqueia sem carreta; so o emissor/previa bloqueiam.
+- Migracao de 16/11 (bloqueios so externos) segue nao aplicada.
+- A6 sem teste de escrita em producao.
