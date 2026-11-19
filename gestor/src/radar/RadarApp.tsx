@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import './radar.css'
+import './radar-extra.css'
 import { db } from '../lib/prospeccaoDb'
 import { Ctx, Ic, ToastRadar, hojeSP, type Flags } from './ui'
 import { useRadarAcesso } from './useRadarAcesso'

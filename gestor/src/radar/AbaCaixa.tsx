@@ -10,7 +10,7 @@ type Anexo = { nome: string; tipo?: string; tamanho?: number; caminho?: string }
 type Msg = {
   id: string; caixa: string; pasta: string; uid_imap: number | null; message_id: string | null; in_reply_to: string | null; references: string | null; de: string; para: string; cc: string | null
   assunto: string; corpo_texto: string | null; recebido_em: string; lida: boolean; estrela: boolean; etiquetas: string[]; anexos: Anexo[]; empresa_id: string | null; resposta_id: string | null
-  direcao: 'entrada' | 'saida'; _fio?: { eu: boolean; de: string; quando: string; texto: string }[]; _sug?: string; _porque?: string; _empresa?: string
+  direcao: 'entrada' | 'saida'; _fio?: { eu: boolean; de: string; quando: string; texto: string }[]; _sug?: string; _porque?: string; _empresa?: string; _quando?: string
 }
 type CaixaCfg = { id: string; endereco: string; assinatura: string; ativa: boolean }
 type Rascunho = { de: string; para: string; cc: string; assunto: string; corpo: string; origem?: Msg; novo?: boolean }
@@ -30,7 +30,7 @@ function doExemplo(): Msg[] {
   return EXEMPLO_CAIXA.map((e) => ({
     id: e.id, caixa: e.pasta === 'enviados' ? 'pedro@rbrcargo.com.br' : 'pedro@rbrcargo.com.br', pasta: e.pasta, uid_imap: null, message_id: null, in_reply_to: null, references: null, de: `${e.de} <${e.email}>`, para: 'pedro@rbrcargo.com.br', cc: null,
     assunto: e.assunto, corpo_texto: e.fio[e.fio.length - 1].texto, recebido_em: new Date().toISOString(), lida: e.lida, estrela: e.estrela, etiquetas: [...(e.quente ? ['quente'] : []), ...e.etiquetas], anexos: e.anexo ? [{ nome: e.anexo }] : [],
-    empresa_id: null, resposta_id: null, direcao: e.pasta === 'enviados' ? 'saida' : 'entrada', _fio: e.fio, _sug: e.sugestao, _porque: e.porque, _empresa: e.empresa,
+    empresa_id: null, resposta_id: null, direcao: e.pasta === 'enviados' ? 'saida' : 'entrada', _fio: e.fio, _sug: e.sugestao, _porque: e.porque, _empresa: e.empresa, _quando: e.quando,
   }))
 }
 
@@ -84,8 +84,8 @@ export default function AbaCaixa() {
   async function mudar(m: Msg, patch: Partial<Msg>, acao?: { acao: string; destino?: string }) {
     setLocal((l) => l.map((x) => (x.id === m.id ? { ...x, ...patch } : x)))
     if (exemplos) return
-    const { _fio, _sug, _porque, _empresa, ...limpo } = patch as Msg
-    void _fio; void _sug; void _porque; void _empresa
+    const { _fio, _sug, _porque, _empresa, _quando, ...limpo } = patch as Msg
+    void _fio; void _sug; void _porque; void _empresa; void _quando
     const { error } = await db.from('prospeccao_caixa_mensagens').update(limpo).eq('id', m.id)
     if (error) { toast(mensagemDeErro(error.message)); setVersao((v) => v + 1); return }
     if (acao && m.uid_imap != null) await db.from('prospeccao_caixa_acoes').insert({ mensagem_id: m.id, acao: acao.acao, destino: acao.destino ?? null, criado_por: pessoaId })
@@ -215,7 +215,7 @@ export default function AbaCaixa() {
             {lista.length === 0 ? <div className="empty">{msgs.length === 0 && !exemplos ? 'A caixa ainda está vazia. Quando o robô de leitura estiver ligado, as respostas aparecem aqui.' : 'Nada nesta pasta.'}</div> : lista.map((m) => (
               <div key={m.id} className={`mi${!m.lida ? ' unread' : ''}${m.id === atual?.id ? ' on' : ''}`} onClick={() => abrir(m)}>
                 <button className={`st${m.estrela ? ' on' : ''}`} aria-label="Estrela" onClick={(e) => { e.stopPropagation(); void mudar(m, { estrela: !m.estrela }, { acao: 'estrela' }) }}><Ic n="star" /></button>
-                <span className="fr">{nomeDe(m.direcao === 'saida' ? `Para: ${m.para}` : m.de)}{empresaDe(m) ? ` · ${empresaDe(m)}` : ''}</span><time>{quando(m.recebido_em)}</time>
+                <span className="fr">{nomeDe(m.direcao === 'saida' ? `Para: ${m.para}` : m.de)}{empresaDe(m) ? ` · ${empresaDe(m)}` : ''}</span><time>{m._quando ?? quando(m.recebido_em)}</time>
                 <span className="su">{m.assunto}</span>
                 {(m.etiquetas.length > 0 || m.anexos.length > 0) && <span className="tg">{m.etiquetas.includes('quente') && <span className="chip gold">quente</span>}{m.etiquetas.filter((x) => x !== 'quente' && x !== 'cotacao').map((x) => <span key={x} className="chip">{x.replace(/_/g, ' ')}</span>)}{m.anexos.length > 0 && <span className="chip ice"><Ic n="clip" />anexo</span>}</span>}
               </div>

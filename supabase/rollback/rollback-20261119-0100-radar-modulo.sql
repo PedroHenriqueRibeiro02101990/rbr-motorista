@@ -1,6 +1,6 @@
 -- Desfaz 20261119-0100-radar-modulo.sql. Os dados importados em prospeccao_base e as configuracoes novas sao PERDIDOS.
 drop function if exists public.radar_mandar_para_lista(text[], boolean), public.radar_contagem_segmentos(), public.radar_buscar_base(jsonb),
-  public.radar_importar_base(jsonb), public.radar_segmento_slug(text), public.radar_restricao_cnae(text);
+  public.radar_importar_base(jsonb), public.radar_criterios_da_base(public.prospeccao_base), public.radar_segmento_slug(text), public.radar_restricao_cnae(text);
 drop table if exists public.prospeccao_curso_progresso, public.prospeccao_sugestoes, public.prospeccao_respostas_config,
   public.prospeccao_caixa_acoes, public.prospeccao_caixa_mensagens, public.prospeccao_buscas_salvas, public.prospeccao_base;
 drop policy if exists prospeccao_anexos_sel on storage.objects;

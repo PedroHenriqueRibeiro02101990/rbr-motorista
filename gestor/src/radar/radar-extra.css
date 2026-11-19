@@ -1,0 +1,27 @@
+/* ---- acréscimos do módulo real (não existem no protótipo) ---- */
+.rdr{overflow-x:clip}
+.rdr .shell{width:100%}
+.rdr .rdr-modal-fundo{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:flex-end;padding:24px;background:rgba(10,14,40,.28)}
+.rdr .rdr-modal{width:min(640px,100%)}
+.rdr .rdr-modal .comp{box-shadow:0 24px 60px -20px rgba(10,14,40,.45);border-radius:0 0 12px 12px}
+.rdr .rdr-modal .mt{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--navy);color:#fff;border-radius:12px 12px 0 0;font-weight:600}
+.rdr .rdr-modal .mt .btn{color:#fff}
+.rdr .rdr-modal .mt .btn:hover{background:rgba(255,255,255,.12)}
+.rdr .mobile-fechar{display:none}
+.rdr .typed{max-height:220px}
+.rdr .menu a{cursor:pointer}
+.rdr .kpi button{min-width:0}
+.rdr details>summary{list-style:none}
+.rdr details>summary::-webkit-details-marker{display:none}
+.rdr .shell>main{min-width:0}
+@media (max-width:999px){
+  .rdr .drawer[data-aberta="false"]{display:none}
+  .rdr .drawer[data-aberta="true"]{position:fixed;inset:0;z-index:55;max-height:100dvh;border-radius:0;overflow:auto}
+  .rdr .mobile-fechar{display:inline-flex}
+  .rdr .rdr-modal-fundo{padding:0;align-items:stretch}
+  .rdr .rdr-modal{width:100%}
+  .rdr .kpi{grid-template-columns:repeat(2,1fr)!important}
+  .rdr .mcols{min-width:668px}
+  .rdr .mx .read .sc{padding:14px}
+  .rdr .hero .stats{gap:18px}
+}

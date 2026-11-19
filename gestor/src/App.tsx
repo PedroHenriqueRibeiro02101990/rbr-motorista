@@ -32,9 +32,15 @@ import RadarApp from './radar/RadarApp'
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
 const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
 
+// Conferência visual do Radar sem login (só em build com VITE_DEMO_RADAR=true; em produção a rota nem existe).
+const DEMO_RADAR = import.meta.env.VITE_DEMO_RADAR === 'true'
+
 export default function App() {
   const auth = useAuth()
   if (DEMO_CIOT && window.location.pathname === '/demo-ciot') return <DemoCiot />
+  if (DEMO_RADAR && window.location.pathname.startsWith('/radar')) {
+    return <BrowserRouter><Routes><Route path="/radar/*" element={<RadarApp papel="gestor_rbr" pessoaId="00000000-0000-0000-0000-000000000000" />} /></Routes></BrowserRouter>
+  }
 
   // E04: link público de aceite (/p/<código>), antes do login; o cliente não tem conta.
   const mProposta = window.location.pathname.match(/^\/p\/([0-9a-z]{1,64})\/?$/)

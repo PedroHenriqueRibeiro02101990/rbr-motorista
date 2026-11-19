@@ -293,9 +293,29 @@ begin
     where segmento_rbr is not null and upper(coalesce(porte,'')) <> 'MEI' group by segmento_rbr) t), '{}'::jsonb);
 end $$;
 
+-- Criterios da pontuacao que a base da Receita permite preencher COM DADO REAL (os demais ficam sem valor: nada e inventado).
+-- Com so estes, a nota maxima e 44 (faixa C); funcionarios (20 pontos) e os outros criterios dependem de enriquecimento. Ver relatorio.
+create or replace function public.radar_criterios_da_base(b public.prospeccao_base) returns jsonb
+language plpgsql immutable set search_path = public, pg_temp as $$
+declare v_ini date; v_crit jsonb := '{}'::jsonb;
+begin
+  v_ini := case when b.data_inicio ~ '^\d{4}-\d{2}-\d{2}' then substr(b.data_inicio, 1, 10)::date
+                when b.data_inicio ~ '^\d{2}/\d{2}/\d{4}' then to_date(substr(b.data_inicio, 1, 10), 'DD/MM/YYYY') else null end;
+  v_crit := jsonb_build_object('segmento_cnae', 1);
+  if b.email is not null then
+    v_crit := v_crit || jsonb_build_object('email_logistica', case when split_part(b.email, '@', 1) ~ '^(logistica|expedicao|transportes|compras|operacao)' then 1 when split_part(b.email, '@', 1) ~ '^(comercial|vendas|contato)' then 0.5 else 0.3 end);
+  end if;
+  v_crit := v_crit || jsonb_build_object('capital_porte', case upper(coalesce(b.porte, '')) when 'DEMAIS' then 1 when 'EPP' then 0.6 when 'ME' then 0.3 else 0 end);
+  if b.distancia_km is not null then v_crit := v_crit || jsonb_build_object('perto_rodovia', case when b.distancia_km <= 60 then 1 when b.distancia_km <= 100 then 0.5 else 0 end); end if;
+  if v_ini is not null then v_crit := v_crit || jsonb_build_object('cnpj_3_anos', case when v_ini <= (current_date - interval '3 years') then 1 else 0 end); end if;
+  if coalesce(b.telefone1, '') <> '' then v_crit := v_crit || jsonb_build_object('telefone_whatsapp', 1); end if;
+  if b.tem_site then v_crit := v_crit || jsonb_build_object('site_ativo', 1); end if;
+  return v_crit;
+end $$;
+
 create or replace function public.radar_mandar_para_lista(p_cnpjs text[], p_qualificado boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare b record; v_emp uuid; v_seg text; v_novas int := 0; v_ja int := 0; v_bloq int := 0; v_sem int := 0; v_orig text;
+declare b public.prospeccao_base%rowtype; v_emp uuid; v_seg text; v_novas int := 0; v_ja int := 0; v_bloq int := 0; v_sem int := 0; v_orig text;
 begin
   if public.current_papel() is distinct from 'gestor_rbr' then raise exception 'Sem permissao.'; end if;
   if coalesce(cardinality(p_cnpjs), 0) > 500 then raise exception 'Maximo de 500 empresas por vez.'; end if;
@@ -307,8 +327,8 @@ begin
     select id into v_emp from public.prospeccao_empresas where cnpj = b.cnpj;
     if v_emp is null and b.email is not null and exists (select 1 from public.prospeccao_contatos c where lower(c.email) = b.email) then v_ja := v_ja + 1; continue; end if;
     if v_emp is null then
-      insert into public.prospeccao_empresas (razao_social, nome_fantasia, cnpj, cnae, segmento, cidade, uf, telefone, origem_contato, status)
-      values (b.razao_social, b.nome_fantasia, b.cnpj, b.cnae_principal, v_seg, b.municipio, b.uf, b.telefone1, v_orig, case when p_qualificado then 'qualificado' else 'novo' end)
+      insert into public.prospeccao_empresas (razao_social, nome_fantasia, cnpj, cnae, segmento, cidade, uf, telefone, site, criterios, origem_contato, status)
+      values (b.razao_social, b.nome_fantasia, b.cnpj, b.cnae_principal, v_seg, b.municipio, b.uf, b.telefone1, null, public.radar_criterios_da_base(b), v_orig, case when p_qualificado then 'qualificado' else 'novo' end)
       returning id into v_emp;
       v_novas := v_novas + 1;
     else
@@ -330,3 +350,5 @@ end $$;
 
 revoke all on function public.radar_importar_base(jsonb), public.radar_buscar_base(jsonb), public.radar_contagem_segmentos(), public.radar_mandar_para_lista(text[], boolean) from public, anon;
 grant execute on function public.radar_importar_base(jsonb), public.radar_buscar_base(jsonb), public.radar_contagem_segmentos(), public.radar_mandar_para_lista(text[], boolean) to authenticated;
+revoke all on function public.radar_restricao_cnae(text), public.radar_segmento_slug(text), public.radar_criterios_da_base(public.prospeccao_base) from public, anon;
+grant execute on function public.radar_restricao_cnae(text), public.radar_segmento_slug(text), public.radar_criterios_da_base(public.prospeccao_base) to authenticated;
