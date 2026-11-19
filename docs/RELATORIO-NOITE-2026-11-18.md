@@ -22,3 +22,9 @@ Branch: fix/fiscal-noite-2026-11-18. Cada secao = um item (A1..A8). Se a sessao 
 ## A5 — CIOT manual sem exigir verificador — CONCLUIDO (codigo)
 - etapaCiot e validarLancamento: verificador opcional (se vier, 4 digitos). "XXXX" ignorado (so digitos); 16 digitos separa 12+4. RPC confirmar_ciot_vpo_manual ja marca emitido sem verificador (nao exigiu mudanca de banco).
 - verificadorReal() em lancamentoManual.ts e juntarCiot (_shared/ciotEfrete.ts) ignoram '0000' (marcador da OP-3771): encerramento (efrete-ciot-operacao) nao monta mais "ciot/0000". PENDENTE DE DEPLOY: efrete-ciot-operacao usa juntarCiot; so passa a valer quando a funcao for publicada (regra 5: nao publiquei).
+
+## A4 — Leitura dos PDFs no lancamento manual — CONCLUIDO
+- Confirmado no banco (so SELECT): o VPR da OP-3771 (documentacao_operacao.vpo) tinha 0 linhas em documento_extracoes. Causa: a leitura rodava dentro da acao de upload, qualquer falha virava um aviso generico e o status ja dizia "enviado e lido".
+- CartaoFiscalManual.tsx: upload agora diz so "enviado"; a leitura roda depois (lerDocumento) com estado proprio (lendo / ok / erro). VPR -> vpr_vale_pedagio, contrato -> contrato_ciot_repom (gestor/src/lib/leituraManual.ts). So fica "lido" com extracao; erro mostra a mensagem e o codigo da funcao (ia_indisponivel etc.) + botao "Ler de novo".
+- Preenche IDVPO, valor (valor_total), CIOT (12 + verificador se houver), frete e adiantamento nos campos, com selo "lido: confira"; editar o campo tira o selo; nada e gravado sem o clique (mantive o painel "Confirmar e gravar").
+- Testes: gestor/test/leituraManual.test.ts. Nao consegui ver o log da edge function (query_logs exige SQL); a causa do 0 extracoes em producao pode ter sido a IA indisponivel (503) — agora a tela mostra isso.

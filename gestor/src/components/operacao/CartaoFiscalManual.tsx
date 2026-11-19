@@ -8,6 +8,7 @@ import { CATEGORIAS_VALIDAS, categoriaCombinacao, eixosDaCombinacao, normalizarC
 import { completarPadroes, etapaCiot, etapaVpo, IPEF_REPOM_CNPJ, separarCiot, validarLancamento, type FormularioManual, type LinhaCiotVpo } from '../../../../supabase/functions/_shared/lancamentoManual.ts'
 import { caminhoArquivo, hashArquivo, montarEvento, planejarGravacao, REGRAS, validarArquivo, type CampoUpload, type DocExistente } from '../../../../supabase/functions/_shared/uploadsFiscais.ts'
 import { normalizarExtracao, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
+import { mensagemFalhaLeitura, preenchimentoDaLeitura, TIPO_EXTRACAO, type CampoLido } from '../../lib/leituraManual'
 import { formatarMoeda } from '../../../../supabase/functions/_shared/unidades-br.ts'
 
 // Cartao unico "Vale-pedagio e CIOT (lancamento manual)" da aba Fiscal (Parte B etapas 9 a 12b). So aparece com VITE_FISCAL_V3 e em operacao
@@ -53,6 +54,8 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
   const [form, setForm] = useState<{ idvpo: string; vpo_valor: string; cnpj_forn: string; categoria: string; ciot: string; ver: string; frete: string; adiant: string; ipef: string; cnpjResp: string }>({ idvpo: '', vpo_valor: '', cnpj_forn: '', categoria: '', ciot: '', ver: '', frete: '', adiant: '', ipef: '', cnpjResp: '' })
   const [lido, setLido] = useState<{ campo: CampoUpload; norm: Normalizado; path: string } | null>(null)
   const [avisosLeitura, setAvisosLeitura] = useState<string[]>([])
+  const [leitura, setLeitura] = useState<{ fase: 'lendo' | 'ok' | 'erro'; texto: string; campo?: CampoUpload; path?: string } | null>(null)
+  const [lidos, setLidos] = useState<Set<CampoLido>>(new Set())
   const stForm = useStatusAcao(quem)
   const stUp = useStatusAcao(quem)
 
@@ -108,7 +111,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
     if (!v.ok) { await stUp.rodar({ verbo: '', acao: async () => { throw new Error(v.mensagem) } }); return }
     const regra = REGRAS[campo]
     await stUp.rodar({
-      verbo: `${regra.rotulo} enviado e lido`, enviando: 'Enviando e lendo o arquivo...',
+      verbo: `${regra.rotulo} enviado`, enviando: 'Enviando o arquivo...',
       acao: async () => {
         const bytes = await file.arrayBuffer()
         const hash = await hashArquivo(bytes)
@@ -129,22 +132,40 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
           throw new Error('Nao consegui gravar o documento. O arquivo enviado foi desfeito.')
         }
         await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: plano.acao === 'trocar' ? 'troca' : 'upload', atorId: null, sucesso: true, mensagem: `${regra.rotulo}: ${file.name}`, requisicao: { path, hash }, resposta: { ator: u.user?.id ?? null } }) as never)
-        // Leitura pelo sistema (so CIOT e VPO). Se falhar, segue manual sem erro.
-        if (campo === 'ciot_pdf' || campo === 'vpo_pdf') {
-          const tipo = campo === 'ciot_pdf' ? 'contrato_ciot_repom' : 'vpr_vale_pedagio'
-          const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'cadastro', bucket: regra.bucket, arquivos: [{ path, tipo }] } })
-          const r = data?.resultados?.[0]
-          if (error || !r?.normalizado) setAvisosLeitura(['Nao consegui ler o arquivo sozinho. Preencha os campos abaixo manualmente.'])
-          else {
-            const norm = normalizarExtracao(tipo, Object.fromEntries(Object.entries(r.normalizado.campos as Record<string, { valor: unknown; confianca: string; trecho?: string }>).map(([k, c]) => [k, { valor: c.valor, confianca: c.confianca, trecho: c.trecho }])), new Date().toISOString().slice(0, 10))
-            setLido({ campo, norm: { ...norm, deducoes: r.normalizado.deducoes ?? norm.deducoes, avisos: r.normalizado.avisos ?? norm.avisos }, path })
-            await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: 'leitura', atorId: null, sucesso: true, mensagem: 'Documento lido pelo sistema' }) as never)
-          }
-        }
+        // A leitura roda DEPOIS do envio, com estado proprio: so diz "lido" quando houver extracao; falha mostra o erro da funcao.
         return path
       },
       verificar: async () => { await recarregar(); return true },
-    })
+    }).then((path) => { if (path && (campo === 'ciot_pdf' || campo === 'vpo_pdf')) void lerDocumento(campo, path) })
+  }
+
+  async function lerDocumento(campo: 'ciot_pdf' | 'vpo_pdf', path: string) {
+    const regra = REGRAS[campo]
+    const tipo = TIPO_EXTRACAO[campo]
+    setLido(null); setAvisosLeitura([])
+    setLeitura({ fase: 'lendo', texto: 'Lendo o arquivo...', campo, path })
+    let falha: string | null = null
+    try {
+      const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'cadastro', bucket: regra.bucket, arquivos: [{ path, tipo }] } })
+      let corpo: { erro?: string; codigo?: string } | null = null
+      if (error) { const ctx = (error as { context?: Response }).context; corpo = ctx ? await ctx.json().catch(() => null) : null; falha = mensagemFalhaLeitura(corpo ?? { erro: error.message }) }
+      else {
+        const r = data?.resultados?.[0]
+        if (!r?.sucesso || !r?.normalizado) falha = mensagemFalhaLeitura(r ?? data)
+        else {
+          const campos = r.normalizado.campos as Record<string, { valor: unknown; confianca: string; trecho?: string }>
+          const norm = normalizarExtracao(tipo, Object.fromEntries(Object.entries(campos).map(([k, c]) => [k, { valor: c.valor, confianca: c.confianca, trecho: c.trecho }])), new Date().toISOString().slice(0, 10))
+          const normFinal = { ...norm, deducoes: r.normalizado.deducoes ?? norm.deducoes, avisos: r.normalizado.avisos ?? norm.avisos }
+          setLido({ campo, norm: normFinal, path })
+          const { valores, lidos: ks } = preenchimentoDaLeitura(campo, norm.campos as never, normFinal.deducoes as never)
+          setForm((f) => ({ ...f, ...valores }))
+          setLidos(new Set(ks))
+          setLeitura({ fase: 'ok', texto: `Arquivo lido pelo sistema (${ks.length} campo(s) preenchido(s) abaixo, confira antes de lançar).` })
+          await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: 'leitura', atorId: null, sucesso: true, mensagem: 'Documento lido pelo sistema' }) as never)
+        }
+      }
+    } catch (e) { falha = mensagemFalhaLeitura({ erro: e instanceof Error ? e.message : String(e) }) }
+    if (falha) setLeitura({ fase: 'erro', texto: falha, campo, path })
   }
 
   // Avisos ao confirmar a leitura (derivados do que foi lido x o que esta gravado)
@@ -195,6 +216,8 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
 
   if (erroCarga) return <Aviso tipo="erro">{erroCarga} <button type="button" className="underline font-bold" onClick={() => void recarregar()}>Tentar de novo</button></Aviso>
   if (!dados) return <div className="text-xs">Carregando o estado gravado...</div>
+  const selo = (k: CampoLido) => lidos.has(k) ? <b style={{ color: COR.media, fontWeight: 700 }}> · lido: confira</b> : null
+  const edita = (k: CampoLido, v: string) => { setLidos((x) => { if (!x.has(k)) return x; const n = new Set(x); n.delete(k); return n }); return v }
   const campo = 'border rounded px-2 py-1 text-sm w-full'
   const estilo = { borderColor: 'var(--rbr-border)' }
   return (
@@ -210,8 +233,8 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
         {secao !== 'ciot' && (
         <div className="flex flex-col gap-2">
           <div className="font-bold text-xs">Vale-pedagio</div>
-          <label className="text-xs">IDVPO (20 digitos)<input className={campo} style={estilo} inputMode="numeric" value={form.idvpo} onChange={(e) => setForm({ ...form, idvpo: e.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
-          <label className="text-xs">Valor do vale<CampoMoeda className={campo} style={estilo} value={form.vpo_valor} onChange={(e) => setForm({ ...form, vpo_valor: e.target.value })} /></label>
+          <label className="text-xs">IDVPO (20 digitos){selo('idvpo')}<input className={campo} style={estilo} inputMode="numeric" value={form.idvpo} onChange={(e) => setForm({ ...form, idvpo: edita('idvpo', e.target.value.replace(/\D/g, '').slice(0, 20)) })} /></label>
+          <label className="text-xs">Valor do vale{selo('vpo_valor')}<CampoMoeda className={campo} style={estilo} value={form.vpo_valor} onChange={(e) => setForm({ ...form, vpo_valor: edita('vpo_valor', e.target.value) })} /></label>
           <label className="text-xs">CNPJ da empresa fornecedora (padrao da Repom quando vazio)<input className={campo} style={estilo} inputMode="numeric" value={form.cnpj_forn} onChange={(e) => setForm({ ...form, cnpj_forn: e.target.value.replace(/\D/g, '').slice(0, 14) })} /></label>
           <label className="text-xs">Categoria de combinação veicular ({rotuloCategoriaPorEixos(dados.eixos)})
             <select className={campo} style={estilo} value={normalizarCategoria(form.categoria) ?? ''} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
@@ -225,10 +248,10 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
         {secao !== 'vpo' && (
         <div className="flex flex-col gap-2">
           <div className="font-bold text-xs">CIOT</div>
-          <label className="text-xs">Número (12 dígitos; o verificador de 4 é opcional, a Repom o mascara com XXXX)
-            <div className="flex gap-1"><input className={campo} style={estilo} inputMode="numeric" value={form.ciot} onChange={(e) => setForm({ ...form, ciot: e.target.value.replace(/\D/g, '').slice(0, 16) })} /><input className="border rounded px-2 py-1 text-sm w-24" style={estilo} inputMode="numeric" placeholder="opcional" value={form.ver} onChange={(e) => setForm({ ...form, ver: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div></label>
-          <label className="text-xs">Valor do frete<CampoMoeda className={campo} style={estilo} value={form.frete} onChange={(e) => setForm({ ...form, frete: e.target.value })} /></label>
-          <label className="text-xs">Adiantamento<CampoMoeda className={campo} style={estilo} value={form.adiant} onChange={(e) => setForm({ ...form, adiant: e.target.value })} /></label>
+          <label className="text-xs">Número (12 dígitos; o verificador de 4 é opcional, a Repom o mascara com XXXX){selo('ciot')}
+            <div className="flex gap-1"><input className={campo} style={estilo} inputMode="numeric" value={form.ciot} onChange={(e) => setForm({ ...form, ciot: edita('ciot', e.target.value.replace(/\D/g, '').slice(0, 16)) })} /><input className="border rounded px-2 py-1 text-sm w-24" style={estilo} inputMode="numeric" placeholder="opcional" value={form.ver} onChange={(e) => setForm({ ...form, ver: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div></label>
+          <label className="text-xs">Valor do frete{selo('frete')}<CampoMoeda className={campo} style={estilo} value={form.frete} onChange={(e) => setForm({ ...form, frete: edita('frete', e.target.value) })} /></label>
+          <label className="text-xs">Adiantamento{selo('adiant')}<CampoMoeda className={campo} style={estilo} value={form.adiant} onChange={(e) => setForm({ ...form, adiant: edita('adiant', e.target.value) })} /></label>
           <div className="text-xs">Saldo: <b>{numeros.saldo != null ? formatarMoeda(numeros.saldo) : '-'}</b> · Destino do pagamento: IPEF da Repom ({IPEF_REPOM_CNPJ})</div>
         </div>
         )}
@@ -241,6 +264,12 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
 
       <div className="grid gap-2 md:grid-cols-2">{secao !== 'vpo' && upBloco('ciot_pdf', 'Subir CIOT (contrato da Repom, PDF)')}{secao !== 'ciot' && upBloco('vpo_pdf', 'Subir VPO (VPR/recibo, PDF ou imagem)')}</div>
       <LinhaStatus estado={stUp.estado} onTentarDeNovo={stUp.tentarDeNovo} />
+      {leitura && (
+        <div role={leitura.fase === 'erro' ? 'alert' : 'status'} className="text-xs font-semibold" style={{ color: leitura.fase === 'erro' ? 'var(--rbr-danger)' : leitura.fase === 'ok' ? '#15803d' : 'var(--rbr-muted)' }}>
+          {leitura.fase === 'ok' ? '✓ ' : leitura.fase === 'erro' ? '✗ ' : '… '}{leitura.texto}
+          {leitura.fase === 'erro' && leitura.campo && leitura.path && (leitura.campo === 'ciot_pdf' || leitura.campo === 'vpo_pdf') && <> <button type="button" className="underline font-bold" onClick={() => void lerDocumento(leitura.campo as 'ciot_pdf' | 'vpo_pdf', leitura.path as string)}>Ler de novo</button></>}
+        </div>
+      )}
       {avisosLeitura.map((a) => <Aviso key={a} tipo="atencao">{a}</Aviso>)}
 
       {lido && (
