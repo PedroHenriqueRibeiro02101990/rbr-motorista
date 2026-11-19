@@ -9,6 +9,7 @@ import {
   conferenciaCruzada, normalizarExtracao, PROMPT_CLASSIFICACAO, PROMPTS_V2, SCHEMA_CLASSIFICACAO, schemaDoTipo, TIPOS_DOCUMENTO,
   type Normalizado, type TipoDocumento,
 } from "../_shared/extracao-documentos.ts";
+import { lerSemIa } from "../_shared/leitura-texto.ts";
 
 const BUCKETS = ["cadastro-documentos", "operacao-documentos"];
 const MAX_ARQUIVOS = 12;
@@ -52,8 +53,8 @@ export async function tratarCadastro(req: Request, body: Record<string, unknown>
   const arquivos = Array.isArray(body.arquivos) ? (body.arquivos as { path?: string; tipo?: string }[]) : [];
   if (!arquivos.length || arquivos.length > MAX_ARQUIVOS) return resp({ sucesso: false, erro: `Envie de 1 a ${MAX_ARQUIVOS} arquivos.` }, 400);
 
-  const { data: chave, error: ek } = await admin.rpc("get_gemini_api_key");
-  if (ek || !chave) return resp({ sucesso: false, erro: "Leitura automatica indisponivel (chave da IA nao configurada)." }, 503);
+  // 19/11/2026: PDF com texto (Repom VPR/contrato) e lido sem IA; a chave da IA so e exigida quando precisar dela.
+  const { data: chave } = await admin.rpc("get_gemini_api_key");
 
   const hoje = new Date().toISOString().slice(0, 10);
   const prazoAbsoluto = Date.now() + ORCAMENTO_TOTAL_MS; // a execucao inteira termina antes do limite de 150 s do Supabase (erro 546)
@@ -77,6 +78,17 @@ export async function tratarCadastro(req: Request, body: Record<string, unknown>
       const mime = blob.type || (path.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg");
       let tipo = (a.tipo ?? "") as TipoDocumento;
       let tipoAuto = false;
+      const semIa = await lerSemIa(bytes, mime, TIPOS_DOCUMENTO.includes(tipo) ? tipo : null);
+      if (semIa) {
+        const tipoTxt = semIa.tipo as TipoDocumento;
+        const normalizado = normalizarExtracao(tipoTxt, semIa.bruto as Record<string, unknown>, hoje);
+        normalizados.push(normalizado);
+        console.log(JSON.stringify({ fn: "extrair-documento", etapa: tipoTxt, ok: true, origem_leitura: "texto" }));
+        await admin.from("documento_extracoes").upsert({ path: chaveCache, tipo: tipoTxt, campos: { normalizado, legivel: true, suspeita_fraude: null, origem_leitura: "texto" } });
+        resultados.push({ path, sucesso: true, tipo: tipoTxt, tipo_automatico: !a.tipo, normalizado, legivel: true, suspeita_fraude: null, origem_leitura: "texto" });
+        continue;
+      }
+      if (!chave) { resultados.push({ path, sucesso: false, codigo: "ia_indisponivel", erro: "Leitura automatica indisponivel (chave da IA nao configurada).", detalhe: "sem_chave" }); continue; }
       if (!TIPOS_DOCUMENTO.includes(tipo)) {
         const cl = await gemini(chave, PROMPT_CLASSIFICACAO, SCHEMA_CLASSIFICACAO, bytes, mime, "classificar", prazoAbsoluto);
         tipo = TIPOS_DOCUMENTO.includes(cl.tipo) ? cl.tipo : "outro";
