@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
+import { gravarEventoFiscal, pessoaAtualId } from '../../lib/eventoFiscal'
 import { caminhoArquivo, hashArquivo, montarEvento, planejarGravacao, REGRAS, validarArquivo, type CampoUpload, type DocExistente } from '../../../../supabase/functions/_shared/uploadsFiscais.ts'
 import { linhaConfirmacao } from '../../lib/statusAcao'
 import { mensagemClara } from '../../lib/mensagemClara'
@@ -26,18 +27,18 @@ export default function SubirPdfManual({ operacaoId, campo, titulo, ajuda, exist
       const path = caminhoArquivo(campo, operacaoId, file.name)
       const up = await supabase.storage.from(regra.bucket).upload(path, file, { contentType: file.type || undefined })
       if (up.error) throw new Error('Nao consegui enviar o arquivo. Tente de novo.')
-      const { data: u } = await supabase.auth.getUser()
+      const atorId = await pessoaAtualId()
       const dados = { arquivo_path: path, arquivo_nome: file.name, arquivo_hash: hash, arquivo_enviado_em: new Date().toISOString(), origem_acao: 'manual', versao: plano.versao, arquivo_historico: plano.historico }
       const gr = existente?.id
         ? await supabase.from('documentacao_operacao').update(dados as never).eq('id', existente.id)
         : await supabase.from('documentacao_operacao').insert({ ...dados, operacao_id: operacaoId, tipo: regra.tipoDoc!, status: 'pendente' } as never)
       if (gr.error) {
         await supabase.storage.from(regra.bucket).remove([path])
-        await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: 'erro', atorId: u.user?.id ?? null, sucesso: false, mensagem: 'Falha ao gravar o documento; arquivo desfeito.' }) as never)
+        await gravarEventoFiscal(montarEvento({ operacaoId, campo, evento: 'erro', atorId, sucesso: false, mensagem: 'Falha ao gravar o documento; arquivo desfeito.' }))
         throw new Error('Nao consegui gravar o documento. O arquivo enviado foi desfeito.')
       }
-      await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: plano.acao === 'trocar' ? 'troca' : 'upload', atorId: u.user?.id ?? null, sucesso: true, mensagem: `${regra.rotulo}: ${file.name}`, requisicao: { path, hash } }) as never)
-      setMsg({ ok: true, texto: `${file.name} · ${linhaConfirmacao('Enviado', new Date(), quem)}` })
+      const falhaHistorico = await gravarEventoFiscal(montarEvento({ operacaoId, campo, evento: plano.acao === 'trocar' ? 'troca' : 'upload', atorId, sucesso: true, mensagem: `${regra.rotulo}: ${file.name}`, requisicao: { path, hash } }))
+      setMsg({ ok: !falhaHistorico, texto: `${file.name} · ${linhaConfirmacao('Enviado', new Date(), quem)}${falhaHistorico ? ` — ${falhaHistorico}` : ''}` })
       aoGravar()
     } catch (e) {
       setMsg({ ok: false, texto: mensagemClara(e) })

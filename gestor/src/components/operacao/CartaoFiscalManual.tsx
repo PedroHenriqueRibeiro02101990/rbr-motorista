@@ -3,6 +3,7 @@ import { supabase } from '@rbr/shared/supabaseClient'
 import CampoMoeda from '../campos/CampoMoeda'
 import { LinhaStatus, useStatusAcao } from '../StatusAcao'
 import { Aviso } from '../financeiro/ui'
+import { gravarEventoFiscal, pessoaAtualId } from '../../lib/eventoFiscal'
 import { linhaConfirmacao } from '../../lib/statusAcao'
 import { CATEGORIAS_VALIDAS, categoriaCombinacao, eixosDaCombinacao, normalizarCategoria, rotuloCategoriaPorEixos } from '../../../../supabase/functions/_shared/combinacaoVeicular.ts'
 import { completarPadroes, etapaCiot, etapaVpo, IPEF_REPOM_CNPJ, separarCiot, validarLancamento, type FormularioManual, type LinhaCiotVpo } from '../../../../supabase/functions/_shared/lancamentoManual.ts'
@@ -54,6 +55,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
   const [form, setForm] = useState<{ idvpo: string; vpo_valor: string; cnpj_forn: string; categoria: string; ciot: string; ver: string; frete: string; adiant: string; ipef: string; cnpjResp: string }>({ idvpo: '', vpo_valor: '', cnpj_forn: '', categoria: '', ciot: '', ver: '', frete: '', adiant: '', ipef: '', cnpjResp: '' })
   const [lido, setLido] = useState<{ campo: CampoUpload; norm: Normalizado; path: string } | null>(null)
   const [avisosLeitura, setAvisosLeitura] = useState<string[]>([])
+  const [avisoHistorico, setAvisoHistorico] = useState<string | null>(null)
   const [leitura, setLeitura] = useState<{ fase: 'lendo' | 'ok' | 'erro'; texto: string; campo?: CampoUpload; path?: string } | null>(null)
   const [lidos, setLidos] = useState<Set<CampoLido>>(new Set())
   const stForm = useStatusAcao(quem)
@@ -129,17 +131,19 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
         const path = caminhoArquivo(campo, operacaoId, file.name)
         const up = await supabase.storage.from(regra.bucket).upload(path, file, { contentType: file.type || undefined })
         if (up.error) throw new Error('Nao consegui enviar o arquivo. Tente de novo.')
-        const { data: u } = await supabase.auth.getUser()
+        const atorId = await pessoaAtualId()
+        setAvisoHistorico(null)
         const linha = { operacao_id: operacaoId, tipo: regra.tipoDoc!, arquivo_path: path, arquivo_nome: file.name, arquivo_hash: hash, arquivo_enviado_em: new Date().toISOString(), origem_acao: 'manual', versao: plano.versao, arquivo_historico: plano.historico, status: 'emitido' as const }
         const gr = existente?.id
           ? await supabase.from('documentacao_operacao').update(linha as never).eq('id', existente.id)
           : await supabase.from('documentacao_operacao').insert(linha as never)
         if (gr.error) {
           await supabase.storage.from(regra.bucket).remove([path]) // falha no banco: desfaz o arquivo
-          await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: 'erro', atorId: null, sucesso: false, mensagem: 'Falha ao gravar o documento; arquivo desfeito.' }) as never)
+          await gravarEventoFiscal(montarEvento({ operacaoId, campo, evento: 'erro', atorId, sucesso: false, mensagem: 'Falha ao gravar o documento; arquivo desfeito.' }))
           throw new Error('Nao consegui gravar o documento. O arquivo enviado foi desfeito.')
         }
-        await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: plano.acao === 'trocar' ? 'troca' : 'upload', atorId: null, sucesso: true, mensagem: `${regra.rotulo}: ${file.name}`, requisicao: { path, hash }, resposta: { ator: u.user?.id ?? null } }) as never)
+        const falhaHistorico = await gravarEventoFiscal(montarEvento({ operacaoId, campo, evento: plano.acao === 'trocar' ? 'troca' : 'upload', atorId, sucesso: true, mensagem: `${regra.rotulo}: ${file.name}`, requisicao: { path, hash } }))
+        if (falhaHistorico) setAvisoHistorico(falhaHistorico)
         // A leitura roda DEPOIS do envio, com estado proprio: so diz "lido" quando houver extracao; falha mostra o erro da funcao.
         return path
       },
@@ -169,7 +173,8 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
           setForm((f) => ({ ...f, ...valores }))
           setLidos(new Set(ks))
           setLeitura({ fase: 'ok', texto: `Arquivo lido pelo sistema (${ks.length} campo(s) preenchido(s) abaixo, confira antes de lançar).` })
-          await supabase.from('eventos_fiscais_operacao').insert(montarEvento({ operacaoId, campo, evento: 'leitura', atorId: null, sucesso: true, mensagem: 'Documento lido pelo sistema' }) as never)
+          const falhaHistorico = await gravarEventoFiscal(montarEvento({ operacaoId, campo, evento: 'leitura', atorId: await pessoaAtualId(), sucesso: true, mensagem: 'Documento lido pelo sistema' }))
+          if (falhaHistorico) setAvisoHistorico(falhaHistorico)
         }
       }
     } catch (e) { falha = mensagemFalhaLeitura({ erro: e instanceof Error ? e.message : String(e) }) }
@@ -272,6 +277,7 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
 
       <div className="grid gap-2 md:grid-cols-2">{secao !== 'vpo' && upBloco('ciot_pdf', 'Subir CIOT (contrato da Repom, PDF)')}{secao !== 'ciot' && upBloco('vpo_pdf', 'Subir VPO (VPR/recibo, PDF ou imagem)')}</div>
       <LinhaStatus estado={stUp.estado} onTentarDeNovo={stUp.tentarDeNovo} />
+      {avisoHistorico && <Aviso tipo="atencao">{avisoHistorico}</Aviso>}
       {leitura && (
         <div role={leitura.fase === 'erro' ? 'alert' : 'status'} className="text-xs font-semibold" style={{ color: leitura.fase === 'erro' ? 'var(--rbr-danger)' : leitura.fase === 'ok' ? '#15803d' : 'var(--rbr-muted)' }}>
           {leitura.fase === 'ok' ? '✓ ' : leitura.fase === 'erro' ? '✗ ' : '… '}{leitura.texto}

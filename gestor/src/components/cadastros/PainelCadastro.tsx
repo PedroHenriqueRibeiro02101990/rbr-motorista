@@ -4,6 +4,7 @@ import type { Database } from '@rbr/shared/database.types'
 import { BadgeAprovacao, itensDe, ListaItens } from '@rbr/shared/cadastro'
 import { formatarDoc, linkWhatsApp } from '@rbr/shared/documento'
 import { Aviso, Botao, inputClass, inputStyle, Modal } from '../financeiro/ui'
+import { bucketECaminho } from '../../lib/arquivoCadastro'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Veiculo = Database['public']['Tables']['veiculos']['Row']
@@ -11,7 +12,7 @@ type Doc = Database['public']['Tables']['documentos_pessoais_imagens']['Row']
 type Log = Database['public']['Tables']['auditoria_log']['Row']
 type Acesso = { pessoa_id: string; tem_login: boolean; email_login: string | null; email_confirmado: boolean; ultimo_login: string | null; bloqueado: boolean }
 
-const TIPO_DOC: Record<string, string> = { cnh: 'CNH', rg: 'RG', crlv: 'CRLV', cartao_cnpj: 'Cartão CNPJ' }
+const TIPO_DOC: Record<string, string> = { cnh: 'CNH', rg: 'RG', crlv: 'CRLV', cartao_cnpj: 'Cartão CNPJ', cpf: 'CPF', rntrc: 'RNTRC', comprovante_residencia: 'Comprovante de residência', dados_bancarios: 'Dados bancários' }
 const CAMPO_LABEL: Record<string, string> = {
   nome: 'Nome', cpf: 'CPF', numero_registro: 'Nº registro', categoria: 'Categoria', validade: 'Validade', ear: 'EAR',
   placa: 'Placa', renavam: 'RENAVAM', chassi: 'Chassi', marca_modelo: 'Marca/modelo', ano: 'Ano', exercicio: 'Exercício',
@@ -155,7 +156,8 @@ export default function PainelCadastro({ pessoaId, onMudou, aninhado = false }: 
 
   async function abrirDoc(d: Doc) {
     if (!d.arquivo_url) return setMsg({ tipo: 'erro', texto: 'Foto já removida.' })
-    const { data, error } = await supabase.storage.from('documentos-pessoais').createSignedUrl(d.arquivo_url ?? '', 300)
+    const { bucket, caminho } = bucketECaminho(d.arquivo_url)
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(caminho, 300)
     if (error || !data) return setMsg({ tipo: 'erro', texto: 'Não foi possível abrir a foto.' })
     window.open(data.signedUrl, '_blank', 'noopener')
   }

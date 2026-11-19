@@ -4,7 +4,7 @@ import { Modal, Botao, Aviso } from '../financeiro/ui'
 import { LinhaStatus, useStatusAcao } from '../StatusAcao'
 import { rodarComLimite } from '../../../../supabase/functions/_shared/geminiResiliente.ts'
 import CampoPeso from '../campos/CampoPeso'
-import { estadoDaLeitura, ROTULO_ESTADO, textoResumoVazio, type EstadoLeitura, type ResultadoLeitura, achadosDoPayload, montarPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
+import { estadoDaLeitura, ROTULO_ESTADO, textoResumoVazio, type EstadoLeitura, type ResultadoLeitura, achadosDoPayload, montarPayload, titularesDoPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
 import { conferenciaCruzada, TIPOS_DOCUMENTO, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
 import { montarCorpoMotoristaRepom, montarCorpoVeiculoRepom, preChecagemRepom } from '../../../../supabase/functions/_shared/repomCadastro.ts'
 import { formatarKg } from '../../../../supabase/functions/_shared/unidades-br.ts'
@@ -26,6 +26,7 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
   const [itens, setItens] = useState<Item[]>([])
   const [aviso, setAviso] = useState<string | null>(null)
   const [sel, setSel] = useState(0)
+  const [concluidoComAviso, setConcluidoComAviso] = useState(false)
   const st = useStatusAcao(quem)
   const lote = useRef(`lote-${Date.now()}`)
   const hoje = new Date().toISOString().slice(0, 10)
@@ -93,6 +94,7 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
 
   async function confirmar() {
     let avisoComplemento: string | null = null
+    let avisosRpc: string[] = []
     const gravado = await st.rodar({
       verbo: 'Cadastro lancado', enviando: 'Gravando o cadastro...',
       acao: async () => {
@@ -107,7 +109,9 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
             avisoComplemento = e instanceof Error ? e.message : String(e)
           }
         }
-        return data as { motorista_id?: string; cavalo_id?: string; carreta_id?: string }
+        const r = data as { motorista_id?: string; cavalo_id?: string; carreta_id?: string; avisos?: string[] }
+        avisosRpc = Array.isArray(r?.avisos) ? r.avisos : []
+        return r
       },
       // so mostra ok depois de reler o que foi gravado
       verificar: async (r) => {
@@ -125,7 +129,9 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
     })
     // So fecha/recarrega se gravou de verdade; se falhou, a tela continua com o erro e o 'Tentar de novo'.
     if (!gravado) return
-    if (avisoComplemento) setAviso(`Cadastro gravado, mas RG e genero (usados no cadastro da Repom) nao foram gravados: ${avisoComplemento}`)
+    // Se a RPC ou o complemento mandaram aviso (ex.: titular divergente mantido), a janela NAO fecha sozinha: a pessoa precisa ler.
+    const avisosFinais = [...avisosRpc, ...(avisoComplemento ? [`Cadastro gravado, mas RG e genero (usados no cadastro da Repom) nao foram gravados: ${avisoComplemento}`] : [])]
+    if (avisosFinais.length) { setAviso(avisosFinais.join(' | ')); setConcluidoComAviso(true); return }
     aoConcluir?.()
   }
 
@@ -219,6 +225,7 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
 
         <div className="rounded border p-2 text-xs flex flex-col gap-1" style={{ borderColor: 'var(--rbr-border)' }}>
           <div className="font-semibold">Vai criar: {payload.motorista || payload.cavalo || payload.carreta ? resumoDoQueSeraCriado(payload) : textoResumoVazio(itens.map((i) => i.estado))}</div>
+          {titularesDoPayload(payload).map((t) => <div key={t} style={{ color: 'var(--rbr-muted)' }}>{t}</div>)}
           {achados.map((a, i) => <div key={i} style={{ color: a.nivel === 'bloqueio' ? 'var(--rbr-danger)' : COR_CONFIANCA.media }}>{a.nivel === 'bloqueio' ? 'Corrija: ' : 'Aviso: '}{a.mensagem}</div>)}
         </div>
         {REPOM_CADASTRO_HABILITADO && faltaRepom.length > 0 && (
@@ -229,8 +236,8 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
         )}
         <div className="flex justify-end gap-2">
           {REPOM_CADASTRO_HABILITADO && <Botao variante="secundario" disabled title="Desligado: o envio para a Repom so entra depois da liberacao">Cadastrar na Repom</Botao>}
-          <Botao variante="secundario" onClick={onFechar}>Fechar</Botao>
-          <Botao onClick={() => void confirmar()} disabled={bloqueado || st.enviando}>Confirmar cadastro</Botao>
+          <Botao variante="secundario" onClick={concluidoComAviso ? (aoConcluir ?? onFechar) : onFechar}>Fechar</Botao>
+          <Botao onClick={() => void confirmar()} disabled={bloqueado || st.enviando || concluidoComAviso}>Confirmar cadastro</Botao>
         </div>
       </div>
     </Modal>

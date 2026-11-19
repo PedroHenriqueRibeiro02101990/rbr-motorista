@@ -192,3 +192,24 @@ export function validarProprietario(p: { proprietario_documento?: string | null;
   }
   return out;
 }
+
+/** D6 (19/11/2026): o emissor do MDF-e (emitir-mdfe/mdfe.ts mapearTipoCarroceria) so entende sider, container, graneleira, bau/fechada,
+ *  aberta/grade/prancha e "nao aplicavel". O CRLV traz texto livre ("CARROCERIA ABERTA", "TANQUE"...). Esta funcao devolve, para o que
+ *  o emissor entende, o texto canonico; para o resto, `reconhecida: false` e NAO inventa equivalente (o texto cru fica para a pessoa decidir). */
+export function carroceriaParaMdfe(texto: string | null | undefined): { valor: string | null; reconhecida: boolean } {
+  const t = semAcento(String(texto ?? "")).trim();
+  if (!t) return { valor: null, reconhecida: false };
+  if (/sider/.test(t)) return { valor: "sider", reconhecida: true };
+  if (/cont[ae]i?ner|conteiner/.test(t)) return { valor: "container", reconhecida: true };
+  if (/granel/.test(t)) return { valor: "graneleira", reconhecida: true };
+  if (/\bbau\b|fechad|furgao/.test(t)) return { valor: "bau", reconhecida: true };
+  if (/abert|grade|prancha|plataforma/.test(t)) return { valor: "aberta", reconhecida: true };
+  if (/nao aplic|sem carroceria|nenhuma/.test(t)) return { valor: "nao aplicavel", reconhecida: true };
+  return { valor: String(texto).trim(), reconhecida: false };
+}
+
+/** C1 (19/11/2026): tipo de documento do proprietario do CRLV. 11 caracteres = CPF, 14 = CNPJ (aceita o CNPJ alfanumerico). */
+export function tipoDocumentoProprietario(v: unknown): "cpf" | "cnpj" | null {
+  const d = alfa(v);
+  return d.length === 11 ? "cpf" : d.length === 14 ? "cnpj" : null;
+}
