@@ -4,7 +4,7 @@ import CampoMoeda from '../campos/CampoMoeda'
 import { LinhaStatus, useStatusAcao } from '../StatusAcao'
 import { Aviso } from '../financeiro/ui'
 import { linhaConfirmacao } from '../../lib/statusAcao'
-import { categoriaCombinacao, eixosDaCombinacao } from '../../../../supabase/functions/_shared/combinacaoVeicular.ts'
+import { CATEGORIAS_VALIDAS, categoriaCombinacao, eixosDaCombinacao, normalizarCategoria, rotuloCategoriaPorEixos } from '../../../../supabase/functions/_shared/combinacaoVeicular.ts'
 import { completarPadroes, etapaCiot, etapaVpo, IPEF_REPOM_CNPJ, separarCiot, validarLancamento, type FormularioManual, type LinhaCiotVpo } from '../../../../supabase/functions/_shared/lancamentoManual.ts'
 import { caminhoArquivo, hashArquivo, montarEvento, planejarGravacao, REGRAS, validarArquivo, type CampoUpload, type DocExistente } from '../../../../supabase/functions/_shared/uploadsFiscais.ts'
 import { normalizarExtracao, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
@@ -213,14 +213,20 @@ export default function CartaoFiscalManual({ operacaoId, quem, onMudou, secao = 
           <label className="text-xs">IDVPO (20 digitos)<input className={campo} style={estilo} inputMode="numeric" value={form.idvpo} onChange={(e) => setForm({ ...form, idvpo: e.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
           <label className="text-xs">Valor do vale<CampoMoeda className={campo} style={estilo} value={form.vpo_valor} onChange={(e) => setForm({ ...form, vpo_valor: e.target.value })} /></label>
           <label className="text-xs">CNPJ da empresa fornecedora (padrao da Repom quando vazio)<input className={campo} style={estilo} inputMode="numeric" value={form.cnpj_forn} onChange={(e) => setForm({ ...form, cnpj_forn: e.target.value.replace(/\D/g, '').slice(0, 14) })} /></label>
-          <label className="text-xs">Categoria de combinacao veicular (pelos eixos: {categoriaCombinacao(dados.eixos) ?? '?'})<input className={campo} style={estilo} value={form.categoria} placeholder={categoriaCombinacao(dados.eixos) ?? ''} onChange={(e) => setForm({ ...form, categoria: e.target.value.replace(/\D/g, '').slice(0, 2) })} /></label>
+          <label className="text-xs">Categoria de combinação veicular ({rotuloCategoriaPorEixos(dados.eixos)})
+            <select className={campo} style={estilo} value={normalizarCategoria(form.categoria) ?? ''} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
+              <option value="">Automática pelos eixos{categoriaCombinacao(dados.eixos) ? ` (${categoriaCombinacao(dados.eixos)})` : ''}</option>
+              {CATEGORIAS_VALIDAS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {form.categoria && !normalizarCategoria(form.categoria) && <span className="text-xs" style={{ color: 'var(--rbr-danger)' }}>Valor inválido gravado antes ({form.categoria}): escolha da lista.</span>}
+          </label>
         </div>
         )}
         {secao !== 'vpo' && (
         <div className="flex flex-col gap-2">
           <div className="font-bold text-xs">CIOT</div>
-          <label className="text-xs">Numero (12 digitos + verificador de 4)
-            <div className="flex gap-1"><input className={campo} style={estilo} inputMode="numeric" value={form.ciot} onChange={(e) => setForm({ ...form, ciot: e.target.value.replace(/\D/g, '').slice(0, 16) })} /><input className="border rounded px-2 py-1 text-sm w-24" style={estilo} inputMode="numeric" placeholder="4 dig." value={form.ver} onChange={(e) => setForm({ ...form, ver: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div></label>
+          <label className="text-xs">Número (12 dígitos; o verificador de 4 é opcional, a Repom o mascara com XXXX)
+            <div className="flex gap-1"><input className={campo} style={estilo} inputMode="numeric" value={form.ciot} onChange={(e) => setForm({ ...form, ciot: e.target.value.replace(/\D/g, '').slice(0, 16) })} /><input className="border rounded px-2 py-1 text-sm w-24" style={estilo} inputMode="numeric" placeholder="opcional" value={form.ver} onChange={(e) => setForm({ ...form, ver: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div></label>
           <label className="text-xs">Valor do frete<CampoMoeda className={campo} style={estilo} value={form.frete} onChange={(e) => setForm({ ...form, frete: e.target.value })} /></label>
           <label className="text-xs">Adiantamento<CampoMoeda className={campo} style={estilo} value={form.adiant} onChange={(e) => setForm({ ...form, adiant: e.target.value })} /></label>
           <div className="text-xs">Saldo: <b>{numeros.saldo != null ? formatarMoeda(numeros.saldo) : '-'}</b> · Destino do pagamento: IPEF da Repom ({IPEF_REPOM_CNPJ})</div>

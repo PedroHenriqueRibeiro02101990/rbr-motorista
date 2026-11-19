@@ -6,3 +6,19 @@ Branch: fix/fiscal-noite-2026-11-18. Cada secao = um item (A1..A8). Se a sessao 
 - mdfe.ts: contratantes = propTracao ? [{nome: emitente_razao_social, cnpj: cnpjEmitente}] : cliente ? [cliente] : [] (rejeicao 741).
 - Teste novo em mdfe.test.ts (com proprietario PF: 1 contratante = emitente; sem: cliente). 47/47 passam.
 - Nada publicado.
+
+## A2 — Previa automatica no card do MDF-e — CONCLUIDO
+- Ja existia: previa carregada ao abrir (carregarPreVoo). Faltava: link por item, contagem, "Conferir", dados reais em "Ver o que enviamos".
+- gestor/src/lib/fiscalV3Modelo.ts: contarBloqueios, rotuloFaltam, destinoDoItem (CT-e/VPO/CIOT = visao da esteira; pagamento = /operacoes?op=&aba=financeiro; motorista; veiculo = /cadastros?aba=motoristas), linhasDoQueEnviamos(payload).
+- fiscalV3Dados.ts: carregarPreVoo devolve {itens, payload}. FiscalV3Painel.tsx: "Corrigir em: <aba>" por item, botao "Conferir", botao Emitir mostra "(faltam N itens)", "Ver o que enviamos" lista contratante, proprietario, reboques com tara, CIOT 12 digitos e categoria do vale.
+- Decisao: o campo "aba" de traduzirRejeicaoMdfe so existe para rejeicao pos-envio; para a previa o destino e derivado do campo/texto do item (funcao pura, testada).
+- Testes: gestor/test/fiscalV3Modelo.test.ts (2 novos, 1 antigo atualizado para o novo texto).
+
+## A3 — Categoria de combinacao veicular — CONCLUIDO
+- _shared/combinacaoVeicular.ts: CATEGORIAS_VALIDAS, normalizarCategoria (padStart 2, so lista), rotuloCategoriaPorEixos. lancamentoManual.ts: validarLancamento bloqueia fora da lista; completarPadroes normaliza ("7"->"07"), sem Number/parseInt.
+- CartaoFiscalManual.tsx: campo virou select (lista valida + "automatica pelos eixos"); rotulo mostra eixos reais ("6 eixos da combinacao -> 08"), eixos = cavalo + reboques de operacao_reboques.
+- Testes em lancamentoManual.test.ts.
+
+## A5 — CIOT manual sem exigir verificador — CONCLUIDO (codigo)
+- etapaCiot e validarLancamento: verificador opcional (se vier, 4 digitos). "XXXX" ignorado (so digitos); 16 digitos separa 12+4. RPC confirmar_ciot_vpo_manual ja marca emitido sem verificador (nao exigiu mudanca de banco).
+- verificadorReal() em lancamentoManual.ts e juntarCiot (_shared/ciotEfrete.ts) ignoram '0000' (marcador da OP-3771): encerramento (efrete-ciot-operacao) nao monta mais "ciot/0000". PENDENTE DE DEPLOY: efrete-ciot-operacao usa juntarCiot; so passa a valer quando a funcao for publicada (regra 5: nao publiquei).

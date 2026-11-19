@@ -62,14 +62,14 @@ export async function carregarDadosFiscais(operacaoId: string): Promise<DadosFis
 }
 
 /** Pre-voo do MDF-e = PREVIA do proprio emissor (fonte unica; nao emite nada nem grava). Falha na leitura nao bloqueia (o emissor bloqueia por conta propria). */
-export async function carregarPreVoo(operacaoId: string): Promise<Item[] | null> {
+export async function carregarPreVoo(operacaoId: string): Promise<{ itens: Item[]; payload: Record<string, unknown> | null } | null> {
   try {
     const { data, error } = await supabase.functions.invoke('emitir-mdfe', { body: { operacao_id: operacaoId, previa: true } })
     if (error && !data) {
       const ctx = (error as { context?: Response }).context
       const corpo = ctx ? await ctx.json().catch(() => null) : null
-      return corpo ? itensDaPrevia(corpo) : null
+      return corpo ? { itens: itensDaPrevia(corpo), payload: null } : null
     }
-    return itensDaPrevia(data)
+    return { itens: itensDaPrevia(data), payload: (data?.payload as Record<string, unknown> | undefined) ?? null }
   } catch { return null }
 }
