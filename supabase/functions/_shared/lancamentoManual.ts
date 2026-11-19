@@ -1,7 +1,7 @@
 // Lancamento manual de vale-pedagio e CIOT (Parte B etapas 9 a 11 e 15). Funcoes puras: validacao, esteira e pre-voo derivados do
 // ESTADO GRAVADO (operacao_ciot_vpo + documentacao_operacao), nunca de estado de tela (regra G5).
 // Teste: node --test supabase/functions/_shared/lancamentoManual.test.ts
-import { categoriaCombinacao } from "./combinacaoVeicular.ts";
+import { categoriaCombinacao, normalizarCategoria } from "./combinacaoVeicular.ts";
 
 export const IPEF_REPOM_CNPJ = "65697260000103"; // IPEF da Repom (destino do pagamento quando a origem do CIOT e a Repom)
 export type Nivel = "ok" | "aviso" | "bloqueio";
@@ -17,7 +17,13 @@ export function ehOperacaoManual(o: { modo_demonstracao?: boolean | null; eh_tes
   return origem !== "efrete" && origem !== "nstech"; // qualquer operacao real enquanto nao houver emissao por API em producao
 }
 
-/** "5200480384321483" (16) vira 12 + 4; 12 digitos sozinhos ficam sem verificador. */
+/** Verificador de verdade: 4 digitos e diferente de "0000" (marcador interno gravado na OP-3771 quando a Repom mascarou o verificador). */
+export function verificadorReal(v: unknown): string | null {
+  const d = so(v);
+  return d.length === 4 && d !== "0000" ? d : null;
+}
+
+/** "5200480384321483" (16) vira 12 + 4; 12 digitos sozinhos ficam sem verificador. A Repom mascara o verificador ("520048413061XXXX"): o "XXXX" e ignorado (so() tira o que nao e digito). */
 export function separarCiot(texto: unknown): { ciot: string; verificador: string } | null {
   const d = so(texto);
   if (d.length === 16) return { ciot: d.slice(0, 12), verificador: d.slice(12) };
@@ -50,11 +56,12 @@ export function validarLancamento(f: FormularioManual): Item[] {
   if (f.idvpo) out.push(idv.length === 20 && idv === String(f.idvpo).trim() ? ok("idvpo") : { nivel: "bloqueio", campo: "idvpo", mensagem: "IDVPO deve ter 20 digitos (so numeros)." });
   if (f.vpo_valor != null) out.push(f.vpo_valor > 0 ? ok("vpo_valor") : { nivel: "bloqueio", campo: "vpo_valor", mensagem: "Valor do vale-pedagio deve ser maior que zero." });
   if (f.vpo_cnpj_fornecedora && so(f.vpo_cnpj_fornecedora).length !== 14) out.push({ nivel: "bloqueio", campo: "vpo_cnpj_fornecedora", mensagem: "CNPJ da fornecedora do vale deve ter 14 digitos." });
+  if (f.categoria_combinacao && !normalizarCategoria(f.categoria_combinacao)) out.push({ nivel: "bloqueio", campo: "categoria_combinacao", mensagem: "Categoria de combinacao invalida: use 02, 04, 06, 07, 08, 10, 11, 12, 13 ou 14 (pelo total de eixos do cavalo e reboques)." });
   if (f.ciot) {
     const c = so(f.ciot);
     if (c.length === 16) { /* sera separado ao gravar */ out.push(ok("ciot")); }
     else if (c.length !== 12 || c !== String(f.ciot).trim()) out.push({ nivel: "bloqueio", campo: "ciot", mensagem: "CIOT: 12 digitos (ou os 16 que a Repom mostra, que o sistema separa em 12 + 4)." });
-    else if (so(f.ciot_verificador).length !== 4) out.push({ nivel: "bloqueio", campo: "ciot_verificador", mensagem: "Informe o verificador de 4 digitos do CIOT." });
+    else if (so(f.ciot_verificador) && so(f.ciot_verificador).length !== 4) out.push({ nivel: "bloqueio", campo: "ciot_verificador", mensagem: "O verificador do CIOT tem 4 digitos (ou deixe vazio: o MDF-e usa so os 12 primeiros)." });
     else out.push(ok("ciot"));
   }
   if (f.valor_frete != null && !(f.valor_frete > 0)) out.push({ nivel: "bloqueio", campo: "valor_frete", mensagem: "Valor do frete do CIOT deve ser maior que zero." });
@@ -72,7 +79,7 @@ export function validarLancamento(f: FormularioManual): Item[] {
 export function completarPadroes(f: FormularioManual, o: { cnpj_rbr?: string | null; eixos_combinacao?: number | null }): FormularioManual {
   return {
     ...f,
-    categoria_combinacao: f.categoria_combinacao || categoriaCombinacao(o.eixos_combinacao ?? null),
+    categoria_combinacao: normalizarCategoria(f.categoria_combinacao) || categoriaCombinacao(o.eixos_combinacao ?? null),
     pagto_cnpj_ipef: f.pagto_cnpj_ipef || (f.origem_repom ? IPEF_REPOM_CNPJ : null),
     ciot_cnpj_responsavel: f.ciot_cnpj_responsavel || o.cnpj_rbr || null,
   };
@@ -87,7 +94,7 @@ export interface LinhaCiotVpo {
 export interface EtapaEsteira { concluida: boolean; texto: string; faltam: string[] }
 
 export function mascaraCiot(ciot: string, ver: string): string {
-  return `${ciot.slice(0, 4)} ${ciot.slice(4, 8)} ${ciot.slice(8, 12)}-${ver}`.trim();
+  return `${ciot.slice(0, 4)} ${ciot.slice(4, 8)} ${ciot.slice(8, 12)}${ver ? `-${ver}` : ""}`.trim();
 }
 
 export function etapaVpo(l: LinhaCiotVpo | null, temPedagio = true): EtapaEsteira {
@@ -104,7 +111,8 @@ export function etapaCiot(l: LinhaCiotVpo | null): EtapaEsteira {
   const c = so(l?.ciot), v = so(l?.ciot_verificador);
   const faltam: string[] = [];
   if (c.length !== 12) faltam.push(c.length === 16 ? "separar o verificador (16 digitos gravados)" : "CIOT (12 digitos)");
-  if (v.length !== 4) faltam.push("verificador");
+  // O verificador e opcional: a Repom o mascara (XXXX) e o MDF-e usa so os 12 digitos. Se vier, tem de ter 4.
+  if (v && v.length !== 4) faltam.push("verificador (4 digitos ou vazio)");
   if (!faltam.length) return { concluida: true, texto: `CIOT ${mascaraCiot(c, v)}`, faltam };
   return { concluida: false, texto: l?.ciot ? `Em andamento: falta ${faltam.join(", ")}` : "Ainda nao lancado", faltam };
 }

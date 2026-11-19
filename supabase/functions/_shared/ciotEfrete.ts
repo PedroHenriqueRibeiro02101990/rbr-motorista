@@ -214,7 +214,8 @@ export function separarCiot(codigo: string, ambiente: 'homologacao' | 'producao'
   const m = (ambiente === 'homologacao' ? /^\s*(\d{12})(?:\s*\/\s*(\d{4}|XXXX))?\s*$/ : /^\s*(\d{12})(?:\s*\/\s*(\d{4}))?\s*$/).exec(codigo ?? '')
   return m ? { numero: m[1], verificador: m[2] ?? null } : null
 }
-export const juntarCiot = (numero: string, verificador: string | null | undefined) => (verificador ? `${numero}/${verificador}` : numero)
+// "0000" e o marcador interno de CIOT manual sem verificador (a Repom mascara o verificador): nunca e verificador real.
+export const juntarCiot = (numero: string, verificador: string | null | undefined) => (verificador && verificador !== '0000' ? `${numero}/${verificador}` : numero)
 
 // ---- Anti-duplicidade ----
 export interface PedidoRegistrado {

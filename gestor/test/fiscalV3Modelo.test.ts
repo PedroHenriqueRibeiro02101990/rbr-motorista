@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { itensDaPrevia, linhasConferenciaMdfe, modeloFiscal, ncmDaOperacao, type EstadoFiscal } from '../src/lib/fiscalV3Modelo.ts'
+import { contarBloqueios, destinoDoItem, itensDaPrevia, linhasDoQueEnviamos, linhasConferenciaMdfe, modeloFiscal, ncmDaOperacao, type EstadoFiscal } from '../src/lib/fiscalV3Modelo.ts'
 
 const ciotOk = { ciot: '520048038432', ciot_verificador: '1483', ciot_origem: 'rbr_repom', ciot_ambiente: 'producao', vpo_idvpo: '96670000000000000001', vpo_valor: 1431.56 }
 const base = (s: Partial<EstadoFiscal>): EstadoFiscal => ({ cte: null, atm: null, mdfe: null, rcv: null, ciotVpo: null, preVoo: [], ...s })
@@ -42,7 +42,7 @@ test('estado 4 (tudo emitido): 4 de 4, MDF-e averbado, acoes pos-emissao habilit
 test('A) Emitir MDF-e fica DESABILITADO com pre-voo em vermelho (cep_carregamento) e mostra o motivo; ao corrigir, habilita', () => {
   const pronto = { cte: CTE, atm: { status: 'emitido' }, ciotVpo: ciotOk }
   const bloqueado = modeloFiscal(base({ ...pronto, preVoo: [{ nivel: 'bloqueio', campo: 'cep_carregamento', mensagem: 'CEP de carregamento com 8 digitos nao encontrado.' }] }))
-  assert.equal(bloqueado.botoes.emitirMdfe, false); assert.match(bloqueado.motivoMdfe, /Emitir MDF-e fica apagado\. Falta: cep_carregamento/)
+  assert.equal(bloqueado.botoes.emitirMdfe, false); assert.match(bloqueado.motivoMdfe, /Emitir MDF-e fica apagado: falta 1 item/)
   const ok = modeloFiscal(base({ ...pronto, preVoo: [] }))
   assert.equal(ok.botoes.emitirMdfe, true); assert.equal(ok.motivoMdfe, '')
 })
@@ -100,4 +100,26 @@ test('o painel tem os textos e a estrutura da previa', () => {
   for (const t of ['O que enviamos e de onde vem', 'Ver o que enviamos e de onde vem', 'Averbação do CT-e', 'Averbação do MDF-e', 'Conferência antes de emitir', 'Finalizar viagem', 'Eventos do MDF-e', 'Regras de troca de motorista e veículo', 'CT-e feito fora do sistema', 'MDF-e feito fora do sistema', 'Vale-pedágio feito fora do sistema', 'CIOT feito fora do sistema', 'Aguardando o MDF-e', 'NF-e do cliente', 'Averbação automática', 'prefers-reduced-motion', 'role="tablist"', 'Baixar JSON', 'Salvar em PDF'])
     assert.ok(f.includes(t), t)
   assert.ok(readFileSync(new URL('../src/components/operacao/SubirPdfManual.tsx', import.meta.url), 'utf8').includes('Subir PDF manual'))
+})
+
+test('A2: botao mostra quantos faltam e cada item leva a aba certa', () => {
+  const itens = itensDaPrevia({ bloqueios: ['Veículo de tração: tara não informada.', 'Falta o destino de pagamento do frete.'], avisos: ['x'] })
+  const m = modeloFiscal(base({ cte: CTE, ciotVpo: ciotOk, preVoo: itens }))
+  assert.equal(contarBloqueios(itens), 2)
+  assert.match(m.motivoMdfe, /faltam 2 itens/)
+  assert.equal(m.botoes.emitirMdfe, false)
+  assert.match(modeloFiscal(base({ cte: CTE, ciotVpo: ciotOk, preVoo: itens.slice(0, 1) })).motivoMdfe, /falta 1 item/)
+  assert.equal(destinoDoItem({ campo: 'tara', mensagem: 'tara' }, 'op1').rota, '/cadastros?aba=motoristas')
+  assert.equal(destinoDoItem({ campo: 'destino_pagamento', mensagem: 'pagamento' }, 'op1').rota, '/operacoes?op=op1&aba=financeiro')
+  assert.equal(destinoDoItem({ campo: 'ciot', mensagem: 'CIOT' }, 'op1').vista, 'ciot')
+  assert.equal(destinoDoItem({ campo: 'vpo', mensagem: 'vale-pedágio' }, 'op1').vista, 'vpo')
+})
+test('A2: "Ver o que enviamos" mostra contratante, proprietario, reboques com tara, CIOT de 12 digitos e categoria do vale', () => {
+  const l = linhasDoQueEnviamos({ modal_rodoviario: {
+    contratantes: [{ nome: 'RBR CARGO LTDA', cnpj: '69115969000104' }], cpf_proprietario_veiculo: '12345678909', razao_social_proprietario_veiculo: 'Fulano', uf_proprietario_veiculo: 'SP',
+    placa_veiculo: 'AAA1A11', tara_veiculo: 9000, veiculos_reboque: [{ placa: 'BBB2B22', tara: 6800 }], ciot: [{ ciot: '520048413061' }],
+    dispositivos_vale_pedagio: [{ numero_comprovante_compra: '9667', valor_vale_pedagio: '100.00', categoria_combinacao_veicular: '08' }] } })
+  const t = l.map((x) => x.valor).join(' | ')
+  assert.match(t, /RBR CARGO LTDA · 69115969000104/); assert.match(t, /Fulano · 12345678909 · UF SP/); assert.match(t, /BBB2B22 \(tara 6800 kg\)/); assert.match(t, /520048413061/); assert.match(t, /categoria 08/)
+  assert.deepEqual(linhasDoQueEnviamos(null), [])
 })

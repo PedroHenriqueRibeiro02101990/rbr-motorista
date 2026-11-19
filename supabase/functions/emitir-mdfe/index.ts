@@ -1,3 +1,4 @@
+// v30 (2026-11-18): rejeicao 741 - com proprietario do veiculo informado, contratante = emitente (RBR). Ver mdfe.ts.
 // Edge Function: emitir-mdfe (v29)
 // v29 (2026-11-16): so bloqueia o que o orgao externo rejeitaria. Le rntrc_status (veiculo/motorista) e cavalo_veiculo_id; carreta no campo de tracao
 //   com cavalo_veiculo_id vira reboque; condicao de pagamento vem do contrato do CIOT (efrete); rejeicao da SEFAZ vem traduzida com o campo a corrigir;

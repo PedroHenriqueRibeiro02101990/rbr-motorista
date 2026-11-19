@@ -13,3 +13,20 @@ export function eixosDaCombinacao(tracao: { quantidade_eixos?: number | null } |
   const total = (tracao?.quantidade_eixos ?? 0) + reboques.reduce((s, r) => s + (r.quantidade_eixos ?? 0), 0);
   return total > 0 ? total : null;
 }
+
+/** Unicos valores que o banco aceita (constraint operacao_ciot_vpo_vpo_categoria_combinacao_check): TEXTO de 2 digitos. */
+export const CATEGORIAS_VALIDAS = ["02", "04", "06", "07", "08", "10", "11", "12", "13", "14"] as const;
+
+/** Texto de 2 digitos ("7" -> "07"); devolve null se vazio ou fora da lista. Nunca usa parseInt/Number no valor gravado. */
+export function normalizarCategoria(v: string | number | null | undefined): string | null {
+  const d = String(v ?? "").replace(/\D/g, "");
+  if (!d) return null;
+  const c = d.padStart(2, "0");
+  return (CATEGORIAS_VALIDAS as readonly string[]).includes(c) ? c : null;
+}
+
+/** Texto do rotulo da tela: "6 eixos -> 08". */
+export function rotuloCategoriaPorEixos(eixos: number | null | undefined): string {
+  const c = categoriaCombinacao(eixos);
+  return eixos && c ? `${eixos} eixos da combinação → ${c}` : "eixos não conhecidos";
+}

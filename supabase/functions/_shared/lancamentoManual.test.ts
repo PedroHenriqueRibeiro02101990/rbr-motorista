@@ -34,7 +34,7 @@ test('esteira: concluida so com dado completo; senao diz o que falta', () => {
   assert.match(etapaVpo({ vpo_idvpo: '96670000000000000001', vpo_valor: 236.27 }).texto, /VPO 9667\.\.\. R\$ 236,27/)
   assert.deepEqual(etapaVpo({ vpo_valor: 0 }).faltam, ['IDVPO', 'valor do vale'])
   assert.equal(etapaCiot({ ciot: '520047919729', ciot_verificador: '6226' }).concluida, true)
-  assert.deepEqual(etapaCiot({ ciot: '5200480384321483' }).faltam.length, 2)
+  assert.deepEqual(etapaCiot({ ciot: '5200480384321483' }).faltam.length, 1) // so separar os 16; verificador e opcional
   assert.equal(etapaCiot(null).texto, 'Ainda nao lancado')
 })
 const base = (): EstadoPreVoo => ({
@@ -58,4 +58,24 @@ test('pre-voo: CEP invalido bloqueia; NCM ausente e averbacao so avisam; homolog
   assert.equal(r.find((x) => x.campo === 'cep_descarregamento')?.nivel, 'bloqueio')
   assert.equal(r.find((x) => x.campo === 'ncm')?.nivel, 'aviso'); assert.equal(r.find((x) => x.campo === 'averbacao_cte')?.nivel, 'aviso')
   assert.equal(r.find((x) => x.campo === 'ciot_ambiente')?.nivel, 'bloqueio')
+})
+
+test('A3: categoria e texto de 2 digitos ("7" vira "07"), so valores da lista; fora dela bloqueia', async () => {
+  const { normalizarCategoria, CATEGORIAS_VALIDAS } = await import('./combinacaoVeicular.ts')
+  assert.equal(normalizarCategoria('7'), '07'); assert.equal(normalizarCategoria(7), '07'); assert.equal(normalizarCategoria('08'), '08'); assert.equal(normalizarCategoria('14'), '14')
+  assert.equal(normalizarCategoria('3'), null); assert.equal(normalizarCategoria('15'), null); assert.equal(normalizarCategoria(''), null)
+  assert.equal(CATEGORIAS_VALIDAS.length, 10)
+  assert.equal(validarLancamento({ categoria_combinacao: '03' })[0].nivel, 'bloqueio')
+  assert.equal(validarLancamento({ categoria_combinacao: '7' }).some((i) => i.nivel === 'bloqueio'), false)
+  assert.equal(completarPadroes({ categoria_combinacao: '7' }, {}).categoria_combinacao, '07')
+  assert.equal(completarPadroes({}, { eixos_combinacao: 6 }).categoria_combinacao, '08')
+})
+test('A5: CIOT de 12 digitos sem verificador vale; 16 separa 12+4; XXXX ignorado; 0000 nunca e verificador real', async () => {
+  const { verificadorReal } = await import('./lancamentoManual.ts')
+  assert.equal(etapaCiot({ ciot: '520048413061' }).concluida, true)
+  assert.equal(etapaCiot({ ciot: '520048413061', ciot_verificador: '12' }).concluida, false)
+  assert.equal(validarLancamento({ ciot: '520048413061' }).some((i) => i.nivel === 'bloqueio'), false)
+  assert.deepEqual(separarCiot('520048413061XXXX'), { ciot: '520048413061', verificador: '' })
+  assert.deepEqual(separarCiot('5200484130611483'), { ciot: '520048413061', verificador: '1483' })
+  assert.equal(verificadorReal('0000'), null); assert.equal(verificadorReal('1483'), '1483'); assert.equal(verificadorReal(null), null)
 })

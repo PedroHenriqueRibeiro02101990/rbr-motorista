@@ -12,7 +12,8 @@ import { DesfazerEPrazos, TrocaMotoristaVeiculo } from './EsteiraEmissao'
 import { baixarArquivoFiscal } from './BaixarDocumentoFiscal'
 import { Modal } from '../financeiro/ui'
 import { carregarDadosFiscais, carregarPreVoo, type DadosFiscais } from '../../lib/fiscalV3Dados'
-import { linhasConferenciaMdfe, modeloFiscal, type ChaveCartao, type EstadoFiscal } from '../../lib/fiscalV3Modelo'
+import { Link } from 'react-router-dom'
+import { contarBloqueios, destinoDoItem, linhasConferenciaMdfe, linhasDoQueEnviamos, modeloFiscal, rotuloFaltam, type ChaveCartao, type EstadoFiscal } from '../../lib/fiscalV3Modelo'
 import { etapaCiot, etapaVpo, IPEF_REPOM_CNPJ } from '../../../../supabase/functions/_shared/lancamentoManual.ts'
 import { categoriaCombinacao } from '../../../../supabase/functions/_shared/combinacaoVeicular.ts'
 import { faltaParaRepom, type ItemFalta } from '../../../../supabase/functions/_shared/repomPreVoo.ts'
@@ -100,16 +101,25 @@ export interface PropsFiscalV3 {
 export default function FiscalV3Painel(p: PropsFiscalV3) {
   const [dados, setDados] = useState<DadosFiscais | null>(null)
   const [preVoo, setPreVoo] = useState<EstadoFiscal['preVoo']>(null)
+  const [payloadPrevia, setPayloadPrevia] = useState<Record<string, unknown> | null>(null)
+  const [conferindo, setConferindo] = useState(false)
   const [repom, setRepom] = useState<ItemFalta[] | null>(null)
   const [erro, setErro] = useState(false)
   const [vista, setVista] = useState<ChaveCartao | null>(null)
   const [regras, setRegras] = useState(false)
 
+  // Previa do emissor (sem gravar nem chamar a Focus): roda ao abrir o card e no botao "Conferir".
+  const conferir = useCallback(async () => {
+    setConferindo(true)
+    const r = await carregarPreVoo(p.operacaoId)
+    setPreVoo(r ? r.itens : null); setPayloadPrevia(r?.payload ?? null); setConferindo(false)
+  }, [p.operacaoId])
+
   const recarregar = useCallback(async () => {
     try {
       const d = await carregarDadosFiscais(p.operacaoId)
       setDados(d); setErro(false)
-      void carregarPreVoo(p.operacaoId).then(setPreVoo)
+      void conferir()
       // pre-voo da Repom: usa a MESMA funcao de NCM do pre-voo do MDF-e (causa do erro B: um lia operacoes.ncm, o outro as NF-e)
       const { data: mot } = await supabase.from('pessoas').select('nome, cpf, cnh_numero_registro, data_nascimento, celular, cep, logradouro, rntrc_numero, genero, rg_numero, rg_orgao_emissor, rg_uf, numero_dependentes, optante_simples_nacional' as never).eq('id', (await supabase.from('operacoes').select('pessoa_alocada_id').eq('id', p.operacaoId).maybeSingle()).data?.pessoa_alocada_id ?? '').maybeSingle()
       const { data: o2 } = await supabase.from('operacoes').select('entrega_prevista, tipo_carga_antt' as never).eq('id', p.operacaoId).maybeSingle()
@@ -122,7 +132,7 @@ export default function FiscalV3Painel(p: PropsFiscalV3) {
         operacao: { tipo_carga_antt: oo.tipo_carga_antt ?? null, entrega_prevista: oo.entrega_prevista ?? null, ncm: d.ncm, filial_repom: (cfg as { valor?: string } | null)?.valor ?? null },
       }) : null)
     } catch { setErro(true) }
-  }, [p.operacaoId])
+  }, [p.operacaoId, conferir])
 
   useEffect(() => {
     void recarregar()
@@ -284,9 +294,21 @@ export default function FiscalV3Painel(p: PropsFiscalV3) {
         <div className="grid">
           <div className="panel">
             <h3>Conferência antes de emitir</h3>
-            <ul className="chk">{linhasConferenciaMdfe(estado).map((l) => <li key={l.texto}><span className={l.sinal}>{l.sinal === 'y' ? '✓' : l.sinal === 'a' ? '!' : '✗'}</span><span>{l.texto}</span></li>)}</ul>
+            <ul className="chk">{linhasConferenciaMdfe(estado).map((l) => {
+              const d = l.sinal === 'y' || !l.campo ? null : destinoDoItem({ campo: l.campo, mensagem: l.texto }, p.operacaoId)
+              return (
+                <li key={l.texto}><span className={l.sinal}>{l.sinal === 'y' ? '✓' : l.sinal === 'a' ? '!' : '✗'}</span><span>{l.texto}
+                  {d && (d.rota
+                    ? <> <Link to={d.rota} className="underline font-bold">Corrigir em: {d.rotulo}</Link></>
+                    : <> <button type="button" className="underline font-bold" onClick={() => setVista(d.vista ?? 'mdfe')}>Corrigir em: {d.rotulo}</button></>)}
+                </span></li>
+              )
+            })}</ul>
+            <button className="btn sm" type="button" disabled={conferindo} onClick={() => void conferir()}>{conferindo ? 'Conferindo…' : 'Conferir'}</button>
+            {preVoo === null && !conferindo && <div className="res bad">Não consegui conferir agora. Clique em Conferir para tentar de novo.</div>}
             <details><summary>Ver o que enviamos e de onde vem</summary>
               <Tabela cab={['Dado', 'Valor', 'Origem']} linhas={[
+                ...linhasDoQueEnviamos(payloadPrevia).map((x): Linha => [x.dado, x.valor, x.origem]),
                 ['Tração e reboque', [dados.placa, ...dados.placaReboques].filter(Boolean).join(' + ') || 'cavalo + carreta do cadastro', 'Cadastro'], ['Tara e capacidade (kg)', 'pelos três níveis, sem mexer no cadastro', 'Cadastro/CRLV'],
                 ['Condutor', dados.motoristaNome ?? 'motorista da operação', 'Cadastro'], ['CIOT e vale-pedágio', 'lançados nesta operação', 'Fiscal'], ['CT-e', cte?.numero_documento ? `nº ${cte.numero_documento}` : '—', 'Fiscal'],
               ]} />
@@ -294,7 +316,7 @@ export default function FiscalV3Painel(p: PropsFiscalV3) {
           </div>
           <div className="panel">
             <h3>Ações</h3>
-            <button className="btn p" type="button" style={{ width: '100%' }} disabled={!m.botoes.emitirMdfe || p.ocupado(`${p.operacaoId}:mdfe`)} onClick={() => p.onEmitir('mdfe')}>{p.ocupado(`${p.operacaoId}:mdfe`) ? 'Enviando…' : 'Emitir MDF-e'}</button>
+            <button className="btn p" type="button" style={{ width: '100%' }} disabled={!m.botoes.emitirMdfe || p.ocupado(`${p.operacaoId}:mdfe`)} onClick={() => p.onEmitir('mdfe')}>{p.ocupado(`${p.operacaoId}:mdfe`) ? 'Enviando…' : m.mdfeLiberado || mdfe?.status === 'emitido' || contarBloqueios(preVoo) === 0 ? 'Emitir MDF-e' : `Emitir MDF-e (${rotuloFaltam(contarBloqueios(preVoo))})`}</button>
             <div className={`res ${mdfe?.status === 'emitido' ? 'okk' : m.motivoMdfe ? 'bad' : ''}`}>{mdfe?.status === 'emitido' ? <><b>MDF-e emitido.</b> Nº {mdfe.numero_documento} · {dh(mdfe.emitido_em)}</> : m.motivoMdfe || 'Ainda não emitido. O protocolo é gravado antes de ler a resposta; clicar de novo não gera outro MDF-e.'}</div>
             {mdfe && (mdfe.status === 'erro' || mdfe.status === 'bloqueado') && mdfe.mensagem_erro && <div className="res bad">{mdfe.mensagem_erro}</div>}
             {mdfe?.status === 'emitido' && (

@@ -527,3 +527,10 @@ test("etapa 19: referencia nova da Focus a cada reemissao; pendente e emitido ma
   assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1-r2", status: "pendente" }), "rbr-mdfe-op1-r2");
   assert.equal(referenciaMdfe("op1", { referencia: "rbr-mdfe-op1", status: "emitido" }), "rbr-mdfe-op1");
 });
+
+test("v30 (rejeicao 741): com proprietario PF informado, contratantes = 1 item com o CNPJ do emitente; sem proprietario, vai o cliente", () => {
+  const comProp = montarMdfe(base({ tracao: TAC, reboques: [] })).payload.modal_rodoviario;
+  assert.deepEqual(comProp.contratantes, [{ nome: "RBR CARGO LTDA", cnpj: RBR }]);
+  const semProp = montarMdfe(base()).payload.modal_rodoviario;
+  assert.deepEqual(semProp.contratantes, [{ nome: "CLIENTE TESTE", cnpj: "11444777000161" }]);
+});

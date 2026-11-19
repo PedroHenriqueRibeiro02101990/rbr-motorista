@@ -694,7 +694,11 @@ export function montarMdfe(
           },
         ]
         : undefined,
-      contratantes: cliente
+      // v30 (18/11/2026, rejeicao 741): com proprietario do veiculo de tracao informado (TAC/terceiro), a SEFAZ exige
+      // UM contratante igual ao emitente do MDF-e (a RBR contrata o TAC). Sem proprietario, segue o cliente.
+      contratantes: propTracao
+        ? [{ nome: op.emitente_razao_social, cnpj: cnpjEmitente }]
+        : cliente
         ? [{ nome: cliente.razao_social, ...(cliente.cnpj ? { cnpj: digitos(cliente.cnpj) } : { cpf: digitos(cliente.cpf) }) }]
         : [],
       pagamentos,
