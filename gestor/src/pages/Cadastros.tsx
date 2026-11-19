@@ -24,6 +24,7 @@ import { CamposParceiro, SeloClassificacao } from '../components/cadastros/Parce
 import { SeloTermo, useAceitesPrestador } from '../components/cadastros/SeloTermo'
 import { SeloContrato } from '../components/conformidade/ContratosAgenciador'
 import { mensagemErroSalvar } from '../lib/erroSupabase'
+import { achadosVeiculo, veiculoProprioParaGravar } from '../lib/veiculoCadastro'
 
 type Cliente = Database['public']['Tables']['clientes']['Row']
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
@@ -228,7 +229,7 @@ const VEICULO_INICIAL = {
   potencia_cv: '',
   quantidade_eixos: '',
   quantidade_pneus: '',
-  is_veiculo_proprio: true,
+  is_veiculo_proprio: false, // a RBR nao tem frota propria: veiculo de motorista/TAC/terceiro = false
   e_reboque: false,
   uf_licenciamento: '',
   rntrc_numero: '',
@@ -1080,7 +1081,7 @@ export default function Cadastros() {
       potencia_cv: novoVeiculo.potencia_cv ? Number(novoVeiculo.potencia_cv) : null,
       quantidade_eixos: novoVeiculo.quantidade_eixos ? Number(novoVeiculo.quantidade_eixos) : null,
       quantidade_pneus: novoVeiculo.quantidade_pneus ? Number(novoVeiculo.quantidade_pneus) : null,
-      is_veiculo_proprio: novoVeiculo.is_veiculo_proprio,
+      is_veiculo_proprio: veiculoProprioParaGravar(true, novoVeiculo.is_veiculo_proprio), // sempre ha titular neste formulario
       e_reboque: novoVeiculo.e_reboque,
       uf_licenciamento: novoVeiculo.uf_licenciamento.trim().toUpperCase() || null,
       rntrc_numero: novoVeiculo.rntrc_numero.trim() || null,
@@ -1107,6 +1108,9 @@ export default function Cadastros() {
       setErroVeiculo('Informe o RENAVAM.')
       return
     }
+    const { data: tit } = await supabase.from('pessoas').select('cpf, uf').eq('id', motoristaId).maybeSingle()
+    const bloq = achadosVeiculo(novoVeiculo, tit).filter((a) => a.nivel === 'bloqueio')
+    if (bloq.length) { setErroVeiculo(bloq.map((a) => a.mensagem).join(' ')); return }
     setSalvandoVeiculo(true)
     try {
       const payload = montarPayloadVeiculo()
@@ -2428,6 +2432,11 @@ export default function Cadastros() {
                             {erroVeiculo}
                           </div>
                         )}
+                        {achadosVeiculo(novoVeiculo).map((a) => (
+                          <div key={a.mensagem} className="text-xs rounded-xl px-3 py-2.5" style={a.nivel === 'bloqueio' ? { background: '#FBE9E9', color: 'var(--rbr-danger)' } : { background: '#FFF6E0', color: '#8a5a00' }}>
+                            {a.nivel === 'bloqueio' ? 'Corrija: ' : 'Atenção: '}{a.mensagem}
+                          </div>
+                        ))}
                         <div className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--rbr-muted)]">Veículos</div>
                         {veic === undefined && <div className="text-xs text-[color:var(--rbr-muted)]">Carregando…</div>}
                         {veic && veic.length === 0 && (
@@ -2611,14 +2620,7 @@ export default function Cadastros() {
                                 style={inputStyle}
                               />
                             </div>
-                            <label className="flex items-center gap-1.5 text-xs">
-                              <input
-                                type="checkbox"
-                                checked={novoVeiculo.is_veiculo_proprio}
-                                onChange={(e) => setNovoVeiculo((f) => ({ ...f, is_veiculo_proprio: e.target.checked }))}
-                              />
-                              Veículo próprio do titular
-                            </label>
+                            <div className="text-xs text-[color:var(--rbr-muted)]">Veículo do titular (motorista, TAC ou terceiro): o MDF-e leva o titular como proprietário. A RBR não tem frota própria.</div>
                             <div className="flex items-center gap-3 flex-wrap">
                               <label className="flex items-center gap-1.5 text-xs">
                                 <input
