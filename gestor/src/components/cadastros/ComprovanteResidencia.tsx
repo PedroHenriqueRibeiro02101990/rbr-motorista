@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '@rbr/shared/supabaseClient'
 import { msgErro } from '../../lib/novoDb'
 import { Aviso, inputClass, inputStyle } from '../financeiro/ui'
+import { bucketECaminho } from '../../lib/arquivoCadastro'
 
 // Upload do comprovante de residência (mesmo bucket e pasta dos documentos pessoais).
 export default function ComprovanteResidencia({
@@ -26,6 +27,8 @@ export default function ComprovanteResidencia({
       const path = `pessoa/${pessoaId ?? 'novo'}/comprovante_residencia-${Date.now()}.${ext}`
       const { error } = await supabase.storage.from('documentos-pessoais').upload(path, file, { contentType: file.type || undefined })
       if (error) throw error
+      // D4: em cadastro novo o arquivo ainda nao tem dono; ao trocar o comprovante antes de salvar, o anterior viraria arquivo orfao. Remove (melhor esforco).
+      if (!pessoaId && url && url.startsWith('pessoa/novo/') && url !== path) void supabase.storage.from('documentos-pessoais').remove([url])
       onChange(path, data || new Date().toISOString().slice(0, 10))
       setMsg({ tipo: 'ok', texto: '✓ Comprovante enviado. Lendo a data automaticamente…' })
       // Leitura automática da data de emissão (não bloqueia: se falhar, o gestor digita a data).
@@ -45,7 +48,8 @@ export default function ComprovanteResidencia({
   }
 
   async function ver() {
-    const { data: s, error } = await supabase.storage.from('documentos-pessoais').createSignedUrl(url, 300)
+    const { bucket, caminho } = bucketECaminho(url)
+    const { data: s, error } = await supabase.storage.from(bucket).createSignedUrl(caminho, 300)
     if (error || !s) return setMsg({ tipo: 'erro', texto: '✗ Não consegui abrir o arquivo.' })
     window.open(s.signedUrl, '_blank')
   }

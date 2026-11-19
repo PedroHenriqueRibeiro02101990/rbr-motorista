@@ -136,3 +136,28 @@ where p.papel in ('gestor_rbr', 'operacao', 'fiscal') and v.deleted_at is null;
 select op.codigo, op.status, op.veiculo_id is null as sem_veiculo, op.pessoa_alocada_id is null as sem_motorista,
        (select count(*) from operacao_reboques r where r.operacao_id = op.id) as carretas
 from operacoes op where op.status not in ('cancelada', 'concluida', 'rascunho') order by op.codigo;
+
+-- ============================================================================================================================
+-- Acrescentado na sessao da manha de 19/11/2026 (SO LEITURA). 1I = S1 (buckets); 1J = o que conferir ANTES da migracao 20261119-0900;
+-- 1K = veiculos cujo tipo ou carroceria o emissor do MDF-e nao entende.
+-- ============================================================================================================================
+-- 1I) S1: buckets (nenhum bucket de documento pessoal pode estar public = true) e policies de storage
+select id, name, public, file_size_limit, allowed_mime_types from storage.buckets order by id;
+select policyname, cmd, roles, qual, with_check from pg_policies where schemaname = 'storage' and tablename = 'objects' order by policyname;
+
+-- 1J) Antes de aplicar 20261119-0900: gatilhos, indices e checks que a nova linha de documentos_pessoais_imagens / pessoas vai encontrar
+select tgname, tgenabled, pg_get_triggerdef(oid) as definicao from pg_trigger where tgrelid = 'public.documentos_pessoais_imagens'::regclass and not tgisinternal;
+select indexname, indexdef from pg_indexes where schemaname = 'public' and tablename = 'documentos_pessoais_imagens';
+select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid = 'public.pessoas'::regclass and contype = 'c';
+select unnest(enum_range(null::papel_pessoa)) as papel;
+
+-- 1K) Tipo de rodado/carroceria que o emissor nao entende (bloqueia a previa do MDF-e)
+select placa, tipo_veiculo, tipo_crlv, e_reboque, tipo_carroceria,
+  (tipo_veiculo is null or (tipo_veiculo !~* 'truck|toco|cavalo|van|utilit|fiorino|vuc|3/4|reboque|carreta')) as tipo_que_o_emissor_nao_entende,
+  (e_reboque is not true and tipo_veiculo !~* 'cavalo' and (tipo_carroceria is null or tipo_carroceria !~* 'sider|container|conteiner|granel|bau|baú|fechad|abert|grade|prancha|nao aplic|não aplic')) as carroceria_de_tracao_que_o_emissor_nao_entende,
+  (e_reboque is true and (tipo_carroceria is null or tipo_carroceria !~* 'sider|container|conteiner|granel|bau|baú|fechad|abert|grade|prancha|nao aplic|não aplic')) as carroceria_de_reboque_que_o_emissor_nao_entende
+from veiculos where deleted_at is null and ativo
+  and (tipo_veiculo is null or tipo_veiculo !~* 'truck|toco|cavalo|van|utilit|fiorino|vuc|3/4|reboque|carreta'
+       or (e_reboque is not true and tipo_veiculo !~* 'cavalo' and (tipo_carroceria is null or tipo_carroceria !~* 'sider|container|conteiner|granel|bau|baú|fechad|abert|grade|prancha|nao aplic|não aplic'))
+       or (e_reboque is true and (tipo_carroceria is null or tipo_carroceria !~* 'sider|container|conteiner|granel|bau|baú|fechad|abert|grade|prancha|nao aplic|não aplic')))
+order by placa;

@@ -7,8 +7,8 @@ import { achadosDoPayload, montarPayload, resumoDoQueSeraCriado, temBloqueio, ve
 const c = (valor: unknown, confianca = 'alta') => ({ valor, confianca, trecho: 'x' })
 const HOJE = '2026-11-18'
 const cnh = normalizarExtracao('cnh', { nome: c('Joao Teste'), cpf: c('52998224725'), numero_registro: c('12345678900'), categoria: c('E'), validade: c('2030-05-01'), data_nascimento: c('1985-03-02') }, HOJE)
-const cavalo = normalizarExtracao('crlv', { placa: c('MKT6E78'), renavam: c('00000000001'), especie_tipo: c('CAMINHAO TRATOR'), quantidade_eixos: c(3), pbt: c(16.0), cmt: c(60.0), cpf_cnpj_proprietario: c('52998224725'), uf: c('SP') }, HOJE)
-const carreta = normalizarExtracao('crlv', { placa: c('MLN9A91'), renavam: c('00000000002'), especie_tipo: c('SEMIRREBOQUE'), quantidade_eixos: c(3), pbt: c(25.5), capacidade_carga: c(16.33), cpf_cnpj_proprietario: c('52998224725') }, HOJE)
+const cavalo = normalizarExtracao('crlv', { placa: c('MKT6E78'), renavam: c('00000000001'), especie_tipo: c('CAMINHAO TRATOR'), quantidade_eixos: c(3), pbt: c(16.0), cmt: c(60.0), nome_proprietario: c('Joao Teste'), cpf_cnpj_proprietario: c('52998224725'), uf: c('SP') }, HOJE)
+const carreta = normalizarExtracao('crlv', { placa: c('MLN9A91'), renavam: c('00000000002'), especie_tipo: c('SEMIRREBOQUE'), quantidade_eixos: c(3), pbt: c(25.5), capacidade_carga: c(16.33), nome_proprietario: c('Joao Teste'), cpf_cnpj_proprietario: c('52998224725') }, HOJE)
 
 test('flag do cadastro por documentos sai desligada', () => assert.equal(CADASTRO_POR_DOCUMENTOS_HABILITADO, false))
 
@@ -54,8 +54,8 @@ test('cadastros para corrigir: MKT6E78 (25.5/17.16) e MLN9A91 (9.8/25.5) aparece
 test('integracao: saida crua da IA (sintetica) -> normalizacao -> payload -> validacoes, do CRLV ao cadastro vinculado', () => {
   // Simula o JSON que a IA devolveria para dois CRLV e uma CNH (PDFs sinteticos; nenhum dado real)
   const cr = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, c(v)]))
-  const iaCavalo = cr({ placa: 'MKT-6E78', renavam: '00000000001', especie_tipo: 'CAMINHAO TRATOR', quantidade_eixos: 3, pbt: '16.0', cmt: '60.0', capacidade_carga: '*.*', tara: null, cpf_cnpj_proprietario: '529.982.247-25', uf: 'MA' })
-  const iaCarreta = cr({ placa: 'MLN9A91', renavam: '00000000002', especie_tipo: 'SEMIRREBOQUE', quantidade_eixos: 3, pbt: '25.5', capacidade_carga: '16.33', cpf_cnpj_proprietario: '52998224725', uf: 'MA' })
+  const iaCavalo = cr({ placa: 'MKT-6E78', renavam: '00000000001', especie_tipo: 'CAMINHAO TRATOR', quantidade_eixos: 3, pbt: '16.0', cmt: '60.0', capacidade_carga: '*.*', tara: null, nome_proprietario: 'JOAO TESTE', cpf_cnpj_proprietario: '529.982.247-25', uf: 'MA' })
+  const iaCarreta = cr({ placa: 'MLN9A91', renavam: '00000000002', especie_tipo: 'SEMIRREBOQUE', quantidade_eixos: 3, pbt: '25.5', capacidade_carga: '16.33', nome_proprietario: 'JOAO TESTE', cpf_cnpj_proprietario: '52998224725', uf: 'MA' })
   const docs = [
     { path: 'l/cnh.pdf', tipo: 'cnh', normalizado: cnh },
     { path: 'l/cavalo.pdf', tipo: 'crlv', normalizado: normalizarExtracao('crlv', iaCavalo, HOJE), edicoes: { tara: 8100 } },
@@ -106,7 +106,7 @@ test('payload normaliza o que foi digitado: placa sem traco, CPF/RENAVAM so digi
   const p = montarPayload(docs)
   assert.equal(p.motorista?.cpf, '52998224725'); assert.equal(p.cavalo?.placa, 'MKT6E78'); assert.equal(p.cavalo?.renavam, '00000000001')
 })
-test('sem CPF valido o motorista bloqueia (a RPC o ignoraria em silencio); sem RENAVAM bloqueia; so veiculo avisa do titular', () => {
+test('sem CPF valido o motorista bloqueia (a RPC o ignoraria em silencio); sem RENAVAM bloqueia; so veiculo sem dono no CRLV bloqueia (nunca cai em quem cadastra)', () => {
   const semCpf = normalizarExtracao('cnh', { nome: c('Joao Teste'), numero_registro: c('1'), validade: c('2030-05-01') }, HOJE)
   const p = montarPayload([{ path: 'a/cnh.pdf', tipo: 'cnh', normalizado: semCpf }])
   const a = achadosDoPayload(p, HOJE)
@@ -115,5 +115,6 @@ test('sem CPF valido o motorista bloqueia (a RPC o ignoraria em silencio); sem R
   const p2 = montarPayload([{ path: 'a/cavalo.pdf', tipo: 'crlv', normalizado: semRenavam }])
   const a2 = achadosDoPayload(p2, HOJE)
   assert.ok(a2.some((x) => x.campo === 'renavam' && x.nivel === 'bloqueio'))
-  assert.ok(a2.some((x) => x.campo === 'titular' && x.nivel === 'aviso'))
+  assert.ok(a2.some((x) => x.campo === 'proprietario' && x.nivel === 'bloqueio'))
+  assert.ok(!a2.some((x) => x.campo === 'titular')) // o aviso "o titular sou eu" nao existe mais: titular so vem do CRLV
 })

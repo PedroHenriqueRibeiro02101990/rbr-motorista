@@ -2,7 +2,8 @@
 // resume o que sera criado, junta as validacoes e lista os cadastros para corrigir. Teste: node --test gestor/test/cadastroPorDocumentos.test.ts
 import type { Normalizado } from '../../../supabase/functions/_shared/extracao-documentos.ts'
 import { resolverTara, classeDoVeiculo } from '../../../supabase/functions/_shared/tara-aproximada.ts'
-import { cpfValido, eReboquePorTipoCrlv, tipoVeiculoDoCrlv, validarCnh, validarProprietario, validarVeiculo, type Achado } from '../../../supabase/functions/_shared/validacoes-cadastro.ts'
+import { carroceriaParaMdfe, cpfValido, eReboquePorTipoCrlv, tipoVeiculoDoCrlv, validarCnh, validarProprietario, validarVeiculo, type Achado } from '../../../supabase/functions/_shared/validacoes-cadastro.ts'
+import { decidirTitular } from './titularVeiculo.ts'
 
 // Flag do fluxo novo: padrao DESLIGADO (so liga com VITE_CADASTRO_POR_DOCUMENTOS=true no build da Vercel).
 export const CADASTRO_POR_DOCUMENTOS_HABILITADO = import.meta.env?.VITE_CADASTRO_POR_DOCUMENTOS === 'true'
@@ -24,6 +25,9 @@ const val = (d: Normalizado | undefined, k: string, ed?: Record<string, string |
   return v === undefined ? null : v
 }
 
+/** Documento enviado que a RPC vincula a pessoa/veiculo (D1): `path` e o caminho no bucket cadastro-documentos. */
+export interface DocumentoVinculado { tipo: string; path: string; alvo: 'motorista' | 'cavalo' | 'carreta'; data?: string | null }
+
 export interface PayloadCadastro {
   motorista?: Record<string, unknown>
   cavalo?: Record<string, unknown>
@@ -31,20 +35,37 @@ export interface PayloadCadastro {
   complemento?: Record<string, unknown>
   auditoria: Record<string, unknown>[]
   manual: string[]
+  /** D1: arquivos que a RPC grava em documentos_pessoais_imagens (+ colunas da pessoa) para aparecerem no cadastro. */
+  documentos: DocumentoVinculado[]
+  /** D5: documentos recebidos que NAO cabem no cadastro (ex.: 2o CRLV de cavalo). Nao vao para a RPC; a tela avisa/bloqueia. */
+  excedentes: { tipo: string; descricao: string; bloqueia: boolean }[]
 }
+
+// Tipos de documento pessoal que a RPC guarda no cadastro da pessoa (a que o CNH/CPF/RG identificam).
+const TIPOS_PESSOAIS = ['cnh', 'rg', 'cpf', 'rntrc', 'comprovante_residencia', 'dados_bancarios'] as const
 
 function veiculoDoCrlv(doc: DocumentoLido, tara: { valor: number | null; origem: string | null }): Record<string, unknown> {
   const d = doc.normalizado!
   const ed = doc.edicoes
   const g = (k: string) => val(d, k, ed)
+  const tipoVeiculo = tipoVeiculoDoCrlv(g('especie_tipo') as string | null, g('quantidade_eixos') as number | null).tipo
   return {
     placa: g('placa'), renavam: g('renavam'), chassi: g('chassi'), tipo_crlv: g('especie_tipo'),
-    tipo_veiculo: tipoVeiculoDoCrlv(g('especie_tipo') as string | null, g('quantidade_eixos') as number | null).tipo, tipo_carroceria: g('carroceria'),
+    tipo_veiculo: tipoVeiculo, tipo_carroceria: carroceriaDoCadastro(tipoVeiculo, g('carroceria') as string | null),
+    proprietario_nome: g('nome_proprietario'),
     quantidade_eixos: g('quantidade_eixos'), tara_kg: tara.valor, tara_origem: tara.origem,
     capacidade_carga: g('capacidade_carga'), pbt_kg: g('pbt'), cmt_kg: g('cmt'), uf_licenciamento: g('uf'), crlv_exercicio: g('exercicio'),
     proprietario_documento: g('cpf_cnpj_proprietario'), marca_modelo: g('marca_modelo'), ano: g('ano_modelo') ?? g('ano_fabricacao'),
     crlv_foto_url: `cadastro-documentos/${doc.path}`, crlv_extracao_id: `cadastro-documentos/${doc.path}`,
   }
+}
+
+/** D6: grava a carroceria no texto que o emissor do MDF-e entende. Cavalo mecanico nao usa carroceria no MDF-e (o emissor manda "nao aplicavel"):
+ *  so grava se o texto for reconhecido. Truck/toco/carreta: se o texto nao for reconhecido, guarda o texto cru e a tela avisa (achadosDoPayload). */
+function carroceriaDoCadastro(tipoVeiculo: string | null, texto: string | null): string | null {
+  const c = carroceriaParaMdfe(texto)
+  if (tipoVeiculo === 'cavalo mecanico') return c.reconhecida ? c.valor : null
+  return c.valor
 }
 
 /** Tara a gravar: so o que a pessoa confirmou (ou a derivada do CRLV, que ela viu e confirmou). Nunca inventa. */
@@ -75,6 +96,7 @@ function normalizarPayload(out: PayloadCadastro): PayloadCadastro {
     v.renavam = soDigitos(v.renavam)
     v.chassi = soAlfa(v.chassi)
     v.proprietario_documento = soAlfa(v.proprietario_documento)
+    v.proprietario_nome = v.proprietario_nome ? String(v.proprietario_nome).trim().replace(/\s+/g, ' ') || null : null
     if (v.uf_licenciamento) v.uf_licenciamento = String(v.uf_licenciamento).trim().toUpperCase().slice(0, 2)
   }
   return out
@@ -85,7 +107,7 @@ export function montarPayload(docs: DocumentoLido[]): PayloadCadastro {
 }
 
 function montarPayloadBruto(docs: DocumentoLido[]): PayloadCadastro {
-  const out: PayloadCadastro = { auditoria: [], manual: [] }
+  const out: PayloadCadastro = { auditoria: [], manual: [], documentos: [], excedentes: [] }
   const por = (t: string) => docs.filter((d) => d.tipo === t && d.normalizado)
   const cnh = por('cnh')[0], rg = por('rg')[0], cpf = por('cpf')[0], cr = por('comprovante_residencia')[0], rntrc = por('rntrc')[0]
 
@@ -116,9 +138,19 @@ function montarPayloadBruto(docs: DocumentoLido[]): PayloadCadastro {
   for (const d of crlvs) {
     const reb = eReboquePorTipoCrlv(val(d.normalizado!, 'especie_tipo', d.edicoes) as string | null)
     const v = veiculoDoCrlv(d, taraConfirmada(d))
-    if (reb) out.carreta = v
-    else if (!out.cavalo) out.cavalo = v
-    else out.carreta = out.carreta ?? v
+    const alvo: 'cavalo' | 'carreta' = reb ? 'carreta' : 'cavalo'
+    // D5: cabe 1 cavalo (veiculo de tracao) e 1 carreta. O resto NAO e descartado em silencio: vira excedente (a tela bloqueia).
+    if (out[alvo]) { out.excedentes.push({ tipo: 'crlv', descricao: `CRLV extra de ${alvo === 'cavalo' ? 'veiculo de tracao' : 'carreta'} (${String(v.placa ?? 'sem placa')}): o cadastro aceita 1 cavalo e 1 carreta por vez`, bloqueia: true }); continue }
+    out[alvo] = v
+    out.documentos.push({ tipo: 'crlv', path: d.path, alvo })
+  }
+
+  // D1: os documentos pessoais ficam vinculados a pessoa (so o 1o de cada tipo e usado nos campos; os extras viram aviso).
+  for (const t of TIPOS_PESSOAIS) {
+    const lista = por(t)
+    if (!lista.length) continue
+    out.documentos.push({ tipo: t, path: lista[0].path, alvo: 'motorista', ...(t === 'comprovante_residencia' ? { data: (val(lista[0].normalizado!, 'data_emissao', lista[0].edicoes) as string | null) ?? null } : {}) })
+    for (const extra of lista.slice(1)) out.excedentes.push({ tipo: t, descricao: `2o documento do tipo ${t} (${extra.path.split('/').pop()}) nao foi usado nem vinculado`, bloqueia: false })
   }
 
   for (const d of docs) {
@@ -145,18 +177,39 @@ export function resumoDoQueSeraCriado(p: PayloadCadastro): string {
   return itens.length ? itens.join(', ') : 'nada ainda: envie ao menos um documento'
 }
 
+/** Linhas "quem sera o titular de cada veiculo" para a tela: sempre o proprietario do CRLV. */
+export function titularesDoPayload(p: PayloadCadastro): string[] {
+  const out: string[] = []
+  for (const [rotulo, v] of [['Cavalo', p.cavalo], ['Carreta', p.carreta]] as const) {
+    if (!v) continue
+    const dec = decidirTitular({ documento: v.proprietario_documento as string | null, nome: v.proprietario_nome as string | null, uf: v.uf_licenciamento as string | null }, [])
+    if (dec.acao === 'bloquear') continue
+    out.push(`${rotulo} ${String(v.placa ?? '')}: titular = proprietario do CRLV, ${String(v.proprietario_nome ?? '(nome do cadastro existente)')} (${String(v.proprietario_documento)}). Se esse CPF/CNPJ ja estiver cadastrado usa o cadastro; senao cria o titular.`)
+  }
+  return out
+}
+
 export function achadosDoPayload(p: PayloadCadastro, hoje: string): Achado[] {
   const out: Achado[] = []
   const m = p.motorista
   // A RPC so cria/atualiza o motorista quando ha CPF: sem CPF ele seria IGNORADO em silencio e o veiculo ficaria no nome de quem cadastrou.
   if (m && !cpfValido(m.cpf)) out.push({ nivel: 'bloqueio', campo: 'cpf', mensagem: 'Motorista sem CPF valido: sem o CPF o cadastro do motorista nao e criado. Digite o CPF (CNH, RG ou CPF).' })
   if (m && !m.nome) out.push({ nivel: 'bloqueio', campo: 'nome', mensagem: 'Motorista sem nome: digite o nome como esta na CNH.' })
-  if (!m && (p.cavalo || p.carreta)) out.push({ nivel: 'aviso', campo: 'titular', mensagem: 'Sem CNH/RG/CPF nesta leva, o titular do veiculo fica sendo VOCE (quem esta cadastrando). Envie a CNH do dono ou corrija o titular depois em Cadastros.' })
+  for (const x of p.excedentes) out.push({ nivel: x.bloqueia ? 'bloqueio' : 'aviso', campo: x.tipo, mensagem: `${x.bloqueia ? 'Remova da lista: ' : ''}${x.descricao}.` })
   if (m) out.push(...validarCnh({ validade: m.cnh_validade as string | null, data_nascimento: m.data_nascimento as string | null }, hoje))
   for (const [rotulo, v] of [['Cavalo', p.cavalo], ['Carreta', p.carreta]] as const) {
     if (!v) continue
     // Sem RENAVAM a RPC grava 'PENDENTE-<placa>' no campo e o emissor/Repom leem esse texto como se fosse o RENAVAM.
     if (!v.renavam) out.push({ nivel: 'bloqueio', campo: 'renavam', mensagem: `${rotulo}: RENAVAM nao lido. Digite o RENAVAM do CRLV (sem ele o cadastro ficaria com um valor provisorio).` })
+    // C1: o titular e o proprietario do CRLV (nunca o motorista do lote nem quem esta logado). Sem documento/nome do dono nao ha titular a criar.
+    const dec = decidirTitular({ documento: v.proprietario_documento as string | null, nome: v.proprietario_nome as string | null, uf: v.uf_licenciamento as string | null }, [])
+    if (dec.acao === 'bloquear') out.push({ nivel: 'bloqueio', campo: 'proprietario', mensagem: `${rotulo}: ${dec.motivo}` })
+    // D6: carroceria que o emissor do MDF-e nao entende bloqueia a emissao: avisa na entrada, nao so na previa.
+    const carr = carroceriaParaMdfe(v.tipo_carroceria as string | null)
+    if (v.tipo_veiculo !== 'cavalo mecanico') {
+      if (!carr.valor) out.push({ nivel: 'aviso', campo: 'tipo_carroceria', mensagem: `${rotulo}: carroceria nao lida do CRLV. O MDF-e exige (aberta, bau/fechada, sider, graneleira, container): preencha em Cadastros antes de emitir.` })
+      else if (!carr.reconhecida) out.push({ nivel: 'aviso', campo: 'tipo_carroceria', mensagem: `${rotulo}: carroceria "${carr.valor}" nao tem equivalente no MDF-e (aberta, bau/fechada, sider, graneleira, container). Ajuste em Cadastros antes de emitir.` })
+    }
     const tv = tipoVeiculoDoCrlv(v.tipo_crlv as string | null, v.quantidade_eixos as number | null)
     if (tv.tipo === null) out.push({ nivel: 'aviso', campo: 'tipo_veiculo', mensagem: `${rotulo}: o CRLV nao diz se e truck, toco, van ou utilitario. O tipo fica como estava no cadastro (ou vazio): ajuste em Cadastros antes de emitir o MDF-e.` })
     else if (tv.inferido) out.push({ nivel: 'aviso', campo: 'tipo_veiculo', mensagem: `${rotulo}: tipo do veiculo definido pelos eixos (${String(v.quantidade_eixos)} eixos = ${tv.tipo}). Confira.` })
@@ -165,7 +218,7 @@ export function achadosDoPayload(p: PayloadCadastro, hoje: string): Achado[] {
       tara_kg: v.tara_kg as number, capacidade_carga: v.capacidade_carga as number, pbt_kg: v.pbt_kg as number, carreta_vinculada: rotulo === 'Cavalo' ? !!p.carreta : true,
     })
     out.push(...ach.filter((a) => a.nivel !== 'ok').map((a) => ({ ...a, mensagem: `${rotulo}: ${a.mensagem}` })))
-    out.push(...validarProprietario({ proprietario_documento: v.proprietario_documento as string, motorista_documento: m?.cpf as string }).map((a) => ({ ...a, mensagem: `${rotulo}: ${a.mensagem}` })))
+    out.push(...validarProprietario({ proprietario_documento: v.proprietario_documento as string, motorista_documento: m?.cpf as string }).filter((a) => !(dec.acao === 'bloquear' && a.nivel === 'bloqueio' && a.campo === 'proprietario_documento')).map((a) => ({ ...a, mensagem: `${rotulo}: ${a.mensagem}` })))
   }
   return out
 }
