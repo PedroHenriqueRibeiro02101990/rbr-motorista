@@ -202,7 +202,9 @@ export function carroceriaParaMdfe(texto: string | null | undefined): { valor: s
   if (/sider/.test(t)) return { valor: "sider", reconhecida: true };
   if (/cont[ae]i?ner|conteiner/.test(t)) return { valor: "container", reconhecida: true };
   if (/granel/.test(t)) return { valor: "graneleira", reconhecida: true };
-  if (/\bbau\b|fechad|furgao/.test(t)) return { valor: "bau", reconhecida: true };
+  if (/\bbau\b|fechad|furgao|frigorific|refriger/.test(t)) return { valor: "bau", reconhecida: true }; // decisao 19/11: frigorifica = fechada/bau
+  if (/basculante|cacamba/.test(t)) return { valor: "graneleira", reconhecida: true }; // decisao 19/11: basculante = graneleira
+  if (/tanque/.test(t)) return { valor: "nao aplicavel", reconhecida: true }; // decisao 19/11: tanque = nao aplicavel
   if (/abert|grade|prancha|plataforma/.test(t)) return { valor: "aberta", reconhecida: true };
   if (/nao aplic|sem carroceria|nenhuma/.test(t)) return { valor: "nao aplicavel", reconhecida: true };
   return { valor: String(texto).trim(), reconhecida: false };

@@ -145,18 +145,18 @@ test('D5 CRLV a mais NAO e descartado em silencio: vira excedente que bloqueia; 
 })
 
 test('D6 carroceria: texto do CRLV vira o que o emissor do MDF-e entende; o que nao tem equivalente fica como esta e a tela avisa', () => {
-  const casos: [string, string][] = [['CARROCERIA ABERTA', 'aberta'], ['Graneleira', 'graneleira'], ['BAÚ', 'bau'], ['Carroceria fechada', 'bau'], ['SIDER', 'sider'], ['porta-container', 'container'], ['PRANCHA', 'aberta'], ['SEM CARROCERIA', 'nao aplicavel'], ['NAO APLICAVEL', 'nao aplicavel']]
+  const casos: [string, string][] = [['CARROCERIA ABERTA', 'aberta'], ['Graneleira', 'graneleira'], ['BAÚ', 'bau'], ['Carroceria fechada', 'bau'], ['SIDER', 'sider'], ['porta-container', 'container'], ['PRANCHA', 'aberta'], ['SEM CARROCERIA', 'nao aplicavel'], ['NAO APLICAVEL', 'nao aplicavel'], ['FRIGORIFICA', 'bau'], ['Basculante', 'graneleira'], ['TANQUE', 'nao aplicavel']]
   for (const [entrada, esperado] of casos) {
     const r = carroceriaParaMdfe(entrada)
     assert.deepEqual([r.valor, r.reconhecida], [esperado, true], entrada)
     assert.notEqual(mapearTipoCarroceria(r.valor), null, `o emissor deve entender "${r.valor}"`)
   }
-  for (const nao of ['TANQUE', 'FRIGORIFICA', 'BASCULANTE', 'CEGONHA']) { const r = carroceriaParaMdfe(nao); assert.equal(r.reconhecida, false, nao); assert.equal(mapearTipoCarroceria(r.valor), null) }
+  for (const nao of ['CEGONHA', 'BOIADEIRO']) { const r = carroceriaParaMdfe(nao); assert.equal(r.reconhecida, false, nao); assert.equal(mapearTipoCarroceria(r.valor), null) }
   assert.deepEqual(carroceriaParaMdfe(''), { valor: null, reconhecida: false })
   // no payload: truck com carroceria que o emissor nao entende -> grava o texto cru e AVISA; cavalo nunca grava texto sem equivalente
-  const truck = normalizarExtracao('crlv', { placa: c('TRK1A23'), renavam: c('00000000005'), especie_tipo: c('CAMINHAO'), carroceria: c('TANQUE'), quantidade_eixos: c(3), nome_proprietario: c('Maria'), cpf_cnpj_proprietario: c(CPF_DONO) }, HOJE)
+  const truck = normalizarExtracao('crlv', { placa: c('TRK1A23'), renavam: c('00000000005'), especie_tipo: c('CAMINHAO'), carroceria: c('CEGONHA'), quantidade_eixos: c(3), nome_proprietario: c('Maria'), cpf_cnpj_proprietario: c(CPF_DONO) }, HOJE)
   const p = montarPayload([{ path: 'l/t.pdf', tipo: 'crlv', normalizado: truck }])
-  assert.equal(p.cavalo?.tipo_carroceria, 'TANQUE')
+  assert.equal(p.cavalo?.tipo_carroceria, 'CEGONHA')
   assert.ok(achadosDoPayload(p, HOJE).some((a) => a.campo === 'tipo_carroceria' && a.nivel === 'aviso'))
   const cav = montarPayload([{ path: 'l/c.pdf', tipo: 'crlv', normalizado: crlvCavalo('11144477735', { carroceria: c('QUALQUER COISA') }) }])
   assert.equal(cav.cavalo?.tipo_carroceria, null)
@@ -199,4 +199,21 @@ test('C4 cavalo gravado pelo cadastro novo + carreta gravada pelo cadastro novo:
   assert.equal(payload.modal_rodoviario.tipo_rodado_veiculo, '03')
   assert.equal(payload.modal_rodoviario.tipo_carroceria_veiculo, '00') // carroceria do cavalo nao entra
   assert.equal(payload.modal_rodoviario.veiculos_reboque[0].tipo_carroceria, '01') // carreta "CARROCERIA ABERTA" -> aberta
+})
+
+// ---------- decisoes de 19/11 (parte 2) ----------
+test('banco: dados bancarios lidos vao em payload.banco; conta de outro CPF avisa', () => {
+  const p = montarPayload([{ path: 'l/cnh.pdf', tipo: 'cnh', normalizado: cnh }, { path: 'l/banco.pdf', tipo: 'dados_bancarios', normalizado: banco }])
+  assert.equal(p.banco?.agencia, '1234'); assert.equal(p.banco?.documento_titular, CPF_MOTORISTA)
+  assert.ok(!achadosDoPayload(p, HOJE).some((a) => a.campo === 'dados_bancarios'))
+  const outro = normalizarExtracao('dados_bancarios', { titular: c('Outra'), cpf_cnpj: c(CPF_DONO), agencia: c('1'), conta: c('2') }, HOJE)
+  const q = montarPayload([{ path: 'l/cnh.pdf', tipo: 'cnh', normalizado: cnh }, { path: 'l/b2.pdf', tipo: 'dados_bancarios', normalizado: outro }])
+  assert.ok(achadosDoPayload(q, HOJE).some((a) => a.campo === 'dados_bancarios' && a.nivel === 'aviso'))
+})
+test('banco/status: a migracao 1000 grava banco so se vazio e vira o documento manual para emitido so com numero', () => {
+  const sql = readFileSync(new URL('../../supabase/migrations/20261119-1000-banco-e-status-documento-manual.sql', import.meta.url), 'utf8')
+  assert.ok(sql.includes('NAO foram gravados') && sql.includes("nullif(btrim(coalesce(pix, '')), '') is null"))
+  assert.ok(sql.includes("tipo = 'ciot' and status = 'pendente'") && sql.includes("tipo = 'vpo' and status = 'pendente'"))
+  const card = readFileSync(new URL('../src/components/operacao/CartaoFiscalManual.tsx', import.meta.url), 'utf8')
+  assert.ok(!card.includes("status: 'emitido' as const") && card.includes("status: 'pendente'"))
 })

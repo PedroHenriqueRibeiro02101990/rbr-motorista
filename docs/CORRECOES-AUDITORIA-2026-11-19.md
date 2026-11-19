@@ -21,3 +21,10 @@ D3 (onde mora o dado bancario lido) e B10 (status `pendente` x `emitido` para PD
 2. `supabase/migrations/20261119-0900-cadastro-docs-titular-e-vinculos.sql` (rollback: `supabase/rollback/rollback-20261119-0900-...sql`).
 3. `supabase/tests/cadastro_por_documentos_titular_e_docs.sql` (ROLLBACK no fim; deve imprimir OK 1 a OK 8).
 4. `supabase/correcoes-pendentes-2026-11-19.sql` bloco a bloco com o Pedro (novos: 6B, 9, 10).
+
+## Decisoes do Pedro (parte 2, 19/11/2026)
+- Dados bancarios lidos: gravados so se a pessoa nao tem banco/PIX; senao so avisa (migracao `20261119-1000`, teste `supabase/tests/banco_e_status_documento_manual.sql`). Conta de outro CPF/CNPJ: aviso na tela.
+- PDF manual de CIOT/VPO (`CartaoFiscalManual`) agora nasce `pendente` como o `SubirPdfManual` (CT-e/MDF-e ja era); vira `emitido` quando o CIOT/IDVPO e confirmado (RPC `confirmar_ciot_vpo_manual`). Documentos ja gravados como `emitido` nao foram alterados.
+- Carroceria: frigorifica = bau, basculante = graneleira, tanque = nao aplicavel (`carroceriaParaMdfe`). `emitir-mdfe` intocado.
+- Titular de terceiro mantido com aviso; papel `titular_motorista` mantido.
+Ordem: aplicar `20261119-0900` e depois `20261119-1000`; rollback na ordem inversa.
