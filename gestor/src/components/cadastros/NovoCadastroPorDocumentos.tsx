@@ -92,14 +92,20 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
   }
 
   async function confirmar() {
-    await st.rodar({
+    let avisoComplemento: string | null = null
+    const gravado = await st.rodar({
       verbo: 'Cadastro lancado', enviando: 'Gravando o cadastro...',
       acao: async () => {
         const { data, error } = await (supabase as unknown as { rpc: (n: string, a: unknown) => Promise<{ data: unknown; error: { message: string } | null }> }).rpc('confirmar_cadastro_por_documentos', { p_payload: payload })
         if (error) throw new Error(error.message)
         // Complemento (RG e genero confirmados) para a Repom: tolerante a funcao ainda nao aplicada (nao derruba o cadastro).
         if (payload.complemento && payload.motorista?.cpf) {
-          await (supabase as unknown as { rpc: (n: string, a: unknown) => Promise<unknown> }).rpc('complementar_motorista_por_documentos', { p_cpf: payload.motorista.cpf, p_dados: payload.complemento }).catch(() => undefined)
+          try {
+            const { error: ec } = await (supabase as unknown as { rpc: (n: string, a: unknown) => Promise<{ error: { message: string } | null }> }).rpc('complementar_motorista_por_documentos', { p_cpf: payload.motorista.cpf, p_dados: payload.complemento })
+            if (ec) avisoComplemento = ec.message
+          } catch (e) {
+            avisoComplemento = e instanceof Error ? e.message : String(e)
+          }
         }
         return data as { motorista_id?: string; cavalo_id?: string; carreta_id?: string }
       },
@@ -117,6 +123,9 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
         return true
       },
     })
+    // So fecha/recarrega se gravou de verdade; se falhou, a tela continua com o erro e o 'Tentar de novo'.
+    if (!gravado) return
+    if (avisoComplemento) setAviso(`Cadastro gravado, mas RG e genero (usados no cadastro da Repom) nao foram gravados: ${avisoComplemento}`)
     aoConcluir?.()
   }
 

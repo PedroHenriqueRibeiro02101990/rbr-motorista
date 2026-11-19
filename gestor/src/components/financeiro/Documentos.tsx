@@ -318,7 +318,8 @@ function RevisaoDocumento({ doc, apoio, onFechar, onFeito, onReler }: { doc: Doc
       .single()
     if (error) return setErro(error.message)
     setFornecedorCriado(data.id)
-    await supabase.from('documentos_financeiros').update({ fornecedor_id: data.id }).eq('id', doc.id)
+    const { error: ev } = await supabase.from('documentos_financeiros').update({ fornecedor_id: data.id }).eq('id', doc.id)
+    if (ev) setErro(`Fornecedor criado, mas não consegui ligar ao documento: ${ev.message}`)
   }
 
   const opcoes: string[] =

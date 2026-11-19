@@ -52,3 +52,16 @@ test('proprietario diferente do motorista: aviso com o tipo de transportador', (
   const a = validarProprietario({ proprietario_documento: '52998224725', motorista_documento: '11144477735' })
   assert.deepEqual(a.map((x) => x.nivel), ['aviso']); assert.match(a[0].mensagem, /TAC/)
 })
+
+// ---- Auditoria 19/11: tipo do veiculo pelo CRLV (o emissor do MDF-e le veiculos.tipo_veiculo) ----
+import { tipoVeiculoDoCrlv } from './validacoes-cadastro.ts'
+test('tipoVeiculoDoCrlv: trator=cavalo, reboque=semirreboque, caminhao pelos eixos, duvida=null', () => {
+  assert.equal(tipoVeiculoDoCrlv('CAMINHAO TRATOR', 3).tipo, 'cavalo mecanico')
+  assert.equal(tipoVeiculoDoCrlv('SEMIRREBOQUE', 3).tipo, 'semirreboque')
+  assert.deepEqual(tipoVeiculoDoCrlv('CARGA/CAMINHAO', 3), { tipo: 'truck', inferido: true })
+  assert.deepEqual(tipoVeiculoDoCrlv('CAMINHAO', 2), { tipo: 'toco', inferido: true })
+  assert.equal(tipoVeiculoDoCrlv('CAMINHAO', null).tipo, null)
+  assert.equal(tipoVeiculoDoCrlv('CARGA/VAN', 2).tipo, 'van')
+  assert.equal(tipoVeiculoDoCrlv('CARAVANA', 2).tipo, null) // "van" dentro de outra palavra nao conta
+  assert.equal(tipoVeiculoDoCrlv(null, 3).tipo, null)
+})

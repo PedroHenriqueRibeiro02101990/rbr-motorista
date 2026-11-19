@@ -173,6 +173,7 @@ export function ProgramarOperacoesModal({
       if (Math.floor(Number(d.qtd)) > restante(d)) throw new Error(`${d.nome}: só restam ${restante(d)} carga(s) no saldo.`)
     }
     let abertas = 0
+    let avisoData = ''
     for (const d of lista) {
       const { data, error } = await supabase.rpc('abrir_operacoes_cotacao', {
         p_cotacao: cotacaoId,
@@ -193,10 +194,11 @@ export function ProgramarOperacoesModal({
       const hoje = new Date().toLocaleDateString('pt-BR')
       const nota = comData.map((d) => `${d.nome}: ${Math.floor(Number(d.qtd))} carga(s) a partir de ${dataBr(d.data)}`).join('; ')
       const novo = [(c as { observacoes?: string | null } | null)?.observacoes, `Programação (${hoje}): ${nota}`].filter(Boolean).join('\n')
-      await supabase.from('cotacoes').update({ observacoes: novo }).eq('id', cotacaoId)
+      const { error: eo } = await supabase.from('cotacoes').update({ observacoes: novo }).eq('id', cotacaoId)
+      if (eo) avisoData = ' (atenção: não consegui anotar a data prevista na cotação)'
     }
     onMudou()
-    return `${abertas} operação(ões) aberta(s) — ${totalAb + abertas} de ${totalPrev} abertas${juntas ? ', saindo juntas' : ''}`
+    return `${abertas} operação(ões) aberta(s) — ${totalAb + abertas} de ${totalPrev} abertas${juntas ? ', saindo juntas' : ''}${avisoData}`
   }
 
   return (

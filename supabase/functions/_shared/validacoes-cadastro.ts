@@ -68,6 +68,23 @@ export function eReboquePorTipoCrlv(tipoCrlv: string | null | undefined): boolea
   return null;
 }
 
+/** Tipo do veiculo (o que o emissor do MDF-e le em veiculos.tipo_veiculo) a partir da ESPECIE/TIPO do CRLV.
+ *  Antes todo CRLV que nao era reboque virava "cavalo mecanico": um truck ou toco saia no MDF-e como cavalo e exigia carreta.
+ *  Truck x toco so se decide pelos eixos (3+ = truck, 2 = toco); sem certeza devolve null (nao inventa). */
+export function tipoVeiculoDoCrlv(especie: string | null | undefined, eixos: number | null | undefined): { tipo: string | null; inferido: boolean } {
+  const t = semAcento(especie ?? "");
+  if (!t) return { tipo: null, inferido: false };
+  if (/reboque/.test(t)) return { tipo: "semirreboque", inferido: false };
+  if (t.includes("trator")) return { tipo: "cavalo mecanico", inferido: false };
+  if (/\bvan\b|micro-?onibus/.test(t)) return { tipo: "van", inferido: false };
+  if (/utilitario|camioneta|camionete|furgao|automovel|caminhonete/.test(t)) return { tipo: "utilitario", inferido: false };
+  if (/caminhao|carga/.test(t)) {
+    if (typeof eixos === "number" && eixos >= 3) return { tipo: "truck", inferido: true };
+    if (eixos === 2) return { tipo: "toco", inferido: true };
+  }
+  return { tipo: null, inferido: false };
+}
+
 export function validarTara(v: VeiculoCadastro): Achado[] {
   const classe = classeDoVeiculo({ ...v, e_reboque: v.e_reboque ?? eReboquePorTipoCrlv(v.tipo_crlv) });
   const tara = n(v.tara_kg);

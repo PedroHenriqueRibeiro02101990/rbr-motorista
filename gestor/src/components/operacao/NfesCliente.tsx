@@ -119,7 +119,11 @@ export default function NfesCliente({ operacaoId, onMudou }: { operacaoId: strin
     }
     const { data: pid } = await supabase.rpc('current_pessoa_id')
     const { error } = await supabase.from('operacao_nfes').insert({ ...nota, operacao_id: operacaoId, arquivo_xml_path: path, criado_por: (pid as string | null) ?? null })
-    if (error) throw new Error(error.code === '23505' ? 'Esta nota já está na operação.' : mensagemClara(error))
+    if (error) {
+      // 23505 = a nota já existe (o XML guardado é o dela): só apaga o XML se a falha foi outra.
+      if (path && error.code !== '23505') await supabase.storage.from('operacao-nfe').remove([path])
+      throw new Error(error.code === '23505' ? 'Esta nota já está na operação.' : mensagemClara(error))
+    }
   }
 
   async function executar(fn: () => Promise<void>) {
@@ -138,7 +142,18 @@ export default function NfesCliente({ operacaoId, onMudou }: { operacaoId: strin
 
   const confirmarPendentes = () =>
     executar(async () => {
-      for (const p of pendentes) await gravar(p.nota, p.xml)
+      // Grava uma a uma e tira da lista só as que gravaram: se uma falhar, as já gravadas não são repetidas (evita 'nota já está na operação').
+      const restantes = [...pendentes]
+      try {
+        for (const p of pendentes) {
+          await gravar(p.nota, p.xml)
+          restantes.shift()
+        }
+      } catch (e) {
+        setPendentes(restantes)
+        const gravadas = pendentes.length - restantes.length
+        throw new Error(`${gravadas} de ${pendentes.length} nota(s) gravada(s). ${e instanceof Error ? e.message : String(e)}`)
+      }
       setPendentes([])
     })
 

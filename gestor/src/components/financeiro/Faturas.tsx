@@ -315,10 +315,14 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
       .update({ linha_digitavel: digitos(linha) || null, pix_copia_cola: pix.trim() || null, ...(boletoDocId ? { boleto_documento_id: boletoDocId } : {}) })
       .eq('id', id)
     if (error) return setErro(error.message)
-    if (itens.length === 1 && digitos(linha)) await supabase.from('lancamentos_financeiros').update({ linha_digitavel: digitos(linha) }).eq('id', itens[0].id!)
+    if (itens.length === 1 && digitos(linha)) {
+      const { error: el } = await supabase.from('lancamentos_financeiros').update({ linha_digitavel: digitos(linha) }).eq('id', itens[0].id!)
+      if (el) return setErro(`A fatura foi salva, mas não consegui gravar a linha digitável no lançamento: ${el.message}`)
+    }
     if (boleto?.valido && boleto.vencimento && f && boleto.vencimento !== f.data_vencimento) {
       if (window.confirm(`O boleto vence em ${fmtData(boleto.vencimento)} e a fatura em ${fmtData(f.data_vencimento)}. Ajustar a fatura para a data do boleto?`)) {
-        await supabase.rpc('alterar_vencimento_fatura', { p_fatura: id, p_vencimento: boleto.vencimento })
+        const { error: ev } = await supabase.rpc('alterar_vencimento_fatura', { p_fatura: id, p_vencimento: boleto.vencimento })
+        if (ev) return setErro(`Dados de pagamento salvos, mas não consegui ajustar o vencimento: ${ev.message}`)
       }
     }
     setOk('Dados de pagamento salvos.')
@@ -332,7 +336,10 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
     setOcupado('boleto')
     try {
       const doc = await enviarDocumento(file, { tipo: 'boleto', direcao: 'emitido', cliente_id: f.cliente_id })
-      for (const l of itens) await supabase.rpc('vincular_documento_lancamento', { p_documento: doc.id, p_lancamento: l.id!, p_atualizar: false })
+      for (const l of itens) {
+        const { error: ev } = await supabase.rpc('vincular_documento_lancamento', { p_documento: doc.id, p_lancamento: l.id!, p_atualizar: false })
+        if (ev) throw new Error(`O boleto foi enviado, mas não consegui vincular a um lançamento: ${ev.message}`)
+      }
       try {
         const r = await invocarIA<{ sugestao?: { lancamento?: { linha_digitavel?: string; pix_copia_cola?: string } } }>('ler_documento', { documento_id: doc.id })
         const s = r.sugestao?.lancamento
@@ -342,7 +349,9 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
       } catch (e) {
         setOk(`Boleto anexado (a IA não leu: ${erroMsg(e)}).`)
       }
-      await supabase.from('faturas').update({ boleto_documento_id: doc.id }).eq('id', id)
+      const { error: eb } = await supabase.from('faturas').update({ boleto_documento_id: doc.id }).eq('id', id)
+      if (eb) throw new Error(`O boleto foi enviado, mas não consegui vincular à fatura: ${eb.message}`)
+      carregar()
     } catch (e) {
       setErro(erroMsg(e))
     } finally {
@@ -431,7 +440,8 @@ function DetalheFatura({ id, apoio, onFechar, onMudou }: { id: string; apoio: Ap
   }
 
   async function marcarEnviada() {
-    await supabase.from('faturas').update({ enviada_em: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase.from('faturas').update({ enviada_em: new Date().toISOString() }).eq('id', id)
+    if (error) return setErro(`Não consegui marcar a fatura como enviada: ${error.message}`)
     carregar()
   }
 

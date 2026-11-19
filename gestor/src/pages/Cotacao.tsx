@@ -34,6 +34,8 @@ import { tituloRota } from '../lib/tituloRota'
 import { PrecoCard, PassosCotacao, ValidadeCard, HistoricoCard, ProntoParaEnviarCard, RecebedorCard, AprovacaoPrecoCard, EnviarPropostaCard, QualidadePrecoCard, faixaDaMargem, type EventoLinha } from '../components/cotacao/PrecoVisual'
 import { avisoRemetenteDiferente, enderecoDoCliente, erroOrigemManual, origemAoTrocarCliente, origemDaCotacao, origemEfetiva, patchOrigem } from '../lib/origemCotacao'
 import { useMensagemTemporaria } from '@rbr/shared/useMensagemTemporaria'
+import { mostrarToast } from '../lib/toast'
+import { mensagemClara } from '../lib/mensagemClara'
 
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
 type CotacaoUpdate = Database['public']['Tables']['cotacoes']['Update']
@@ -2008,8 +2010,16 @@ export default function Cotacao() {
       }
     }
     if (linhas.length === 0) return
-    await supabase.from('pedagio_historico').delete().eq('cotacao_id', cotacaoId).eq('fonte', 'cotacao')
-    await supabase.from('pedagio_historico').insert(linhas)
+    // Insere o novo ANTES de apagar o antigo: se a gravação falhar, o histórico anterior continua inteiro.
+    const { data: antigas, error: ea } = await supabase.from('pedagio_historico').select('id').eq('cotacao_id', cotacaoId).eq('fonte', 'cotacao')
+    if (ea) throw ea
+    const { error: ei } = await supabase.from('pedagio_historico').insert(linhas)
+    if (ei) throw ei
+    const ids = (antigas ?? []).map((a) => a.id)
+    if (ids.length) {
+      const { error: ed } = await supabase.from('pedagio_historico').delete().in('id', ids)
+      if (ed) throw ed
+    }
   }
 
   const recarregarConversao = useCallback(async (cotacaoId: string) => {
@@ -2043,8 +2053,9 @@ export default function Cotacao() {
       setEditingStatus('convertida')
       try {
         await registrarPedagioHistorico(final.id)
-      } catch {
-        /* histórico de pedágio é auxiliar: não derruba a conversão */
+      } catch (e) {
+        // histórico de pedágio é auxiliar: não derruba a conversão, mas avisa
+        mostrarToast(`Cotação convertida, mas o histórico de pedágio não foi atualizado: ${mensagemClara(e)}`, 'erro')
       }
       const r = await recarregarConversao(final.id)
       const ativas = (r?.ops ?? []).filter((o) => o.status !== 'cancelada')

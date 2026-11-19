@@ -96,3 +96,24 @@ test('(vi) a tela envia UM arquivo por chamada, no maximo 2 ao mesmo tempo, tem 
   assert.match(f, /arquivos: \[\{ path, tipo \}\]/); assert.match(f, /rodarComLimite\(paraLer\.map\(\(path\) => \(\) => lerUm\(path\)\), 2\)/)
   for (const t of ['A leitura automatica esta ocupada.', 'Tentar de novo', 'Preencher manualmente']) assert.ok(f.includes(t), t)
 })
+
+// ---- Auditoria 19/11: o que chega no banco e o que bloqueia antes de gravar ----
+test('payload normaliza o que foi digitado: placa sem traco, CPF/RENAVAM so digitos (a RPC procura por valor exato)', () => {
+  const docs = [
+    { path: 'a/cnh.pdf', tipo: 'cnh', normalizado: cnh, edicoes: { cpf: '529.982.247-25' } },
+    { path: 'a/cavalo.pdf', tipo: 'crlv', normalizado: cavalo, edicoes: { placa: 'mkt-6e78', renavam: '0000.000.0001' } },
+  ]
+  const p = montarPayload(docs)
+  assert.equal(p.motorista?.cpf, '52998224725'); assert.equal(p.cavalo?.placa, 'MKT6E78'); assert.equal(p.cavalo?.renavam, '00000000001')
+})
+test('sem CPF valido o motorista bloqueia (a RPC o ignoraria em silencio); sem RENAVAM bloqueia; so veiculo avisa do titular', () => {
+  const semCpf = normalizarExtracao('cnh', { nome: c('Joao Teste'), numero_registro: c('1'), validade: c('2030-05-01') }, HOJE)
+  const p = montarPayload([{ path: 'a/cnh.pdf', tipo: 'cnh', normalizado: semCpf }])
+  const a = achadosDoPayload(p, HOJE)
+  assert.ok(a.some((x) => x.campo === 'cpf' && x.nivel === 'bloqueio')); assert.equal(temBloqueio(a), true)
+  const semRenavam = normalizarExtracao('crlv', { placa: c('MKT6E78'), especie_tipo: c('CAMINHAO TRATOR'), quantidade_eixos: c(3), pbt: c(16.0) }, HOJE)
+  const p2 = montarPayload([{ path: 'a/cavalo.pdf', tipo: 'crlv', normalizado: semRenavam }])
+  const a2 = achadosDoPayload(p2, HOJE)
+  assert.ok(a2.some((x) => x.campo === 'renavam' && x.nivel === 'bloqueio'))
+  assert.ok(a2.some((x) => x.campo === 'titular' && x.nivel === 'aviso'))
+})

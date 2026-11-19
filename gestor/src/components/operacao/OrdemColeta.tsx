@@ -103,7 +103,10 @@ export default function OrdemColeta({ d, gestor }: { d: DetalheOperacao; gestor:
         pdf_path: path,
         gerada_por: gestor.id,
       })
-      if (insErr) throw new Error(`O PDF foi guardado, mas não consegui registrar a ordem: ${insErr.message}`)
+      if (insErr) {
+        await supabase.storage.from('operacao-documentos').remove([path]) // não deixa PDF órfão sem registro
+        throw new Error(`Não consegui registrar a ordem (o PDF foi desfeito): ${insErr.message}`)
+      }
       baixar(blob, `ordem-coleta-${ordem.codigo}.pdf`)
       setOk(`Ordem ${ordem.codigo} gerada. O motorista já vê no app quando a carga estiver liberada.`)
       await carregar()

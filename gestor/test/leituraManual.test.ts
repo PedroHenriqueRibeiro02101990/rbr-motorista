@@ -19,3 +19,8 @@ test('A4: falha mostra o erro da funcao e diz que o arquivo foi enviado', () => 
   assert.match(mensagemFalhaLeitura({ erro: 'IA ocupada', codigo: 'ia_indisponivel' }), /IA ocupada \(ia_indisponivel\).*arquivo foi enviado/)
   assert.match(mensagemFalhaLeitura(null), /não respondeu/)
 })
+
+test('auditoria 19/11: a categoria lida do VPR preenche o campo da tela (antes era lida e jogada fora)', () => {
+  const r = preenchimentoDaLeitura('vpo_pdf', { idvpo: { valor: '96670000000000000001' }, valor_total: { valor: 236.27 }, categoria: { valor: '08' } })
+  assert.equal(r.valores.categoria, '08'); assert.ok(r.lidos.includes('categoria'))
+})

@@ -2,7 +2,7 @@
 // Regra: so se diz "lido" quando existe extracao; a falha mostra o erro da funcao (ia_indisponivel etc.), nunca um "lido" falso.
 import { separarCiot } from '../../../supabase/functions/_shared/lancamentoManual.ts'
 
-export type CampoLido = 'idvpo' | 'vpo_valor' | 'ciot' | 'ver' | 'frete' | 'adiant'
+export type CampoLido = 'idvpo' | 'vpo_valor' | 'categoria' | 'ciot' | 'ver' | 'frete' | 'adiant'
 type Campos = Record<string, { valor: unknown }>
 
 /** Tipo de extracao por upload: VPR -> vpr_vale_pedagio; contrato da Repom -> contrato_ciot_repom. */
@@ -14,7 +14,7 @@ export function preenchimentoDaLeitura(campo: 'vpo_pdf' | 'ciot_pdf', campos: Ca
   const pegar = (k: string) => { const v = campos[k]?.valor; return v === null || v === undefined || v === '' ? null : v }
   const poe = (k: CampoLido, v: unknown) => { if (v !== null && v !== undefined && v !== '') valores[k] = String(v) }
   if (campo === 'vpo_pdf') {
-    poe('idvpo', pegar('idvpo')); poe('vpo_valor', pegar('valor_total'))
+    poe('idvpo', pegar('idvpo')); poe('vpo_valor', pegar('valor_total')); poe('categoria', pegar('categoria'))
   } else {
     const sep = separarCiot(`${pegar('ciot') ?? ''}${deducoes?.ciot_verificador?.valor ?? ''}`) ?? separarCiot(pegar('ciot'))
     if (sep) { poe('ciot', sep.ciot); poe('ver', sep.verificador) }

@@ -274,7 +274,10 @@ function AnexarNota({
                   p_arquivo_url: path as string, // null = nota sem arquivo (a coluna aceita null)
                   p_operacoes: [...marcadas],
                 })
-                if (error) throw error
+                if (error) {
+                  if (path) await supabase.storage.from('notas-parceiros').remove([path]) // não deixa arquivo órfão
+                  throw error
+                }
                 const dif = Number((r as { diferenca?: number } | null)?.diferenca ?? 0)
                 onFeito(`NFS-e ${num.trim()} anexada: ${marcadas.size} operação(ões) baixada(s).${dif !== 0 ? ` Diferença de ${formatMoney(dif)} registrada como aviso.` : ''}`)
               })
