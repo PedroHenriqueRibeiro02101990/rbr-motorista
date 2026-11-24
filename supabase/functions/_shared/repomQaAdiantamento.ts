@@ -91,7 +91,7 @@ export function conferirModelo(m: ModeloContrato): string | null {
   if (!m.hiredNationalId.endsWith(FINAIS_MODELO.prestadorCpf) || m.hiredNationalId.length !== 11) return 'O prestador do contrato-modelo não é o da rodada de 17/11 (pessoa física).'
   if (!m.motoristas.some((d) => d.cpf.endsWith(FINAIS_MODELO.motoristaCpf))) return 'O motorista do contrato-modelo não é o da rodada de 17/11.'
   if (!m.placas.includes(FINAIS_MODELO.placa)) return 'A placa do contrato-modelo não é a da rodada de 17/11.'
-  if (m.cardNumber !== 0) return 'O contrato-modelo não é de conta digital (CardNumber 0).'
+  // CardNumber do modelo não é conferido: o GET devolve o cartão da conta digital já criado; a emissão do teste SEMPRE envia CardNumber 0 (viagem digital).
   if (m.documento.tipo !== 'CTE') return 'O documento do contrato-modelo não é um CT-e.'
   return null
 }
@@ -126,7 +126,7 @@ export function novoIdentifier(agora: Date): string {
 export interface TipoCarga { id: number; descricao: string }
 export function lerTiposCarga(dados: unknown): TipoCarga[] {
   const lista: unknown[] = Array.isArray(dados) ? dados : ehObj(dados) ? Object.values(dados).flatMap((x) => (Array.isArray(x) ? x : [])) : []
-  return lista.filter(ehObj).map((o) => ({ id: Number(pick(o, 'Id', 'Code', 'Codigo', 'Value')), descricao: String(pick(o, 'Description', 'Descricao', 'Name', 'Nome') ?? '') })).filter((t) => Number.isInteger(t.id) && t.descricao)
+  return lista.filter(ehObj).map((o) => ({ id: Number(pick(o, 'CodeType', 'Id', 'Code', 'Codigo', 'Value')), descricao: String(pick(o, 'Description', 'Descricao', 'Name', 'Nome') ?? '') })).filter((t) => Number.isInteger(t.id) && t.descricao)
 }
 /** "Carga geral" é o tipo usado no contrato de teste; se a lista não trouxer esse texto, PARA (não adivinha). */
 export function escolherCargaGeral(tipos: TipoCarga[]): TipoCarga | null {

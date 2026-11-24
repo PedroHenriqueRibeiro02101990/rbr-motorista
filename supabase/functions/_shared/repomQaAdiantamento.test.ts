@@ -20,7 +20,7 @@ const MODELO_GET = {
   Documents: [{ BranchCode: '1', DocumentType: 'CTE', Series: '1', Number: '660', EletronicKey: CHAVE_MODELO }],
   ShippingReceiver: { Country: 'Brazil', NationalId: '06315338003134', Name: 'Destinatario Teste', ReceiverType: 'Company' },
 }
-const TIPOS = [{ Id: 1, Description: 'Granel sólido' }, { Id: 5, Description: 'Carga Geral' }]
+const TIPOS = [{ CodeType: 1, Description: 'Granel sólido' }, { CodeType: 5, Description: 'Carga Geral' }]
 const AGORA = new Date('2026-11-24T18:30:15Z')
 
 test('DV da chave de acesso: módulo 11; chaveValida confere; chave de modelo gerada aqui é válida', () => {
@@ -49,7 +49,7 @@ test('leitura do modelo: aceita a resposta do GET, confere por FINAIS e placa, e
   assert.equal(r.modelo.ncm, '1005'); assert.equal(r.modelo.cardNumber, 0); assert.equal(conferirModelo(r.modelo), null)
   assert.match(conferirModelo({ ...r.modelo, placas: ['AAA0000'] }) ?? '', /placa/)
   assert.match(conferirModelo({ ...r.modelo, hiredNationalId: '11122220000' }) ?? '', /prestador/)
-  assert.match(conferirModelo({ ...r.modelo, cardNumber: 700023471 }) ?? '', /conta digital/)
+  assert.equal(conferirModelo({ ...r.modelo, cardNumber: 700023471 }), null) // o GET devolve o cartão da conta digital; a emissão envia CardNumber 0
   for (const falta of [{ Documents: [] }, { Drivers: [] }, { Vehicles: [] }, { ShippingReceiver: null }, { BrazilianRouteRouteCode: undefined }, { LoadBrazilianNCM: '12' }]) {
     assert.ok('erro' in lerModeloContrato({ ...MODELO_GET, ...falta }), JSON.stringify(falta))
   }
@@ -72,7 +72,7 @@ test('pedido: frete 3.500, adiantamento 10, SEST, NCM de 4, CardNumber 0, sem Ch
 
 test('tipos de carga: lê Id/Description e escolhe "carga geral"; sem ela, devolve null (a emissão PARA)', () => {
   const t = lerTiposCarga({ Result: TIPOS })
-  assert.equal(escolherCargaGeral(t)?.id, 5); assert.equal(escolherCargaGeral(lerTiposCarga([{ Id: 1, Description: 'Granel' }])), null)
+  assert.equal(escolherCargaGeral(t)?.id, 5); assert.equal(lerTiposCarga([{ Id: 5, Description: 'Carga Geral' }]).length, 1); assert.equal(escolherCargaGeral(lerTiposCarga([{ CodeType: 1, Description: 'Granel' }])), null)
   assert.deepEqual(lerTiposCarga('x'), [])
 })
 
@@ -157,7 +157,7 @@ test('emitir: guardas — nome, máximo de 2 tentativas, contrato já emitido, m
   for (const hist of [['erro', 'erro'], ['ok'], ['erro', 'ok']]) { const m = montar({ hist }); assert.equal((await executarQaTeste(EMITIR, m.deps)).corpo.parou, true); assert.ok(!m.chamadas.includes('emitir')) }
   const outro = montar({ modelo: { ...MODELO_GET, Vehicles: [{ LicensePlate: 'ZZZ9999' }] } })
   assert.equal((await executarQaTeste(EMITIR, outro.deps)).corpo.parou, true); assert.ok(!outro.chamadas.includes('emitir'))
-  const semGeral = montar({ tipos: [{ Id: 1, Description: 'Granel' }] })
+  const semGeral = montar({ tipos: [{ CodeType: 1, Description: 'Granel' }] })
   assert.equal((await executarQaTeste(EMITIR, semGeral.deps)).corpo.parou, true); assert.ok(!semGeral.chamadas.includes('emitir'))
   const semChave = montar({ emitir: ok({ operationKey: null }) })
   assert.equal((await executarQaTeste(EMITIR, semChave.deps)).corpo.parou, true)
