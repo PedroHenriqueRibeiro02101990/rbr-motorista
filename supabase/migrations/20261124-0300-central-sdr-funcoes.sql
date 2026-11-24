@@ -66,7 +66,7 @@ language plpgsql stable security definer set search_path = public, pg_temp as $$
 begin
   if not public.central_eh_sdr() then raise exception 'Sem permissao.'; end if;
   return coalesce((
-    select jsonb_agg(x order by x.ord, x.criado_em)
+    select jsonb_agg(t.x order by t.ord, t.criado_em)
       from (
         select case when f.status in ('na_fila','assumido') then 0 else 1 end as ord, f.criado_em,
                jsonb_build_object(

@@ -1,6 +1,6 @@
 // Acesso ao banco da Central. Mesma sessão e mesmas regras de RLS do gestor: quem decide é o banco, não a tela.
 // Cada mudança grava em central_registro (e na auditoria) pela função central_registrar.
-import { auditar, db } from './prospeccaoDb'
+import { db } from './prospeccaoDb'
 import { termoBusca, tipoEmail, valorDaFlag, PREFIXOS_SETOR, type RoboLinha } from './central'
 
 export const CHAVES_FLAGS = [
