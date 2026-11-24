@@ -1,7 +1,8 @@
 // Regras da função temporária repom-qa-teste (sem Deno, sem rede; testes em repomQaTeste.test.ts).
 // Só QA, só o contrato 2166947 (RBRC4943103), ações FIXAS (token, consultar_contrato, sequencia), UMA tentativa por ação de dinheiro,
 // para no primeiro problema. Só funciona com o segredo REPOM_QA_TESTE_LIBERADO=sim. A resposta nunca leva credencial nem corpo bruto.
-import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
+import { situacaoProcessamento, type ClienteRepomFrete, type ResultadoFrete } from './repomFreteClient.ts'
+import { ADIANTAMENTO, FRETE_TOTAL, MAX_TENTATIVAS_EMISSAO, PREFIXO_IDENTIFIER, SEST_PF, classificarFalhaEmissao, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
 
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
@@ -28,7 +29,7 @@ export function montarCombos(achados: Combo[]): Combo[] {
   }
   return lista.slice(0, LIMITE_RODADA)
 }
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo'] as const
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'emitir_adiantamento', 'cancelar_adiantamento'] as const
 /** Janela fixa da consulta de saldo/extrato (só leitura). */
 export const SALDO_INICIO = '2026-11-01'
 
@@ -39,7 +40,11 @@ export interface DepsQaTeste {
   ambiente: 'qa' | 'prd'
   frete: ClienteRepomFrete
   /** status das linhas anteriores de repom_requisicoes para esta ação ('quitar' | 'autorizar') */
-  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada'): Promise<string[]>
+  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada' | 'emitir-adiantamento'): Promise<string[]>
+  /** Identifier da ÚLTIMA tentativa de emissão do adiantamento registrada em repom_requisicoes (qualquer status), para o cancelamento. */
+  ultimaEmissao(): Promise<string | null>
+  agora(): Date
+  espera(ms: number): Promise<void>
   registrar(acao: string, request: unknown): Promise<string | null>
   concluir(id: string | null, r: { status: 'ok' | 'erro'; http: number; resposta: unknown; erro: string | null }): Promise<void>
   hoje(): string // AAAA-MM-DD de hoje (fim da janela do saldo)
@@ -184,6 +189,104 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
       return { total_movimentos: todos, do_contrato: movimentosDoContrato(dados) }
     })
     return fim(sal.e.ok || ext.e.ok ? 200 : 502, { janela: { inicio: ini, fim: fimDia }, ok: sal.e.ok && ext.e.ok })
+  }
+
+  // 1c) TESTE DE SALDO COM ADIANTAMENTO (24/11/2026): ler o modelo, emitir UM contrato novo com adiantamento de R$ 10,00 e cancelar
+  if (acao === 'ler_modelo') {
+    const mod = await passo('modelo', { shippingId: CONTRATO_QA.shippingId }, () => d.frete.consultarContratoPorViagem(CONTRATO_QA.shippingId), (dados) => {
+      const r = lerModeloContrato(dados)
+      if ('erro' in r) return { erro_leitura: r.erro }
+      const m = r.modelo
+      return { status: m.status, prestador_final: m.hiredNationalId.slice(-4), motoristas_finais: m.motoristas.map((x) => x.cpf.slice(-4)), placas: m.placas, filial: m.branchCode, ncm4: m.ncm, peso: m.pesoCarga, valor_carga: m.valorCarga, percurso: m.traceCode, roteiro: m.routeCode, local_entrega: m.tipoLocal, destinatario_tipo: m.destinatario.tipo, documento_tipo: m.documento.tipo, confere_com_17_11: conferirModelo(m) ?? 'sim' }
+    })
+    const tc = await passo('tipos_carga', {}, () => d.frete.tiposDeCarga(), (dados) => ({ tipos: lerTiposCarga(dados) }))
+    return fim(mod.e.ok && tc.e.ok ? 200 : 502, { ok: mod.e.ok && tc.e.ok })
+  }
+  if (acao === 'emitir_adiantamento') {
+    const nomeE = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+    if (nomeE.length < 3) return parar('A emissão exige confirmacao.nome.', 400)
+    const hist = await d.historico('emitir-adiantamento')
+    if (hist.length >= MAX_TENTATIVAS_EMISSAO) return parar(`Já foram ${hist.length} tentativas de emissão (máximo ${MAX_TENTATIVAS_EMISSAO}); não repito.`)
+    if (hist.includes('ok')) return parar('Já existe um contrato emitido por este teste; cancele antes de qualquer nova emissão.')
+    const mod = await passo('modelo', { shippingId: CONTRATO_QA.shippingId }, () => d.frete.consultarContratoPorViagem(CONTRATO_QA.shippingId))
+    if (!mod.r.ok) return fim(502, { parou: true })
+    const lm = lerModeloContrato(mod.r.dados)
+    if ('erro' in lm) return parar(lm.erro + ' Nada foi emitido.')
+    const conf = conferirModelo(lm.modelo)
+    if (conf) return parar(conf + ' Nada foi emitido.')
+    const tc = await passo('tipos_carga', {}, () => d.frete.tiposDeCarga())
+    if (!tc.r.ok) return fim(502, { parou: true })
+    const tipos = lerTiposCarga(tc.r.dados)
+    const geral = escolherCargaGeral(tipos)
+    if (!geral) return parar(`Não achei "carga geral" na lista de tipos da ANTT (${tipos.map((t) => `${t.id}=${t.descricao}`).join('; ').slice(0, 400)}). Nada foi emitido.`)
+    const { pedido } = montarPedidoAdiantamento(lm.modelo, d.agora(), geral.id)
+    const tentativa = hist.length + 1
+    const idLinha = await d.registrar('qa-teste-emitir-adiantamento', { identifier: pedido.identifier, tentativa, max: MAX_TENTATIVAS_EMISSAO, frete: FRETE_TOTAL, adiantamento: ADIANTAMENTO, sest: SEST_PF, ncm: pedido.ncm, antt: geral.id, card: 0, confirmado_por: nomeE })
+    const fecha = async (status: 'ok' | 'erro', http: number, resposta: Record<string, unknown>, erroTxt: string | null) => { await d.concluir(idLinha, { status, http, resposta: { identifier: pedido.identifier, tentativa, ...resposta }, erro: erroTxt }) }
+    const em = await d.frete.emitirContrato(pedido)
+    if (!em.ok) {
+      const tipo = classificarFalhaEmissao([em.erro], em.codigoErro)
+      await fecha('erro', em.http, { resultado: tipo, codigo: em.codigoErro ?? null, incerto: em.incerto ?? false }, curto(em.erro))
+      etapas.push({ etapa: 'emitir', ok: false, http: em.http, erro: curto(em.erro), codigoErro: em.codigoErro ?? null, detalhe: { identifier: pedido.identifier, resultado: tipo, ...(em.incerto ? { incerto: true } : {}) } })
+      return fim(em.http && em.http < 500 ? 422 : 502, { parou: true, identifier: pedido.identifier, resultado: tipo, responde_sobre_saldo: tipo !== 'outro', ...(tipo === '2768' ? { pendencia_externa: pendenciaKaren } : {}) })
+    }
+    const chave = em.dados.operationKey
+    if (!chave) {
+      await fecha('erro', em.http, { resultado: 'sem_operation_key' }, 'A Repom aceitou o pedido mas não devolveu a chave da operação.')
+      return fim(502, { parou: true, identifier: pedido.identifier, motivo: 'A Repom aceitou o pedido mas não devolveu a OperationKey; confira o contrato pelo identificador antes de qualquer nova tentativa.' })
+    }
+    // a emissão é assíncrona: consultar o processamento (até 8 vezes, 4 s entre elas)
+    let final: 'emitido' | 'erro' | 'processando' = 'processando'
+    let erros: string[] = []
+    for (let i = 0; i < 8 && final === 'processando'; i++) {
+      await d.espera(4000)
+      const st = await d.frete.consultarStatusPorChave(chave)
+      if (!st.ok) continue
+      const itens = st.dados
+      erros = itens.flatMap((x) => x.erros)
+      if (itens.some((x) => situacaoProcessamento(x) === 'erro')) final = 'erro'
+      else if (itens.length && itens.every((x) => situacaoProcessamento(x) === 'emitido')) final = 'emitido'
+    }
+    if (final === 'erro') {
+      const tipo = classificarFalhaEmissao(erros)
+      await fecha('erro', 200, { resultado: tipo, erros: erros.map(curto).slice(0, 5) }, curto(erros.join('; ')))
+      etapas.push({ etapa: 'emitir', ok: false, http: 200, erro: curto(erros.join('; ')), detalhe: { identifier: pedido.identifier, resultado: tipo } })
+      return fim(422, { parou: true, identifier: pedido.identifier, resultado: tipo, responde_sobre_saldo: tipo !== 'outro', ...(tipo === '2768' ? { pendencia_externa: pendenciaKaren } : {}) })
+    }
+    if (final === 'processando') {
+      await fecha('erro', 200, { resultado: 'processando' }, 'Sem resposta final do processamento no prazo.')
+      return fim(504, { parou: true, identifier: pedido.identifier, motivo: 'A emissão ainda estava em processamento quando parei de esperar; consulte o contrato pelo identificador (ele pode existir).' })
+    }
+    const lido2 = await d.frete.consultarContratoPorIdentificador(pedido.identifier)
+    const o2 = lido2.ok ? (Array.isArray(lido2.dados) ? lido2.dados[0] : lido2.dados) : null
+    const dados2 = ehObj(o2) ? o2 : {}
+    const shippingId = Number(primeiro(dados2, ['ShippingId'])) || null
+    const ciot = primeiro(dados2, ['CIOT']) ?? null
+    const statusContrato = lerContratoQa(o2)?.status ?? null
+    const adiant = primeiro(dados2, ['AdvanceMoneyValue']) ?? null
+    await fecha('ok', 200, { resultado: 'emitido_com_adiantamento', shippingId, ciot, status: statusContrato, adiantamento_no_contrato: adiant }, null)
+    etapas.push({ etapa: 'emitir', ok: true, http: 200, detalhe: { identifier: pedido.identifier, shippingId, ciot, status: statusContrato, adiantamento_no_contrato: adiant } })
+    return fim(200, { identifier: pedido.identifier, resultado: 'emitido_com_adiantamento', credito_chegou: true, shippingId, ciot, status: statusContrato })
+  }
+  if (acao === 'cancelar_adiantamento') {
+    const nomeC = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+    if (nomeC.length < 3) return parar('O cancelamento exige confirmacao.nome.', 400)
+    const ident = await d.ultimaEmissao()
+    if (!ident || !ident.startsWith(PREFIXO_IDENTIFIER)) return parar('Não há contrato criado por este teste para cancelar.')
+    const lido3 = await passo('consultar_criado', { identifier: ident }, () => d.frete.consultarContratoPorIdentificador(ident))
+    if (!lido3.r.ok) return parar(`Não achei o contrato ${ident} na Repom (nada a cancelar): ${curto(lido3.r.erro)}`)
+    const o3 = Array.isArray(lido3.r.dados) ? lido3.r.dados[0] : lido3.r.dados
+    const sid = ehObj(o3) ? Number(primeiro(o3, ['ShippingId'])) : NaN
+    if (!Number.isInteger(sid) || sid <= 0) return parar('Não consegui ler o código da viagem do contrato criado; não cancelo.')
+    if (sid === CONTRATO_QA.shippingId) return parar('Recusado: nunca cancelo o contrato 2166947.')
+    if (ehObj(o3) && String(primeiro(o3, ['Identifier']) ?? ident) !== ident) return parar('O contrato lido não tem o identificador esperado; não cancelo.')
+    const stAntes = lerContratoQa(o3)?.status ?? null
+    if (/cancel/i.test(stAntes ?? '')) return fim(200, { identifier: ident, shippingId: sid, status: stAntes, ja_cancelado: true })
+    const canc = await passo('cancelar', { identifier: ident, shippingId: sid, confirmado_por: nomeC }, () => d.frete.cancelarContrato(sid))
+    if (!canc.r.ok) return fim(canc.e.http && canc.e.http < 500 ? 422 : 502, { parou: true, identifier: ident, shippingId: sid, motivo: 'A Repom recusou o cancelamento.' })
+    const dep = await d.frete.consultarContratoPorViagem(sid)
+    const stDepois = dep.ok ? lerContratoQa(dep.dados)?.status ?? null : null
+    return fim(200, { identifier: ident, shippingId: sid, status_antes: stAntes, status_depois: stDepois, cancelado: /cancel/i.test(stDepois ?? '') })
   }
 
   // 2) consulta do contrato (só leitura)

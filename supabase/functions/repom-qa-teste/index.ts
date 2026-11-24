@@ -29,6 +29,13 @@ Deno.serve(async (req) => {
       ligado: true,
       ambiente,
       frete,
+      agora: () => new Date(),
+      espera: (ms) => new Promise((r) => setTimeout(r, ms)),
+      async ultimaEmissao() {
+        const { data } = await admin.from("repom_requisicoes").select("request_json").eq("acao", "qa-teste-emitir-adiantamento").order("criado_em", { ascending: false }).limit(1);
+        const id = (data?.[0]?.request_json as { identifier?: string } | undefined)?.identifier;
+        return typeof id === "string" ? id : null;
+      },
       hoje: () => new Date().toISOString().slice(0, 10),
       amanha: () => new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10), // dia seguinte (AAAA-MM-DD, formato do guia); a Repom recusa a data de hoje
       async historico(acao) {

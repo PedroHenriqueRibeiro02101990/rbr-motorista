@@ -161,6 +161,8 @@ export interface PedidoContratoFrete {
   impostos?: { tipo: 'IRRF' | 'SEST' | 'SENAT' | 'INSS'; valor: number }[] // obrigatório se o cliente calcula os impostos (D-F07)
   combustivel?: { cartao: string; valor: number } // adiantamento flexível
   ciotTacAgregado?: { contratoExistenteId: number } // 0 na primeira viagem
+  /** MinimumFreightCost: SEMPRE objeto com as 4 chaves (Swagger v3: VeichleComposition é boolean = veículo agregado). */
+  pisoFrete?: { distanceTravel: number; emptyReturn: boolean; highPerformanceTransport: boolean; veichleComposition: boolean }
 }
 
 /** Valida o que o guia (seção 8) marca como obrigatório. Devolve a primeira mensagem ou null. */
@@ -226,6 +228,7 @@ export function montarCorpoContrato(p: PedidoContratoFrete) {
       ...(p.impostos?.length ? { Taxes: p.impostos.map((t) => ({ Type: t.tipo, Value: t.valor })) } : {}),
       ...(p.combustivel ? { ShippingFuel: { FuelCardNumber: p.combustivel.cartao, FuelValue: p.combustivel.valor } } : {}),
       ...(p.ciotTacAgregado ? { CIOTShippingType: 3, ExistingContractId: p.ciotTacAgregado.contratoExistenteId } : {}),
+      ...(p.pisoFrete ? { MinimumFreightCost: { DistanceTravel: p.pisoFrete.distanceTravel, EmptyReturn: p.pisoFrete.emptyReturn, HighPerformanceTransport: p.pisoFrete.highPerformanceTransport, VeichleComposition: p.pisoFrete.veichleComposition } } : {}),
     },
   ]
 }

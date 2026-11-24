@@ -207,3 +207,11 @@ test('extrato financeiro: GET no host do Relatório com datas AAAA-MM-DD; datas 
   assert.equal((await c.consultarExtratoFinanceiro('2026-11-25', '2026-11-24')).ok, false)
   assert.equal(m.chamadas.length, n)
 })
+
+test('contrato: MinimumFreightCost sai como objeto com as 4 chaves quando informado; sem pisoFrete nao sai', () => {
+  const com = montarCorpoContrato({ ...contrato, pisoFrete: { distanceTravel: 300, emptyReturn: true, highPerformanceTransport: false, veichleComposition: false } })[0] as Record<string, unknown>
+  assert.deepEqual(com.MinimumFreightCost, { DistanceTravel: 300, EmptyReturn: true, HighPerformanceTransport: false, VeichleComposition: false })
+  assert.equal('MinimumFreightCost' in (montarCorpoContrato(contrato)[0] as object), false)
+  assert.equal('CheckDocument' in ((com.Documents as object[])[0]), false) // nao enviar so um entre CheckDocument e DeliveryLocationType
+  assert.equal('DeliveryLocationType' in ((com.Documents as object[])[0]), false)
+})
