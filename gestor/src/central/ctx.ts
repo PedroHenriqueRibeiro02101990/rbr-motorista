@@ -1,18 +1,20 @@
 // Contexto comum às seções da Central: dados carregados, confirmação em janela e aviso rápido.
 import { createContext, useContext } from 'react'
-import type { Batimento, Comando, RegistroLinha, UsoLinha } from '../lib/centralDb'
+import type { Batimento, Comando, RegistroLinha, RelatorioLinha, SugestaoLinha, UsoLinha } from '../lib/centralDb'
 import type { RoboLinha } from '../lib/central'
 
 export type Pedido = { titulo: string; texto: string; ok: string; perigoso?: boolean }
 export type Painel = {
   robos: RoboLinha[]; batimentos: Batimento[]; uso: UsoLinha[]; comandos: Comando[]; registro: RegistroLinha[]
-  sugestoesPendentes: number; filaSdr: number
+  sugestoes: SugestaoLinha[]; relatorio: RelatorioLinha | null; filaSdr: number
 }
 export type CentralCtx = {
   painel: Painel; flags: Record<string, string>; agora: Date
   confirmar: (p: Pedido) => Promise<boolean>
   aviso: (msg: string) => void
   recarregar: () => void
+  pessoaId: string
+  prevooCompleto: boolean
   executar: (fazer: () => Promise<string | void>) => Promise<void>   // roda, mostra erro em português, recarrega
 }
 export const CentralContexto = createContext<CentralCtx | null>(null)

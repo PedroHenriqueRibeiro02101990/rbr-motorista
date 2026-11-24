@@ -86,7 +86,7 @@ export default function App() {
         {/* Radar (prospecção ativa): tela própria, com menu lateral próprio; quem pode ver é decidido dentro dele (flag + usuário do Pedro). */}
         <Route path="/radar/*" element={<RadarApp papel={auth.pessoa.papel} pessoaId={auth.pessoa.id} />} />
         {/* Central (controle dos robôs): tela própria; o banco confere se é o administrador. */}
-        <Route path="/central/*" element={<CentralApp papel={auth.pessoa.papel} />} />
+        <Route path="/central/*" element={<CentralApp papel={auth.pessoa.papel} pessoaId={auth.pessoa.id} />} />
         <Route path="*" element={
       <AppShell pessoa={auth.pessoa} onSignOut={auth.signOut}>
         <Routes>

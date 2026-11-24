@@ -165,15 +165,87 @@ export function efeitoDaChave(roboId: string, ligar: boolean): Efeito {
         : { titulo: 'Desligar este robô?', efeito: 'O agente do PC para de executar este robô. Se ele estiver no meio de algo, termina o passo atual.', perigoso: false }
   }
 }
-// Até o pré-voo existir (próxima fase), ligar envio ou leitura não é feito por aqui: ligue pelo Radar.
+// Envio e leitura só ligam com o pré-voo completo.
 export const LIGAR_EXIGE_PREVOO = ['envio', 'leitura']
-export function motivoNaoLiga(r: RoboLinha, flags: Record<string, string>): string | null {
+export function motivoNaoLiga(r: RoboLinha, flags: Record<string, string>, prevooCompleto = false): string | null {
   if (r.travado) return 'Travado: só muda com o seu OK no chat.'
   if (r.bloqueado_motivo) return r.bloqueado_motivo
-  if (LIGAR_EXIGE_PREVOO.includes(r.id)) return 'O "pronto para o primeiro envio" ainda não está nesta versão da Central. Ligue pelo Radar (Ajustes), que já tem as travas.'
+  if (LIGAR_EXIGE_PREVOO.includes(r.id) && !prevooCompleto) return 'Ainda falta item no "Pronto para o primeiro envio". Complete a lista e depois ligue.'
   if (r.id === 'resposta_auto' && !(flags.PROSPECCAO_ENVIO_LIBERADO === 'sim' && flags.PROSPECCAO_LEITURA_LIBERADA === 'sim')) return 'Só liga com enviar e ler ligados.'
   return null
 }
 
 // ---- recusar tudo se a pessoa não é do grupo -----------------------------------------------------------
 export function valorDaFlag(ligar: boolean): string { return ligar ? 'sim' : 'nao' }
+
+// ============================== F3 ==========================================================================
+// ---- pré-voo do primeiro envio -------------------------------------------------------------------------
+export type EntradaPrevoo = {
+  naBase: number; modelosAtivos: number; caixasAtivas: number; caixasComDiagnostico: number; caixasComSenha: number
+  marcas: Record<string, string> | null   // null = parâmetro ainda não existe (migration 0200 não aplicada)
+  flags: Record<string, string>
+}
+export type ItemPrevoo = { id: string; nome: string; feito: boolean; manual: boolean; detalhe: string }
+export const TOQUES_OBRIGATORIOS = 4
+export function calcularPrevoo(e: EntradaPrevoo): { itens: ItemPrevoo[]; feitos: number; total: number; completo: boolean } {
+  const m = e.marcas ?? {}
+  const itens: ItemPrevoo[] = [
+    { id: 'base', nome: 'Base importada', feito: e.naBase > 0, manual: false, detalhe: e.naBase > 0 ? `${e.naBase} empresas na base.` : 'Envie a lista para a base do TMS.' },
+    { id: 'textos', nome: 'Textos dos 4 toques ativos', feito: e.modelosAtivos >= TOQUES_OBRIGATORIOS, manual: false, detalhe: `${e.modelosAtivos} de ${TOQUES_OBRIGATORIOS} textos ativos. Ative na seção Jornada do e-mail.` },
+    { id: 'diagnostico', nome: 'Diagnóstico das caixas feito', feito: e.caixasAtivas > 0 && e.caixasComDiagnostico >= e.caixasAtivas, manual: false, detalhe: e.caixasAtivas === 0 ? 'Nenhuma caixa ativa.' : `${e.caixasComDiagnostico} de ${e.caixasAtivas} caixas diagnosticadas (rode o diagnóstico nos Ajustes do Radar).` },
+    { id: 'senhas', nome: 'Senhas das caixas no cofre', feito: e.caixasAtivas > 0 && e.caixasComSenha >= e.caixasAtivas, manual: false, detalhe: e.caixasAtivas === 0 ? 'Nenhuma caixa ativa.' : `${e.caixasComSenha} de ${e.caixasAtivas} caixas com senha configurada. A tela nunca mostra a senha.` },
+    { id: 'dns', nome: 'SPF, DKIM e DMARC conferidos', feito: !!m.dns, manual: true, detalhe: e.marcas == null ? 'Marcação disponível depois que a migration 0200 for aplicada.' : 'Confira no provedor de e-mail e marque aqui.' },
+    { id: 'descadastrar', nome: 'Caixa descadastrar@ funcionando', feito: !!m.descadastrar, manual: true, detalhe: e.marcas == null ? 'Marcação disponível depois que a migration 0200 for aplicada.' : 'Mande um teste para a caixa e marque aqui.' },
+    { id: 'travas', nome: 'Modo teste e aprovação ligados', feito: e.flags.PROSPECCAO_MODO_TESTE === 'sim' && e.flags.PROSPECCAO_APROVACAO_OBRIGATORIA === 'sim', manual: false, detalhe: 'As duas travas precisam estar ligadas no primeiro envio.' },
+  ]
+  const feitos = itens.filter((i) => i.feito).length
+  return { itens, feitos, total: itens.length, completo: feitos === itens.length }
+}
+
+// ---- pausar / retomar -----------------------------------------------------------------------------------
+export type ComandoLinha = { robo_id: string | null; comando: string; status: string; criado_em: string }
+// Pausado = o último pedido de pausar/retomar para o robô foi pausar.
+export function robPausado(roboId: string, comandos: ComandoLinha[]): boolean {
+  const c = comandos.filter((x) => x.robo_id === roboId && (x.comando === 'pausar' || x.comando === 'retomar')).sort((a, b) => Date.parse(b.criado_em) - Date.parse(a.criado_em))[0]
+  return c?.comando === 'pausar'
+}
+
+// ---- prefixos do setor certo -----------------------------------------------------------------------------
+export function limparPrefixos(lista: unknown): string[] {
+  if (!Array.isArray(lista)) return []
+  const vistos = new Set<string>()
+  for (const x of lista) {
+    const p = String(x ?? '').trim().toLowerCase().replace(/@.*$/, '')
+    if (/^[a-z0-9][a-z0-9._-]{0,30}$/.test(p)) vistos.add(p)
+  }
+  return [...vistos].slice(0, 30)
+}
+export function metasDoParametro(texto: string | undefined, padrao: { contatos: number; base: number }) {
+  try {
+    const o = JSON.parse(texto ?? '') as Record<string, unknown>
+    const c = Number(o.contatos), b = Number(o.base)
+    return { contatos: Number.isFinite(c) && c >= 0 ? c : padrao.contatos, base: Number.isFinite(b) && b >= 0 ? b : padrao.base }
+  } catch { return padrao }
+}
+
+// ---- resumo do dia / fila ao vivo -----------------------------------------------------------------------
+export type PassoLista = { nome: string; estado: 'feito' | 'rodando' | 'espera'; detalhe: string }
+export function passosDoResumo(resumo: unknown): PassoLista[] {
+  const l = (resumo as { passos?: unknown } | null)?.passos
+  if (!Array.isArray(l)) return []
+  return (l as Record<string, unknown>[]).filter((p) => p && typeof p.nome === 'string').slice(0, 30).map((p) => ({
+    nome: String(p.nome), estado: p.estado === 'feito' || p.estado === 'rodando' ? p.estado : 'espera', detalhe: String(p.detalhe ?? ''),
+  }))
+}
+export type TarefaFila = { titulo: string; estado: string }
+export function filaDoResumo(resumo: unknown): TarefaFila[] {
+  const l = (resumo as { fila_tms?: unknown } | null)?.fila_tms
+  if (!Array.isArray(l)) return []
+  return (l as Record<string, unknown>[]).filter((p) => p && typeof p.titulo === 'string').slice(0, 30).map((p) => ({ titulo: String(p.titulo), estado: String(p.estado ?? 'na fila') }))
+}
+// Últimas linhas do log ao vivo; tira o que parece segredo (chave, token, senha) antes de mostrar.
+export function linhasAoVivo(resumo: unknown, max = 40): string[] {
+  const l = (resumo as { log?: unknown } | null)?.log
+  if (!Array.isArray(l)) return []
+  return l.slice(-max).map((x) => String(x ?? '').slice(0, 300).replace(/bearer\s+\S+/gi, 'Bearer ***').replace(/((?:senha|password|token|secret|apikey|api_key|chave|authorization|bearer)\s*[:=]?\s*)\S+/gi, '$1***'))
+}

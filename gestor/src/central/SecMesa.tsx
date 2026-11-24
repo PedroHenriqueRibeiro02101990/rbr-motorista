@@ -2,8 +2,9 @@
 // Cada cartão de robô muda de coluna sozinho. Chaves de produção sempre pedem confirmação com o efeito escrito.
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { batimentoAtrasado, efeitoDaChave, estadoDoRobo, motivoNaoLiga, nivelUso, SERVICOS_USO, type RoboLinha } from '../lib/central'
+import { batimentoAtrasado, efeitoDaChave, estadoDoRobo, motivoNaoLiga, nivelUso, robPausado, SERVICOS_USO, type RoboLinha } from '../lib/central'
 import { alternarRobo, rodarAgora, salvarHora, usoAtual } from '../lib/centralDb'
+import { decidirSugestao, pedirComandoRobo } from '../lib/centralDbF3'
 import { fmtData, fmtN, ultimoBatimento, useCentral } from './ctx'
 
 type Aviso = { id: string; sev: 'urg' | 'hoje'; t: string; w: string; why: string; acao?: { rotulo: string; fazer: () => void }; link?: { rotulo: string; to: string } }
@@ -11,7 +12,7 @@ const CHAVE_ADIAR = 'central-adiar'
 function lerAdiados(): Record<string, string> { try { return JSON.parse(localStorage.getItem(CHAVE_ADIAR) ?? '{}') as Record<string, string> } catch { return {} } }
 
 export default function SecMesa({ faltam, emImportacao, onImportar }: { faltam: number; emImportacao: boolean; onImportar: () => void }) {
-  const { painel, flags, agora, confirmar, executar } = useCentral()
+  const { painel, flags, agora, confirmar, executar, pessoaId, prevooCompleto } = useCentral()
   const [adiados, setAdiados] = useState(lerAdiados)
   const bat = ultimoBatimento(painel)
   const atrasado = batimentoAtrasado(bat?.ultimo_batimento, agora)
@@ -27,7 +28,7 @@ export default function SecMesa({ faltam, emImportacao, onImportar }: { faltam: 
   }
   for (const r of painel.robos) if (r.ultimo_resultado && /^erro/i.test(r.ultimo_resultado)) avisos.push({ id: `erro-${r.id}`, sev: 'hoje', t: `${r.nome} terminou com erro`, w: r.ultimo_resultado, why: 'O resultado do dia pode estar incompleto.' })
   for (const c of painel.comandos.filter((x) => x.status === 'erro').slice(0, 3)) avisos.push({ id: `cmd-${c.id}`, sev: 'hoje', t: `Pedido "${c.comando}" deu erro`, w: c.resultado ?? 'Sem detalhe.', why: 'O agente não conseguiu cumprir o pedido.' })
-  if (painel.sugestoesPendentes > 0) avisos.push({ id: 'sugestoes', sev: 'hoje', t: `${painel.sugestoesPendentes} sugestões da IA esperam sua decisão`, w: 'A aprovação direta pela Central chega na próxima fase.', why: 'São mudanças que a IA propõe com base nos resultados.', link: { rotulo: 'Ver no Radar', to: '/radar/relatorios' } })
+  const sugs = painel.sugestoes
   const visiveis = avisos.filter((a) => !(adiados[a.id] && Date.parse(adiados[a.id]) > agora.getTime()))
   const adiar = (id: string) => {
     const n = { ...adiados, [id]: new Date(agora.getTime() + 24 * 3600 * 1000).toISOString() }
@@ -36,7 +37,7 @@ export default function SecMesa({ faltam, emImportacao, onImportar }: { faltam: 
   }
 
   async function mexer(r: RoboLinha, ligar: boolean) {
-    if (ligar) { const m = motivoNaoLiga(r, flags); if (m) return executar(() => { throw new Error(m) }) }
+    if (ligar) { const m = motivoNaoLiga(r, flags, prevooCompleto); if (m) return executar(() => { throw new Error(m) }) }
     const e = efeitoDaChave(r.flag_chave ? r.id : 'pc', ligar)
     if (r.flag_chave) {
       const ok = await confirmar({ titulo: e.titulo, texto: `${e.efeito}\n\nChave: ${r.flag_chave}`, ok: ligar ? 'Ligar' : 'Desligar', perigoso: e.perigoso })
@@ -50,7 +51,7 @@ export default function SecMesa({ faltam, emImportacao, onImportar }: { faltam: 
   const card = (r: RoboLinha) => {
     const est = estadoDoRobo(r, flags)
     const ligado = est === 'rodando' || est === 'ligado'
-    const trava = !ligado ? motivoNaoLiga(r, flags) : null
+    const trava = !ligado ? motivoNaoLiga(r, flags, prevooCompleto) : null
     const pill = est === 'rodando' ? ['rodando', 'ic'] : est === 'ligado' ? ['ligado', 'on'] : est === 'travado' ? ['travado', ''] : ['desligado', '']
     const efeito = efeitoDaChave(r.flag_chave ? r.id : 'pc', !ligado)
     return (
@@ -65,15 +66,20 @@ export default function SecMesa({ faltam, emImportacao, onImportar }: { faltam: 
           ? <div className="ds">Fiscal e Repom só mudam com o seu OK no chat, não por este painel.</div>
           : trava && <div className="ds">{trava}</div>}
         <div className="mt">
-          <span className={`pill ${pill[1]}`}>{pill[0]}</span>
+          <span className={`pill ${pill[1]}`}>{robPausado(r.id, painel.comandos) && !r.flag_chave && ligado ? 'pausado' : pill[0]}</span>
           <span className={`mini ${r.onde_roda === 'nuvem' ? 'cl' : ''}`}>{r.onde_roda === 'nuvem' ? 'Nuvem' : 'PC'}</span>
           {r.hora && ligado && <span className="mini">todo dia {r.hora}</span>}
           {r.ultimo_fim && <span className="mini">Última: {fmtData(r.ultimo_fim)}{r.ultimo_resultado ? ` · ${r.ultimo_resultado}` : ''}</span>}
         </div>
         {est !== 'travado' && (
           <>
-            {r.onde_roda === 'pc' && !r.flag_chave && ligado && est !== 'rodando' && (
-              <div className="acts"><button className="sm" onClick={() => void executar(async () => { await rodarAgora(r); return 'Pedido enviado ao agente.' })}>Rodar agora</button></div>
+            {r.onde_roda === 'pc' && !r.flag_chave && ligado && (
+              <div className="acts">
+                {est !== 'rodando' && !robPausado(r.id, painel.comandos) && <button className="sm" onClick={() => void executar(async () => { await rodarAgora(r); return 'Pedido enviado ao agente.' })}>Rodar agora</button>}
+                {robPausado(r.id, painel.comandos)
+                  ? <button className="sm" onClick={() => void executar(async () => { await pedirComandoRobo(r, 'retomar'); return 'Pedido enviado ao agente.' })}>Retomar</button>
+                  : <button className="sm" onClick={() => void executar(async () => { await pedirComandoRobo(r, 'pausar'); return 'Pedido enviado ao agente.' })}>Pausar</button>}
+              </div>
             )}
             <details className="aj"><summary>Ajustes</summary>
               <div className="bx">
@@ -93,11 +99,22 @@ export default function SecMesa({ faltam, emImportacao, onImportar }: { faltam: 
   const deslig = grupos.desligado
   return (
     <section className="card" id="agora">
-      <div className="hd"><div><h2>Mesa de despacho</h2><p>Tudo que precisa de você e o estado de cada robô, no mesmo quadro. Ligue ou desligue direto no cartão.</p></div><span className={`stt ${visiveis.some((a) => a.sev === 'urg') ? 'bd' : visiveis.length ? 'wn' : 'ok'}`}>{visiveis.length ? `${visiveis.length} esperando você` : 'em dia'}</span></div>
+      <div className="hd"><div><h2>Mesa de despacho</h2><p>Tudo que precisa de você e o estado de cada robô, no mesmo quadro. Ligue ou desligue direto no cartão.</p></div><span className={`stt ${visiveis.some((a) => a.sev === 'urg') ? 'bd' : visiveis.length + sugs.length ? 'wn' : 'ok'}`}>{visiveis.length + sugs.length ? `${visiveis.length + sugs.length} esperando você` : 'em dia'}</span></div>
+      {painel.relatorio && <div className="yday"><span><b>Resumo da semana:</b> {painel.relatorio.resumo.slice(0, 280)}{painel.relatorio.resumo.length > 280 ? '…' : ''}</span></div>}
       <div className="board">
         <div className="bc need">
-          <h3>Precisa de você <em>{visiveis.length}</em></h3>
-          {visiveis.length === 0 && <div className="okline">Nada esperando você. Os robôs cuidam do resto.</div>}
+          <h3>Precisa de você <em>{visiveis.length + sugs.length}</em></h3>
+          {visiveis.length + sugs.length === 0 && <div className="okline">Nada esperando você. Os robôs cuidam do resto.</div>}
+          {sugs.map((s) => (
+            <div className="it" key={s.id}>
+              <div className="row1"><span className="sv sug">Sugestão</span></div>
+              <div><div className="nm">{s.titulo}</div><div className="ds">{s.motivo}</div></div>
+              <div className="acts">
+                <button className="sm pri" onClick={() => void executar(async () => { await decidirSugestao(s, true, pessoaId); return 'Sugestão aprovada e registrada.' })}>Aprovar</button>
+                <button className="sm" onClick={() => void executar(async () => { await decidirSugestao(s, false, pessoaId); return 'Sugestão rejeitada.' })}>Rejeitar</button>
+              </div>
+            </div>
+          ))}
           {visiveis.map((a) => (
             <div className={`it ${a.sev}`} key={a.id}>
               <div className="row1"><span className={`sv ${a.sev}`}>{a.sev === 'urg' ? 'Urgente' : 'Hoje'}</span></div>

@@ -1,19 +1,27 @@
 // Acesso ao banco da Central. Mesma sessão e mesmas regras de RLS do gestor: quem decide é o banco, não a tela.
 // Cada mudança grava em central_registro (e na auditoria) pela função central_registrar.
-import { db } from './prospeccaoDb'
+import { auditar, db } from './prospeccaoDb'
 import { termoBusca, tipoEmail, valorDaFlag, PREFIXOS_SETOR, type RoboLinha } from './central'
 
 export const CHAVES_FLAGS = [
   'CENTRAL_UI_LIBERADA', 'CENTRAL_IMPORTAR_AUTO', 'CENTRAL_SDR_CORTE_NOTA', 'CENTRAL_SDR_MAX_DIA',
+  'CENTRAL_PREFIXOS_SETOR', 'CENTRAL_PREVOO_MARCAS', 'CENTRAL_METAS',
   'PROSPECCAO_ENVIO_LIBERADO', 'PROSPECCAO_LEITURA_LIBERADA', 'PROSPECCAO_RESPOSTA_AUTOMATICA_LIBERADA', 'PROSPECCAO_APROVACAO_OBRIGATORIA', 'PROSPECCAO_MODO_TESTE',
 ]
 
-function falhou(error: { message: string } | null) { if (error) throw new Error(error.message) }
+export function falhou(error: { message: string } | null) { if (error) throw new Error(error.message) }
+
+// Parâmetro CENTRAL_*: se a linha ainda não existe (migration 0200 não aplicada), avisa em vez de fingir que salvou.
+export async function gravarParametroCentral(chave: string, valor: unknown) {
+  const { data, error } = await db.from('parametros_sistema').update({ valor }).eq('chave', chave).select('chave')
+  falhou(error)
+  if (!data || data.length === 0) throw new Error('Esta opção só funciona depois que a migration 0200 for aplicada (ainda não foi).')
+}
 
 export async function lerFlags(): Promise<Record<string, string>> {
   const { data, error } = await db.from('parametros_sistema').select('chave, valor').in('chave', CHAVES_FLAGS)
   falhou(error)
-  return Object.fromEntries(((data ?? []) as { chave: string; valor: unknown }[]).map((x) => [x.chave, String(x.valor)]))
+  return Object.fromEntries(((data ?? []) as { chave: string; valor: unknown }[]).map((x) => [x.chave, typeof x.valor === 'object' && x.valor !== null ? JSON.stringify(x.valor) : String(x.valor)]))
 }
 
 export async function ehAdmin(): Promise<boolean> {
@@ -28,17 +36,20 @@ export async function ehSdr(): Promise<boolean> {
 export type Comando = { id: string; robo_id: string | null; comando: string; parametros: Record<string, unknown> | null; status: string; resultado: string | null; progresso: Record<string, number> | null; criado_em: string; feito_em: string | null }
 export type UsoLinha = { id: string; servico: string; periodo: 'dia' | 'mes'; referencia: string; usado: number; limite: number; atualizado_em: string }
 export type Batimento = { maquina: string; ultimo_batimento: string; versao_agente: string | null; resumo_json: Record<string, unknown> | null }
+export type SugestaoLinha = { id: string; titulo: string; motivo: string; criado_em: string }
+export type RelatorioLinha = { semana_inicio: string; semana_fim: string; resumo: string }
 export type RegistroLinha = { id: string; quando: string; quem: string; o_que: string; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null; desfazivel: boolean; desfeito_em: string | null }
 
 export async function carregarPainel() {
-  const [robos, bat, uso, cmd, reg, sug, sdr] = await Promise.all([
+  const [robos, bat, uso, cmd, reg, sug, sdr, rel] = await Promise.all([
     db.from('central_robos').select('*').order('nome'),
     db.from('central_heartbeat').select('*').order('ultimo_batimento', { ascending: false }).limit(5),
     db.from('central_uso').select('*').order('servico').order('referencia', { ascending: false }),
     db.from('central_comandos').select('*').order('criado_em', { ascending: false }).limit(40),
     db.from('central_registro').select('*').order('quando', { ascending: false }).limit(40),
-    db.from('prospeccao_sugestoes').select('id', { count: 'exact', head: true }).eq('status', 'pendente'),
+    db.from('prospeccao_sugestoes').select('id, titulo, motivo, criado_em').eq('status', 'pendente').order('criado_em', { ascending: false }).limit(20),
     db.from('central_sdr_fila').select('id', { count: 'exact', head: true }).eq('status', 'na_fila'),
+    db.from('prospeccao_relatorios').select('semana_inicio, semana_fim, resumo').order('criado_em', { ascending: false }).limit(1),
   ])
   for (const r of [robos, bat, uso, cmd, reg]) falhou(r.error)
   return {
@@ -47,7 +58,8 @@ export async function carregarPainel() {
     uso: (uso.data ?? []) as UsoLinha[],
     comandos: (cmd.data ?? []) as Comando[],
     registro: (reg.data ?? []) as RegistroLinha[],
-    sugestoesPendentes: sug.count ?? 0,
+    sugestoes: (sug.data ?? []) as SugestaoLinha[],
+    relatorio: ((rel.data ?? [])[0] ?? null) as RelatorioLinha | null,
     filaSdr: sdr.count ?? 0,
   }
 }
@@ -176,6 +188,21 @@ export async function desfazer(r: RegistroLinha): Promise<string> {
     falhou(error)
     const c = await db.from('central_comandos').insert({ robo_id: String(a.id), comando: a.ligado === true ? 'ligar' : 'desligar' })
     falhou(c.error)
+  } else if (a.tipo === 'param') {
+    await gravarParametroCentral(String(a.chave), a.valor)
+  } else if (a.tipo === 'sugestao') {
+    const { error } = await db.from('prospeccao_sugestoes').update({ status: 'revertida' }).eq('id', String(a.id))
+    falhou(error)
+    msg = 'Desfeito: a sugestão ficou como "revertida". Se o robô já aplicou a mudança, confira no Radar.'
+  } else if (a.tipo === 'atraso') {
+    const { error } = await db.from('prospeccao_jornada').update({ atraso_dias: Number(a.dias) }).eq('toque', Number(a.toque))
+    falhou(error)
+  } else if (a.tipo === 'modelo') {
+    const { error } = await db.from('prospeccao_modelos').update({ assunto: String(a.assunto), corpo: String(a.corpo), ativo: a.ativo === true }).eq('tipo', String(a.modelo))
+    falhou(error)
+  } else if (a.tipo === 'modo_resposta') {
+    const { error } = await db.from('prospeccao_respostas_config').update({ modo: String(a.modo) }).eq('classe', String(a.classe))
+    falhou(error)
   } else if (a.tipo === 'hora') {
     const { error } = await db.from('central_robos').update({ hora: a.hora ?? null }).eq('id', String(a.id))
     falhou(error)

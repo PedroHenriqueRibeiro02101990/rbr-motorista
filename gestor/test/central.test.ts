@@ -119,3 +119,55 @@ test('confirmação: toda chave de produção diz o efeito e marca o que é peri
   assert.equal(efeitoDaChave('aprovacao', false).perigoso, true)
   assert.equal(efeitoDaChave('modo_teste', true).perigoso, false)
 })
+
+// ---------------- F3 ----------------
+import { calcularPrevoo, filaDoResumo, limparPrefixos, linhasAoVivo, metasDoParametro, passosDoResumo, robPausado } from '../src/lib/central.ts'
+
+const entradaOk = { naBase: 10, modelosAtivos: 4, caixasAtivas: 2, caixasComDiagnostico: 2, caixasComSenha: 2, marcas: { dns: '2026-11-24', descadastrar: '2026-11-24' }, flags: { PROSPECCAO_MODO_TESTE: 'sim', PROSPECCAO_APROVACAO_OBRIGATORIA: 'sim' } }
+
+test('pré-voo: completo só com os 7 itens; falta de qualquer um bloqueia', () => {
+  assert.equal(calcularPrevoo(entradaOk).completo, true)
+  assert.equal(calcularPrevoo({ ...entradaOk, naBase: 0 }).completo, false)
+  assert.equal(calcularPrevoo({ ...entradaOk, modelosAtivos: 3 }).completo, false)
+  assert.equal(calcularPrevoo({ ...entradaOk, caixasComDiagnostico: 1 }).completo, false)
+  assert.equal(calcularPrevoo({ ...entradaOk, caixasComSenha: 0 }).completo, false)
+  assert.equal(calcularPrevoo({ ...entradaOk, caixasAtivas: 0, caixasComDiagnostico: 0, caixasComSenha: 0 }).completo, false)
+  assert.equal(calcularPrevoo({ ...entradaOk, marcas: {} }).completo, false)
+  assert.equal(calcularPrevoo({ ...entradaOk, marcas: null }).completo, false) // migration 0200 ausente: falha fechado
+  assert.equal(calcularPrevoo({ ...entradaOk, flags: { PROSPECCAO_MODO_TESTE: 'nao', PROSPECCAO_APROVACAO_OBRIGATORIA: 'sim' } }).completo, false)
+  assert.equal(calcularPrevoo(entradaOk).total, 7)
+})
+
+test('pré-voo: envio e leitura só ligam com o pré-voo completo', () => {
+  const envio = robo({ id: 'envio', flag_chave: 'PROSPECCAO_ENVIO_LIBERADO' })
+  assert.ok(motivoNaoLiga(envio, {}, false))
+  assert.equal(motivoNaoLiga(envio, {}, true), null)
+  // responder sozinho continua exigindo enviar e ler ligados e o bloqueio do banco
+  const resp = robo({ id: 'resposta_auto', flag_chave: 'X', bloqueado_motivo: 'bloqueado' })
+  assert.equal(motivoNaoLiga(resp, { PROSPECCAO_ENVIO_LIBERADO: 'sim', PROSPECCAO_LEITURA_LIBERADA: 'sim' }, true), 'bloqueado')
+})
+
+test('pausar e retomar: vale o último pedido', () => {
+  const c = (comando: string, t: string) => ({ robo_id: 'tms', comando, status: 'feito', criado_em: t })
+  assert.equal(robPausado('tms', []), false)
+  assert.equal(robPausado('tms', [c('pausar', '2026-11-24T10:00:00Z')]), true)
+  assert.equal(robPausado('tms', [c('pausar', '2026-11-24T10:00:00Z'), c('retomar', '2026-11-24T11:00:00Z')]), false)
+  assert.equal(robPausado('outro', [c('pausar', '2026-11-24T10:00:00Z')]), false)
+})
+
+test('prefixos e metas do parâmetro', () => {
+  assert.deepEqual(limparPrefixos(['Compras@', ' logistica ', 'compras', '<script>', '', 5]), ['compras', 'logistica', '5'])
+  assert.deepEqual(limparPrefixos('x'), [])
+  assert.deepEqual(metasDoParametro('{"contatos":50,"base":7}', { contatos: 1, base: 2 }), { contatos: 50, base: 7 })
+  assert.deepEqual(metasDoParametro('lixo', { contatos: 1, base: 2 }), { contatos: 1, base: 2 })
+  assert.deepEqual(metasDoParametro(undefined, { contatos: 1, base: 2 }), { contatos: 1, base: 2 })
+})
+
+test('ao vivo: passos, fila e log sem segredo', () => {
+  assert.deepEqual(passosDoResumo({ passos: [{ nome: 'Garimpo', estado: 'feito' }, { nome: 'x', estado: '??' }, { semNome: 1 }] }).map((p) => p.estado), ['feito', 'espera'])
+  assert.equal(filaDoResumo({ fila_tms: [{ titulo: 'a' }, {}] }).length, 1)
+  const l = linhasAoVivo({ log: ['ok 1', 'senha: abc123', 'Authorization: Bearer xyz', 'api_key=SEGREDO'] })
+  assert.equal(l[0], 'ok 1')
+  assert.ok(!l.join('\n').includes('abc123') && !l.join('\n').includes('xyz') && !l.join('\n').includes('SEGREDO'))
+  assert.equal(linhasAoVivo({ log: Array.from({ length: 100 }, (_, i) => String(i)) }, 40).length, 40)
+})
