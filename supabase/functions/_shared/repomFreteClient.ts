@@ -344,7 +344,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
   let token: { valor: string; expira: number } | null = null
 
   const configurado = (): string | null => {
-    if (config.ambiente === 'qa' && [base, config.urlToken, config.urlRelatorio].some((u) => u && urlProibidaEmQa(u))) return 'Ambiente QA recusa URL que não seja a de QA da Repom (qa.repom.com.br). Nada foi enviado.'
+    if (config.ambiente === 'qa' && [base, config.urlToken, config.urlRelatorio, baseRel].some((u) => u && urlProibidaEmQa(u))) return 'Ambiente QA recusa URL que não seja a de QA da Repom (qa.repom.com.br). Nada foi enviado.'
     if (!base) return 'A URL da API Frete de produção não foi configurada.'
     if (!config.urlToken) return 'A URL do token da Repom Frete não foi configurada.'
     if (!c.user || !c.password || !c.partner) return 'Credenciais da Repom Frete não configuradas.'
