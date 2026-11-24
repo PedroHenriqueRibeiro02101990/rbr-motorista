@@ -59,6 +59,8 @@ Proibido `taskkill` por nome genérico. Encerrar sempre por pid verificado.
 }
 ```
 - Junto com `processos`, mandar `lista` (o que a LISTAS gerou, para a tela mostrar o botão "Enviar para a base do TMS"): `"lista": { "empresas": 12000, "contatos": 9000, "gerada_em": "2026-11-24T03:00:00-03:00" }`. Sem isso a tela diz que o agente ainda não informou o tamanho da lista e o botão fica desligado.
+- Para a seção "Fila do TMS e ao vivo" (só leitura na tela), também no `resumo_json`: `"passos": [{"nome","estado":"feito|rodando|espera","detalhe"}]` (passos da LISTAS), `"fila_tms": [{"titulo","estado"}]` (tarefas do Claude) e `"log": ["última linha", ...]` (até 40 linhas, **sem segredo**; a tela ainda esconde senha/token/chave por garantia).
+- Comandos `pausar` e `retomar` (robôs do PC, `onde_roda = 'pc'`): pausar para depois do passo atual; retomar continua. A tela considera pausado o robô cujo último pedido foi `pausar`.
 - Listar só processos cujo caminho esteja em `D:\RBR\Sistema` (ou scripts da lista branca: garimpo, freellm, listas, radar, agente).
 - `dono` = id do robô da Central que o agente iniciou, ou `"sem dono"`.
 - Não gravar linha de comando completa (pode ter segredo); só o caminho do arquivo.

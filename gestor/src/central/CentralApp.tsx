@@ -95,6 +95,7 @@ export default function CentralApp({ papel, pessoaId }: { papel: string; pessoaI
             {lista?.gerada_em && <span className="chip">Última LISTAS <b>{fmtData(lista.gerada_em)}</b></span>}
             <span className="chip">Robôs ligados <b>{ligados}</b></span>
             {emTeste && <span className="chip" style={{ background: 'var(--gold)', color: '#12173D', borderColor: 'var(--gold)' }}>Em teste: só você vê</span>}
+            <Link to="/fila-sdr" className="chip" style={{ textDecoration: 'none' }}>Fila do SDR</Link>
             <Link to="/" className="chip" style={{ textDecoration: 'none' }}>Voltar ao gestor</Link>
             <button aria-label="Alternar tema claro e escuro" onClick={() => { const n = tema === 'escuro' ? 'claro' : 'escuro'; setTema(n); try { localStorage.setItem(TEMA, n) } catch { /* sem armazenamento */ } }}>Tema</button>
           </div>
