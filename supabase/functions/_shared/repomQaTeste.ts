@@ -1,8 +1,8 @@
 // Regras da função temporária repom-qa-teste (sem Deno, sem rede; testes em repomQaTeste.test.ts).
 // Só QA, só o contrato 2166947 (RBRC4943103), ações FIXAS (token, consultar_contrato, sequencia), UMA tentativa por ação de dinheiro,
 // para no primeiro problema. Só funciona com o segredo REPOM_QA_TESTE_LIBERADO=sim. A resposta nunca leva credencial nem corpo bruto.
-import { situacaoProcessamento, type ClienteRepomFrete, type ResultadoFrete } from './repomFreteClient.ts'
-import { ADIANTAMENTO, FRETE_TOTAL, IBGE_DESTINO, IBGE_ORIGEM, MAX_TENTATIVAS_EMISSAO, PREFIXO_IDENTIFIER, SEST_PF, classificarFalhaEmissao, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
+import { lerRotaCriada, situacaoProcessamento, type ClienteRepomFrete, type ResultadoFrete } from './repomFreteClient.ts'
+import { ADIANTAMENTO, FILIAL_ROTA, FINAIS_MODELO, FRETE_TOTAL, IBGE_DESTINO, IBGE_ORIGEM, MAX_TENTATIVAS_EMISSAO, MAX_TENTATIVAS_ROTA, PREFIXO_IDENTIFIER, SEST_PF, VARIANTES_IBGE_ROTA, classificarFalhaEmissao, eixosDoVeiculo, novoTraceIdentifier, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
 
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
@@ -29,7 +29,7 @@ export function montarCombos(achados: Combo[]): Combo[] {
   }
   return lista.slice(0, LIMITE_RODADA)
 }
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'emitir_adiantamento', 'cancelar_adiantamento'] as const
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'criar_rota', 'consultar_rota', 'emitir_adiantamento', 'cancelar_adiantamento'] as const
 /** Janela fixa da consulta de saldo/extrato (só leitura). */
 export const SALDO_INICIO = '2026-11-01'
 
@@ -40,7 +40,13 @@ export interface DepsQaTeste {
   ambiente: 'qa' | 'prd'
   frete: ClienteRepomFrete
   /** status das linhas anteriores de repom_requisicoes para esta ação ('quitar' | 'autorizar') */
-  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada' | 'emitir-adiantamento'): Promise<string[]>
+  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada' | 'emitir-adiantamento' | 'criar-rota'): Promise<string[]>
+  /** TraceIdentifier das tentativas de criar_rota (qualquer status, mais recente primeiro), para conferir quando o resultado ficou incerto. */
+  tentativasRota(): Promise<string[]>
+  /** Rota própria do 9520 criada por este teste (última com status ok em qa-teste-criar-rota), com os eixos do veículo; null se não existe. */
+  rotaCriada(): Promise<{ traceCode: number; routeCode: number; eixos: number } | null>
+  /** Status das tentativas de emissão (qa-teste-emitir-adiantamento) feitas COM a rota de roteiro `routeCode` (as anteriores, com a rota de 17/11, não contam). */
+  tentativasComRota(routeCode: number): Promise<string[]>
   /** Identifier da ÚLTIMA tentativa de emissão do adiantamento registrada em repom_requisicoes (qualquer status), para o cancelamento. */
   ultimaEmissao(): Promise<string | null>
   agora(): Date
@@ -98,7 +104,7 @@ export function lerContratoQa(dados: unknown): ContratoLido | null {
 function etapaDe(nome: string, r: ResultadoFrete<unknown>, detalhe?: Record<string, unknown>): Etapa {
   return r.ok
     ? { etapa: nome, ok: true, http: r.http, detalhe }
-    : { etapa: nome, ok: false, http: r.http, erro: curto(r.erro), codigoErro: r.codigoErro ?? null, detalhe: r.incerto ? { ...detalhe, incerto: true } : detalhe }
+    : { etapa: nome, ok: false, http: r.http, erro: curto(r.erro), codigoErro: r.codigoErro ?? null, detalhe: { ...detalhe, ...(r.incerto ? { incerto: true } : {}), ...(r.corpoErro ? { corpo_erro: r.corpoErro } : {}) } }
 }
 const ehSaldo2768 = (e: Etapa) => e.codigoErro === '2768' || /\b2768\b/.test(e.erro ?? '')
 const pendenciaKaren = { codigo: 2768, dono: 'Karen', nota: 'ControleSaldo não configurado; não tentar de novo.' }
@@ -202,10 +208,67 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     const tc = await passo('tipos_carga', {}, () => d.frete.tiposDeCarga(), (dados) => ({ tipos: lerTiposCarga(dados) }))
     return fim(mod.e.ok && tc.e.ok ? 200 : 502, { ok: mod.e.ok && tc.e.ok })
   }
+  if (acao === 'consultar_rota') {
+    // SÓ LEITURA: confere se a última tentativa de criar_rota (que ficou incerta por tempo esgotado) chegou a criar a rota; não gasta tentativa
+    const tids = await d.tentativasRota()
+    if (!tids.length) return parar('Não há tentativa de criar_rota para conferir.')
+    if (await d.rotaCriada()) return parar('A rota já está registrada; nada a conferir.')
+    const vei = await d.frete.consultarVeiculo(FINAIS_MODELO.placa)
+    const eixos = vei.ok ? eixosDoVeiculo(vei.dados) : 5
+    for (const tid of tids) {
+      const porId = await passo('rota_por_identificador', { traceIdentifier: tid, eixos }, () => d.frete.consultarRotaPorIdentificador(tid, eixos), (dados) => ({ traceIdentifier: tid, resposta: resumirResposta(dados) }))
+      const ro = porId.r.ok ? (Array.isArray(porId.r.dados) ? porId.r.dados[0] : porId.r.dados) : null
+      const o = ehObj(ro) ? ro : {}
+      const trace = Number(primeiro(o, ['TraceCode'])); const route = Number(primeiro(o, ['RouteCode'])); const dist = Number(primeiro(o, ['Distance']))
+      if (!Number.isInteger(trace) || !Number.isInteger(route) || trace <= 0 || route <= 0) continue
+      const id = await d.registrar('qa-teste-criar-rota', { origem: 'consulta_rota', traceIdentifier: tid, confirmado_por: 'consulta' })
+      await d.concluir(id, { status: 'ok', http: 200, resposta: { traceIdentifier: tid, traceCode: trace, routeCode: route, eixos, distancia_km: Number.isFinite(dist) ? dist : null, achada_por_consulta: true }, erro: null })
+      return fim(200, { encontrada: true, traceIdentifier: tid, traceCode: trace, routeCode: route, eixos, distancia_km: Number.isFinite(dist) ? dist : null })
+    }
+    return fim(200, { parou: true, encontrada: false, identificadores: tids, motivo: 'A Repom não devolveu rota para nenhum dos identificadores tentados.' })
+  }
+  if (acao === 'criar_rota') {
+    const nomeR = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+    if (nomeR.length < 3) return parar('A criação da rota exige confirmacao.nome.', 400)
+    const hist = await d.historico('criar-rota')
+    if (hist.includes('ok') || (await d.rotaCriada())) return parar('Já existe uma rota criada por este teste; não crio outra.')
+    if (hist.length >= MAX_TENTATIVAS_ROTA) return parar(`Já foram ${hist.length} tentativas de criar a rota (máximo ${MAX_TENTATIVAS_ROTA}); não repito.`)
+    const formato = VARIANTES_IBGE_ROTA[hist.length]!
+    const traceId = novoTraceIdentifier(d.agora())
+    const idLinha = await d.registrar('qa-teste-criar-rota', { tentativa: hist.length + 1, max: MAX_TENTATIVAS_ROTA, formato_ibge: formato, filial: FILIAL_ROTA, origem: IBGE_ORIGEM, destino: IBGE_DESTINO, ida_e_volta: true, traceIdentifier: traceId, confirmado_por: nomeR })
+    const cr = await d.frete.rotaAutomatica({ filial: FILIAL_ROTA, ibgeOrigem: IBGE_ORIGEM, ibgeDestino: IBGE_DESTINO, idaVolta: true, identificador: traceId, formatoIbge: formato })
+    const base = { tentativa: hist.length + 1, formato_ibge: formato, traceIdentifier: traceId }
+    if (!cr.ok) {
+      const e = etapaDe('criar_rota', cr, base)
+      await d.concluir(idLinha, { status: 'erro', http: e.http, resposta: { ...base, codigoErro: e.codigoErro ?? null, erro: e.erro ?? null, corpo_erro: cr.corpoErro ?? null, incerto: cr.incerto ?? false }, erro: e.erro ?? null })
+      etapas.push(e)
+      return fim(e.http && e.http < 500 ? 422 : 502, { parou: true, tentativa: hist.length + 1, formato_ibge: formato, motivo: cr.incerto ? 'Resultado incerto (5xx ou rede); não sei se a Repom criou a rota. Parei para conferir.' : 'A Repom recusou a criação da rota.' })
+    }
+    const lida = lerRotaCriada(cr.bruto)
+    if ('erro' in lida) {
+      const resumo = resumirResposta(cr.bruto)
+      await d.concluir(idLinha, { status: 'erro', http: cr.http, resposta: { ...base, resultado: 'sem_codigos', erro: lida.erro, resposta: resumo }, erro: lida.erro })
+      etapas.push({ etapa: 'criar_rota', ok: false, http: cr.http, erro: lida.erro, detalhe: { ...base, resposta: resumo } })
+      return fim(422, { parou: true, tentativa: hist.length + 1, formato_ibge: formato, motivo: 'A Repom respondeu, mas sem RouteCode/TraceCodeRepom válidos.' })
+    }
+    // eixos do veículo (só leitura) e confirmação da rota por GET /Route/byroutecode/{trace}/{route}/{eixos}
+    const vei = await d.frete.consultarVeiculo(FINAIS_MODELO.placa)
+    const eixos = vei.ok ? eixosDoVeiculo(vei.dados) : 5
+    const conf = await d.frete.consultarRotaPorCodigo(lida.traceCode, lida.routeCode, eixos)
+    const ro = conf.ok ? (Array.isArray(conf.dados) ? conf.dados[0] : conf.dados) : null
+    const rotaObj = ehObj(ro) ? ro : {}
+    const dist = Number(primeiro(rotaObj, ['Distance']))
+    const detalhe = { ...base, traceCode: lida.traceCode, routeCode: lida.routeCode, status_repom: lida.status, eixos, eixos_lidos_do_veiculo: vei.ok, confirmada: conf.ok, http_confirmacao: conf.http, erro_confirmacao: conf.ok ? null : curto(conf.erro), corpo_erro_confirmacao: conf.ok ? null : (conf.corpoErro ?? null), nome: String(primeiro(rotaObj, ['Name']) ?? '').slice(0, 120), distancia_km: Number.isFinite(dist) ? dist : null }
+    await d.concluir(idLinha, { status: 'ok', http: cr.http, resposta: detalhe, erro: null })
+    etapas.push({ etapa: 'criar_rota', ok: true, http: cr.http, detalhe })
+    return fim(200, { traceCode: lida.traceCode, routeCode: lida.routeCode, eixos, confirmada: conf.ok, distancia_km: Number.isFinite(dist) ? dist : null })
+  }
   if (acao === 'emitir_adiantamento') {
     const nomeE = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
     if (nomeE.length < 3) return parar('A emissão exige confirmacao.nome.', 400)
-    const hist = await d.historico('emitir-adiantamento')
+    const rotaNova = await d.rotaCriada()
+    if (!rotaNova) return parar('Não há rota própria do 9520 criada por este teste (ação criar_rota). Nada foi emitido.')
+    const hist = await d.tentativasComRota(rotaNova.routeCode)
     if (hist.length >= MAX_TENTATIVAS_EMISSAO) return parar(`Já foram ${hist.length} tentativas de emissão (máximo ${MAX_TENTATIVAS_EMISSAO}); não repito.`)
     if (hist.includes('ok')) return parar('Já existe um contrato emitido por este teste; cancele antes de qualquer nova emissão.')
     const mod = await passo('modelo', { shippingId: CONTRATO_QA.shippingId }, () => d.frete.consultarContratoPorViagem(CONTRATO_QA.shippingId))
@@ -220,20 +283,22 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     const geral = escolherCargaGeral(tipos)
     if (!geral) return parar(`Não achei "carga geral" na lista de tipos da ANTT (${tipos.map((t) => `${t.id}=${t.descricao}`).join('; ').slice(0, 400)}). Nada foi emitido.`)
     // leitura da rota (só GET): distância real para o piso; o Swagger não traz IBGE nessa consulta, então valem os IBGE de 17/11 (SP -> RJ)
-    const rr = await d.frete.consultarRotaPorCodigo(lm.modelo.traceCode, lm.modelo.routeCode, 5)
+    const rr = await d.frete.consultarRotaPorCodigo(rotaNova.traceCode, rotaNova.routeCode, rotaNova.eixos)
     const ro = rr.ok ? (Array.isArray(rr.dados) ? rr.dados[0] : rr.dados) : null
     const rotaObj = ehObj(ro) ? ro : {}
     const distRota = Number(primeiro(rotaObj, ['Distance']))
-    etapas.push({ etapa: 'rota', ok: true, http: rr.http, detalhe: { lida: rr.ok, erro_leitura: rr.ok ? null : curto(rr.erro), nome: String(primeiro(rotaObj, ['Name']) ?? '').slice(0, 120), distancia_km: Number.isFinite(distRota) ? distRota : null, ibge_na_resposta: Object.keys(rotaObj).some((k) => /ibge/i.test(k)), ibge_usados: { origem: IBGE_ORIGEM, destino: IBGE_DESTINO } } })
-    const { pedido } = montarPedidoAdiantamento(lm.modelo, d.agora(), geral.id, Math.random, { distanciaKm: Number.isFinite(distRota) ? distRota : null })
+    const distOk = Number.isFinite(distRota) && distRota > 0
+    etapas.push({ etapa: 'rota', ok: rr.ok && distOk, http: rr.http, ...(rr.ok ? {} : { erro: curto(rr.erro) }), detalhe: { lida: rr.ok, ...(!rr.ok && rr.corpoErro ? { corpo_erro: rr.corpoErro } : {}), traceCode: rotaNova.traceCode, routeCode: rotaNova.routeCode, eixos: rotaNova.eixos, nome: String(primeiro(rotaObj, ['Name']) ?? '').slice(0, 120), distancia_km: Number.isFinite(distRota) ? distRota : null, ibge_usados: { origem: IBGE_ORIGEM, destino: IBGE_DESTINO } } })
+    if (!distOk) return parar('Não consegui ler a distância da rota criada; nada foi emitido (nenhuma tentativa gasta).')
+    const { pedido } = montarPedidoAdiantamento(lm.modelo, d.agora(), geral.id, Math.random, { distanciaKm: distRota, rota: { traceCode: rotaNova.traceCode, routeCode: rotaNova.routeCode } })
     const tentativa = hist.length + 1
-    const idLinha = await d.registrar('qa-teste-emitir-adiantamento', { identifier: pedido.identifier, tentativa, max: MAX_TENTATIVAS_EMISSAO, frete: FRETE_TOTAL, adiantamento: ADIANTAMENTO, sest: SEST_PF, ibge_origem: pedido.ibgeOrigem, ibge_destino: pedido.ibgeDestino, distancia_km: pedido.distanciaKm, ncm: pedido.ncm, antt: geral.id, card: 0, confirmado_por: nomeE })
+    const idLinha = await d.registrar('qa-teste-emitir-adiantamento', { identifier: pedido.identifier, tentativa, max: MAX_TENTATIVAS_EMISSAO, frete: FRETE_TOTAL, adiantamento: ADIANTAMENTO, sest: SEST_PF, ibge_origem: pedido.ibgeOrigem, ibge_destino: pedido.ibgeDestino, cep_origem: pedido.cepOrigem, cep_destino: pedido.cepDestino, rota_trace: rotaNova.traceCode, rota_route: rotaNova.routeCode, distancia_km: pedido.distanciaKm, ncm: pedido.ncm, antt: geral.id, card: 0, confirmado_por: nomeE })
     const fecha = async (status: 'ok' | 'erro', http: number, resposta: Record<string, unknown>, erroTxt: string | null) => { await d.concluir(idLinha, { status, http, resposta: { identifier: pedido.identifier, tentativa, ...resposta }, erro: erroTxt }) }
     const em = await d.frete.emitirContrato(pedido)
     if (!em.ok) {
       const tipo = classificarFalhaEmissao([em.erro], em.codigoErro)
-      await fecha('erro', em.http, { resultado: tipo, codigo: em.codigoErro ?? null, incerto: em.incerto ?? false }, curto(em.erro))
-      etapas.push({ etapa: 'emitir', ok: false, http: em.http, erro: curto(em.erro), codigoErro: em.codigoErro ?? null, detalhe: { identifier: pedido.identifier, resultado: tipo, ...(em.incerto ? { incerto: true } : {}) } })
+      await fecha('erro', em.http, { resultado: tipo, codigo: em.codigoErro ?? null, incerto: em.incerto ?? false, corpo_erro: em.corpoErro ?? null }, curto(em.erro))
+      etapas.push({ etapa: 'emitir', ok: false, http: em.http, erro: curto(em.erro), codigoErro: em.codigoErro ?? null, detalhe: { identifier: pedido.identifier, resultado: tipo, ...(em.incerto ? { incerto: true } : {}), ...(em.corpoErro ? { corpo_erro: em.corpoErro } : {}) } })
       return fim(em.http && em.http < 500 ? 422 : 502, { parou: true, identifier: pedido.identifier, resultado: tipo, responde_sobre_saldo: tipo !== 'outro', ...(tipo === '2768' ? { pendencia_externa: pendenciaKaren } : {}) })
     }
     const chave = em.dados.operationKey

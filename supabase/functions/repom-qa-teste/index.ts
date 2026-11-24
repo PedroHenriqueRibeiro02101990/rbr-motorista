@@ -1,6 +1,6 @@
 // Edge Function TEMPORÁRIA repom-qa-teste (verify_jwt = true; chamada com a chave pública anon). APAGAR/DESATIVAR depois do teste.
 // Só roda com o segredo REPOM_QA_TESTE_LIBERADO=sim (fora disso responde "desligado"). Só QA (base e token FIXOS no código), só o contrato 2166947.
-// Ações: { acao: "token" | "consultar_contrato" | "sequencia" | "ler_autorizacao" | "rodada_autorizar" | "saldo", confirmacao?: { nome } }. Regras e travas em _shared/repomQaTeste.ts.
+// Ações: { acao: "token" | "consultar_contrato" | "sequencia" | "ler_autorizacao" | "rodada_autorizar" | "saldo" | "ler_modelo" | "criar_rota" | "consultar_rota" | "emitir_adiantamento" | "cancelar_adiantamento", confirmacao?: { nome } }. Regras e travas em _shared/repomQaTeste.ts.
 // Credenciais: SOMENTE REPOM_QA_FRETE_* (user, password, partner). Nunca devolve credencial, token nem corpo bruto da Repom.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     const corpo = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const ambiente = ambienteRepom(await segredo("REPOM_AMBIENTE"));
     const cfg = await configFreteDoAmbiente("qa", segredo); // só REPOM_QA_FRETE_*
-    const frete = criarRepomFreteClient({ ...cfg, ambiente: "qa", urlBase: BASE_QA_FIXA, urlToken: TOKEN_QA_FIXO });
+    const frete = criarRepomFreteClient({ ...cfg, ambiente: "qa", urlBase: BASE_QA_FIXA, urlToken: TOKEN_QA_FIXO, limiteMs: 100_000 });
     const saida = await executarQaTeste(corpo, {
       ligado: true,
       ambiente,
@@ -35,6 +35,19 @@ Deno.serve(async (req) => {
         const { data } = await admin.from("repom_requisicoes").select("request_json").eq("acao", "qa-teste-emitir-adiantamento").order("criado_em", { ascending: false }).limit(1);
         const id = (data?.[0]?.request_json as { identifier?: string } | undefined)?.identifier;
         return typeof id === "string" ? id : null;
+      },
+      async tentativasRota() {
+        const { data } = await admin.from("repom_requisicoes").select("request_json").eq("acao", "qa-teste-criar-rota").order("criado_em", { ascending: false });
+        return (data ?? []).map((x: { request_json: { traceIdentifier?: string } | null }) => x.request_json?.traceIdentifier).filter((t: unknown): t is string => typeof t === "string");
+      },
+      async rotaCriada() {
+        const { data } = await admin.from("repom_requisicoes").select("response_json").eq("acao", "qa-teste-criar-rota").eq("status", "ok").order("criado_em", { ascending: false }).limit(1);
+        const r = data?.[0]?.response_json as { traceCode?: number; routeCode?: number; eixos?: number } | undefined;
+        return r && Number.isInteger(r.traceCode) && Number.isInteger(r.routeCode) ? { traceCode: r.traceCode!, routeCode: r.routeCode!, eixos: Number.isInteger(r.eixos) ? r.eixos! : 5 } : null;
+      },
+      async tentativasComRota(routeCode) {
+        const { data } = await admin.from("repom_requisicoes").select("status, request_json").eq("acao", "qa-teste-emitir-adiantamento");
+        return (data ?? []).filter((x: { request_json: { rota_route?: number } | null }) => x.request_json?.rota_route === routeCode).map((x: { status: string }) => x.status);
       },
       hoje: () => new Date().toISOString().slice(0, 10),
       amanha: () => new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10), // dia seguinte (AAAA-MM-DD, formato do guia); a Repom recusa a data de hoje

@@ -92,7 +92,7 @@ export class RepomFreteNaoImplementado extends Error {
 
 export type ResultadoFrete<T> =
   | { ok: true; http: number; dados: T; bruto: unknown }
-  | { ok: false; http: number; erro: string; codigoErro?: string | null; incerto?: boolean; bruto: unknown }
+  | { ok: false; http: number; erro: string; codigoErro?: string | null; incerto?: boolean; /** corpo do erro (sanitizado) quando o leitor lerErroFrete NÃO reconheceu o formato */ corpoErro?: string; bruto: unknown }
 
 // ---------- regras puras ----------
 
@@ -114,8 +114,24 @@ export function lerErroFrete(bruto: unknown): { mensagem: string; codigo: string
   if (Array.isArray(o.errors) && o.errors.length) return lista(o.errors)
   const r = o.Response as Record<string, unknown> | undefined
   const sc = Number(r?.StatusCode ?? o.StatusCode)
-  if (sc >= 400 && typeof o.Message === 'string') return { mensagem: o.Message, codigo: null }
+  const msg = typeof o.Message === 'string' ? o.Message : typeof r?.Message === 'string' ? r.Message : null // QA devolve {Response:{StatusCode:404,Message:"Route not found"}}
+  if (sc >= 400 && msg) return { mensagem: msg, codigo: null }
   return null
+}
+
+const CAMPO_SENSIVEL = /(senha|password|secret|token|authorization|login|client_?id|partner|cnpj|cpf|nationalid|documento|e-?mail)/i
+/** Corpo de erro da Repom guardável: sem credenciais, sem campos de documento/token, sem sequências longas de dígitos (CPF/CNPJ/chaves), máx. 800 caracteres. null se não houver corpo. */
+export function corpoErroSeguro(bruto: unknown, segredos: (string | undefined)[] = []): string | null {
+  if (bruto == null || bruto === '') return null
+  const limpa = (x: unknown, n: number): unknown => {
+    if (n > 6 || x == null || typeof x !== 'object') return x
+    if (Array.isArray(x)) return x.slice(0, 20).map((y) => limpa(y, n + 1))
+    return Object.fromEntries(Object.entries(x as Record<string, unknown>).map(([k, v]) => [k, CAMPO_SENSIVEL.test(k) ? '[oculto]' : limpa(v, n + 1)]))
+  }
+  let t = typeof bruto === 'string' ? bruto : (JSON.stringify(limpa(bruto, 0)) ?? '')
+  for (const sg of segredos) if (sg && sg.length >= 3) t = t.split(sg).join('***')
+  t = t.replace(/\d{11,}/g, '[numero]').replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***').replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[email]')
+  return t.slice(0, 800) || null
 }
 
 export function mensagemHttpFrete(status: number): string {
@@ -245,6 +261,27 @@ export function situacaoProcessamento(s: StatusProcessamento): 'emitido' | 'erro
   return String(s.status ?? '').toLowerCase() === 'finished' ? 'emitido' : 'processando'
 }
 
+/** Lê RouteCode e TraceCodeRepom da resposta SÍNCRONA da rota automática (Swagger: Status, RouteCode, TraceCodeRepom, ExternalTraceCode, ErrorDescription), em qualquer nível. */
+export function lerRotaCriada(bruto: unknown): { routeCode: number; traceCode: number; status: number | null; descricao: string | null } | { erro: string } {
+  const achados: Record<string, unknown> = {}
+  const rec = (x: unknown, n: number) => {
+    if (n > 4 || !x || typeof x !== 'object') return
+    if (Array.isArray(x)) { for (const y of x) rec(y, n + 1); return }
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      const lk = k.toLowerCase()
+      if (['routecode', 'tracecoderepom', 'status', 'errordescription'].includes(lk) && !(lk in achados)) achados[lk] = v
+      else if (v && typeof v === 'object') rec(v, n + 1)
+    }
+  }
+  rec(bruto, 0)
+  const rc = Number(achados['routecode'])
+  const tc = Number(achados['tracecoderepom'])
+  const desc = typeof achados['errordescription'] === 'string' && achados['errordescription'].trim() ? String(achados['errordescription']).trim().slice(0, 300) : null
+  if (!Number.isInteger(rc) || rc <= 0 || !Number.isInteger(tc) || tc <= 0) return { erro: desc ?? 'A resposta da rota não trouxe RouteCode e TraceCodeRepom válidos.' }
+  const st = Number(achados['status'])
+  return { routeCode: rc, traceCode: tc, status: Number.isFinite(st) ? st : null, descricao: desc }
+}
+
 export function lerOperationKey(bruto: unknown): string | null {
   const m = String((bruto as { Message?: unknown } | null)?.Message ?? '').match(/OperationKey:\s*([0-9a-f-]{36})/i)
   return m ? m[1]! : null
@@ -289,7 +326,7 @@ export interface ClienteRepomFrete {
   bloquearVeiculo(placa: string, bloquear: boolean, motivo: string): Promise<ResultadoFrete<unknown>>
   tiposDeCarga(): Promise<ResultadoFrete<unknown>>
   // rota
-  rotaAutomatica(p: { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador?: string; paradasIbge?: string[] }): Promise<ResultadoFrete<unknown>>
+  rotaAutomatica(p: { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador?: string; paradasIbge?: string[]; /** 'sem2' (padrão, texto do guia: sem os 2 primeiros dígitos e sem zeros, número) ou 'sete' (7 dígitos completos, texto; Swagger: string só com números) */ formatoIbge?: 'sem2' | 'sete' }): Promise<ResultadoFrete<unknown>>
   consultarRotaPorIbge(ibgeOrigem: string, ibgeDestino: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorCep(cep: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorCodigo(percurso: number, roteiro: number, eixos: number): Promise<ResultadoFrete<unknown>>
@@ -419,7 +456,8 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
       const e = lerErroFrete(r.bruto)
       if (r.status >= 200 && r.status < 300 && !e) return { ok: true, http: r.status, dados: ler ? ler(r.bruto) : ((r.bruto as { Result?: unknown } | null)?.Result ?? r.bruto) as T, bruto: r.bruto }
       const incerto = emissao && r.status >= 500 ? true : undefined
-      return { ok: false, http: r.status, erro: e?.mensagem ?? mensagemHttpFrete(r.status), codigoErro: e?.codigo ?? null, incerto, bruto: r.bruto }
+      const corpoErro = e ? undefined : (corpoErroSeguro(r.bruto, [c.user, c.password, c.partner, c.version]) ?? undefined)
+      return { ok: false, http: r.status, erro: e?.mensagem ?? mensagemHttpFrete(r.status), codigoErro: e?.codigo ?? null, incerto, ...(corpoErro ? { corpoErro } : {}), bruto: r.bruto }
     } catch (e) {
       const m = (e as Error)?.message ?? ''
       if (m.startsWith('TOKEN:')) return { ok: false, http: Number(m.slice(6)) || 0, erro: mensagemHttpFrete(Number(m.slice(6)) || 401), bruto: null }
@@ -472,7 +510,10 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
       if ((p.paradasIbge ?? []).length > 23) return invalido('No máximo 23 paradas.')
       // IBGE sem os 2 primeiros dígitos e sem zeros à esquerda (mesma regra da VPR)
       const tira = (i: string) => so(i).slice(2).replace(/^0+/, '')
-      const corpo = { BranchCode: p.filial, OriginIBGECode: Number(tira(p.ibgeOrigem)), DestinyIBGECode: Number(tira(p.ibgeDestino)), RoundTrip: p.idaVolta, ...(p.identificador ? { TraceIdentifier: p.identificador } : {}), ...(p.paradasIbge?.length ? { RouteStopIBGE: p.paradasIbge.map((i) => Number(tira(i))) } : {}) }
+      const sete = p.formatoIbge === 'sete'
+      if (sete && ![p.ibgeOrigem, p.ibgeDestino, ...(p.paradasIbge ?? [])].every((i) => so(i).length === 7)) return invalido('IBGE de 7 dígitos esperado.')
+      const f = (i: string) => (sete ? so(i) : Number(tira(i)))
+      const corpo = { BranchCode: p.filial, OriginIBGECode: f(p.ibgeOrigem), DestinyIBGECode: f(p.ibgeDestino), RoundTrip: p.idaVolta, ...(p.identificador ? { TraceIdentifier: p.identificador } : {}), ...(p.paradasIbge?.length ? { RouteStopIBGE: p.paradasIbge.map((i) => f(i)) } : {}) }
       return rodar('POST', '/RouteRequest/RouteRequestAutomatic', { corpo, versao: '2.4' })
     },
     consultarRotaPorIbge: (o, d, e) => rodar('GET', `/Route/byibge/${seg(so(o).slice(2).replace(/^0+/, ''))}/${seg(so(d).slice(2).replace(/^0+/, ''))}/${seg(e)}`),

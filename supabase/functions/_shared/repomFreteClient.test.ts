@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Fetch } from './repomClient.ts'
-import { criarRepomFreteClient, lerErroFrete, lerOperationKey, montarCorpoContrato, RepomFreteNaoImplementado, situacaoProcessamento, validarContratoFrete, type ConfigRepomFrete, type PedidoContratoFrete } from './repomFreteClient.ts'
+import { corpoErroSeguro, criarRepomFreteClient, lerRotaCriada, lerErroFrete, lerOperationKey, montarCorpoContrato, RepomFreteNaoImplementado, situacaoProcessamento, validarContratoFrete, type ConfigRepomFrete, type PedidoContratoFrete } from './repomFreteClient.ts'
 
 const cfg: ConfigRepomFrete = { ambiente: 'qa', credenciais: { user: 'USER_9520_SECRETO', version: '3.0', password: 'SENHA_9520_SECRETA', partner: '00000000000100' }, urlToken: 'https://exemplo.invalid/token' }
 type Chamada = { url: string; init: { method?: string; headers?: Record<string, string>; body?: string } }
@@ -214,4 +214,27 @@ test('contrato: MinimumFreightCost sai como objeto com as 4 chaves quando inform
   assert.equal('MinimumFreightCost' in (montarCorpoContrato(contrato)[0] as object), false)
   assert.equal('CheckDocument' in ((com.Documents as object[])[0]), false) // nao enviar so um entre CheckDocument e DeliveryLocationType
   assert.equal('DeliveryLocationType' in ((com.Documents as object[])[0]), false)
+})
+
+test('rota automática com IBGE de 7 dígitos (texto) e leitura síncrona de RouteCode/TraceCodeRepom', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : ok({ Status: 1, RouteCode: '143300', TraceCodeRepom: '2', ErrorDescription: null })))
+  const c = criarRepomFreteClient(cfg, m.fetchFn)
+  const r = await c.rotaAutomatica({ filial: '1', ibgeOrigem: '3550308', ibgeDestino: '3304557', idaVolta: true, identificador: 'RQ24183015', formatoIbge: 'sete' })
+  assert.deepEqual(JSON.parse(m.chamadas.find((y) => !ehToken(y))!.init.body!), { BranchCode: '1', OriginIBGECode: '3550308', DestinyIBGECode: '3304557', RoundTrip: true, TraceIdentifier: 'RQ24183015' })
+  assert.ok(r.ok)
+  const l = lerRotaCriada(r.ok ? r.bruto : null)
+  assert.ok('routeCode' in l && l.routeCode === 143300 && l.traceCode === 2)
+  assert.ok('erro' in lerRotaCriada({ Status: 0, ErrorDescription: 'Origem inválida' }))
+})
+test('corpo do erro não reconhecido é guardado sem credenciais, sem documentos e sem sequências longas de dígitos', async () => {
+  assert.equal(corpoErroSeguro(null), null)
+  const t = corpoErroSeguro({ Detalhe: 'CPF 12345678901 senha abc123', password: 'x', nationalId: '123', Info: { ok: 1 } }, ['abc123'])!
+  assert.ok(!t.includes('12345678901') && !t.includes('abc123') && !t.includes('"x"')); assert.match(t, /Detalhe/); assert.match(t, /oculto/)
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : { status: 400, corpo: { Foo: 'bar', Outro: 1 } }))
+  const r = await criarRepomFreteClient(cfg, m.fetchFn).consultarMotorista('16545346091')
+  assert.equal(r.ok, false); assert.match(!r.ok ? (r.corpoErro ?? '') : '', /Foo/)
+})
+
+test('erro aninhado {Response:{StatusCode,Message}} é lido', () => {
+  assert.deepEqual(lerErroFrete({ Response: { StatusCode: 404, Message: 'Route not found' } }), { mensagem: 'Route not found', codigo: null })
 })

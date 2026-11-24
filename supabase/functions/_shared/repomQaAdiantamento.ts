@@ -13,6 +13,26 @@ export const MAX_TENTATIVAS_EMISSAO = 2
 /** IBGE da rota de teste de 17/11 (a consulta da rota por código não devolve IBGE: o Swagger só traz Name/Distance/RoundTrip). Exigidos pela Repom na emissão (725). */
 export const IBGE_ORIGEM = '3550308' // São Paulo/SP
 export const IBGE_DESTINO = '3304557' // Rio de Janeiro/RJ
+/** CEP de origem e destino da rota de teste (Swagger: BrazilianCEPSource/Destination, 8 dígitos numéricos): Praça da Sé/SP e Centro/RJ. */
+export const CEP_ORIGEM = '01001000'
+export const CEP_DESTINO = '20010000'
+/** Rota PRÓPRIA do cliente 9520, criada em QA por POST /RouteRequest/RouteRequestAutomatic (a de 17/11, percurso 1 / roteiro 143217, era do cliente 9501/VPR). */
+export const FILIAL_ROTA = '1'
+export const MAX_TENTATIVAS_ROTA = 2
+/** Swagger: TraceIdentifier tem MaximumLength(10). "RQ" + ddHHmmss (UTC) = 10 caracteres, único por segundo. */
+export function novoTraceIdentifier(agora: Date): string {
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  return `RQ${p2(agora.getUTCDate())}${p2(agora.getUTCHours())}${p2(agora.getUTCMinutes())}${p2(agora.getUTCSeconds())}`
+}
+/** 'sete' = 7 dígitos (exemplo do guia cap. 40 e Swagger); 'sem2' = texto do guia (sem os 2 primeiros dígitos). A 1ª tentativa usa 'sete'; a 2ª, a outra. */
+export const VARIANTES_IBGE_ROTA = ['sete', 'sem2'] as const
+/** Eixos do veículo na consulta da rota: lê VehicleAxles (texto como "5" ou "5 eixos"); sem leitura, 5 (como na leitura de 24/11). */
+export function eixosDoVeiculo(dados: unknown): number {
+  const o = Array.isArray(dados) ? dados[0] : dados
+  const v = ehObj(o) ? pick(o, 'VehicleAxles') : undefined
+  const n = Number(String(v ?? '').match(/\d+/)?.[0])
+  return Number.isInteger(n) && n >= 2 && n <= 9 ? n : 5
+}
 
 type Obj = Record<string, unknown>
 const ehObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -136,7 +156,7 @@ export function escolherCargaGeral(tipos: TipoCarga[]): TipoCarga | null {
   return tipos.find((t) => /carga\s+geral|general\s+cargo/i.test(t.descricao)) ?? null
 }
 
-export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCodeType: number, aleatorio: () => number = Math.random, opcoes: { distanciaKm?: number | null } = {}): { pedido: PedidoContratoFrete; documentoNovo: { serie: string; numero: string } } {
+export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCodeType: number, aleatorio: () => number = Math.random, opcoes: { distanciaKm?: number | null; rota?: { traceCode: number; routeCode: number } } = {}): { pedido: PedidoContratoFrete; documentoNovo: { serie: string; numero: string } } {
   const distancia = opcoes.distanciaKm && opcoes.distanciaKm > 0 ? Math.round(opcoes.distanciaKm) : PISO.distanceTravel
   const k = novaChaveCte(m.documento, agora, aleatorio)
   const identifier = novoIdentifier(agora)
@@ -149,8 +169,8 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
       hiredNationalId: m.hiredNationalId,
       operationIdentifier: operacao,
       cardNumber: 0, // conta digital (viagem digital)
-      routeTraceCode: m.traceCode,
-      routeRouteCode: m.routeCode,
+      routeTraceCode: opcoes.rota?.traceCode ?? m.traceCode,
+      routeRouteCode: opcoes.rota?.routeCode ?? m.routeCode,
       issueDate: agora.toISOString(),
       totalFreightValue: FRETE_TOTAL,
       totalLoadWeight: m.pesoCarga,
@@ -162,6 +182,8 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
       distanciaKm: distancia,
       ibgeOrigem: IBGE_ORIGEM,
       ibgeDestino: IBGE_DESTINO,
+      cepOrigem: CEP_ORIGEM,
+      cepDestino: CEP_DESTINO,
       vpr: { issue: false, oneWay: true, suspendedAxles: 0, returnSuspendedAxles: 0 },
       entrega: { esperadaEm: dia(2), tipoLocal: m.tipoLocal },
       motoristas: m.motoristas,

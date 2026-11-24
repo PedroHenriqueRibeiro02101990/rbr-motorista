@@ -83,7 +83,7 @@ test('classificação da falha: Saldo Insuficiente responde sobre o saldo; 2768 
 })
 
 // ---------- ações da função ----------
-function montar(o: { rota?: ResultadoFrete<unknown>; modelo?: unknown; tipos?: unknown; emitir?: ResultadoFrete<{ operationKey: string | null }>; status?: ResultadoFrete<{ shippingId: number | null; identifier: string | null; status: string | null; erros: string[] }[]>[]; porIdent?: ResultadoFrete<unknown>; hist?: string[]; ultima?: string | null; cancelar?: ResultadoFrete<unknown>; depoisCancel?: unknown } = {}) {
+function montar(o: { rota?: ResultadoFrete<unknown>; modelo?: unknown; tipos?: unknown; emitir?: ResultadoFrete<{ operationKey: string | null }>; status?: ResultadoFrete<{ shippingId: number | null; identifier: string | null; status: string | null; erros: string[] }[]>[]; porIdent?: ResultadoFrete<unknown>; hist?: string[]; histRota?: string[]; porTrace?: Record<string, ResultadoFrete<unknown>>; tentativas?: string[]; rotaCriada?: { traceCode: number; routeCode: number; eixos: number } | null; criar?: ResultadoFrete<unknown>[]; veiculo?: ResultadoFrete<unknown>; ultima?: string | null; cancelar?: ResultadoFrete<unknown>; depoisCancel?: unknown } = {}) {
   const chamadas: string[] = []
   const args: Record<string, unknown> = {}
   let nStatus = 0
@@ -91,6 +91,9 @@ function montar(o: { rota?: ResultadoFrete<unknown>; modelo?: unknown; tipos?: u
     verificarToken: async () => ({ ok: true }),
     consultarContratoPorViagem: async (id: unknown) => { chamadas.push(`viagem:${id}`); return ok(Number(id) === 2166947 ? (o.modelo ?? MODELO_GET) : (o.depoisCancel ?? { ShippingId: id, Status: 'Cancelado' })) },
     tiposDeCarga: async () => { chamadas.push('tipos'); return ok(o.tipos ?? TIPOS) },
+    rotaAutomatica: async (p: unknown) => { chamadas.push('criar_rota'); (args.criar ??= []); (args.criar as unknown[]).push(p); return (o.criar ?? [ok({ Status: 1, RouteCode: '666', TraceCodeRepom: '555', ExternalTraceCode: 'x', ErrorDescription: null })])[Math.min((args.criar as unknown[]).length - 1, (o.criar ?? [1]).length - 1)] },
+    consultarRotaPorIdentificador: async (id: string, e: number) => { chamadas.push(`rota_id:${id}/${e}`); return o.porTrace?.[id] ?? erro(404, 'Route not found') },
+    consultarVeiculo: async () => { chamadas.push('veiculo'); return o.veiculo ?? ok({ LicensePlate: 'BIS4025', VehicleAxles: '6' }) },
     consultarRotaPorCodigo: async (t: number, r: number, e: number) => { chamadas.push(`rota:${t}/${r}/${e}`); return o.rota ?? ok({ TraceCode: t, RouteCode: r, Distance: 432.4, RoundTrip: false, Name: 'SAO PAULO/SP x RIO DE JANEIRO/RJ' }) },
     emitirContrato: async (p: PedidoContratoFrete) => { chamadas.push('emitir'); args.pedido = p; return o.emitir ?? ok({ operationKey: 'OP-KEY' }) },
     consultarStatusPorChave: async () => { chamadas.push('status'); const r = (o.status ?? [ok([{ shippingId: 9, identifier: 'x', status: 'Finished', erros: [] }])])[Math.min(nStatus++, (o.status ?? [1]).length - 1)]; return r },
@@ -102,7 +105,7 @@ function montar(o: { rota?: ResultadoFrete<unknown>; modelo?: unknown; tipos?: u
   const linhas: { acao: string; request?: unknown; status?: string; resposta?: Record<string, unknown> }[] = []
   const deps: DepsQaTeste = {
     ligado: true, ambiente: 'qa', frete, hoje: () => '2026-11-24', amanha: () => '2026-11-25', agora: () => AGORA, espera: async () => {},
-    historico: async () => o.hist ?? [], ultimaEmissao: async () => (o.ultima === undefined ? 'RBRQA261124183015' : o.ultima),
+    historico: async (a) => (a === 'criar-rota' ? o.histRota ?? [] : o.hist ?? []), rotaCriada: async () => (o.rotaCriada === undefined ? { traceCode: 555, routeCode: 666, eixos: 5 } : o.rotaCriada), tentativasComRota: async () => o.hist ?? [], tentativasRota: async () => o.tentativas ?? [], ultimaEmissao: async () => (o.ultima === undefined ? 'RBRQA261124183015' : o.ultima),
     registrar: async (acao, request) => { linhas.push({ acao, request }); return String(linhas.length - 1) },
     concluir: async (id, r) => { Object.assign(linhas[Number(id)], { status: r.status, resposta: r.resposta as Record<string, unknown> }) },
   }
@@ -203,18 +206,57 @@ test('IBGE: o corpo leva BrazilianIBGECodeSource 3550308 e BrazilianIBGECodeDest
   assert.equal(sem.TravelledDistance, 300) // sem a rota: distância padrão
 })
 
-test('emitir: lê a rota (GET) antes de emitir, usa a distância dela e os IBGE de 17/11; se a leitura da rota falhar, emite com a distância padrão e informa', async () => {
+test('emitir: usa a rota PRÓPRIA do 9520 (criar_rota), lê a distância dela, manda os CEP e os IBGE de 7 dígitos; se a leitura da rota falhar, PARA sem gastar tentativa', async () => {
   const m = montar()
   const r = await executarQaTeste(EMITIR, m.deps)
-  assert.equal(r.status, 200); assert.ok(m.chamadas.includes('rota:11/22/5'))
+  assert.equal(r.status, 200); assert.ok(m.chamadas.includes('rota:555/666/5'))
   const p = m.args.pedido as PedidoContratoFrete
-  assert.equal(p.ibgeOrigem, '3550308'); assert.equal(p.ibgeDestino, '3304557'); assert.equal(p.distanciaKm, 432)
-  const det = (r.corpo.etapas as { etapa: string; detalhe?: Record<string, unknown> }[]).find((e) => e.etapa === 'rota')?.detalhe
-  assert.equal(det?.lida, true); assert.equal(det?.ibge_na_resposta, false)
+  assert.equal(p.routeTraceCode, 555); assert.equal(p.routeRouteCode, 666)
+  assert.equal(p.ibgeOrigem, '3550308'); assert.equal(p.ibgeDestino, '3304557'); assert.equal(p.cepOrigem, '01001000'); assert.equal(p.cepDestino, '20010000'); assert.equal(p.distanciaKm, 432)
+  const corpo = montarCorpoContrato(p)[0] as Record<string, unknown>
+  assert.equal(corpo.BrazilianRouteTraceCode, 555); assert.equal(corpo.BrazilianRouteRouteCode, 666); assert.equal(corpo.BrazilianCEPSource, '01001000'); assert.equal(corpo.TravelledDistance, 432)
+  assert.equal(m.linhas.find((l) => l.acao === 'qa-teste-emitir-adiantamento')?.request && (m.linhas.find((l) => l.acao === 'qa-teste-emitir-adiantamento')!.request as Record<string, unknown>).rota_route, 666)
   const falha = montar({ rota: erro(404, 'Rota não encontrada') })
   const r2 = await executarQaTeste(EMITIR, falha.deps)
-  assert.equal(r2.status, 200); assert.equal((falha.args.pedido as PedidoContratoFrete).distanciaKm, 300)
-  assert.equal((r2.corpo.etapas as { etapa: string; detalhe?: Record<string, unknown> }[]).find((e) => e.etapa === 'rota')?.detalhe?.lida, false)
+  assert.equal(r2.corpo.parou, true); assert.ok(!falha.chamadas.includes('emitir')); assert.ok(!falha.linhas.some((l) => l.acao === 'qa-teste-emitir-adiantamento'))
+})
+
+test('emitir sem rota criada: para antes de qualquer chamada de emissão', async () => {
+  const m = montar({ rotaCriada: null })
+  const r = await executarQaTeste(EMITIR, m.deps)
+  assert.equal(r.corpo.parou, true); assert.ok(!m.chamadas.includes('emitir')); assert.match(String(r.corpo.motivo), /criar_rota/)
+})
+
+const CRIAR = { acao: 'criar_rota', confirmacao: { nome: 'Pedro' } }
+test('criar_rota: 1ª tentativa com IBGE de 7 dígitos, TraceIdentifier de até 10 caracteres; guarda RouteCode/TraceCode, lê eixos do veículo e confirma pela consulta', async () => {
+  const m = montar({ rotaCriada: null, histRota: [] })
+  const r = await executarQaTeste(CRIAR, m.deps)
+  assert.equal(r.status, 200); assert.equal(r.corpo.routeCode, 666); assert.equal(r.corpo.traceCode, 555); assert.equal(r.corpo.eixos, 6); assert.equal(r.corpo.confirmada, true); assert.equal(r.corpo.distancia_km, 432.4)
+  const a = (m.args.criar as { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador: string; formatoIbge: string }[])[0]!
+  assert.equal(a.filial, '1'); assert.equal(a.ibgeOrigem, '3550308'); assert.equal(a.ibgeDestino, '3304557'); assert.equal(a.idaVolta, true); assert.equal(a.formatoIbge, 'sete'); assert.ok(a.identificador.length <= 10)
+  assert.ok(m.chamadas.includes('rota:555/666/6'))
+  assert.equal(m.linhas.find((l) => l.acao === 'qa-teste-criar-rota')?.status, 'ok')
+})
+test('criar_rota: 2ª tentativa usa o IBGE sem os 2 primeiros dígitos; 3ª e rota já criada recusam; exige confirmacao.nome', async () => {
+  const seg = montar({ rotaCriada: null, histRota: ['erro'] })
+  await executarQaTeste(CRIAR, seg.deps)
+  assert.equal((seg.args.criar as { formatoIbge: string }[])[0]!.formatoIbge, 'sem2')
+  const terc = montar({ rotaCriada: null, histRota: ['erro', 'erro'] })
+  assert.equal((await executarQaTeste(CRIAR, terc.deps)).corpo.parou, true); assert.ok(!terc.chamadas.includes('criar_rota'))
+  const ja = montar({ histRota: ['ok'] })
+  assert.equal((await executarQaTeste(CRIAR, ja.deps)).corpo.parou, true); assert.ok(!ja.chamadas.includes('criar_rota'))
+  const semNome = montar({ rotaCriada: null })
+  assert.equal((await executarQaTeste({ acao: 'criar_rota' }, semNome.deps)).status, 400); assert.ok(!semNome.chamadas.includes('criar_rota'))
+})
+test('criar_rota: recusa da Repom para e mostra o corpo do erro (corpoErro) sem tentar de novo; resposta sem códigos também para', async () => {
+  const rec = { ...erro(400, 'A Repom não aceitou o pedido (HTTP 400).'), corpoErro: '{"Detalhe":"IBGE invalido"}' } as ResultadoFrete<unknown>
+  const m = montar({ rotaCriada: null, criar: [rec] })
+  const r = await executarQaTeste(CRIAR, m.deps)
+  assert.equal(r.status, 422); assert.equal(r.corpo.parou, true); assert.equal((m.args.criar as unknown[]).length, 1)
+  assert.match(JSON.stringify(r.corpo), /IBGE invalido/); assert.match(JSON.stringify(m.linhas.find((l) => l.acao === 'qa-teste-criar-rota')?.resposta), /IBGE invalido/)
+  const sem = montar({ rotaCriada: null, criar: [ok({ Status: 0, ErrorDescription: 'Origem inválida' })] })
+  const r2 = await executarQaTeste(CRIAR, sem.deps)
+  assert.equal(r2.corpo.parou, true); assert.match(JSON.stringify(r2.corpo), /Origem inválida/)
 })
 
 test('emitir (tentativa 2, a última): com 1 tentativa anterior com erro de validação, ainda emite; com 2 anteriores, recusa', async () => {
@@ -222,4 +264,14 @@ test('emitir (tentativa 2, a última): com 1 tentativa anterior com erro de vali
   assert.equal((await executarQaTeste(EMITIR, ok2.deps)).status, 200)
   const nao = montar({ hist: ['erro', 'erro'] })
   assert.equal((await executarQaTeste(EMITIR, nao.deps)).corpo.parou, true); assert.ok(!nao.chamadas.includes('emitir'))
+})
+
+test('consultar_rota: só leitura; se a Repom devolve a rota de uma tentativa incerta, registra como criada; se não, não grava rota', async () => {
+  const achou = montar({ rotaCriada: null, tentativas: ['RQ2', 'RQ1'], porTrace: { RQ1: ok([{ TraceCode: 7, RouteCode: 8, Distance: 430, Name: 'SP x RJ' }]) } })
+  const r = await executarQaTeste({ acao: 'consultar_rota' }, achou.deps)
+  assert.equal(r.corpo.encontrada, true); assert.equal(r.corpo.routeCode, 8); assert.ok(!achou.chamadas.includes('criar_rota'))
+  assert.equal(achou.linhas.find((l) => l.acao === 'qa-teste-criar-rota')?.status, 'ok')
+  const nada = montar({ rotaCriada: null, tentativas: ['RQ2'] })
+  const r2 = await executarQaTeste({ acao: 'consultar_rota' }, nada.deps)
+  assert.equal(r2.corpo.encontrada, false); assert.ok(!nada.linhas.some((l) => l.acao === 'qa-teste-criar-rota'))
 })
