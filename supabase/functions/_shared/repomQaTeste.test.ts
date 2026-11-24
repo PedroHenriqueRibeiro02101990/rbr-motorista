@@ -2,14 +2,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
-import { BASE_QA_FIXA, CONTRATO_QA, COMBOS_FIXOS, LIMITE_RODADA, MOTIVO_RODADA, TOKEN_QA_FIXO, chaveLigada, executarQaTeste, lerAutorizacoes, lerContratoQa, montarCombos, tipoErroAutorizacao, type DepsQaTeste } from './repomQaTeste.ts'
+import { SALDO_INICIO, movimentosDoContrato, resumirResposta, BASE_QA_FIXA, CONTRATO_QA, COMBOS_FIXOS, LIMITE_RODADA, MOTIVO_RODADA, TOKEN_QA_FIXO, chaveLigada, executarQaTeste, lerAutorizacoes, lerContratoQa, montarCombos, tipoErroAutorizacao, type DepsQaTeste } from './repomQaTeste.ts'
 
 const ok = <T>(dados: T, http = 200): ResultadoFrete<T> => ({ ok: true, http, dados, bruto: dados })
 const erro = (http: number, msg: string, codigoErro: string | null = null, incerto?: boolean): ResultadoFrete<never> => ({ ok: false, http, erro: msg, codigoErro, incerto, bruto: { segredo: 'SENHA_SECRETA' } })
 
 const contratoOk = { Identifier: 'RBRC4943103', Status: 'InTransit', BranchCode: '1', Documents: [{ Number: '660', Series: '1', BranchCode: '1', DocumentType: 'CTE' }] }
 
-function montar(o: { leitura?: ResultadoFrete<unknown>; autorizarSeq?: ResultadoFrete<unknown>[]; contrato?: unknown; consulta?: ResultadoFrete<unknown>; quitar?: ResultadoFrete<unknown>; autorizar?: ResultadoFrete<unknown>; token?: boolean; hist?: { quitar?: string[]; autorizar?: string[] }; ligado?: boolean; ambiente?: 'qa' | 'prd' } = {}) {
+function montar(o: { saldo?: ResultadoFrete<unknown>; extrato?: ResultadoFrete<unknown>; leitura?: ResultadoFrete<unknown>; autorizarSeq?: ResultadoFrete<unknown>[]; contrato?: unknown; consulta?: ResultadoFrete<unknown>; quitar?: ResultadoFrete<unknown>; autorizar?: ResultadoFrete<unknown>; token?: boolean; hist?: { quitar?: string[]; autorizar?: string[] }; ligado?: boolean; ambiente?: 'qa' | 'prd' } = {}) {
   const chamadas: string[] = []
   const args: Record<string, unknown> = {}
   const todas: unknown[] = []
@@ -18,12 +18,14 @@ function montar(o: { leitura?: ResultadoFrete<unknown>; autorizarSeq?: Resultado
     consultarContratoPorViagem: async (id: unknown) => { chamadas.push('consultar'); args.consultar = id; return o.consulta ?? ok(o.contrato ?? contratoOk) },
     quitarViagem: async (p: unknown) => { chamadas.push('quitar'); args.quitar = p; return o.quitar ?? ok({}) },
     autorizarPagamento: async (p: unknown) => { chamadas.push('autorizar'); args.autorizar = p; todas.push(p); return o.autorizarSeq ? (o.autorizarSeq[todas.length - 1] ?? erro(400, 'sem resposta', '760')) : (o.autorizar ?? ok({})) },
+    consultarSaldoCliente: async (i: string, f: string) => { chamadas.push('saldo'); args.saldo = [i, f]; return o.saldo ?? ok({ saldo: 100 }) },
+    consultarExtratoFinanceiro: async (i: string, f: string) => { chamadas.push('extrato'); args.extrato = [i, f]; return o.extrato ?? ok([]) },
     consultarAutorizacaoPorViagem: async () => { chamadas.push('ler_viagem'); return o.leitura ?? erro(404, 'Não encontrado') },
     consultarAutorizacaoPorIdentificador: async () => { chamadas.push('ler_ident'); return o.leitura ?? erro(404, 'Não encontrado') },
   } as unknown as ClienteRepomFrete
   const linhas: { acao: string; status?: string; resposta?: unknown; request?: unknown }[] = []
   const deps: DepsQaTeste = {
-    ligado: o.ligado ?? true, ambiente: o.ambiente ?? 'qa', frete, amanha: () => '2026-11-25',
+    ligado: o.ligado ?? true, ambiente: o.ambiente ?? 'qa', frete, hoje: () => '2026-11-24', amanha: () => '2026-11-25',
     historico: async (a) => o.hist?.[a] ?? [],
     registrar: async (acao, request) => { linhas.push({ acao, request }); return String(linhas.length - 1) },
     concluir: async (id, r) => { Object.assign(linhas[Number(id)], { status: r.status, resposta: r.resposta }) },
@@ -255,4 +257,29 @@ test('a ação antiga "autorizar" não existe mais; entradas livres (branch, url
   const m2 = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E728(), E728(), E728(), E728()] })
   await executarQaTeste({ ...RODADA, branch: 99, branchCode: 'X', url: 'https://www.repom.com.br' }, m2.deps)
   assert.ok((m2.todas as { branch: number }[][]).every((x) => [1, 2].includes(x[0].branch)))
+})
+
+test('saldo: só leitura (nenhum POST), janela fixa, devolve resposta limpa e só as movimentações DESTE contrato', async () => {
+  const extrato = [
+    { identifier: 'RBRC4943103', repomContractCode: '2166947', financialTransactionType: '3', financialManagementType: 'X', financialTransactionValue: 1500, financialTransactionDate: '2026-11-17', financialTransactionPaymentDate: '2026-11-24', paymentBatchCode: 7, cnpj: '69115969000104' },
+    { identifier: 'OUTRO', repomContractCode: '1', financialTransactionValue: 9 },
+  ]
+  const m = montar({ saldo: ok({ SaldoDisponivel: 1000, token: 'SEGREDO_X', Cliente: { Cnpj: '69115969000104' } }), extrato: ok(extrato) })
+  const r = await executarQaTeste({ acao: 'saldo', shippingId: 1, inicio: '2000-01-01' }, m.deps)
+  assert.equal(r.status, 200); assert.equal(r.corpo.ok, true)
+  assert.deepEqual(m.chamadas, ['token', 'saldo', 'extrato'])
+  assert.deepEqual(m.args.saldo, [SALDO_INICIO, '2026-11-24']); assert.deepEqual(m.args.extrato, [SALDO_INICIO, '2026-11-24'])
+  const txt = JSON.stringify(r.corpo)
+  assert.ok(!txt.includes('SEGREDO_X') && !txt.includes('69115969000104') && !txt.includes('"OUTRO"'))
+  assert.match(txt, /financialTransactionValue/); assert.match(txt, /"total_movimentos":2/)
+  assert.ok(!m.chamadas.includes('autorizar') && !m.chamadas.includes('quitar'))
+})
+
+test('saldo: erro numa das consultas não esconde a outra; resposta enorme é truncada', async () => {
+  const m = montar({ saldo: erro(404, 'Não encontrado'), extrato: ok([]) })
+  const r = await executarQaTeste({ acao: 'saldo' }, m.deps)
+  assert.equal(r.status, 200); assert.equal(r.corpo.ok, false)
+  assert.equal(movimentosDoContrato({ x: 1 }).length, 0)
+  const grande = resumirResposta(Array.from({ length: 20 }, (_, i) => ({ k: 'x'.repeat(300), i })))
+  assert.equal((grande as { truncado?: boolean }).truncado, true)
 })

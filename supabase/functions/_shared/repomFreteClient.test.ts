@@ -196,3 +196,14 @@ test('autorizar pagamento: Branch (numero) e OBRIGATORIO (QA devolveu 728 sem el
   }
   assert.equal(m.chamadas.length, antes) // nada foi enviado
 })
+
+test('extrato financeiro: GET no host do Relatório com datas AAAA-MM-DD; datas ruins nem chamam a Repom', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 'T', expires_in: 3600 }) : ok([])))
+  const c = criarRepomFreteClient({ ...cfg, urlBase: 'https://exemplo.invalid/Repom.Frete.WebAPI' }, m.fetchFn)
+  assert.equal((await c.consultarExtratoFinanceiro('2026-11-01', '2026-11-24')).ok, true)
+  assert.equal(m.chamadas.at(-1)!.url, 'https://exemplo.invalid/Repom.Relatorio.WebAPI/Statement/Financial/GetByCustomerStartDateEndDate/2026-11-01/2026-11-24')
+  const n = m.chamadas.length
+  assert.equal((await c.consultarExtratoFinanceiro('01/11/2026', '2026-11-24')).ok, false)
+  assert.equal((await c.consultarExtratoFinanceiro('2026-11-25', '2026-11-24')).ok, false)
+  assert.equal(m.chamadas.length, n)
+})

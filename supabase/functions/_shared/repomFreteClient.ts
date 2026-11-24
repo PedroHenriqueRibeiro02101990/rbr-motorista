@@ -328,6 +328,8 @@ export interface ClienteRepomFrete {
   // NAO IMPLEMENTADO (guia ambíguo ou sem detalhe; ver DUVIDAS-PARA-REPOM.md)
   /** Saldo do cliente: caminho informado pela Repom (Karen, 13/11), FORA do guia. Formato da resposta desconhecido (D-F15): devolve o que vier. */
   consultarSaldoCliente(inicio: string, fim: string): Promise<ResultadoFrete<unknown>>
+  /** Relatório financeiro por período (guia 3.0 cap. 82: Statement/Financial/GetByCustomerStartDateEndDate; datas AAAA-MM-DD). Só leitura. */
+  consultarExtratoFinanceiro(inicio: string, fim: string): Promise<ResultadoFrete<unknown>>
   adiantarSaldoFrete(): Promise<never>
   alterarDocumentoQuitacao(): Promise<never>
   consultarContratosPorStatus(): Promise<never>
@@ -546,6 +548,11 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
       const dia = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
       if (!dia.test(inicio) || !dia.test(fim) || Number.isNaN(new Date(inicio).getTime()) || Number.isNaN(new Date(fim).getTime()) || inicio > fim) return invalido('Informe as datas no formato AAAA-MM-DD, início até o fim.')
       return rodar('GET', `/Balance/Financial/GetByDateInicialDateFinal/${inicio}/${fim}`, { relatorio: true }) // base do Relatório (Repom.Relatorio.WebAPI)
+    },
+    consultarExtratoFinanceiro(inicio, fim) {
+      const dia = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
+      if (!dia.test(inicio) || !dia.test(fim) || Number.isNaN(new Date(inicio).getTime()) || Number.isNaN(new Date(fim).getTime()) || inicio > fim) return invalido('Informe as datas no formato AAAA-MM-DD, início até o fim.')
+      return rodar('GET', `/Statement/Financial/GetByCustomerStartDateEndDate/${inicio}/${fim}`, { relatorio: true })
     },
     adiantarSaldoFrete: nao('adiantar saldo de frete', 'D-F11'),
     alterarDocumentoQuitacao: nao('alterar documento na quitação', 'D-F13'),

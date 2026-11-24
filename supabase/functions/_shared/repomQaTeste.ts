@@ -28,7 +28,9 @@ export function montarCombos(achados: Combo[]): Combo[] {
   }
   return lista.slice(0, LIMITE_RODADA)
 }
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar'] as const
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo'] as const
+/** Janela fixa da consulta de saldo/extrato (só leitura). */
+export const SALDO_INICIO = '2026-11-01'
 
 export const chaveLigada = (v: string | null | undefined) => String(v ?? '').trim().toLowerCase() === 'sim'
 
@@ -40,6 +42,7 @@ export interface DepsQaTeste {
   historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada'): Promise<string[]>
   registrar(acao: string, request: unknown): Promise<string | null>
   concluir(id: string | null, r: { status: 'ok' | 'erro'; http: number; resposta: unknown; erro: string | null }): Promise<void>
+  hoje(): string // AAAA-MM-DD de hoje (fim da janela do saldo)
   amanha(): string // AAAA-MM-DD do dia seguinte (a Repom recusa PaymentDate de hoje: "deve ser maior ou igual a data atual")
 }
 
@@ -121,6 +124,27 @@ export function lerAutorizacoes(dados: unknown): AutorizacaoLida[] {
   return out
 }
 
+const PROIBIDAS = /(senha|password|secret|token|authorization|login|client_?id|partner|cnpj|cpf|documento|nationalid)/i
+/** Cópia da resposta sem campos que pareçam segredo/documento, limitada a ~1800 caracteres. */
+export function resumirResposta(v: unknown): unknown {
+  const rec = (x: unknown, n: number): unknown => {
+    if (n > 5 || x == null || typeof x !== 'object') return x
+    if (Array.isArray(x)) return x.slice(0, 20).map((y) => rec(y, n + 1))
+    return Object.fromEntries(Object.entries(x as Obj).map(([k, y]) => [k, PROIBIDAS.test(k) ? '[oculto]' : rec(y, n + 1)]))
+  }
+  const txt = JSON.stringify(rec(v, 0)) ?? 'null'
+  return txt.length > 1800 ? { truncado: true, inicio: txt.slice(0, 1800) } : JSON.parse(txt)
+}
+const CAMPOS_EXTRATO = ['identifier', 'repomContractCode', 'clientContractCode', 'clientBranchCode', 'financialTransactionType', 'financialManagementType', 'financialTransactionValue', 'financialTransactionDate', 'financialTransactionPaymentDate', 'paymentBatchCode', 'transactionID']
+/** Movimentações do extrato que são DESTE contrato (identifier RBRC4943103 ou código Repom 2166947), só campos financeiros. */
+export function movimentosDoContrato(dados: unknown): Record<string, unknown>[] {
+  const lista: unknown[] = Array.isArray(dados) ? dados : ehObj(dados) ? Object.values(dados).flatMap((x) => (Array.isArray(x) ? x : [])) : []
+  return lista.filter(ehObj)
+    .filter((m) => String(primeiro(m, ['identifier']) ?? '') === CONTRATO_QA.identifier || String(primeiro(m, ['repomContractCode']) ?? '') === String(CONTRATO_QA.shippingId))
+    .map((m) => Object.fromEntries(CAMPOS_EXTRATO.map((k) => [k, primeiro(m, [k]) ?? null])))
+}
+
+
 export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaTeste): Promise<SaidaQa> {
   if (!d.ligado) return { status: 503, corpo: { ok: false, desligado: true, erro: 'desligado' } }
   if (d.ambiente !== 'qa') return { status: 403, corpo: { ok: false, erro: 'Esta função só roda em QA.' } }
@@ -148,6 +172,18 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     etapas.push(e)
     if (!t.ok) return fim(502, { parou: true })
     if (acao === 'token') return fim(200)
+  }
+
+  // 1b) saldo do cliente e extrato financeiro (SÓ LEITURA, dois GET no host do Relatório de QA)
+  if (acao === 'saldo') {
+    const ini = SALDO_INICIO
+    const fimDia = d.hoje()
+    const sal = await passo('saldo_cliente', { inicio: ini, fim: fimDia }, () => d.frete.consultarSaldoCliente(ini, fimDia), (dados) => ({ resposta: resumirResposta(dados) }))
+    const ext = await passo('extrato_financeiro', { inicio: ini, fim: fimDia }, () => d.frete.consultarExtratoFinanceiro(ini, fimDia), (dados) => {
+      const todos = Array.isArray(dados) ? dados.length : null
+      return { total_movimentos: todos, do_contrato: movimentosDoContrato(dados) }
+    })
+    return fim(sal.e.ok || ext.e.ok ? 200 : 502, { janela: { inicio: ini, fim: fimDia }, ok: sal.e.ok && ext.e.ok })
   }
 
   // 2) consulta do contrato (só leitura)
