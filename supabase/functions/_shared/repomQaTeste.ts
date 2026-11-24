@@ -2,7 +2,7 @@
 // Só QA, só o contrato 2166947 (RBRC4943103), ações FIXAS (token, consultar_contrato, sequencia), UMA tentativa por ação de dinheiro,
 // para no primeiro problema. Só funciona com o segredo REPOM_QA_TESTE_LIBERADO=sim. A resposta nunca leva credencial nem corpo bruto.
 import { situacaoProcessamento, type ClienteRepomFrete, type ResultadoFrete } from './repomFreteClient.ts'
-import { ADIANTAMENTO, FRETE_TOTAL, MAX_TENTATIVAS_EMISSAO, PREFIXO_IDENTIFIER, SEST_PF, classificarFalhaEmissao, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
+import { ADIANTAMENTO, FRETE_TOTAL, IBGE_DESTINO, IBGE_ORIGEM, MAX_TENTATIVAS_EMISSAO, PREFIXO_IDENTIFIER, SEST_PF, classificarFalhaEmissao, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
 
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
@@ -219,9 +219,15 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     const tipos = lerTiposCarga(tc.r.dados)
     const geral = escolherCargaGeral(tipos)
     if (!geral) return parar(`Não achei "carga geral" na lista de tipos da ANTT (${tipos.map((t) => `${t.id}=${t.descricao}`).join('; ').slice(0, 400)}). Nada foi emitido.`)
-    const { pedido } = montarPedidoAdiantamento(lm.modelo, d.agora(), geral.id)
+    // leitura da rota (só GET): distância real para o piso; o Swagger não traz IBGE nessa consulta, então valem os IBGE de 17/11 (SP -> RJ)
+    const rr = await d.frete.consultarRotaPorCodigo(lm.modelo.traceCode, lm.modelo.routeCode, 5)
+    const ro = rr.ok ? (Array.isArray(rr.dados) ? rr.dados[0] : rr.dados) : null
+    const rotaObj = ehObj(ro) ? ro : {}
+    const distRota = Number(primeiro(rotaObj, ['Distance']))
+    etapas.push({ etapa: 'rota', ok: true, http: rr.http, detalhe: { lida: rr.ok, erro_leitura: rr.ok ? null : curto(rr.erro), nome: String(primeiro(rotaObj, ['Name']) ?? '').slice(0, 120), distancia_km: Number.isFinite(distRota) ? distRota : null, ibge_na_resposta: Object.keys(rotaObj).some((k) => /ibge/i.test(k)), ibge_usados: { origem: IBGE_ORIGEM, destino: IBGE_DESTINO } } })
+    const { pedido } = montarPedidoAdiantamento(lm.modelo, d.agora(), geral.id, Math.random, { distanciaKm: Number.isFinite(distRota) ? distRota : null })
     const tentativa = hist.length + 1
-    const idLinha = await d.registrar('qa-teste-emitir-adiantamento', { identifier: pedido.identifier, tentativa, max: MAX_TENTATIVAS_EMISSAO, frete: FRETE_TOTAL, adiantamento: ADIANTAMENTO, sest: SEST_PF, ncm: pedido.ncm, antt: geral.id, card: 0, confirmado_por: nomeE })
+    const idLinha = await d.registrar('qa-teste-emitir-adiantamento', { identifier: pedido.identifier, tentativa, max: MAX_TENTATIVAS_EMISSAO, frete: FRETE_TOTAL, adiantamento: ADIANTAMENTO, sest: SEST_PF, ibge_origem: pedido.ibgeOrigem, ibge_destino: pedido.ibgeDestino, distancia_km: pedido.distanciaKm, ncm: pedido.ncm, antt: geral.id, card: 0, confirmado_por: nomeE })
     const fecha = async (status: 'ok' | 'erro', http: number, resposta: Record<string, unknown>, erroTxt: string | null) => { await d.concluir(idLinha, { status, http, resposta: { identifier: pedido.identifier, tentativa, ...resposta }, erro: erroTxt }) }
     const em = await d.frete.emitirContrato(pedido)
     if (!em.ok) {

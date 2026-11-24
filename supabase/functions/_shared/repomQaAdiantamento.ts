@@ -10,6 +10,9 @@ export const SEST_PF = 10.5 // 1,5% de 20% do frete (3.500 x 20% = 700; 1,5% = 1
 export const PISO = { distanceTravel: 300, emptyReturn: true, highPerformanceTransport: false, veichleComposition: false } as const
 export const FINAIS_MODELO = { prestadorCpf: '4687', motoristaCpf: '2853', placa: 'BIS4025' } as const
 export const MAX_TENTATIVAS_EMISSAO = 2
+/** IBGE da rota de teste de 17/11 (a consulta da rota por código não devolve IBGE: o Swagger só traz Name/Distance/RoundTrip). Exigidos pela Repom na emissão (725). */
+export const IBGE_ORIGEM = '3550308' // São Paulo/SP
+export const IBGE_DESTINO = '3304557' // Rio de Janeiro/RJ
 
 type Obj = Record<string, unknown>
 const ehObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -133,7 +136,8 @@ export function escolherCargaGeral(tipos: TipoCarga[]): TipoCarga | null {
   return tipos.find((t) => /carga\s+geral|general\s+cargo/i.test(t.descricao)) ?? null
 }
 
-export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCodeType: number, aleatorio: () => number = Math.random): { pedido: PedidoContratoFrete; documentoNovo: { serie: string; numero: string } } {
+export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCodeType: number, aleatorio: () => number = Math.random, opcoes: { distanciaKm?: number | null } = {}): { pedido: PedidoContratoFrete; documentoNovo: { serie: string; numero: string } } {
+  const distancia = opcoes.distanciaKm && opcoes.distanciaKm > 0 ? Math.round(opcoes.distanciaKm) : PISO.distanceTravel
   const k = novaChaveCte(m.documento, agora, aleatorio)
   const identifier = novoIdentifier(agora)
   const dia = (n: number) => new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate() + n, 12, 0, 0)).toISOString()
@@ -155,7 +159,9 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
       branchCode: m.branchCode,
       ncm: m.ncm, // 4 caracteres
       anttCodeType,
-      distanciaKm: PISO.distanceTravel,
+      distanciaKm: distancia,
+      ibgeOrigem: IBGE_ORIGEM,
+      ibgeDestino: IBGE_DESTINO,
       vpr: { issue: false, oneWay: true, suspendedAxles: 0, returnSuspendedAxles: 0 },
       entrega: { esperadaEm: dia(2), tipoLocal: m.tipoLocal },
       motoristas: m.motoristas,
@@ -163,7 +169,7 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
       placas: m.placas,
       destinatario: m.destinatario,
       impostos: [{ tipo: 'SEST', valor: SEST_PF }], // prestador pessoa física
-      pisoFrete: { ...PISO },
+      pisoFrete: { ...PISO, distanceTravel: distancia },
     },
   }
 }

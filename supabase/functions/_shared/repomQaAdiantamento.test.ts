@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ClienteRepomFrete, PedidoContratoFrete, ResultadoFrete } from './repomFreteClient.ts'
 import { montarCorpoContrato, validarContratoFrete } from './repomFreteClient.ts'
-import { ADIANTAMENTO, FRETE_TOTAL, MAX_TENTATIVAS_EMISSAO, chaveValida, classificarFalhaEmissao, conferirModelo, dvChaveAcesso, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento, novaChaveCte, novoIdentifier } from './repomQaAdiantamento.ts'
+import { IBGE_DESTINO, IBGE_ORIGEM, ADIANTAMENTO, FRETE_TOTAL, MAX_TENTATIVAS_EMISSAO, chaveValida, classificarFalhaEmissao, conferirModelo, dvChaveAcesso, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento, novaChaveCte, novoIdentifier } from './repomQaAdiantamento.ts'
 import { executarQaTeste, type DepsQaTeste } from './repomQaTeste.ts'
 
 const ok = <T>(dados: T, http = 200): ResultadoFrete<T> => ({ ok: true, http, dados, bruto: dados })
@@ -83,7 +83,7 @@ test('classificação da falha: Saldo Insuficiente responde sobre o saldo; 2768 
 })
 
 // ---------- ações da função ----------
-function montar(o: { modelo?: unknown; tipos?: unknown; emitir?: ResultadoFrete<{ operationKey: string | null }>; status?: ResultadoFrete<{ shippingId: number | null; identifier: string | null; status: string | null; erros: string[] }[]>[]; porIdent?: ResultadoFrete<unknown>; hist?: string[]; ultima?: string | null; cancelar?: ResultadoFrete<unknown>; depoisCancel?: unknown } = {}) {
+function montar(o: { rota?: ResultadoFrete<unknown>; modelo?: unknown; tipos?: unknown; emitir?: ResultadoFrete<{ operationKey: string | null }>; status?: ResultadoFrete<{ shippingId: number | null; identifier: string | null; status: string | null; erros: string[] }[]>[]; porIdent?: ResultadoFrete<unknown>; hist?: string[]; ultima?: string | null; cancelar?: ResultadoFrete<unknown>; depoisCancel?: unknown } = {}) {
   const chamadas: string[] = []
   const args: Record<string, unknown> = {}
   let nStatus = 0
@@ -91,6 +91,7 @@ function montar(o: { modelo?: unknown; tipos?: unknown; emitir?: ResultadoFrete<
     verificarToken: async () => ({ ok: true }),
     consultarContratoPorViagem: async (id: unknown) => { chamadas.push(`viagem:${id}`); return ok(Number(id) === 2166947 ? (o.modelo ?? MODELO_GET) : (o.depoisCancel ?? { ShippingId: id, Status: 'Cancelado' })) },
     tiposDeCarga: async () => { chamadas.push('tipos'); return ok(o.tipos ?? TIPOS) },
+    consultarRotaPorCodigo: async (t: number, r: number, e: number) => { chamadas.push(`rota:${t}/${r}/${e}`); return o.rota ?? ok({ TraceCode: t, RouteCode: r, Distance: 432.4, RoundTrip: false, Name: 'SAO PAULO/SP x RIO DE JANEIRO/RJ' }) },
     emitirContrato: async (p: PedidoContratoFrete) => { chamadas.push('emitir'); args.pedido = p; return o.emitir ?? ok({ operationKey: 'OP-KEY' }) },
     consultarStatusPorChave: async () => { chamadas.push('status'); const r = (o.status ?? [ok([{ shippingId: 9, identifier: 'x', status: 'Finished', erros: [] }])])[Math.min(nStatus++, (o.status ?? [1]).length - 1)]; return r },
     consultarContratoPorIdentificador: async (i: string) => { chamadas.push(`ident:${i}`); return o.porIdent ?? ok({ ShippingId: 777, Identifier: i, Status: 'InTransit', CIOT: '123456789012', AdvanceMoneyValue: 10 }) },
@@ -189,4 +190,36 @@ test('cancelar: se a Repom recusar, para; se já estiver cancelado, não cancela
   const b = montar({ porIdent: ok({ ShippingId: 777, Identifier: 'RBRQA261124183015', Status: 'Cancelado' }) })
   const rb = await executarQaTeste({ acao: 'cancelar_adiantamento', confirmacao: { nome: 'Pedro' } }, b.deps)
   assert.equal(rb.corpo.ja_cancelado, true); assert.equal(b.chamadas.filter((q) => q.startsWith('cancelar:')).length, 0)
+})
+
+test('IBGE: o corpo leva BrazilianIBGECodeSource 3550308 e BrazilianIBGECodeDestination 3304557 (Repom exige, erro 725) e a distância da rota no piso', () => {
+  const lm = lerModeloContrato(MODELO_GET)
+  if (!('modelo' in lm)) throw new Error('modelo')
+  const { pedido } = montarPedidoAdiantamento(lm.modelo, AGORA, 5, () => 0.5, { distanciaKm: 432.4 })
+  const corpo = montarCorpoContrato(pedido)[0] as Record<string, unknown>
+  assert.equal(corpo.BrazilianIBGECodeSource, '3550308'); assert.equal(corpo.BrazilianIBGECodeDestination, '3304557'); assert.equal(IBGE_ORIGEM, '3550308'); assert.equal(IBGE_DESTINO, '3304557')
+  assert.equal(corpo.TravelledDistance, 432); assert.equal((corpo.MinimumFreightCost as { DistanceTravel: number }).DistanceTravel, 432)
+  const sem = montarCorpoContrato(montarPedidoAdiantamento(lm.modelo, AGORA, 5, () => 0.5).pedido)[0] as Record<string, unknown>
+  assert.equal(sem.TravelledDistance, 300) // sem a rota: distância padrão
+})
+
+test('emitir: lê a rota (GET) antes de emitir, usa a distância dela e os IBGE de 17/11; se a leitura da rota falhar, emite com a distância padrão e informa', async () => {
+  const m = montar()
+  const r = await executarQaTeste(EMITIR, m.deps)
+  assert.equal(r.status, 200); assert.ok(m.chamadas.includes('rota:11/22/5'))
+  const p = m.args.pedido as PedidoContratoFrete
+  assert.equal(p.ibgeOrigem, '3550308'); assert.equal(p.ibgeDestino, '3304557'); assert.equal(p.distanciaKm, 432)
+  const det = (r.corpo.etapas as { etapa: string; detalhe?: Record<string, unknown> }[]).find((e) => e.etapa === 'rota')?.detalhe
+  assert.equal(det?.lida, true); assert.equal(det?.ibge_na_resposta, false)
+  const falha = montar({ rota: erro(404, 'Rota não encontrada') })
+  const r2 = await executarQaTeste(EMITIR, falha.deps)
+  assert.equal(r2.status, 200); assert.equal((falha.args.pedido as PedidoContratoFrete).distanciaKm, 300)
+  assert.equal((r2.corpo.etapas as { etapa: string; detalhe?: Record<string, unknown> }[]).find((e) => e.etapa === 'rota')?.detalhe?.lida, false)
+})
+
+test('emitir (tentativa 2, a última): com 1 tentativa anterior com erro de validação, ainda emite; com 2 anteriores, recusa', async () => {
+  const ok2 = montar({ hist: ['erro'] })
+  assert.equal((await executarQaTeste(EMITIR, ok2.deps)).status, 200)
+  const nao = montar({ hist: ['erro', 'erro'] })
+  assert.equal((await executarQaTeste(EMITIR, nao.deps)).corpo.parou, true); assert.ok(!nao.chamadas.includes('emitir'))
 })
