@@ -86,7 +86,7 @@ export function montarMinimumFreightCost(p: PisoObjeto) {
 // ---- (h) Quitacao e erro 2768 ----
 export type StatusViagem = "InTransit" | "Finished" | "Quitada" | string;
 export function podeAutorizarPagamento(status: StatusViagem): ValidacaoSimples {
-  if (status !== "Quitada") return { ok: false, mensagem: "O pagamento so pode ser autorizado depois que a viagem estiver quitada (antes disso a Repom devolve erro 760)." };
+  if (status !== "Quitada" && status !== "Paid") return { ok: false, mensagem: "O pagamento so pode ser autorizado depois que a viagem estiver quitada (antes disso a Repom pode devolver erro 760). No QA, depois da quitacao o status da Repom passa a Paid." };
   return { ok: true };
 }
 
@@ -95,7 +95,8 @@ export type Dono = "Eduardo" | "Karen" | "Alan" | "Pedro";
 export interface ErroRepom { mensagem: string; dono: Dono; podeTentarDeNovo: boolean; pendenciaExterna?: boolean }
 export const TABELA_ERROS_REPOM: Record<string, ErroRepom> = {
   "801": { mensagem: "Motorista nao cadastrado na Repom antes do contrato. Cadastre o motorista e tente de novo.", dono: "Eduardo", podeTentarDeNovo: true },
-  "760": { mensagem: "Veiculo nao esta no prestador, ou pagamento antes da quitacao. Confirme com a Karen.", dono: "Karen", podeTentarDeNovo: false },
+  "760": { mensagem: "Erro 760 da Repom (codigo generico): pode ser veiculo fora do prestador, pagamento antes da quitacao OU data de pagamento invalida. Leia a mensagem que veio junto.", dono: "Karen", podeTentarDeNovo: false },
+  "760_DATA": { mensagem: "Data de pagamento recusada pela Repom (deve ser maior ou igual a data atual). Envie PaymentDate (AAAA-MM-DD) do dia seguinte e tente uma vez.", dono: "Pedro", podeTentarDeNovo: true },
   "2768": { mensagem: "Aguardando a Karen configurar o controle de saldo (ControleSaldo) na Repom.", dono: "Karen", podeTentarDeNovo: false, pendenciaExterna: true },
   "JA_CADASTRADO": { mensagem: "O processo ja esta cadastrado na Repom: vamos adotar o contrato existente, sem criar outro.", dono: "Eduardo", podeTentarDeNovo: false },
   "PISO": { mensagem: "Valor abaixo do piso minimo ANTT.", dono: "Eduardo", podeTentarDeNovo: true },
@@ -105,6 +106,8 @@ export function traduzirErroRepom(bruto: unknown): ErroRepom & { codigo: string 
   const t = String(bruto ?? "");
   if (JA_CADASTRADO.test(t)) return { codigo: "JA_CADASTRADO", ...TABELA_ERROS_REPOM.JA_CADASTRADO };
   const m = t.match(/\b(801|760|2768)\b/);
+  // 760 e generico: com mensagem de data de pagamento e erro de data (dono Pedro), nao de prestador/quitacao
+  if (m && m[1] === "760" && /data de pagamento|payment ?date|data atual/i.test(t)) return { codigo: "760", ...TABELA_ERROS_REPOM["760_DATA"] };
   if (m) return { codigo: m[1], ...TABELA_ERROS_REPOM[m[1]] };
   return null;
 }

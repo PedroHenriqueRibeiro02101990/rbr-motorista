@@ -6,7 +6,7 @@ import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
 export const CONTRATO_QA = { shippingId: 2166947, identifier: 'RBRC4943103', status: 'InTransit' } as const
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia'] as const
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'autorizar'] as const
 
 export const chaveLigada = (v: string | null | undefined) => String(v ?? '').trim().toLowerCase() === 'sim'
 
@@ -18,7 +18,7 @@ export interface DepsQaTeste {
   historico(acao: 'quitar' | 'autorizar'): Promise<string[]>
   registrar(acao: string, request: unknown): Promise<string | null>
   concluir(id: string | null, r: { status: 'ok' | 'erro'; http: number; resposta: unknown; erro: string | null }): Promise<void>
-  hoje(): string // AAAA-MM-DD
+  amanha(): string // AAAA-MM-DD do dia seguinte (a Repom recusa PaymentDate de hoje: "deve ser maior ou igual a data atual")
 }
 
 export interface SaidaQa { status: number; corpo: Record<string, unknown> }
@@ -111,6 +111,23 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
   if (acao === 'consultar_contrato') return fim(200)
   const lido = lerContratoQa(c.r.dados)
 
+  // 2b) só autorização (2ª rodada): contrato já quitado (Paid), UMA nova tentativa depois de uma recusa de validação
+  if (acao === 'autorizar') {
+    const ja = await d.historico('autorizar')
+    if (!lido?.status) return parar('Não consegui ler o status do contrato; nada foi autorizado.')
+    if (!['paid', 'quitada'].includes(lido.status.toLowerCase().replace(/[\s_-]/g, ''))) return parar(`Esperava o contrato quitado (Paid); status atual: ${curto(lido.status)}. Nada foi autorizado.`)
+    if (lido.identifier && lido.identifier !== CONTRATO_QA.identifier) return parar('O contrato consultado não é o RBRC4943103; nada foi autorizado.')
+    const branchA = lido.branchCode ?? lido.documentos[0]?.branchCode ?? ''
+    if (!branchA) return parar('Não encontrei o BranchCode no contrato; nada foi autorizado.')
+    const nomeA = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+    if (nomeA.length < 3) return parar('A autorização exige confirmacao.nome.', 400)
+    if (ja.length !== 1 || ja[0] !== 'erro') return parar('Só permito UMA nova tentativa, e só depois de exatamente uma recusa registrada; não repito.')
+    const a2 = await passo('autorizar', { shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, confirmado_por: nomeA, segunda_tentativa: true }, () =>
+      d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branchCode: branchA, dataPagamento: d.amanha() }]))
+    if (!a2.e.ok) return fim(a2.e.http && a2.e.http < 500 ? 422 : 502, { parou: true, pendencia_externa: ehSaldo2768(a2.e) ? pendenciaKaren : undefined })
+    return fim(200)
+  }
+
   // 3) travas antes de mexer em dinheiro
   if (!lido?.status) return parar('Não consegui ler o status do contrato; nada foi quitado.')
   if (lido.status.toLowerCase().replace(/[\s_-]/g, '') !== CONTRATO_QA.status.toLowerCase()) return parar(`O contrato não está mais em ${CONTRATO_QA.status} (status atual: ${curto(lido.status)}); nada foi quitado. Decidir antes de continuar.`)
@@ -134,7 +151,7 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
 
   // 5) autorização de pagamento (UMA tentativa, só depois da quitação ok)
   const a = await passo('autorizar', { shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, confirmado_por: nome }, () =>
-    d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branchCode: branch, dataPagamento: d.hoje() }]))
+    d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branchCode: branch, dataPagamento: d.amanha() }]))
   if (!a.e.ok) return fim(a.e.http && a.e.http < 500 ? 422 : 502, { parou: true, pendencia_externa: ehSaldo2768(a.e) ? pendenciaKaren : undefined })
   return fim(200)
 }

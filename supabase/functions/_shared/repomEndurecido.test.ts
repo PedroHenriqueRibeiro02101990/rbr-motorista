@@ -73,3 +73,10 @@ test('evento de erro nao leva dados pessoais', () => {
   const ev = eventoDeErro('op-1', traduzirErroRepom('760')!)
   assert.ok(!/\d{11}/.test(JSON.stringify(ev))); assert.equal(ev.origem, 'repom')
 })
+test('760 com mensagem de data de pagamento e tratado a parte (dono Pedro, 1 nova tentativa com o dia seguinte); 760 sem data continua generico', () => {
+  const d = traduzirErroRepom('A data de pagamento deve ser maior ou igual a data atual (760)')
+  assert.equal(d?.codigo, '760'); assert.equal(d?.dono, 'Pedro'); assert.equal(d?.podeTentarDeNovo, true); assert.match(d!.mensagem, /dia seguinte/)
+  const g = traduzirErroRepom('Erro 760: veiculo nao pertence ao prestador')
+  assert.equal(g?.dono, 'Karen'); assert.equal(g?.podeTentarDeNovo, false); assert.match(g!.mensagem, /data de pagamento invalida/)
+  assert.equal(podeAutorizarPagamento('Paid').ok, true)
+})

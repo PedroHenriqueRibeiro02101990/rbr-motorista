@@ -12,7 +12,7 @@ Tudo com mocks: nenhuma chamada a producao. Codigo em `supabase/functions/_share
 | Codigo | Mensagem | Dono | Tenta de novo |
 |---|---|---|---|
 | 801 | motorista nao cadastrado antes do contrato | Eduardo | sim |
-| 760 | veiculo fora do prestador / pagamento antes da quitacao | Karen | nao |
+| 760 | codigo generico: veiculo fora do prestador, pagamento antes da quitacao OU data de pagamento invalida (ler a mensagem; com data: dono Pedro, reenviar uma vez com o dia seguinte) | Karen (ou Pedro, se for data) | nao (sim, uma vez, se for data) |
 | 2768 | controle de saldo nao configurado | Karen (pendencia externa) | nao |
 | ja cadastrado | adota o contrato existente | Eduardo | nao |
 

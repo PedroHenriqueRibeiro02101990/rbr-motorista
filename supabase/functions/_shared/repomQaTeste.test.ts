@@ -20,7 +20,7 @@ function montar(o: { contrato?: unknown; consulta?: ResultadoFrete<unknown>; qui
   } as unknown as ClienteRepomFrete
   const linhas: { acao: string; status?: string; resposta?: unknown }[] = []
   const deps: DepsQaTeste = {
-    ligado: o.ligado ?? true, ambiente: o.ambiente ?? 'qa', frete, hoje: () => '2026-11-24',
+    ligado: o.ligado ?? true, ambiente: o.ambiente ?? 'qa', frete, amanha: () => '2026-11-25',
     historico: async (a) => o.hist?.[a] ?? [],
     registrar: async (acao) => { linhas.push({ acao }); return String(linhas.length - 1) },
     concluir: async (id, r) => { Object.assign(linhas[Number(id)], { status: r.status, resposta: r.resposta }) },
@@ -70,7 +70,7 @@ test('sequência feliz: token, consulta, quitação (Delivered, documentos do co
   assert.deepEqual(m.chamadas, ['token', 'consultar', 'quitar', 'autorizar'])
   const q = m.args.quitar as { shippingId: number; branchCode: string; documentos: { status: string; numero: string }[] }
   assert.equal(q.shippingId, 2166947); assert.equal(q.branchCode, '1'); assert.equal(q.documentos[0].status, 'Delivered'); assert.equal(q.documentos[0].numero, '660')
-  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', branchCode: '1', dataPagamento: '2026-11-24' }])
+  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', branchCode: '1', dataPagamento: '2026-11-25' }])
   assert.deepEqual(m.linhas.map((l) => l.acao), ['qa-teste-token', 'qa-teste-consultar_contrato', 'qa-teste-quitar', 'qa-teste-autorizar'])
   assert.ok(m.linhas.every((l) => l.status === 'ok'))
 })
@@ -144,4 +144,26 @@ test('lerContratoQa: lê Documents em Result aninhado, array na raiz, e status e
   assert.equal(lerContratoQa([contratoOk])?.status, 'InTransit')
   assert.equal(lerContratoQa({ Status: { Name: 'InTransit' } })?.status, 'InTransit')
   assert.equal(lerContratoQa('x'), null)
+})
+
+test('autorizar (2ª rodada): contrato Paid + exatamente uma recusa anterior -> UMA tentativa com a data do dia seguinte, sem quitar', async () => {
+  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { quitar: ['ok'], autorizar: ['erro'] } })
+  const r = await executarQaTeste(SEQ.confirmacao ? { acao: 'autorizar', confirmacao: { nome: 'Pedro' } } : {}, m.deps)
+  assert.equal(r.status, 200); assert.deepEqual(m.chamadas, ['token', 'consultar', 'autorizar'])
+  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', branchCode: '1', dataPagamento: '2026-11-25' }])
+})
+
+test('autorizar: 2768 vira pendência da Karen; qualquer outro erro para; sem nova tentativa', async () => {
+  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro'] }, autorizar: erro(400, 'Erro 2768', '2768') })
+  const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
+  assert.equal((r.corpo.pendencia_externa as { dono: string }).dono, 'Karen'); assert.equal(m.chamadas.filter((x) => x === 'autorizar').length, 1)
+})
+
+test('autorizar: não roda sem recusa anterior, depois de 2 tentativas, ou se o contrato não está Paid; nunca quita', async () => {
+  const casos = [{ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: [] as string[] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'erro'] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['ok'] } }, { contrato: contratoOk, hist: { autorizar: ['erro'] } }]
+  for (const c of casos) {
+    const m = montar(c)
+    const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
+    assert.equal(r.corpo.parou, true, JSON.stringify(c.hist)); assert.ok(!m.chamadas.includes('autorizar') && !m.chamadas.includes('quitar'))
+  }
 })

@@ -1,6 +1,6 @@
 // Edge Function TEMPORÁRIA repom-qa-teste (verify_jwt = true; chamada com a chave pública anon). APAGAR/DESATIVAR depois do teste.
 // Só roda com o segredo REPOM_QA_TESTE_LIBERADO=sim (fora disso responde "desligado"). Só QA (base e token FIXOS no código), só o contrato 2166947.
-// Ações: { acao: "token" | "consultar_contrato" | "sequencia", confirmacao?: { nome } }. Regras e travas em _shared/repomQaTeste.ts.
+// Ações: { acao: "token" | "consultar_contrato" | "sequencia" | "autorizar", confirmacao?: { nome } }. Regras e travas em _shared/repomQaTeste.ts.
 // Credenciais: SOMENTE REPOM_QA_FRETE_* (user, password, partner). Nunca devolve credencial, token nem corpo bruto da Repom.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
       ligado: true,
       ambiente,
       frete,
-      hoje: () => new Date().toISOString().slice(0, 10),
+      amanha: () => new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10), // dia seguinte (AAAA-MM-DD, formato do guia); a Repom recusa a data de hoje
       async historico(acao) {
         const { data } = await admin.from("repom_requisicoes").select("status").eq("acao", `qa-teste-${acao}`);
         return (data ?? []).map((x: { status: string }) => x.status);
