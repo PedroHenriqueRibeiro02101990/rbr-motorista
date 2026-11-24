@@ -1,6 +1,6 @@
 -- Central F3 (24/11/2026): tres parametros novos, so valores. ADITIVA. Depende de 20261124-0100-central-base (guarda trg_central_flag_guarda: so o Pedro altera CENTRAL_*).
 -- Rollback: supabase/rollback/rollback-20261124-0200-central-f3-parametros.sql
--- STATUS: NAO APLICADA. So aplicar quando o Pedro escrever "pode aplicar". Nao muda nenhuma flag PROSPECCAO_*. Nao guarda segredo.
+-- STATUS: APLICADA em 24/11/2026 por ordem do Pedro ("pode aplicar"), migrations central_f3_parametros_20261124_0200 e central_sdr_funcoes_20261124_0300.
 set local lock_timeout = '8s';
 
 insert into public.parametros_sistema (chave, valor, descricao) values

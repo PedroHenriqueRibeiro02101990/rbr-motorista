@@ -1,7 +1,7 @@
 -- Central F4 (24/11/2026): funcoes da Fila do SDR (encher a fila, listar com os dados da empresa, concluir a ligacao).
 -- ADITIVA: so cria funcoes novas. Depende de 20261124-0100-central-base (central_sdr_fila, central_eh_sdr/admin) e do CHECK leads_origem_check ja aceitar 'prospeccao'.
 -- Rollback: supabase/rollback/rollback-20261124-0300-central-sdr-funcoes.sql
--- STATUS: NAO APLICADA. So aplicar quando o Pedro escrever "pode aplicar".
+-- STATUS: APLICADA em 24/11/2026 por ordem do Pedro ("pode aplicar"), migrations central_f3_parametros_20261124_0200 e central_sdr_funcoes_20261124_0300.
 -- Regras (prompt do Pedro): entra quem respondeu (qualquer jeito) e quem tem telefone + nota >= CENTRAL_SDR_CORTE_NOTA (ate CENTRAL_SDR_MAX_DIA novos por dia);
 -- nao entra quem so abriu o e-mail; contato bloqueado / descadastrado nunca entra (o gatilho da fila tambem recusa); resultado da ligacao atualiza a empresa e cria/atualiza UM lead.
 set local lock_timeout = '8s';

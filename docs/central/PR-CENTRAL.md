@@ -12,8 +12,8 @@ Branch `feat/central-pedro`. **Sem merge, sem push até o Pedro mandar.**
 | Arquivo | Estado |
 |---|---|
 | `20261124-0100-central-base.sql` | **já aplicada** (pelo Pedro, em outra janela) |
-| `20261124-0200-central-f3-parametros.sql` (3 parâmetros: prefixos, marcas do pré-voo, metas) | **não aplicada** |
-| `20261124-0300-central-sdr-funcoes.sql` (encher fila, listar fila, concluir ligação) | **não aplicada** |
+| `20261124-0200-central-f3-parametros.sql` (3 parâmetros: prefixos, marcas do pré-voo, metas) | **aplicada em 24/11** |
+| `20261124-0300-central-sdr-funcoes.sql` (encher fila, listar fila, concluir ligação) | **aplicada em 24/11** |
 
 Com 0200/0300 ausentes a tela não quebra: as opções que dependem delas avisam "só funciona depois da migration 0200" e a Fila do SDR mostra o erro de função inexistente.
 
