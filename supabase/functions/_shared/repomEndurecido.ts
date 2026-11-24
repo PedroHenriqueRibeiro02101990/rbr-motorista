@@ -96,6 +96,8 @@ export interface ErroRepom { mensagem: string; dono: Dono; podeTentarDeNovo: boo
 export const TABELA_ERROS_REPOM: Record<string, ErroRepom> = {
   "801": { mensagem: "Motorista nao cadastrado na Repom antes do contrato. Cadastre o motorista e tente de novo.", dono: "Eduardo", podeTentarDeNovo: true },
   "760": { mensagem: "Erro 760 da Repom (codigo generico): pode ser veiculo fora do prestador, pagamento antes da quitacao OU data de pagamento invalida. Leia a mensagem que veio junto.", dono: "Karen", podeTentarDeNovo: false },
+  "728": { mensagem: "Branch (numero da filial) e obrigatorio na autorizacao de pagamento: o guia diz opcional, mas a API exige (QA 24/11). Valores corretos de Branch e BranchCode: confirmar com a Karen (palpite: Branch 1, BranchCode \"1\").", dono: "Pedro", podeTentarDeNovo: true },
+  "760_FILIAL": { mensagem: "Filial invalida para o identificador: o par Branch/BranchCode enviado nao vale para este contrato. Confirme com a Karen os valores (Branch 0 com BranchCode \"1\" foi recusado).", dono: "Karen", podeTentarDeNovo: false },
   "760_DATA": { mensagem: "Data de pagamento recusada pela Repom (deve ser maior ou igual a data atual). Envie PaymentDate (AAAA-MM-DD) do dia seguinte e tente uma vez.", dono: "Pedro", podeTentarDeNovo: true },
   "2768": { mensagem: "Aguardando a Karen configurar o controle de saldo (ControleSaldo) na Repom.", dono: "Karen", podeTentarDeNovo: false, pendenciaExterna: true },
   "JA_CADASTRADO": { mensagem: "O processo ja esta cadastrado na Repom: vamos adotar o contrato existente, sem criar outro.", dono: "Eduardo", podeTentarDeNovo: false },
@@ -105,9 +107,10 @@ export const TABELA_ERROS_REPOM: Record<string, ErroRepom> = {
 export function traduzirErroRepom(bruto: unknown): ErroRepom & { codigo: string } | null {
   const t = String(bruto ?? "");
   if (JA_CADASTRADO.test(t)) return { codigo: "JA_CADASTRADO", ...TABELA_ERROS_REPOM.JA_CADASTRADO };
-  const m = t.match(/\b(801|760|2768)\b/);
+  const m = t.match(/\b(801|760|728|2768)\b/);
   // 760 e generico: com mensagem de data de pagamento e erro de data (dono Pedro), nao de prestador/quitacao
   if (m && m[1] === "760" && /data de pagamento|payment ?date|data atual/i.test(t)) return { codigo: "760", ...TABELA_ERROS_REPOM["760_DATA"] };
+  if (m && m[1] === "760" && /filial/i.test(t)) return { codigo: "760", ...TABELA_ERROS_REPOM["760_FILIAL"] };
   if (m) return { codigo: m[1], ...TABELA_ERROS_REPOM[m[1]] };
   return null;
 }

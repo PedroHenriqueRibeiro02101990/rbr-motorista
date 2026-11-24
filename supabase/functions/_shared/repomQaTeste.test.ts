@@ -2,30 +2,33 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
-import { BASE_QA_FIXA, CONTRATO_QA, MOTIVO_EXCECAO, TOKEN_QA_FIXO, chaveLigada, executarQaTeste, lerContratoQa, type DepsQaTeste } from './repomQaTeste.ts'
+import { BASE_QA_FIXA, CONTRATO_QA, COMBOS_FIXOS, LIMITE_RODADA, MOTIVO_RODADA, TOKEN_QA_FIXO, chaveLigada, executarQaTeste, lerAutorizacoes, lerContratoQa, montarCombos, tipoErroAutorizacao, type DepsQaTeste } from './repomQaTeste.ts'
 
 const ok = <T>(dados: T, http = 200): ResultadoFrete<T> => ({ ok: true, http, dados, bruto: dados })
 const erro = (http: number, msg: string, codigoErro: string | null = null, incerto?: boolean): ResultadoFrete<never> => ({ ok: false, http, erro: msg, codigoErro, incerto, bruto: { segredo: 'SENHA_SECRETA' } })
 
 const contratoOk = { Identifier: 'RBRC4943103', Status: 'InTransit', BranchCode: '1', Documents: [{ Number: '660', Series: '1', BranchCode: '1', DocumentType: 'CTE' }] }
 
-function montar(o: { contrato?: unknown; consulta?: ResultadoFrete<unknown>; quitar?: ResultadoFrete<unknown>; autorizar?: ResultadoFrete<unknown>; token?: boolean; hist?: { quitar?: string[]; autorizar?: string[] }; ligado?: boolean; ambiente?: 'qa' | 'prd' } = {}) {
+function montar(o: { leitura?: ResultadoFrete<unknown>; autorizarSeq?: ResultadoFrete<unknown>[]; contrato?: unknown; consulta?: ResultadoFrete<unknown>; quitar?: ResultadoFrete<unknown>; autorizar?: ResultadoFrete<unknown>; token?: boolean; hist?: { quitar?: string[]; autorizar?: string[] }; ligado?: boolean; ambiente?: 'qa' | 'prd' } = {}) {
   const chamadas: string[] = []
   const args: Record<string, unknown> = {}
+  const todas: unknown[] = []
   const frete = {
     verificarToken: async () => { chamadas.push('token'); return o.token === false ? { ok: false, erro: 'Token recusado' } : { ok: true } },
     consultarContratoPorViagem: async (id: unknown) => { chamadas.push('consultar'); args.consultar = id; return o.consulta ?? ok(o.contrato ?? contratoOk) },
     quitarViagem: async (p: unknown) => { chamadas.push('quitar'); args.quitar = p; return o.quitar ?? ok({}) },
-    autorizarPagamento: async (p: unknown) => { chamadas.push('autorizar'); args.autorizar = p; return o.autorizar ?? ok({}) },
+    autorizarPagamento: async (p: unknown) => { chamadas.push('autorizar'); args.autorizar = p; todas.push(p); return o.autorizarSeq ? (o.autorizarSeq[todas.length - 1] ?? erro(400, 'sem resposta', '760')) : (o.autorizar ?? ok({})) },
+    consultarAutorizacaoPorViagem: async () => { chamadas.push('ler_viagem'); return o.leitura ?? erro(404, 'Não encontrado') },
+    consultarAutorizacaoPorIdentificador: async () => { chamadas.push('ler_ident'); return o.leitura ?? erro(404, 'Não encontrado') },
   } as unknown as ClienteRepomFrete
-  const linhas: { acao: string; status?: string; resposta?: unknown }[] = []
+  const linhas: { acao: string; status?: string; resposta?: unknown; request?: unknown }[] = []
   const deps: DepsQaTeste = {
     ligado: o.ligado ?? true, ambiente: o.ambiente ?? 'qa', frete, amanha: () => '2026-11-25',
     historico: async (a) => o.hist?.[a] ?? [],
-    registrar: async (acao) => { linhas.push({ acao }); return String(linhas.length - 1) },
+    registrar: async (acao, request) => { linhas.push({ acao, request }); return String(linhas.length - 1) },
     concluir: async (id, r) => { Object.assign(linhas[Number(id)], { status: r.status, resposta: r.resposta }) },
   }
-  return { deps, chamadas, args, linhas }
+  return { deps, chamadas, args, linhas, todas }
 }
 const SEQ = { acao: 'sequencia', confirmacao: { nome: 'Pedro Teste' } }
 
@@ -70,7 +73,7 @@ test('sequência feliz: token, consulta, quitação (Delivered, documentos do co
   assert.deepEqual(m.chamadas, ['token', 'consultar', 'quitar', 'autorizar'])
   const q = m.args.quitar as { shippingId: number; branchCode: string; documentos: { status: string; numero: string }[] }
   assert.equal(q.shippingId, 2166947); assert.equal(q.branchCode, '1'); assert.equal(q.documentos[0].status, 'Delivered'); assert.equal(q.documentos[0].numero, '660')
-  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', branchCode: '1', dataPagamento: '2026-11-25' }])
+  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', branch: 1, branchCode: '1', dataPagamento: '2026-11-25' }])
   assert.deepEqual(m.linhas.map((l) => l.acao), ['qa-teste-token', 'qa-teste-consultar_contrato', 'qa-teste-quitar', 'qa-teste-autorizar'])
   assert.ok(m.linhas.every((l) => l.status === 'ok'))
 })
@@ -146,16 +149,6 @@ test('lerContratoQa: lê Documents em Result aninhado, array na raiz, e status e
   assert.equal(lerContratoQa('x'), null)
 })
 
-test('autorizar (exceção, 3ª tentativa): contrato Paid + exatamente 2 recusas -> UMA tentativa SEM Branch/BranchCode, data do dia seguinte, motivo registrado, sem quitar', async () => {
-  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { quitar: ['ok'], autorizar: ['erro', 'erro'] } })
-  const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
-  assert.equal(r.status, 200); assert.equal(r.corpo.branch_e_branchcode_nao_vao_na_autorizacao, true)
-  assert.deepEqual(m.chamadas, ['token', 'consultar', 'autorizar'])
-  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', dataPagamento: '2026-11-25' }])
-  assert.ok(!('branchCode' in (m.args.autorizar as object[])[0]))
-  assert.match(JSON.stringify(m.linhas.at(-1)), /autorizar/); assert.match(MOTIVO_EXCECAO, /sem Branch e sem BranchCode/)
-})
-
 test('consultar_contrato informa o BranchCode do contrato (usado na quitação; não é segredo)', async () => {
   const m = montar({ contrato: { ...contratoOk, Status: 'Paid' } })
   const r = await executarQaTeste({ acao: 'consultar_contrato' }, m.deps)
@@ -163,17 +156,103 @@ test('consultar_contrato informa o BranchCode do contrato (usado na quitação; 
   assert.equal(det?.branchCode, '1'); assert.deepEqual(det?.branchCodeDocumentos, ['1'])
 })
 
-test('autorizar: 2768 vira pendência da Karen; qualquer outro erro para; sem nova tentativa', async () => {
-  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'erro'] }, autorizar: erro(400, 'Erro 2768', '2768') })
-  const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
-  assert.equal((r.corpo.pendencia_externa as { dono: string }).dono, 'Karen'); assert.equal(m.chamadas.filter((x) => x === 'autorizar').length, 1)
+
+const PAGO = { ...contratoOk, Status: 'Paid' }
+const E760 = () => erro(400, 'Filial Inválida para o Identificador RBRC4943103', '760')
+const E728 = () => erro(400, "'Branch' should not be empty.; 'Branch' must not be empty.", '728')
+const RODADA = { acao: 'rodada_autorizar', confirmacao: { nome: 'Pedro' } }
+const HIST3 = { autorizar: ['erro', 'erro', 'erro'] }
+
+test('combinações: lista fechada na ordem pedida; limite 4; valores achados na leitura entram primeiro e a última sai', () => {
+  assert.equal(LIMITE_RODADA, 4)
+  assert.deepEqual(COMBOS_FIXOS.map((c) => [c.branch, c.branchCode ?? null]), [[1, '1'], [1, null], [1, '69115969000104'], [2, '1']])
+  assert.deepEqual(montarCombos([]).map((c) => [c.branch, c.branchCode ?? null]), [[1, '1'], [1, null], [1, '69115969000104'], [2, '1']])
+  assert.deepEqual(montarCombos([{ branch: 7, branchCode: '9', origem: 'x' }]).map((c) => [c.branch, c.branchCode ?? null]), [[7, '9'], [1, '1'], [1, null], [1, '69115969000104']])
+  assert.equal(montarCombos([{ branch: 1, branchCode: '1', origem: 'x' }]).length, 4) // duplicado não gasta vaga
 })
 
-test('autorizar: não roda com 0, 1 ou 3 tentativas anteriores, com sucesso anterior, ou contrato fora de Paid; nunca quita', async () => {
-  const casos = [{ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: [] as string[] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro'] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'erro', 'erro'] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'ok'] } }, { contrato: contratoOk, hist: { autorizar: ['erro', 'erro'] } }]
-  for (const c of casos) {
-    const m = montar(c)
-    const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
-    assert.equal(r.corpo.parou, true, JSON.stringify(c.hist)); assert.ok(!m.chamadas.includes('autorizar') && !m.chamadas.includes('quitar'))
+test('classificação dos erros: 760 filial e 728 seguem; 2768 e qualquer outro tipo PARAM', () => {
+  assert.equal(tipoErroAutorizacao({ codigoErro: '760', erro: 'Filial Inválida para o Identificador X' }), 'filial')
+  assert.equal(tipoErroAutorizacao({ codigoErro: '728', erro: "'Branch' should not be empty." }), 'branch')
+  assert.equal(tipoErroAutorizacao({ codigoErro: null, erro: "'Branch' must not be empty." }), 'branch')
+  assert.equal(tipoErroAutorizacao({ codigoErro: '2768', erro: 'x' }), 'saldo2768')
+  assert.equal(tipoErroAutorizacao({ codigoErro: '760', erro: 'A data de pagamento deve ser maior ou igual a data atual' }), 'novo')
+  assert.equal(tipoErroAutorizacao({ codigoErro: '999', erro: 'contrato já autorizado' }), 'novo')
+})
+
+test('ler_autorizacao: só leitura (nada de POST), devolve só campos não secretos', async () => {
+  const m = montar({ contrato: PAGO, leitura: ok({ ShippingId: 2166947, Branch: 1, BranchCode: '1', PaymentDate: '2026-11-20', AmountPaid: 100, BatchId: 5, Token: 'SEGREDO' }) })
+  const r = await executarQaTeste({ acao: 'ler_autorizacao' }, m.deps)
+  assert.equal(r.status, 200); assert.ok(!m.chamadas.includes('autorizar') && !m.chamadas.includes('quitar'))
+  assert.ok(!JSON.stringify(r.corpo).includes('SEGREDO'))
+  const det = (r.corpo.etapas as { detalhe?: { encontradas?: number } }[]).at(-1)?.detalhe
+  assert.equal(det?.encontradas, 1)
+  assert.deepEqual(lerAutorizacoes({ Result: [{ Branch: 1, BranchCode: '1' }] }), [{ branch: 1, branchCode: '1' }])
+  assert.deepEqual(lerAutorizacoes({ nada: 1 }), [])
+})
+
+test('rodada: sem valores na leitura, tenta na ordem 1,2,3,4 e PARA no primeiro sucesso (3ª); data do dia seguinte; cada tentativa registrada com motivo e limite', async () => {
+  const m = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E760(), E728(), ok({ BatchId: 9 })] })
+  const r = await executarQaTeste(RODADA, m.deps)
+  assert.equal(r.status, 200); assert.equal(r.corpo.ok, true)
+  assert.deepEqual(r.corpo.combinacao_que_funcionou, { branch: 1, branchCode: '69115969000104' })
+  const enviados = m.todas as { branch: number; branchCode?: string; dataPagamento: string }[][]
+  assert.deepEqual(enviados.map((x) => [x[0].branch, x[0].branchCode ?? null, x[0].dataPagamento]), [[1, '1', '2026-11-25'], [1, null, '2026-11-25'], [1, '69115969000104', '2026-11-25']])
+  const linhasRodada = m.linhas.filter((l) => l.acao === 'qa-teste-autorizar-rodada')
+  assert.equal(linhasRodada.length, 3)
+  assert.match(JSON.stringify(linhasRodada[0].request), /limite/); assert.match(JSON.stringify(linhasRodada[0].request), /Rodada fixa autorizada pelo Pedro/)
+  assert.ok(MOTIVO_RODADA.includes('4 tentativas'))
+  assert.deepEqual(linhasRodada.map((l) => l.status), ['erro', 'erro', 'ok'])
+})
+
+test('rodada: se nenhuma funcionar, para após 4 e manda esperar a Karen', async () => {
+  const m = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E760(), E728(), E760(), E760(), E760()] })
+  const r = await executarQaTeste(RODADA, m.deps)
+  assert.equal(r.corpo.parou, true); assert.equal(m.todas.length, 4); assert.match(String(r.corpo.motivo), /Karen/)
+})
+
+test('rodada: com valores já registrados na Repom, eles vão primeiro e a combinação 4 (Branch 2) sai', async () => {
+  const m = montar({ contrato: PAGO, hist: HIST3, leitura: ok([{ Branch: 7, BranchCode: '9', PaymentDate: '2026-11-20' }]), autorizarSeq: [E760(), E760(), E760(), E760()] })
+  await executarQaTeste(RODADA, m.deps)
+  const env = (m.todas as { branch: number; branchCode?: string }[][]).map((x) => [x[0].branch, x[0].branchCode ?? null])
+  assert.deepEqual(env, [[7, '9'], [1, '1'], [1, null], [1, '69115969000104']])
+})
+
+test('rodada: 2768 para na hora, vira pendência da Karen, sem nova tentativa', async () => {
+  const m = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E760(), erro(400, 'Erro 2768 ControleSaldo', '2768'), ok({})] })
+  const r = await executarQaTeste(RODADA, m.deps)
+  assert.equal(m.todas.length, 2); assert.equal((r.corpo.pendencia_externa as { dono: string }).dono, 'Karen')
+})
+
+test('rodada: erro de tipo NOVO (data, saldo, contrato já autorizado) ou incerto (5xx) para na hora', async () => {
+  for (const novo of [erro(400, 'A data de pagamento deve ser maior ou igual a data atual', '760'), erro(409, 'Contrato já autorizado', '900'), erro(503, 'indisponível', null, true), erro(0, 'rede', null, true)]) {
+    const m = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E728(), novo, ok({})] })
+    const r = await executarQaTeste(RODADA, m.deps)
+    assert.equal(r.corpo.parou, true); assert.equal(m.todas.length, 2)
   }
+})
+
+test('rodada: só vale com exatamente 3 recusas anteriores, uma única vez, contrato Paid e nome; nunca quita', async () => {
+  const casos = [
+    { contrato: PAGO, hist: { autorizar: ['erro', 'erro'] } },
+    { contrato: PAGO, hist: { autorizar: ['erro', 'erro', 'erro', 'erro'] } },
+    { contrato: PAGO, hist: { autorizar: ['erro', 'erro', 'ok'] } },
+    { contrato: PAGO, hist: { autorizar: ['erro', 'erro', 'erro'], 'autorizar-rodada': ['erro'] } },
+    { contrato: contratoOk, hist: HIST3 },
+  ]
+  for (const c of casos) {
+    const m = montar(c as never)
+    const r = await executarQaTeste(RODADA, m.deps)
+    assert.equal(r.corpo.parou, true, JSON.stringify(c.hist)); assert.equal(m.todas.length, 0); assert.ok(!m.chamadas.includes('quitar'))
+  }
+  const m = montar({ contrato: PAGO, hist: HIST3 })
+  assert.equal((await executarQaTeste({ acao: 'rodada_autorizar' }, m.deps)).status, 400); assert.equal(m.todas.length, 0)
+})
+
+test('a ação antiga "autorizar" não existe mais; entradas livres (branch, url) são ignoradas', async () => {
+  const m = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E728()] })
+  assert.equal((await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)).status, 400)
+  const m2 = montar({ contrato: PAGO, hist: HIST3, autorizarSeq: [E728(), E728(), E728(), E728()] })
+  await executarQaTeste({ ...RODADA, branch: 99, branchCode: 'X', url: 'https://www.repom.com.br' }, m2.deps)
+  assert.ok((m2.todas as { branch: number }[][]).every((x) => [1, 2].includes(x[0].branch)))
 })

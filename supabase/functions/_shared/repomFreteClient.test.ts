@@ -144,7 +144,7 @@ test('cancelar, interromper, TAC-agregado, pagamento e quitação: caminhos e co
   await c.encerrarCiotAgregado('123')
   await c.cancelarCiotAgregado('123', 'erro')
   await c.retificarCiotAgregado({ ciot: '123', veiculos: [{ placa: 'ABC1D23', rntrc: '000300027' }], quantidade: 1, preco: 1 })
-  await c.autorizarPagamento([{ shippingId: 1719704, identifier: '123987', branchCode: '1', dataPagamento: '2026-11-20' }])
+  await c.autorizarPagamento([{ shippingId: 1719704, identifier: '123987', branch: 1, branchCode: '1', dataPagamento: '2026-11-20' }])
   await c.quitarViagem({ branchCode: '1', shippingId: 1719704, documentos: [{ numero: '123', serie: '1', branchCode: '1', tipo: 'CTE', status: 'Delivered' }] })
   await c.cancelarQuitacao(1719704)
   await c.consultarPracasVpr('6483')
@@ -182,13 +182,17 @@ test('saldo do cliente: GET no host do Relatório com datas AAAA-MM-DD; datas ru
   assert.equal(m.chamadas.length, antes)
 })
 
-test('autorizar pagamento: sem branchCode NAO envia Branch nem BranchCode (opcionais no guia, cap. 66); com branchCode envia os dois', async () => {
+test('autorizar pagamento: Branch (numero) e OBRIGATORIO (QA devolveu 728 sem ele); BranchCode so vai se informado', async () => {
   const corpos: unknown[] = []
   const m = mock((c) => { if (!ehToken(c) && c.init.body) corpos.push(JSON.parse(c.init.body)); return ehToken(c) ? ok({ access_token: 'T', expires_in: 3600 }) : ok({}) })
   const c = criarRepomFreteClient({ ...cfg, urlBase: 'https://exemplo.invalid/api' }, m.fetchFn)
-  assert.equal((await c.autorizarPagamento([{ shippingId: 2166947, identifier: 'RBRC4943103', dataPagamento: '2026-11-25' }])).ok, true)
-  assert.deepEqual(corpos[0], [{ ShippingId: 2166947, Identifier: 'RBRC4943103', PaymentDate: '2026-11-25' }])
-  await c.autorizarPagamento([{ identifier: 'X1', branchCode: '1', dataPagamento: '2026-11-25' }])
-  assert.deepEqual(corpos[1], [{ Identifier: 'X1', Branch: 0, BranchCode: '1', PaymentDate: '2026-11-25' }])
-  assert.equal((await c.autorizarPagamento([{ identifier: '  ', dataPagamento: '2026-11-25' }])).ok, false)
+  assert.equal((await c.autorizarPagamento([{ shippingId: 2166947, identifier: 'RBRC4943103', branch: 1, dataPagamento: '2026-11-25' }])).ok, true)
+  assert.deepEqual(corpos[0], [{ ShippingId: 2166947, Identifier: 'RBRC4943103', Branch: 1, PaymentDate: '2026-11-25' }])
+  await c.autorizarPagamento([{ identifier: 'X1', branch: 1, branchCode: '1', dataPagamento: '2026-11-25' }])
+  assert.deepEqual(corpos[1], [{ Identifier: 'X1', Branch: 1, BranchCode: '1', PaymentDate: '2026-11-25' }])
+  const antes = m.chamadas.length
+  for (const ruim of [{ identifier: 'X', dataPagamento: '2026-11-25' }, { identifier: 'X', branch: Number.NaN, dataPagamento: '2026-11-25' }, { identifier: ' ', branch: 1, dataPagamento: '2026-11-25' }, { identifier: 'X', branch: -1, dataPagamento: '2026-11-25' }]) {
+    assert.equal((await c.autorizarPagamento([ruim as never])).ok, false)
+  }
+  assert.equal(m.chamadas.length, antes) // nada foi enviado
 })

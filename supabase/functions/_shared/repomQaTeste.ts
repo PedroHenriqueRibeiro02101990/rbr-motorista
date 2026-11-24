@@ -6,10 +6,29 @@ import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
 export const CONTRATO_QA = { shippingId: 2166947, identifier: 'RBRC4943103', status: 'InTransit' } as const
-/** Recusas já registradas para a autorização (1ª: data de hoje; 2ª: "Filial Inválida"). A 3ª tentativa é uma exceção. */
-export const TENTATIVAS_ANTERIORES_AUTORIZAR = 2
-export const MOTIVO_EXCECAO = '3a tentativa autorizada pelo Pedro em 24/11/2026: sem Branch e sem BranchCode (opcionais, guia 3.0 cap. 66), PaymentDate do dia seguinte, rota POST /PaymentAuthorization (Swagger QA)'
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'autorizar'] as const
+/** Recusas já registradas na rota /PaymentAuthorization antes da rodada fixa: 760 data, 760 filial, 728 Branch obrigatório. */
+export const TENTATIVAS_ANTERIORES_AUTORIZAR = 3
+/** RODADA FIXA (exceção à regra de uma tentativa por ação, autorizada pelo Pedro em 24/11/2026): no máximo 4 tentativas, nesta ordem, PaymentDate sempre do dia seguinte. */
+export const LIMITE_RODADA = 4
+export const MOTIVO_RODADA = 'Rodada fixa autorizada pelo Pedro em 24/11/2026: ate 4 tentativas de POST /PaymentAuthorization (Branch obrigatorio, 728), valores de Branch/BranchCode nao confirmados pela Karen; para no 1o sucesso, no 2768 ou em erro de tipo novo'
+export interface Combo { branch: number; branchCode?: string; origem: string }
+/** Lista fechada, sem entrada livre. Se a leitura prévia achar valores já registrados na Repom, eles entram primeiro e a última combinação sai (limite 4). */
+export const COMBOS_FIXOS: Combo[] = [
+  { branch: 1, branchCode: '1', origem: 'palpite: Branch 1, BranchCode "1"' },
+  { branch: 1, origem: 'Branch 1, sem BranchCode' },
+  { branch: 1, branchCode: '69115969000104', origem: 'Branch 1, BranchCode = CNPJ da filial do QA' },
+  { branch: 2, branchCode: '1', origem: 'Branch 2, BranchCode "1"' },
+]
+export function montarCombos(achados: Combo[]): Combo[] {
+  const vistos = new Set<string>()
+  const lista: Combo[] = []
+  for (const c of [...achados, ...COMBOS_FIXOS]) {
+    const k = `${c.branch}|${c.branchCode ?? ''}`
+    if (!vistos.has(k)) { vistos.add(k); lista.push(c) }
+  }
+  return lista.slice(0, LIMITE_RODADA)
+}
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar'] as const
 
 export const chaveLigada = (v: string | null | undefined) => String(v ?? '').trim().toLowerCase() === 'sim'
 
@@ -18,7 +37,7 @@ export interface DepsQaTeste {
   ambiente: 'qa' | 'prd'
   frete: ClienteRepomFrete
   /** status das linhas anteriores de repom_requisicoes para esta ação ('quitar' | 'autorizar') */
-  historico(acao: 'quitar' | 'autorizar'): Promise<string[]>
+  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada'): Promise<string[]>
   registrar(acao: string, request: unknown): Promise<string | null>
   concluir(id: string | null, r: { status: 'ok' | 'erro'; http: number; resposta: unknown; erro: string | null }): Promise<void>
   amanha(): string // AAAA-MM-DD do dia seguinte (a Repom recusa PaymentDate de hoje: "deve ser maior ou igual a data atual")
@@ -76,6 +95,32 @@ function etapaDe(nome: string, r: ResultadoFrete<unknown>, detalhe?: Record<stri
 const ehSaldo2768 = (e: Etapa) => e.codigoErro === '2768' || /\b2768\b/.test(e.erro ?? '')
 const pendenciaKaren = { codigo: 2768, dono: 'Karen', nota: 'ControleSaldo não configurado; não tentar de novo.' }
 
+/** 'filial' = 760 de filial; 'branch' = 728; 'saldo2768'; 'novo' = qualquer outra coisa (a rodada PARA). */
+export function tipoErroAutorizacao(e: { codigoErro?: string | null; erro?: string }): 'saldo2768' | 'filial' | 'branch' | 'novo' {
+  const m = e.erro ?? ''
+  if (e.codigoErro === '2768' || /\b2768\b/.test(m)) return 'saldo2768'
+  if (e.codigoErro === '760' && /filial/i.test(m)) return 'filial'
+  if (e.codigoErro === '728' || /branch.*(empty|vazio)/i.test(m)) return 'branch'
+  return 'novo'
+}
+export interface AutorizacaoLida { branch?: number | string; branchCode?: string | number; paymentDate?: string; amountPaid?: number | string; batchId?: number | string }
+/** Lê autorizações existentes (só campos não secretos) de qualquer lugar da resposta, até 3 níveis. */
+export function lerAutorizacoes(dados: unknown): AutorizacaoLida[] {
+  const out: AutorizacaoLida[] = []
+  const rec = (x: unknown, n: number) => {
+    if (n > 3 || x == null) return
+    if (Array.isArray(x)) { for (const y of x) rec(y, n + 1); return }
+    if (!ehObj(x)) return
+    const g = (k: string) => { const f = Object.keys(x).find((y) => y.toLowerCase() === k.toLowerCase()); const v = f ? x[f] : undefined; return typeof v === 'string' || typeof v === 'number' ? v : undefined }
+    const item: AutorizacaoLida = { branch: g('Branch'), branchCode: g('BranchCode'), paymentDate: g('PaymentDate') as string | undefined, amountPaid: g('AmountPaid'), batchId: g('BatchId') }
+    const limpo = Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined && v !== '')) as AutorizacaoLida
+    if (Object.keys(limpo).length) out.push(limpo)
+    else for (const v of Object.values(x)) rec(v, n + 1)
+  }
+  rec(dados, 0)
+  return out
+}
+
 export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaTeste): Promise<SaidaQa> {
   if (!d.ligado) return { status: 503, corpo: { ok: false, desligado: true, erro: 'desligado' } }
   if (d.ambiente !== 'qa') return { status: 403, corpo: { ok: false, erro: 'Esta função só roda em QA.' } }
@@ -114,20 +159,56 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
   if (acao === 'consultar_contrato') return fim(200)
   const lido = lerContratoQa(c.r.dados)
 
-  // 2b) só autorização (3ª rodada, EXCEÇÃO registrada): contrato já quitado (Paid); sem Branch/BranchCode (opcionais, guia 3.0 cap. 66)
-  if (acao === 'autorizar') {
-    const ja = await d.historico('autorizar')
+  // 2b) leitura das autorizações já registradas na Repom (só leitura, não gasta tentativa)
+  const lerAuto = async () => {
+    const porViagem = await d.frete.consultarAutorizacaoPorViagem(CONTRATO_QA.shippingId)
+    const porIdent = await d.frete.consultarAutorizacaoPorIdentificador(CONTRATO_QA.identifier)
+    const itens = [...(porViagem.ok ? lerAutorizacoes(porViagem.dados) : []), ...(porIdent.ok ? lerAutorizacoes(porIdent.dados) : [])]
+    const unicos = itens.filter((x, i) => itens.findIndex((y) => JSON.stringify(y) === JSON.stringify(x)) === i)
+    return { itens: unicos, http: [porViagem.http, porIdent.http], erros: [porViagem.ok ? null : curto(porViagem.erro), porIdent.ok ? null : curto(porIdent.erro)] }
+  }
+  if (acao === 'ler_autorizacao' || acao === 'rodada_autorizar') {
+    const idLeitura = await d.registrar('qa-teste-ler-autorizacao', { acao })
+    const l0 = await lerAuto()
+    const detLeitura = { encontradas: l0.itens.length, itens: l0.itens, http: l0.http, erros_leitura: l0.erros }
+    await d.concluir(idLeitura, { status: 'ok', http: l0.http[0] ?? 0, resposta: detLeitura, erro: null })
+    etapas.push({ etapa: 'ler_autorizacao', ok: true, http: l0.http[0] ?? 0, detalhe: detLeitura })
+    if (acao === 'ler_autorizacao') return fim(200)
+
+    // 2c) RODADA FIXA: travas
     if (!lido?.status) return parar('Não consegui ler o status do contrato; nada foi autorizado.')
     if (!['paid', 'quitada'].includes(lido.status.toLowerCase().replace(/[\s_-]/g, ''))) return parar(`Esperava o contrato quitado (Paid); status atual: ${curto(lido.status)}. Nada foi autorizado.`)
     if (lido.identifier && lido.identifier !== CONTRATO_QA.identifier) return parar('O contrato consultado não é o RBRC4943103; nada foi autorizado.')
-    const nomeA = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
-    if (nomeA.length < 3) return parar('A autorização exige confirmacao.nome.', 400)
-    // Regra de "uma tentativa por ação" com UMA exceção explícita: já houve exatamente 2 recusas de validação (data; filial) e esta é a 3ª, autorizada pelo Pedro.
-    if (ja.length !== TENTATIVAS_ANTERIORES_AUTORIZAR || ja.some((x) => x !== 'erro')) return parar('A exceção permite UMA tentativa a mais, e só com exatamente 2 recusas anteriores; não repito.')
-    const a2 = await passo('autorizar', { shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, confirmado_por: nomeA, excecao: MOTIVO_EXCECAO, branch_enviado: false }, () =>
-      d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, dataPagamento: d.amanha() }]))
-    if (!a2.e.ok) return fim(a2.e.http && a2.e.http < 500 ? 422 : 502, { parou: true, pendencia_externa: ehSaldo2768(a2.e) ? pendenciaKaren : undefined })
-    return fim(200, { branch_e_branchcode_nao_vao_na_autorizacao: true })
+    const nomeR = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+    if (nomeR.length < 3) return parar('A rodada exige confirmacao.nome.', 400)
+    const ja = await d.historico('autorizar')
+    if (ja.length !== TENTATIVAS_ANTERIORES_AUTORIZAR || ja.some((x) => x !== 'erro')) return parar('A rodada só vale com exatamente 3 recusas anteriores; não rodo.')
+    if ((await d.historico('autorizar-rodada')).length) return parar('A rodada fixa é única e já foi usada; não repito.')
+
+    const achados: Combo[] = l0.itens
+      .filter((x) => x.branch != null && Number.isInteger(Number(x.branch)))
+      .map((x) => ({ branch: Number(x.branch), branchCode: x.branchCode != null ? String(x.branchCode) : undefined, origem: 'valores já registrados na Repom (leitura prévia)' }))
+    const combos = montarCombos(achados)
+    const tentativas: Record<string, unknown>[] = []
+    for (const [i, cb] of combos.entries()) {
+      const id = await d.registrar('qa-teste-autorizar-rodada', { tentativa: i + 1, limite: LIMITE_RODADA, branch: cb.branch, branchCode: cb.branchCode ?? null, origem: cb.origem, motivo: MOTIVO_RODADA, confirmado_por: nomeR })
+      const r = await d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branch: cb.branch, ...(cb.branchCode ? { branchCode: cb.branchCode } : {}), dataPagamento: d.amanha() }])
+      const e = etapaDe('autorizar_rodada', r, { tentativa: i + 1, branch: cb.branch, branchCode: cb.branchCode ?? null, origem: cb.origem })
+      await d.concluir(id, { status: e.ok ? 'ok' : 'erro', http: e.http, resposta: { ok: e.ok, http: e.http, codigoErro: e.codigoErro ?? null, erro: e.erro ?? null, branch: cb.branch, branchCode: cb.branchCode ?? null }, erro: e.ok ? null : (e.erro ?? null) })
+      etapas.push(e)
+      tentativas.push({ n: i + 1, branch: cb.branch, branchCode: cb.branchCode ?? null, http: e.http, codigo: e.codigoErro ?? null, erro: e.erro ?? null, ok: e.ok })
+      if (e.ok) {
+        const depois = await lerAuto()
+        const c2 = await d.frete.consultarContratoPorViagem(CONTRATO_QA.shippingId)
+        const l2 = c2.ok ? lerContratoQa(c2.dados) : null
+        return fim(200, { ok: true, combinacao_que_funcionou: { branch: cb.branch, branchCode: cb.branchCode ?? null }, tentativas, depois: { autorizacoes: depois.itens, status_contrato: l2?.status ?? null } })
+      }
+      const tipo = tipoErroAutorizacao(e)
+      if (tipo === 'saldo2768') return fim(422, { parou: true, motivo: 'Apareceu o erro 2768; não tento de novo.', tentativas, pendencia_externa: pendenciaKaren })
+      if (e.detalhe?.incerto || e.http >= 500 || e.http === 0) return fim(502, { parou: true, motivo: 'Resultado incerto (erro 5xx ou falha de rede); não sei se a Repom registrou. Parei para conferir.', tentativas })
+      if (tipo === 'novo') return fim(422, { parou: true, erro_de_tipo_novo: true, motivo: 'Erro de tipo NOVO (não é 760 de filial nem 728); parei para você decidir.', tentativas })
+    }
+    return fim(422, { parou: true, motivo: `Nenhuma das ${combos.length} combinações funcionou (limite ${LIMITE_RODADA}); não insisto. Próximo passo: resposta da Karen.`, tentativas })
   }
 
   // 3) travas antes de mexer em dinheiro
@@ -153,7 +234,7 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
 
   // 5) autorização de pagamento (UMA tentativa, só depois da quitação ok)
   const a = await passo('autorizar', { shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, confirmado_por: nome }, () =>
-    d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branchCode: branch, dataPagamento: d.amanha() }]))
+    d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branch: Number(branch), branchCode: branch, dataPagamento: d.amanha() }]))
   if (!a.e.ok) return fim(a.e.http && a.e.http < 500 ? 422 : 502, { parou: true, pendencia_externa: ehSaldo2768(a.e) ? pendenciaKaren : undefined })
   return fim(200)
 }

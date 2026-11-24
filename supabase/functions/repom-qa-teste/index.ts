@@ -1,6 +1,6 @@
 // Edge Function TEMPORÁRIA repom-qa-teste (verify_jwt = true; chamada com a chave pública anon). APAGAR/DESATIVAR depois do teste.
 // Só roda com o segredo REPOM_QA_TESTE_LIBERADO=sim (fora disso responde "desligado"). Só QA (base e token FIXOS no código), só o contrato 2166947.
-// Ações: { acao: "token" | "consultar_contrato" | "sequencia" | "autorizar", confirmacao?: { nome } }. Regras e travas em _shared/repomQaTeste.ts.
+// Ações: { acao: "token" | "consultar_contrato" | "sequencia" | "ler_autorizacao" | "rodada_autorizar", confirmacao?: { nome } }. Regras e travas em _shared/repomQaTeste.ts.
 // Credenciais: SOMENTE REPOM_QA_FRETE_* (user, password, partner). Nunca devolve credencial, token nem corpo bruto da Repom.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";

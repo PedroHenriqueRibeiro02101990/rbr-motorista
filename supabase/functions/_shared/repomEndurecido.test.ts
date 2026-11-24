@@ -80,3 +80,9 @@ test('760 com mensagem de data de pagamento e tratado a parte (dono Pedro, 1 nov
   assert.equal(g?.dono, 'Karen'); assert.equal(g?.podeTentarDeNovo, false); assert.match(g!.mensagem, /data de pagamento invalida/)
   assert.equal(podeAutorizarPagamento('Paid').ok, true)
 })
+test('728 (Branch obrigatorio) e 760 de filial tem tratamento proprio; o palpite Branch 1 / BranchCode "1" fica registrado', () => {
+  const b = traduzirErroRepom("'Branch' should not be empty (728)")
+  assert.equal(b?.codigo, '728'); assert.equal(b?.dono, 'Pedro'); assert.match(b!.mensagem, /obrigatorio/); assert.match(b!.mensagem, /Branch 1/)
+  const f = traduzirErroRepom('Erro 760: Filial Inválida para o Identificador X')
+  assert.equal(f?.dono, 'Karen'); assert.equal(f?.podeTentarDeNovo, false); assert.match(f!.mensagem, /Filial invalida/)
+})

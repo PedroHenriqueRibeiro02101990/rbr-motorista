@@ -317,7 +317,7 @@ export interface ClienteRepomFrete {
   cancelarCiotAgregado(ciot: string, motivo: string): Promise<ResultadoFrete<unknown>>
   encerrarCiotAgregado(ciot: string): Promise<ResultadoFrete<unknown>>
   // pagamento e quitação
-  autorizarPagamento(itens: { shippingId?: number; identifier: string; branchCode?: string; dataPagamento: string }[]): Promise<ResultadoFrete<unknown>>
+  autorizarPagamento(itens: { shippingId?: number; identifier: string; branch: number; branchCode?: string; dataPagamento: string }[]): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorLote(lote: number | string): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorIdentificador(identifier: string): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorViagem(shippingId: number | string): Promise<ResultadoFrete<unknown>>
@@ -507,11 +507,12 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     encerrarCiotAgregado: (ciot) => (!ciot.trim() ? invalido('Informe o CIOT.') : rodar('POST', '/Shipping/CIOTAggregate/ClosingCIOT/', { corpo: { TransportOperationIdentifierCode: ciot }, versao: '3.0' })),
 
     // D-F14: caminho "/PaymentAuthorization" (tabela do guia); o texto escreve "/Payment/Authorization".
-    // Guia 3.0 cap. 66: so Identifier e PaymentDate sao obrigatorios; Branch e BranchCode sao OPCIONAIS (sem branchCode, nenhum dos dois vai no corpo).
+    // Guia 3.0 cap. 66 diz que Branch e BranchCode sao opcionais, mas o QA (24/11/2026) respondeu 728 "'Branch' should not be empty" sem Branch, e o Swagger marca
+    // todos os campos como NotNull/NotEmpty: Branch (numero) e OBRIGATORIO aqui; BranchCode so vai se informado. Valores corretos de Branch/BranchCode: pendentes da Karen (palpite: Branch 1, BranchCode "1").
     autorizarPagamento: (itens) =>
-      itens.length && itens.every((i) => i.identifier.trim() && !Number.isNaN(new Date(i.dataPagamento).getTime()))
-        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, ...(i.branchCode?.trim() ? { Branch: 0, BranchCode: i.branchCode } : {}), PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
-        : invalido('Dados da autorização de pagamento incompletos.'),
+      itens.length && itens.every((i) => i.identifier.trim() && Number.isInteger(i.branch) && i.branch >= 0 && !Number.isNaN(new Date(i.dataPagamento).getTime()))
+        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, Branch: i.branch, ...(i.branchCode?.trim() ? { BranchCode: i.branchCode } : {}), PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
+        : invalido('Dados da autorização de pagamento incompletos (Branch é obrigatório).'),
     consultarAutorizacaoPorLote: (l) => rodar('GET', `/PaymentAuthorization/ByBatchId/${seg(l)}`),
     consultarAutorizacaoPorIdentificador: (i) => rodar('GET', `/PaymentAuthorization/ByIdentifier/${seg(i)}`),
     consultarAutorizacaoPorViagem: (id) => (idViagem(id) ? rodar('GET', `/PaymentAuthorization/ByShippingId/${idViagem(id)}`) : invalido('Código da viagem inválido.')),

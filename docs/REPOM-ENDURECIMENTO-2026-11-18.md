@@ -13,6 +13,8 @@ Tudo com mocks: nenhuma chamada a producao. Codigo em `supabase/functions/_share
 |---|---|---|---|
 | 801 | motorista nao cadastrado antes do contrato | Eduardo | sim |
 | 760 | codigo generico: veiculo fora do prestador, pagamento antes da quitacao OU data de pagamento invalida (ler a mensagem; com data: dono Pedro, reenviar uma vez com o dia seguinte) | Karen (ou Pedro, se for data) | nao (sim, uma vez, se for data) |
+| 728 | Branch obrigatorio na autorizacao de pagamento (API exige; guia diz opcional) | Pedro (valores: Karen) | sim |
+| 760 (filial) | Filial invalida para o identificador (Branch/BranchCode errados) | Karen | nao |
 | 2768 | controle de saldo nao configurado | Karen (pendencia externa) | nao |
 | ja cadastrado | adota o contrato existente | Eduardo | nao |
 
