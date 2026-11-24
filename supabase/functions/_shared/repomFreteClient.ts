@@ -71,6 +71,17 @@ export function erroCurtoToken(bruto: unknown, status: number, c: CredenciaisRep
 
 export const URL_BASE_QA = 'https://qa.repom.com.br/Repom.Frete.WebAPI'
 
+/** true se a URL é de um host da Repom que NÃO é o de QA (ex.: www.repom.com.br). URL inválida também conta como proibida em QA. */
+export function urlProibidaEmQa(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.toLowerCase()
+    if (h === 'qa.repom.com.br') return false
+    return h === 'repom.com.br' || h.endsWith('.repom.com.br')
+  } catch {
+    return true
+  }
+}
+
 export class RepomFreteNaoImplementado extends Error {
   readonly codigo = 'NAO_IMPLEMENTADO'
   constructor(metodo: string, duvida: string) {
@@ -331,6 +342,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
   let token: { valor: string; expira: number } | null = null
 
   const configurado = (): string | null => {
+    if (config.ambiente === 'qa' && [base, config.urlToken, config.urlRelatorio].some((u) => u && urlProibidaEmQa(u))) return 'Ambiente QA recusa URL que não seja a de QA da Repom (qa.repom.com.br). Nada foi enviado.'
     if (!base) return 'A URL da API Frete de produção não foi configurada.'
     if (!config.urlToken) return 'A URL do token da Repom Frete não foi configurada.'
     if (!c.user || !c.password || !c.partner) return 'Credenciais da Repom Frete não configuradas.'

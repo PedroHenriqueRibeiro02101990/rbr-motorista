@@ -10,7 +10,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ambienteRepom } from "../_shared/repomClient.ts";
-import { criarRepomFreteClient, lerFormatoToken } from "../_shared/repomFreteClient.ts";
+import { criarRepomFreteClient } from "../_shared/repomFreteClient.ts";
+import { configFreteDoAmbiente } from "../_shared/repomFreteConfig.ts";
 import { corsPara } from "../_shared/repomHttp.ts";
 import { criarRepomVprClient } from "../_shared/repomVprClient.ts";
 import { inicioDoDia, limiteDiario, travaLiberada, valorMaximoOperacao } from "../_shared/repomTrava.ts";
@@ -31,11 +32,10 @@ Deno.serve(async (req) => {
   if (!gestor && p?.papel !== "agenciador") return json({ ok: false, erro: "Sem permissão." }, 403);
   try {
     const corpo = (await req.json().catch(() => ({}))) as { verificar_token?: unknown };
-    const [lib, amb, lim, login, senha, apiLib, valMax, valeLogin, valeSenha, fUser, fSenha, fPartner, fVersao, fToken] = await Promise.all([
+    const [lib, amb, lim, login, senha, apiLib, valMax, valeLogin, valeSenha] = await Promise.all([
       segredo("REPOM_ROTEIRIZACAO_LIBERADA"), segredo("REPOM_AMBIENTE"), segredo("REPOM_LIMITE_DIARIO"),
       segredo("REPOM_VPR_ROTEIRIZACAO_LOGIN"), segredo("REPOM_VPR_ROTEIRIZACAO_SENHA"),
       segredo("REPOM_API_LIBERADA"), segredo("REPOM_VALOR_MAXIMO_OPERACAO"), segredo("REPOM_VPR_VALEPEDAGIO_LOGIN"), segredo("REPOM_VPR_VALEPEDAGIO_SENHA"),
-      segredo("REPOM_FRETE_USER"), segredo("REPOM_FRETE_PASSWORD"), segredo("REPOM_FRETE_PARTNER"), segredo("REPOM_FRETE_VERSION"), segredo("REPOM_FRETE_URL_TOKEN"),
     ]);
     const ambiente = ambienteRepom(amb);
     // uso do dia: TODAS as ações que foram (ou vão) à Repom; cache e bloqueios não entram
@@ -53,20 +53,17 @@ Deno.serve(async (req) => {
       saida.apiLiberada = travaLiberada(apiLib);
       saida.valorMaximoOperacao = valorMaximoOperacao(valMax);
       saida.valePedagioCredenciaisCadastradas = Boolean(valeLogin && valeSenha);
-      saida.freteCredenciaisCadastradas = Boolean(fUser && fSenha && fPartner && fVersao && fToken);
+      // Frete: QA lê só REPOM_QA_FRETE_*, PRD só REPOM_FRETE_* (configFreteDoAmbiente); aqui só sim/não
+      const cfgFrete = await configFreteDoAmbiente(amb, segredo);
+      const c = cfgFrete.credenciais;
+      saida.freteCredenciaisCadastradas = Boolean(c.user && c.password && c.partner && cfgFrete.urlToken);
       const v = corpo.verificar_token;
       // UMA chamada de token da API pedida (padrão: roteirização, como antes)
       if (v === true || v === "roteirizacao" || v === "vale") {
         const vpr = criarRepomVprClient({ ambiente, roteirizacaoLogin: login ?? "", roteirizacaoSenha: senha ?? "", valePedagioLogin: valeLogin ?? "", valePedagioSenha: valeSenha ?? "" });
         saida.tokenObtido = await vpr.verificarToken(v === "vale" ? "vale" : "roteirizacao");
       } else if (v === "frete") {
-        const frete = criarRepomFreteClient({
-          ambiente,
-          credenciais: { user: fUser ?? "", version: fVersao ?? "", password: fSenha ?? "", partner: fPartner ?? "" },
-          urlToken: fToken ?? undefined,
-          tokenFormato: lerFormatoToken(await segredo("REPOM_FRETE_TOKEN_FORMATO")),
-          urlBase: (await segredo("REPOM_FRETE_URL_BASE")) ?? undefined,
-        });
+        const frete = criarRepomFreteClient(cfgFrete);
         saida.tokenObtido = (await frete.verificarToken()).ok;
       }
     }
