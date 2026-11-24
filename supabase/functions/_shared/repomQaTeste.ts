@@ -6,6 +6,9 @@ import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
 export const CONTRATO_QA = { shippingId: 2166947, identifier: 'RBRC4943103', status: 'InTransit' } as const
+/** Recusas já registradas para a autorização (1ª: data de hoje; 2ª: "Filial Inválida"). A 3ª tentativa é uma exceção. */
+export const TENTATIVAS_ANTERIORES_AUTORIZAR = 2
+export const MOTIVO_EXCECAO = '3a tentativa autorizada pelo Pedro em 24/11/2026: sem Branch e sem BranchCode (opcionais, guia 3.0 cap. 66), PaymentDate do dia seguinte, rota POST /PaymentAuthorization (Swagger QA)'
 export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'autorizar'] as const
 
 export const chaveLigada = (v: string | null | undefined) => String(v ?? '').trim().toLowerCase() === 'sim'
@@ -105,27 +108,26 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
   // 2) consulta do contrato (só leitura)
   const c = await passo('consultar_contrato', { shippingId: CONTRATO_QA.shippingId }, () => d.frete.consultarContratoPorViagem(CONTRATO_QA.shippingId), (dados) => {
     const l = lerContratoQa(dados)
-    return { status: l?.status ?? null, identifier: l?.identifier ?? null, documentos: l?.documentos.length ?? 0 }
+    return { status: l?.status ?? null, identifier: l?.identifier ?? null, documentos: l?.documentos.length ?? 0, branchCode: l?.branchCode ?? null, branchCodeDocumentos: [...new Set((l?.documentos ?? []).map((x) => x.branchCode))] } // BranchCode nao e segredo; e o usado na quitacao
   })
   if (!c.r.ok) return fim(502, { parou: true })
   if (acao === 'consultar_contrato') return fim(200)
   const lido = lerContratoQa(c.r.dados)
 
-  // 2b) só autorização (2ª rodada): contrato já quitado (Paid), UMA nova tentativa depois de uma recusa de validação
+  // 2b) só autorização (3ª rodada, EXCEÇÃO registrada): contrato já quitado (Paid); sem Branch/BranchCode (opcionais, guia 3.0 cap. 66)
   if (acao === 'autorizar') {
     const ja = await d.historico('autorizar')
     if (!lido?.status) return parar('Não consegui ler o status do contrato; nada foi autorizado.')
     if (!['paid', 'quitada'].includes(lido.status.toLowerCase().replace(/[\s_-]/g, ''))) return parar(`Esperava o contrato quitado (Paid); status atual: ${curto(lido.status)}. Nada foi autorizado.`)
     if (lido.identifier && lido.identifier !== CONTRATO_QA.identifier) return parar('O contrato consultado não é o RBRC4943103; nada foi autorizado.')
-    const branchA = lido.branchCode ?? lido.documentos[0]?.branchCode ?? ''
-    if (!branchA) return parar('Não encontrei o BranchCode no contrato; nada foi autorizado.')
     const nomeA = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
     if (nomeA.length < 3) return parar('A autorização exige confirmacao.nome.', 400)
-    if (ja.length !== 1 || ja[0] !== 'erro') return parar('Só permito UMA nova tentativa, e só depois de exatamente uma recusa registrada; não repito.')
-    const a2 = await passo('autorizar', { shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, confirmado_por: nomeA, segunda_tentativa: true }, () =>
-      d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, branchCode: branchA, dataPagamento: d.amanha() }]))
+    // Regra de "uma tentativa por ação" com UMA exceção explícita: já houve exatamente 2 recusas de validação (data; filial) e esta é a 3ª, autorizada pelo Pedro.
+    if (ja.length !== TENTATIVAS_ANTERIORES_AUTORIZAR || ja.some((x) => x !== 'erro')) return parar('A exceção permite UMA tentativa a mais, e só com exatamente 2 recusas anteriores; não repito.')
+    const a2 = await passo('autorizar', { shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, confirmado_por: nomeA, excecao: MOTIVO_EXCECAO, branch_enviado: false }, () =>
+      d.frete.autorizarPagamento([{ shippingId: CONTRATO_QA.shippingId, identifier: CONTRATO_QA.identifier, dataPagamento: d.amanha() }]))
     if (!a2.e.ok) return fim(a2.e.http && a2.e.http < 500 ? 422 : 502, { parou: true, pendencia_externa: ehSaldo2768(a2.e) ? pendenciaKaren : undefined })
-    return fim(200)
+    return fim(200, { branch_e_branchcode_nao_vao_na_autorizacao: true })
   }
 
   // 3) travas antes de mexer em dinheiro

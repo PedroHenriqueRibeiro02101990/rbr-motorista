@@ -317,7 +317,7 @@ export interface ClienteRepomFrete {
   cancelarCiotAgregado(ciot: string, motivo: string): Promise<ResultadoFrete<unknown>>
   encerrarCiotAgregado(ciot: string): Promise<ResultadoFrete<unknown>>
   // pagamento e quitação
-  autorizarPagamento(itens: { shippingId?: number; identifier: string; branchCode: string; dataPagamento: string }[]): Promise<ResultadoFrete<unknown>>
+  autorizarPagamento(itens: { shippingId?: number; identifier: string; branchCode?: string; dataPagamento: string }[]): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorLote(lote: number | string): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorIdentificador(identifier: string): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorViagem(shippingId: number | string): Promise<ResultadoFrete<unknown>>
@@ -507,9 +507,10 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     encerrarCiotAgregado: (ciot) => (!ciot.trim() ? invalido('Informe o CIOT.') : rodar('POST', '/Shipping/CIOTAggregate/ClosingCIOT/', { corpo: { TransportOperationIdentifierCode: ciot }, versao: '3.0' })),
 
     // D-F14: caminho "/PaymentAuthorization" (tabela do guia); o texto escreve "/Payment/Authorization".
+    // Guia 3.0 cap. 66: so Identifier e PaymentDate sao obrigatorios; Branch e BranchCode sao OPCIONAIS (sem branchCode, nenhum dos dois vai no corpo).
     autorizarPagamento: (itens) =>
-      itens.length && itens.every((i) => i.identifier.trim() && i.branchCode.trim() && !Number.isNaN(new Date(i.dataPagamento).getTime()))
-        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, Branch: 0, BranchCode: i.branchCode, PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
+      itens.length && itens.every((i) => i.identifier.trim() && !Number.isNaN(new Date(i.dataPagamento).getTime()))
+        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, ...(i.branchCode?.trim() ? { Branch: 0, BranchCode: i.branchCode } : {}), PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
         : invalido('Dados da autorização de pagamento incompletos.'),
     consultarAutorizacaoPorLote: (l) => rodar('GET', `/PaymentAuthorization/ByBatchId/${seg(l)}`),
     consultarAutorizacaoPorIdentificador: (i) => rodar('GET', `/PaymentAuthorization/ByIdentifier/${seg(i)}`),

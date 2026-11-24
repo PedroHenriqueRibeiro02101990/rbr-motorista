@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ClienteRepomFrete, ResultadoFrete } from './repomFreteClient.ts'
-import { BASE_QA_FIXA, CONTRATO_QA, TOKEN_QA_FIXO, chaveLigada, executarQaTeste, lerContratoQa, type DepsQaTeste } from './repomQaTeste.ts'
+import { BASE_QA_FIXA, CONTRATO_QA, MOTIVO_EXCECAO, TOKEN_QA_FIXO, chaveLigada, executarQaTeste, lerContratoQa, type DepsQaTeste } from './repomQaTeste.ts'
 
 const ok = <T>(dados: T, http = 200): ResultadoFrete<T> => ({ ok: true, http, dados, bruto: dados })
 const erro = (http: number, msg: string, codigoErro: string | null = null, incerto?: boolean): ResultadoFrete<never> => ({ ok: false, http, erro: msg, codigoErro, incerto, bruto: { segredo: 'SENHA_SECRETA' } })
@@ -146,21 +146,31 @@ test('lerContratoQa: lê Documents em Result aninhado, array na raiz, e status e
   assert.equal(lerContratoQa('x'), null)
 })
 
-test('autorizar (2ª rodada): contrato Paid + exatamente uma recusa anterior -> UMA tentativa com a data do dia seguinte, sem quitar', async () => {
-  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { quitar: ['ok'], autorizar: ['erro'] } })
-  const r = await executarQaTeste(SEQ.confirmacao ? { acao: 'autorizar', confirmacao: { nome: 'Pedro' } } : {}, m.deps)
-  assert.equal(r.status, 200); assert.deepEqual(m.chamadas, ['token', 'consultar', 'autorizar'])
-  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', branchCode: '1', dataPagamento: '2026-11-25' }])
+test('autorizar (exceção, 3ª tentativa): contrato Paid + exatamente 2 recusas -> UMA tentativa SEM Branch/BranchCode, data do dia seguinte, motivo registrado, sem quitar', async () => {
+  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { quitar: ['ok'], autorizar: ['erro', 'erro'] } })
+  const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
+  assert.equal(r.status, 200); assert.equal(r.corpo.branch_e_branchcode_nao_vao_na_autorizacao, true)
+  assert.deepEqual(m.chamadas, ['token', 'consultar', 'autorizar'])
+  assert.deepEqual(m.args.autorizar, [{ shippingId: 2166947, identifier: 'RBRC4943103', dataPagamento: '2026-11-25' }])
+  assert.ok(!('branchCode' in (m.args.autorizar as object[])[0]))
+  assert.match(JSON.stringify(m.linhas.at(-1)), /autorizar/); assert.match(MOTIVO_EXCECAO, /sem Branch e sem BranchCode/)
+})
+
+test('consultar_contrato informa o BranchCode do contrato (usado na quitação; não é segredo)', async () => {
+  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' } })
+  const r = await executarQaTeste({ acao: 'consultar_contrato' }, m.deps)
+  const det = (r.corpo.etapas as { detalhe?: { branchCode?: string; branchCodeDocumentos?: string[] } }[])[1].detalhe
+  assert.equal(det?.branchCode, '1'); assert.deepEqual(det?.branchCodeDocumentos, ['1'])
 })
 
 test('autorizar: 2768 vira pendência da Karen; qualquer outro erro para; sem nova tentativa', async () => {
-  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro'] }, autorizar: erro(400, 'Erro 2768', '2768') })
+  const m = montar({ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'erro'] }, autorizar: erro(400, 'Erro 2768', '2768') })
   const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)
   assert.equal((r.corpo.pendencia_externa as { dono: string }).dono, 'Karen'); assert.equal(m.chamadas.filter((x) => x === 'autorizar').length, 1)
 })
 
-test('autorizar: não roda sem recusa anterior, depois de 2 tentativas, ou se o contrato não está Paid; nunca quita', async () => {
-  const casos = [{ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: [] as string[] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'erro'] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['ok'] } }, { contrato: contratoOk, hist: { autorizar: ['erro'] } }]
+test('autorizar: não roda com 0, 1 ou 3 tentativas anteriores, com sucesso anterior, ou contrato fora de Paid; nunca quita', async () => {
+  const casos = [{ contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: [] as string[] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro'] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'erro', 'erro'] } }, { contrato: { ...contratoOk, Status: 'Paid' }, hist: { autorizar: ['erro', 'ok'] } }, { contrato: contratoOk, hist: { autorizar: ['erro', 'erro'] } }]
   for (const c of casos) {
     const m = montar(c)
     const r = await executarQaTeste({ acao: 'autorizar', confirmacao: { nome: 'Pedro' } }, m.deps)

@@ -145,7 +145,7 @@ Consulta das praças: `GET /VPR/TollList/ByShippingIdentifier/{shippingIdentifie
 
 ## 13. Autorização de pagamento e agenda
 Parâmetro 57 habilitado: toda viagem quitada só é **paga** quando o cliente envia a autorização. Parâmetro 58 (agenda): a quitação fica "quitada" e o saldo é liberado só na data agendada.
-- `POST /Payment/Authorization` (tabela diz `POST/PaymentAuthorization`): `[{ShippingId N (não), Identifier N (sim), Branch N (não), BranchCode N (sim), PaymentDate D (sim, AAAA-MM-DD)}]`.
+- `POST /Payment/Authorization` (tabela diz `POST/PaymentAuthorization`): `[{ShippingId N (não), Identifier (sim), Branch N (não), BranchCode (não), PaymentDate D (sim, AAAA-MM-DD)}]` — guia 3.0 cap. 66 e Swagger QA: caminho `/PaymentAuthorization`; Branch e BranchCode são OPCIONAIS (confirmado pelo cap. 66; a tabela anterior desta spec marcava BranchCode como obrigatório por engano). Teste QA 24/11: com BranchCode do contrato a Repom respondeu 760 "Filial Inválida para o Identificador".
 - `GET /PaymentAuthorization/ByBatchId/{batchId}` (consultar muda o contrato de autorizado para **Pago**), `/ByIdentifier/{identifier}`, `/ByShippingId/{shippingId}` → `{ShippingId, PaymentDate, AmountPaid, BatchId}`.
 - `PATCH /PaymentAuthorization/Cancel`: `[{ShippingId, Identifier, Branch, BranchCode}]`. Só cancela o **agendamento**; se o motorista já recebeu na data, não desfaz.
 
