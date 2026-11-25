@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { formatMoney } from '@rbr/shared/format'
 import { mensagemClara } from '../../lib/mensagemClara'
 import { textoConfirmacao } from '../../lib/modoDemonstracao'
-import { avisoPedagioEmitido, faltamCaracteres, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
+import { avisoPedagioEmitido, faltamCaracteres, limiteCancelarCiot, textoLimiteCancelar, motivoValido, passoLibera, pendencias, type Corrigir, type Linha, type Passo, type Previa } from '../../lib/ciotCartao'
 
 // Cartão visual do CIOT (4 estados). Só apresenta: quem chama a função é CiotEfrete; /demo-ciot usa o mesmo cartão com dados de mentira.
 
@@ -390,6 +390,7 @@ export default function CartaoCiot(p: PropsCartao) {
               </button>
             )}
           </div>
+          {!p.naoCancela && ped.status === 'emitido' && limiteCancelarCiot(ped.emitido_em) && <div className="text-xs" style={{ color: 'var(--rbr-muted)' }}>{textoLimiteCancelar(limiteCancelarCiot(ped.emitido_em)!)}</div>}
           {p.naoCancela && ped.status === 'emitido' && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#FDF1DC', color: '#8A5A00' }}>{p.naoCancela}</div>}
           {ped.status === 'emitido' && <div className="text-xs rounded-lg px-3 py-2" style={{ background: '#EEF2FF', color: 'var(--rbr-navy)' }}>Próximo passo: <b>MDF-e</b>. É o último documento e leva o CIOT.</div>}
           {cancelado && (

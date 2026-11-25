@@ -1,7 +1,7 @@
 // node --test gestor/test/ciotCartao.test.ts
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { montarConferencia, motivoNaoCancela, motivoValido, passosAntesDoCiot, pendencias, type Previa } from '../src/lib/ciotCartao.ts'
+import { limiteCancelarCiot, montarConferencia, motivoNaoCancela, motivoValido, passosAntesDoCiot, pendencias, type Previa } from '../src/lib/ciotCartao.ts'
 
 const pedido = { referencia: 'R', frete: 6100, pagamentos: [{ categoria: 'Adiantamento', valor: 1830, liberacao: 'x' }, { categoria: 'Quitacao', valor: 4270, liberacao: 'y' }], pix: 'CpfOuCnpj', placas: ['AAA0A00', 'BBB0B00'], notas: 2, pesoKg: 1000, ncm: '3923', distanciaKm: 188 }
 
@@ -53,15 +53,16 @@ test('motivo do cancelamento: mínimo de 15 caracteres, sem contar espaços nas 
   assert.equal(motivoValido('dados do motorista errados'), true)
 })
 
-test('cancelar CIOT: até 24 h antes do início; depois disso mostra o motivo', () => {
-  const agora = new Date('2026-10-30T12:00:00Z')
-  assert.equal(motivoNaoCancela([], '2026-11-01T12:00:00Z', agora), null) // 48 h antes
-  assert.equal(motivoNaoCancela([], '2026-10-31T13:00:00Z', agora), null) // 25 h antes
-  assert.match(motivoNaoCancela([], '2026-10-31T11:00:00Z', agora)!, /prazo para cancelar/) // 23 h antes
-  assert.match(motivoNaoCancela([], '2026-10-29T12:00:00Z', agora)!, /prazo para cancelar/) // já começou
+test('cancelar CIOT: até 24 h depois de emitido; MDF-e e situação travam; início da viagem não interfere', () => {
+  const agora = new Date('2026-11-25T15:32:00Z')
+  assert.equal(motivoNaoCancela([], '2026-11-25T15:31:00Z', agora, 'emitido'), null) // 1 min
+  assert.equal(motivoNaoCancela([], '2026-11-24T16:32:00Z', agora, 'emitido'), null) // 23 h
+  assert.match(motivoNaoCancela([], '2026-11-24T14:32:00Z', agora, 'emitido')!, /24 horas após a emissão acabou/) // 25 h
   assert.equal(motivoNaoCancela([], null, agora), null) // sem data: não bloqueia
-  // MDF-e continua vindo primeiro
-  assert.match(motivoNaoCancela([{ tipo: 'mdfe', status: 'emitido', exigido: true }], '2026-11-05T12:00:00Z', agora)!, /MDF-e/)
+  assert.match(motivoNaoCancela([{ tipo: 'mdfe', status: 'emitido', exigido: true }], '2026-11-25T15:31:00Z', agora)!, /MDF-e/)
+  assert.match(motivoNaoCancela([], '2026-11-25T15:31:00Z', agora, 'cancelado')!, /já está cancelado/)
+  assert.match(motivoNaoCancela([], '2026-11-25T15:31:00Z', agora, 'encerrado')!, /já está encerrado/)
+  assert.equal(limiteCancelarCiot('2026-11-25T15:31:00Z')?.toISOString(), '2026-11-26T15:31:00.000Z')
 })
 
 test('piso sem pedido montado: mostra só o piso, não "R$ 0,00 contra piso"', () => {

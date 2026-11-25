@@ -121,18 +121,26 @@ export function passosAntesDoCiot(docs: DocLeve[], ehTeste: boolean, demo = fals
 }
 
 // Ordem inversa: com MDF-e já emitido (ou enviado), o CIOT não cancela.
-// Prazo combinado com o Pedro: o CIOT cancela até 24 h antes do início da viagem (a efrete pode ter regra própria; a resposta dela vale).
+// Decisão do Pedro (25/11/2026): o CIOT cancela até 24 h DEPOIS de emitido (emitido_em), não antes do início da viagem.
+// A documentação da efrete que temos no repositório não traz prazo de cancelamento; na homologação ela aceitou cancelar logo após emitir.
+// Constante do prazo: aqui (tela) e em supabase/functions/_shared/prazos.ts (PRAZOS.ciot.cancelarHorasAposEmissao); mudar nos dois.
 export const PRAZO_CANCELAR_CIOT_HORAS = 24
-export function motivoNaoCancela(docs: DocLeve[], inicioViagem?: string | null, agora = new Date()): string | null {
+export function limiteCancelarCiot(emitidoEm?: string | null): Date | null {
+  if (!emitidoEm) return null
+  const t = new Date(emitidoEm).getTime()
+  return Number.isFinite(t) ? new Date(t + PRAZO_CANCELAR_CIOT_HORAS * 3600_000) : null
+}
+export const textoLimiteCancelar = (limite: Date) =>
+  `Pode cancelar até ${limite.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}, ${limite.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+export function motivoNaoCancela(docs: DocLeve[], emitidoEm?: string | null, agora = new Date(), status?: string | null): string | null {
+  if (status === 'cancelado' || status === 'encerrado') return `Este CIOT já está ${status}.`
   const mdfe = docs.find((d) => d.tipo === 'mdfe')
   if (mdfe && ['emitido', 'pendente', 'autorizado'].includes(mdfe.status) && mdfe.exigido !== false) {
     return 'Este CIOT não pode ser cancelado enquanto o MDF-e existir. Cancele o MDF-e primeiro.'
   }
-  if (inicioViagem) {
-    const limite = new Date(inicioViagem).getTime() - PRAZO_CANCELAR_CIOT_HORAS * 3600_000
-    if (Number.isFinite(limite) && agora.getTime() > limite) {
-      return `O prazo para cancelar este CIOT acabou: era até ${PRAZO_CANCELAR_CIOT_HORAS} horas antes do início da viagem. Fale com a efrete se precisar cancelar mesmo assim.`
-    }
+  const limite = limiteCancelarCiot(emitidoEm)
+  if (limite && agora.getTime() > limite.getTime()) {
+    return `O prazo de ${PRAZO_CANCELAR_CIOT_HORAS} horas após a emissão acabou. Fale com a efrete se precisar cancelar mesmo assim.`
   }
   return null
 }

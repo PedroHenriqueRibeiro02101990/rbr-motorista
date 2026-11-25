@@ -7,7 +7,7 @@ const DIA = 24 * H
 export const PRAZOS = {
   cte: { cancelarDias: 7, substituicaoDias: 60 },
   mdfe: { cancelarHoras: 24, encerrarDias: 30 },
-  ciot: { cancelarHorasAntesDoInicio: 24, encerrarDiasAposFimPrevisto: 5, encerrarDiasAposFimPrevistoTacAgregado: 30, operacaoDiasMax: 90 },
+  ciot: { cancelarHorasAposEmissao: 24, encerrarDiasAposFimPrevisto: 5, encerrarDiasAposFimPrevistoTacAgregado: 30, operacaoDiasMax: 90 },
   vpo: { validadeDiasMax: 15 },
   // Rejeição 684: CIOT exigido no MDF-e em produção a partir de 23/11/2026 (00:00, Brasília).
   ciotObrigatorioNoMdfeEm: Date.UTC(2026, 10, 23, 3, 0, 0),
@@ -38,9 +38,9 @@ export function podeEncerrarMdfe(emitidoEm: number, agora: number): Veredito {
   return agora - emitidoEm > PRAZOS.mdfe.encerrarDias * DIA ? nao('Passaram 30 dias da emissão do MDF-e.') : ok
 }
 
-export function podeCancelarCiot(inicioPrevisto: number, agora: number): Veredito {
-  return inicioPrevisto - agora < PRAZOS.ciot.cancelarHorasAntesDoInicio * H
-    ? nao('O CIOT só cancela até 24 horas antes do início da viagem: encerre e emita outro.')
+export function podeCancelarCiot(emitidoEm: number, agora: number): Veredito {
+  return agora - emitidoEm > PRAZOS.ciot.cancelarHorasAposEmissao * H
+    ? nao('O prazo de 24 horas após a emissão acabou.')
     : ok
 }
 
