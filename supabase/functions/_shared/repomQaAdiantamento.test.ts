@@ -160,14 +160,14 @@ test('emitir: falha que NÃO é saldo (documento, imposto, piso, veículo) expli
 
 test('emitir: guardas — nome, máximo de 2 tentativas, contrato já emitido, modelo que não confere, sem "carga geral", resultado sem OperationKey', async () => {
   assert.equal((await executarQaTeste({ acao: 'emitir_adiantamento' }, montar().deps)).status, 400)
-  for (const hist of [['erro', 'erro', 'erro', 'erro'], ['ok'], ['erro', 'ok']]) { const m = montar({ hist }); assert.equal((await executarQaTeste(EMITIR, m.deps)).corpo.parou, true); assert.ok(!m.chamadas.includes('emitir')) }
+  for (const hist of [['erro', 'erro'], ['ok'], ['erro', 'ok']]) { const m = montar({ hist }); assert.equal((await executarQaTeste(EMITIR, m.deps)).corpo.parou, true); assert.ok(!m.chamadas.includes('emitir')) }
   const outro = montar({ modelo: { ...MODELO_GET, Vehicles: [{ LicensePlate: 'ZZZ9999' }] } })
   assert.equal((await executarQaTeste(EMITIR, outro.deps)).corpo.parou, true); assert.ok(!outro.chamadas.includes('emitir'))
   const semGeral = montar({ tipos: [{ CodeType: 1, Description: 'Granel' }] })
   assert.equal((await executarQaTeste(EMITIR, semGeral.deps)).corpo.parou, true); assert.ok(!semGeral.chamadas.includes('emitir'))
   const semChave = montar({ emitir: ok({ operationKey: null }) })
   assert.equal((await executarQaTeste(EMITIR, semChave.deps)).corpo.parou, true)
-  assert.equal(MAX_TENTATIVAS_EMISSAO, 4)
+  assert.equal(MAX_TENTATIVAS_EMISSAO, 2)
 })
 
 test('emitir: ainda em processamento depois de 8 consultas -> para e manda conferir pelo identificador (não conta como resposta sobre saldo)', async () => {
@@ -262,10 +262,10 @@ test('criar_rota: recusa da Repom para e mostra o corpo do erro (corpoErro) sem 
   assert.equal(r2.corpo.parou, true); assert.match(JSON.stringify(r2.corpo), /Origem inválida/)
 })
 
-test('emitir (limite 4): com 3 tentativas anteriores com erro, ainda emite; com 4 anteriores, recusa', async () => {
-  const ok2 = montar({ hist: ['erro', 'erro', 'erro'] })
+test('emitir (limite 4): com 1 tentativa anterior com erro, ainda emite; com 2 anteriores, recusa', async () => {
+  const ok2 = montar({ hist: ['erro'] })
   assert.equal((await executarQaTeste(EMITIR, ok2.deps)).status, 200)
-  const nao = montar({ hist: ['erro', 'erro', 'erro', 'erro'] })
+  const nao = montar({ hist: ['erro', 'erro'] })
   assert.equal((await executarQaTeste(EMITIR, nao.deps)).corpo.parou, true); assert.ok(!nao.chamadas.includes('emitir'))
 })
 

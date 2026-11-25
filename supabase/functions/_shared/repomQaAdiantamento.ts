@@ -15,8 +15,8 @@ export const IRRF_PF = 0 // base abaixo da faixa de isenção
 export const IMPOSTOS_PF = [{ tipo: 'IRRF', valor: IRRF_PF }, { tipo: 'SEST', valor: SEST_PF }, { tipo: 'SENAT', valor: SENAT_PF }, { tipo: 'INSS', valor: INSS_PF }] as const
 export const PISO = { distanceTravel: 300, emptyReturn: true, highPerformanceTransport: false, veichleComposition: false } as const
 export const FINAIS_MODELO = { prestadorCpf: '4687', motoristaCpf: '2853', placa: 'BIS4025' } as const
-/** 4 (era 2): +2 emissões autorizadas pelo Pedro em 25/11/2026 porque as 2 tentativas da rodada 2 (rota 148993) foram gastas antes de o corpo estar completo (faltavam SENAT, IRRF e INSS em Taxes); o corpo foi auditado contra o guia 3.0 e o Swagger v3. Voltar a 2 no fim. */
-export const MAX_TENTATIVAS_EMISSAO = 4
+/** Rodada 3 (25/11/2026): o limite ficou em 4 (+2 autorizadas pelo Pedro, corpo auditado, Taxes completo) e voltou a 2 no fim. */
+export const MAX_TENTATIVAS_EMISSAO = 2 // voltou de 4 ao fim da rodada 3 (25/11/2026)
 /** IBGE da rota de teste de 17/11 (a consulta da rota por código não devolve IBGE: o Swagger só traz Name/Distance/RoundTrip). Exigidos pela Repom na emissão (725). */
 export const IBGE_ORIGEM = '3550308' // São Paulo/SP
 export const IBGE_DESTINO = '3304557' // Rio de Janeiro/RJ
