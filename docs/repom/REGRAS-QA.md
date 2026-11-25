@@ -15,3 +15,10 @@
 3. Com a rota, emitir o contrato com adiantamento de R$ 10,00 (mesmo prestador, motorista e placa de 17/11; frete R$ 3.500; consultar por OperationKey em 20 a 30 s). Depois CANCELAR o contrato.
 4. Responder: o credito da Karen chegou? (emitiu = sim; Saldo Insuficiente = nao; 2768 = pendencia da Karen).
 Depois PARAR.
+
+## Rodada 2 de QA (24/11/2026) - fechamento
+- Rota própria do 9520 criada (só CEP): percurso 1, roteiro 148993, 885 km.
+- Emissão com adiantamento de R$ 10,00: identificador **RBRQA261125000419** aceito (HTTP 201), processamento `Pending` sem erro e sem contrato visível (`Shipping not found`) após ~3 min. **Pendente para a Karen.** Nada cancelado. Crédito: sem resposta (sem Saldo Insuficiente nem 2768).
+- Correções: OperationIdentifier do contrato-modelo (a Repom recusou o inventado: "Operação não encontrada"); leitor de OperationKey tolerante; caminho `/Shipping/StatusProcessing/ByIdentifier`.
+- Ação só de leitura `consultar_emissao` (status + contrato da última emissão); `ler_rota_ibge` (byibge, só leitura).
+- Fim: interruptor apagado, limites de rota e emissão em 2, função desativada (410 confirmado).

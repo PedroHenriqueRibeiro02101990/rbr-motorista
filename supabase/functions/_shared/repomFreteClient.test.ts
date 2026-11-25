@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Fetch } from './repomClient.ts'
-import { criarRepomFreteClient, lerErroFrete, lerOperationKey, montarCorpoContrato, RepomFreteNaoImplementado, situacaoProcessamento, validarContratoFrete, type ConfigRepomFrete, type PedidoContratoFrete } from './repomFreteClient.ts'
+import { corpoErroSeguro, criarRepomFreteClient, lerRotaCriada, lerErroFrete, lerOperationKey, montarCorpoContrato, RepomFreteNaoImplementado, situacaoProcessamento, validarContratoFrete, type ConfigRepomFrete, type PedidoContratoFrete } from './repomFreteClient.ts'
 
 const cfg: ConfigRepomFrete = { ambiente: 'qa', credenciais: { user: 'USER_9520_SECRETO', version: '3.0', password: 'SENHA_9520_SECRETA', partner: '00000000000100' }, urlToken: 'https://exemplo.invalid/token' }
 type Chamada = { url: string; init: { method?: string; headers?: Record<string, string>; body?: string } }
@@ -144,7 +144,7 @@ test('cancelar, interromper, TAC-agregado, pagamento e quitação: caminhos e co
   await c.encerrarCiotAgregado('123')
   await c.cancelarCiotAgregado('123', 'erro')
   await c.retificarCiotAgregado({ ciot: '123', veiculos: [{ placa: 'ABC1D23', rntrc: '000300027' }], quantidade: 1, preco: 1 })
-  await c.autorizarPagamento([{ shippingId: 1719704, identifier: '123987', branchCode: '1', dataPagamento: '2026-11-20' }])
+  await c.autorizarPagamento([{ shippingId: 1719704, identifier: '123987', branch: 1, branchCode: '1', dataPagamento: '2026-11-20' }])
   await c.quitarViagem({ branchCode: '1', shippingId: 1719704, documentos: [{ numero: '123', serie: '1', branchCode: '1', tipo: 'CTE', status: 'Delivered' }] })
   await c.cancelarQuitacao(1719704)
   await c.consultarPracasVpr('6483')
@@ -180,4 +180,85 @@ test('saldo do cliente: GET no host do Relatório com datas AAAA-MM-DD; datas ru
   const antes = m.chamadas.length
   for (const [a, b] of [['01/11/2026', '2026-11-13'], ['2026-11-13', '2026-11-01'], ['2026-13-40', '2026-11-13']]) assert.equal((await c.consultarSaldoCliente(a!, b!)).ok, false)
   assert.equal(m.chamadas.length, antes)
+})
+
+test('autorizar pagamento: Branch (numero) e OBRIGATORIO (QA devolveu 728 sem ele); BranchCode so vai se informado', async () => {
+  const corpos: unknown[] = []
+  const m = mock((c) => { if (!ehToken(c) && c.init.body) corpos.push(JSON.parse(c.init.body)); return ehToken(c) ? ok({ access_token: 'T', expires_in: 3600 }) : ok({}) })
+  const c = criarRepomFreteClient({ ...cfg, urlBase: 'https://exemplo.invalid/api' }, m.fetchFn)
+  assert.equal((await c.autorizarPagamento([{ shippingId: 2166947, identifier: 'RBRC4943103', branch: 1, dataPagamento: '2026-11-25' }])).ok, true)
+  assert.deepEqual(corpos[0], [{ ShippingId: 2166947, Identifier: 'RBRC4943103', Branch: 1, PaymentDate: '2026-11-25' }])
+  await c.autorizarPagamento([{ identifier: 'X1', branch: 1, branchCode: '1', dataPagamento: '2026-11-25' }])
+  assert.deepEqual(corpos[1], [{ Identifier: 'X1', Branch: 1, BranchCode: '1', PaymentDate: '2026-11-25' }])
+  const antes = m.chamadas.length
+  for (const ruim of [{ identifier: 'X', dataPagamento: '2026-11-25' }, { identifier: 'X', branch: Number.NaN, dataPagamento: '2026-11-25' }, { identifier: ' ', branch: 1, dataPagamento: '2026-11-25' }, { identifier: 'X', branch: -1, dataPagamento: '2026-11-25' }]) {
+    assert.equal((await c.autorizarPagamento([ruim as never])).ok, false)
+  }
+  assert.equal(m.chamadas.length, antes) // nada foi enviado
+})
+
+test('extrato financeiro: GET no host do Relatório com datas AAAA-MM-DD; datas ruins nem chamam a Repom', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 'T', expires_in: 3600 }) : ok([])))
+  const c = criarRepomFreteClient({ ...cfg, urlBase: 'https://exemplo.invalid/Repom.Frete.WebAPI' }, m.fetchFn)
+  assert.equal((await c.consultarExtratoFinanceiro('2026-11-01', '2026-11-24')).ok, true)
+  assert.equal(m.chamadas.at(-1)!.url, 'https://exemplo.invalid/Repom.Relatorio.WebAPI/Statement/Financial/GetByCustomerStartDateEndDate/2026-11-01/2026-11-24')
+  const n = m.chamadas.length
+  assert.equal((await c.consultarExtratoFinanceiro('01/11/2026', '2026-11-24')).ok, false)
+  assert.equal((await c.consultarExtratoFinanceiro('2026-11-25', '2026-11-24')).ok, false)
+  assert.equal(m.chamadas.length, n)
+})
+
+test('contrato: MinimumFreightCost sai como objeto com as 4 chaves quando informado; sem pisoFrete nao sai', () => {
+  const com = montarCorpoContrato({ ...contrato, pisoFrete: { distanceTravel: 300, emptyReturn: true, highPerformanceTransport: false, veichleComposition: false } })[0] as Record<string, unknown>
+  assert.deepEqual(com.MinimumFreightCost, { DistanceTravel: 300, EmptyReturn: true, HighPerformanceTransport: false, VeichleComposition: false })
+  assert.equal('MinimumFreightCost' in (montarCorpoContrato(contrato)[0] as object), false)
+  assert.equal('CheckDocument' in ((com.Documents as object[])[0]), false) // nao enviar so um entre CheckDocument e DeliveryLocationType
+  assert.equal('DeliveryLocationType' in ((com.Documents as object[])[0]), false)
+})
+
+test('rota automática com IBGE de 7 dígitos (texto) e leitura síncrona de RouteCode/TraceCodeRepom', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : ok({ Status: 1, RouteCode: '143300', TraceCodeRepom: '2', ErrorDescription: null })))
+  const c = criarRepomFreteClient(cfg, m.fetchFn)
+  const r = await c.rotaAutomatica({ filial: '1', ibgeOrigem: '3550308', ibgeDestino: '3304557', idaVolta: true, identificador: 'RQ24183015', formatoIbge: 'sete' })
+  assert.deepEqual(JSON.parse(m.chamadas.find((y) => !ehToken(y))!.init.body!), { BranchCode: '1', OriginIBGECode: '3550308', DestinyIBGECode: '3304557', RoundTrip: true, TraceIdentifier: 'RQ24183015' })
+  assert.ok(r.ok)
+  const l = lerRotaCriada(r.ok ? r.bruto : null)
+  assert.ok('routeCode' in l && l.routeCode === 143300 && l.traceCode === 2)
+  assert.ok('erro' in lerRotaCriada({ Status: 0, ErrorDescription: 'Origem inválida' }))
+})
+test('corpo do erro não reconhecido é guardado sem credenciais, sem documentos e sem sequências longas de dígitos', async () => {
+  assert.equal(corpoErroSeguro(null), null)
+  const t = corpoErroSeguro({ Detalhe: 'CPF 12345678901 senha abc123', password: 'x', nationalId: '123', Info: { ok: 1 } }, ['abc123'])!
+  assert.ok(!t.includes('12345678901') && !t.includes('abc123') && !t.includes('"x"')); assert.match(t, /Detalhe/); assert.match(t, /oculto/)
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : { status: 400, corpo: { Foo: 'bar', Outro: 1 } }))
+  const r = await criarRepomFreteClient(cfg, m.fetchFn).consultarMotorista('16545346091')
+  assert.equal(r.ok, false); assert.match(!r.ok ? (r.corpoErro ?? '') : '', /Foo/)
+})
+
+test('erro aninhado {Response:{StatusCode,Message}} é lido', () => {
+  assert.deepEqual(lerErroFrete({ Response: { StatusCode: 404, Message: 'Route not found' } }), { mensagem: 'Route not found', codigo: null })
+})
+
+test('rodada 2: rota automatica so com CEP, IBGE 7 + CEP, e leitura /Route/ByIBGE com IBGE completo e 5 eixos', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : ok({ Status: 1, RouteCode: '1', TraceCodeRepom: '2' })))
+  const c = criarRepomFreteClient(cfg, m.fetchFn)
+  const base = { filial: '1', ibgeOrigem: '3550308', ibgeDestino: '3304557', idaVolta: true, identificador: 'RQ25000001', cepOrigem: '01001000', cepDestino: '20010000' }
+  await c.rotaAutomatica({ ...base, formatoIbge: 'cep' })
+  assert.deepEqual(JSON.parse(m.chamadas.filter((y) => !ehToken(y)).at(-1)!.init.body!), { BranchCode: '1', OriginPostalCode: '01001000', DestinyPostalCode: '20010000', RoundTrip: true, TraceIdentifier: 'RQ25000001' })
+  await c.rotaAutomatica({ ...base, formatoIbge: 'sete_cep' })
+  assert.deepEqual(JSON.parse(m.chamadas.filter((y) => !ehToken(y)).at(-1)!.init.body!), { BranchCode: '1', OriginIBGECode: '3550308', DestinyIBGECode: '3304557', OriginPostalCode: '01001000', DestinyPostalCode: '20010000', RoundTrip: true, TraceIdentifier: 'RQ25000001' })
+  assert.equal((await c.rotaAutomatica({ ...base, formatoIbge: 'cep', cepDestino: '123' })).ok, false)
+  await c.consultarRotaPorIbgeCompleto('3550308', '3304557', 5)
+  assert.match(m.chamadas.filter((y) => !ehToken(y)).at(-1)!.url, /\/Route\/ByIBGE\/3550308\/3304557\/5/)
+  assert.equal((await c.consultarRotaPorIbgeCompleto('50308', '3304557', 5)).ok, false)
+})
+
+test('lerOperationKey: reconhece a chave na Message, em campo OperationKey, em string pura ou em qualquer lugar do corpo', () => {
+  const u = '1c3e55cd-7436-44cc-8222-8e5bb887dd54'
+  assert.equal(lerOperationKey({ Message: `OperationKey: ${u}` }), u)
+  assert.equal(lerOperationKey({ OperationKey: u }), u)
+  assert.equal(lerOperationKey({ Data: { operationKey: u } }), u)
+  assert.equal(lerOperationKey(u), u)
+  assert.equal(lerOperationKey([{ Message: `ok ${u}` }]), u)
+  assert.equal(lerOperationKey({ Message: 'sem chave' }), null)
 })

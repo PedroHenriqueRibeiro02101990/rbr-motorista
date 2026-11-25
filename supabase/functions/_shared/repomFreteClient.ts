@@ -71,6 +71,17 @@ export function erroCurtoToken(bruto: unknown, status: number, c: CredenciaisRep
 
 export const URL_BASE_QA = 'https://qa.repom.com.br/Repom.Frete.WebAPI'
 
+/** true se a URL é de um host da Repom que NÃO é o de QA (ex.: www.repom.com.br). URL inválida também conta como proibida em QA. */
+export function urlProibidaEmQa(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.toLowerCase()
+    if (h === 'qa.repom.com.br') return false
+    return h === 'repom.com.br' || h.endsWith('.repom.com.br')
+  } catch {
+    return true
+  }
+}
+
 export class RepomFreteNaoImplementado extends Error {
   readonly codigo = 'NAO_IMPLEMENTADO'
   constructor(metodo: string, duvida: string) {
@@ -81,7 +92,7 @@ export class RepomFreteNaoImplementado extends Error {
 
 export type ResultadoFrete<T> =
   | { ok: true; http: number; dados: T; bruto: unknown }
-  | { ok: false; http: number; erro: string; codigoErro?: string | null; incerto?: boolean; bruto: unknown }
+  | { ok: false; http: number; erro: string; codigoErro?: string | null; incerto?: boolean; /** corpo do erro (sanitizado) quando o leitor lerErroFrete NÃO reconheceu o formato */ corpoErro?: string; bruto: unknown }
 
 // ---------- regras puras ----------
 
@@ -103,8 +114,24 @@ export function lerErroFrete(bruto: unknown): { mensagem: string; codigo: string
   if (Array.isArray(o.errors) && o.errors.length) return lista(o.errors)
   const r = o.Response as Record<string, unknown> | undefined
   const sc = Number(r?.StatusCode ?? o.StatusCode)
-  if (sc >= 400 && typeof o.Message === 'string') return { mensagem: o.Message, codigo: null }
+  const msg = typeof o.Message === 'string' ? o.Message : typeof r?.Message === 'string' ? r.Message : null // QA devolve {Response:{StatusCode:404,Message:"Route not found"}}
+  if (sc >= 400 && msg) return { mensagem: msg, codigo: null }
   return null
+}
+
+const CAMPO_SENSIVEL = /(senha|password|secret|token|authorization|login|client_?id|partner|cnpj|cpf|nationalid|documento|e-?mail)/i
+/** Corpo de erro da Repom guardável: sem credenciais, sem campos de documento/token, sem sequências longas de dígitos (CPF/CNPJ/chaves), máx. 800 caracteres. null se não houver corpo. */
+export function corpoErroSeguro(bruto: unknown, segredos: (string | undefined)[] = []): string | null {
+  if (bruto == null || bruto === '') return null
+  const limpa = (x: unknown, n: number): unknown => {
+    if (n > 6 || x == null || typeof x !== 'object') return x
+    if (Array.isArray(x)) return x.slice(0, 20).map((y) => limpa(y, n + 1))
+    return Object.fromEntries(Object.entries(x as Record<string, unknown>).map(([k, v]) => [k, CAMPO_SENSIVEL.test(k) ? '[oculto]' : limpa(v, n + 1)]))
+  }
+  let t = typeof bruto === 'string' ? bruto : (JSON.stringify(limpa(bruto, 0)) ?? '')
+  for (const sg of segredos) if (sg && sg.length >= 3) t = t.split(sg).join('***')
+  t = t.replace(/\d{11,}/g, '[numero]').replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer ***').replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[email]')
+  return t.slice(0, 800) || null
 }
 
 export function mensagemHttpFrete(status: number): string {
@@ -150,6 +177,8 @@ export interface PedidoContratoFrete {
   impostos?: { tipo: 'IRRF' | 'SEST' | 'SENAT' | 'INSS'; valor: number }[] // obrigatório se o cliente calcula os impostos (D-F07)
   combustivel?: { cartao: string; valor: number } // adiantamento flexível
   ciotTacAgregado?: { contratoExistenteId: number } // 0 na primeira viagem
+  /** MinimumFreightCost: SEMPRE objeto com as 4 chaves (Swagger v3: VeichleComposition é boolean = veículo agregado). */
+  pisoFrete?: { distanceTravel: number; emptyReturn: boolean; highPerformanceTransport: boolean; veichleComposition: boolean }
 }
 
 /** Valida o que o guia (seção 8) marca como obrigatório. Devolve a primeira mensagem ou null. */
@@ -215,6 +244,7 @@ export function montarCorpoContrato(p: PedidoContratoFrete) {
       ...(p.impostos?.length ? { Taxes: p.impostos.map((t) => ({ Type: t.tipo, Value: t.valor })) } : {}),
       ...(p.combustivel ? { ShippingFuel: { FuelCardNumber: p.combustivel.cartao, FuelValue: p.combustivel.valor } } : {}),
       ...(p.ciotTacAgregado ? { CIOTShippingType: 3, ExistingContractId: p.ciotTacAgregado.contratoExistenteId } : {}),
+      ...(p.pisoFrete ? { MinimumFreightCost: { DistanceTravel: p.pisoFrete.distanceTravel, EmptyReturn: p.pisoFrete.emptyReturn, HighPerformanceTransport: p.pisoFrete.highPerformanceTransport, VeichleComposition: p.pisoFrete.veichleComposition } } : {}),
     },
   ]
 }
@@ -231,9 +261,46 @@ export function situacaoProcessamento(s: StatusProcessamento): 'emitido' | 'erro
   return String(s.status ?? '').toLowerCase() === 'finished' ? 'emitido' : 'processando'
 }
 
+/** Lê RouteCode e TraceCodeRepom da resposta SÍNCRONA da rota automática (Swagger: Status, RouteCode, TraceCodeRepom, ExternalTraceCode, ErrorDescription), em qualquer nível. */
+export function lerRotaCriada(bruto: unknown): { routeCode: number; traceCode: number; status: number | null; descricao: string | null } | { erro: string } {
+  const achados: Record<string, unknown> = {}
+  const rec = (x: unknown, n: number) => {
+    if (n > 4 || !x || typeof x !== 'object') return
+    if (Array.isArray(x)) { for (const y of x) rec(y, n + 1); return }
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      const lk = k.toLowerCase()
+      if (['routecode', 'tracecoderepom', 'status', 'errordescription'].includes(lk) && !(lk in achados)) achados[lk] = v
+      else if (v && typeof v === 'object') rec(v, n + 1)
+    }
+  }
+  rec(bruto, 0)
+  const rc = Number(achados['routecode'])
+  const tc = Number(achados['tracecoderepom'])
+  const desc = typeof achados['errordescription'] === 'string' && achados['errordescription'].trim() ? String(achados['errordescription']).trim().slice(0, 300) : null
+  if (!Number.isInteger(rc) || rc <= 0 || !Number.isInteger(tc) || tc <= 0) return { erro: desc ?? 'A resposta da rota não trouxe RouteCode e TraceCodeRepom válidos.' }
+  const st = Number(achados['status'])
+  return { routeCode: rc, traceCode: tc, status: Number.isFinite(st) ? st : null, descricao: desc }
+}
+
 export function lerOperationKey(bruto: unknown): string | null {
+  const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
   const m = String((bruto as { Message?: unknown } | null)?.Message ?? '').match(/OperationKey:\s*([0-9a-f-]{36})/i)
-  return m ? m[1]! : null
+  if (m) return m[1]!
+  // rodada 2 (24/11/2026): a Repom devolveu 201 sem a chave no formato "Message: OperationKey: <uuid>". Procura a chave em qualquer campo (OperationKey/operationKey/Data/...) e, por último, o 1º UUID do corpo.
+  const rec = (x: unknown, n: number): string | null => {
+    if (n > 5 || x == null) return null
+    if (typeof x === 'string') return /^\s*[0-9a-f-]{36}\s*$/i.test(x) && UUID.test(x) ? x.trim() : null
+    if (typeof x !== 'object') return null
+    if (Array.isArray(x)) { for (const y of x) { const r = rec(y, n + 1); if (r) return r } return null }
+    const o = x as Record<string, unknown>
+    for (const k of Object.keys(o)) if (/operation.?key/i.test(k) && typeof o[k] === 'string' && UUID.test(String(o[k]))) return String(o[k]).match(UUID)![0]
+    for (const v of Object.values(o)) { const r = rec(v, n + 1); if (r) return r }
+    return null
+  }
+  const achado = rec(bruto, 0)
+  if (achado) return achado
+  const t = typeof bruto === 'string' ? bruto : JSON.stringify(bruto ?? null)
+  return t.match(UUID)?.[0] ?? null
 }
 export function lerStatusProcessamento(bruto: unknown): StatusProcessamento[] {
   const r = ((bruto as { Result?: unknown } | null)?.Result ?? null) as Record<string, unknown> | null
@@ -275,7 +342,9 @@ export interface ClienteRepomFrete {
   bloquearVeiculo(placa: string, bloquear: boolean, motivo: string): Promise<ResultadoFrete<unknown>>
   tiposDeCarga(): Promise<ResultadoFrete<unknown>>
   // rota
-  rotaAutomatica(p: { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador?: string; paradasIbge?: string[] }): Promise<ResultadoFrete<unknown>>
+  rotaAutomatica(p: { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador?: string; paradasIbge?: string[]; /** 'sem2' (padrão, texto do guia: sem os 2 primeiros dígitos e sem zeros, número), 'sete' (7 dígitos completos, texto; Swagger: string só com números), 'cep' (SÓ OriginPostalCode/DestinyPostalCode, sem IBGE: o guia cap. 26 manda UM conjunto de dados por ponto) ou 'sete_cep' (IBGE de 7 dígitos + CEP) */ formatoIbge?: 'sem2' | 'sete' | 'cep' | 'sete_cep'; cepOrigem?: string; cepDestino?: string }): Promise<ResultadoFrete<unknown>>
+  /** Leitura GET /Route/ByIBGE/{origem}/{destino}/{eixos} com o IBGE COMPLETO de 7 dígitos (Swagger v3: inteiros; a recusa 'IBGE 50308 não encontrada' mostrou que a Repom procura o IBGE completo). */
+  consultarRotaPorIbgeCompleto(ibgeOrigem: string, ibgeDestino: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorIbge(ibgeOrigem: string, ibgeDestino: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorCep(cep: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorCodigo(percurso: number, roteiro: number, eixos: number): Promise<ResultadoFrete<unknown>>
@@ -306,7 +375,7 @@ export interface ClienteRepomFrete {
   cancelarCiotAgregado(ciot: string, motivo: string): Promise<ResultadoFrete<unknown>>
   encerrarCiotAgregado(ciot: string): Promise<ResultadoFrete<unknown>>
   // pagamento e quitação
-  autorizarPagamento(itens: { shippingId?: number; identifier: string; branchCode: string; dataPagamento: string }[]): Promise<ResultadoFrete<unknown>>
+  autorizarPagamento(itens: { shippingId?: number; identifier: string; branch: number; branchCode?: string; dataPagamento: string }[]): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorLote(lote: number | string): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorIdentificador(identifier: string): Promise<ResultadoFrete<unknown>>
   consultarAutorizacaoPorViagem(shippingId: number | string): Promise<ResultadoFrete<unknown>>
@@ -317,6 +386,8 @@ export interface ClienteRepomFrete {
   // NAO IMPLEMENTADO (guia ambíguo ou sem detalhe; ver DUVIDAS-PARA-REPOM.md)
   /** Saldo do cliente: caminho informado pela Repom (Karen, 13/11), FORA do guia. Formato da resposta desconhecido (D-F15): devolve o que vier. */
   consultarSaldoCliente(inicio: string, fim: string): Promise<ResultadoFrete<unknown>>
+  /** Relatório financeiro por período (guia 3.0 cap. 82: Statement/Financial/GetByCustomerStartDateEndDate; datas AAAA-MM-DD). Só leitura. */
+  consultarExtratoFinanceiro(inicio: string, fim: string): Promise<ResultadoFrete<unknown>>
   adiantarSaldoFrete(): Promise<never>
   alterarDocumentoQuitacao(): Promise<never>
   consultarContratosPorStatus(): Promise<never>
@@ -331,6 +402,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
   let token: { valor: string; expira: number } | null = null
 
   const configurado = (): string | null => {
+    if (config.ambiente === 'qa' && [base, config.urlToken, config.urlRelatorio, baseRel].some((u) => u && urlProibidaEmQa(u))) return 'Ambiente QA recusa URL que não seja a de QA da Repom (qa.repom.com.br). Nada foi enviado.'
     if (!base) return 'A URL da API Frete de produção não foi configurada.'
     if (!config.urlToken) return 'A URL do token da Repom Frete não foi configurada.'
     if (!c.user || !c.password || !c.partner) return 'Credenciais da Repom Frete não configuradas.'
@@ -402,7 +474,8 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
       const e = lerErroFrete(r.bruto)
       if (r.status >= 200 && r.status < 300 && !e) return { ok: true, http: r.status, dados: ler ? ler(r.bruto) : ((r.bruto as { Result?: unknown } | null)?.Result ?? r.bruto) as T, bruto: r.bruto }
       const incerto = emissao && r.status >= 500 ? true : undefined
-      return { ok: false, http: r.status, erro: e?.mensagem ?? mensagemHttpFrete(r.status), codigoErro: e?.codigo ?? null, incerto, bruto: r.bruto }
+      const corpoErro = e ? undefined : (corpoErroSeguro(r.bruto, [c.user, c.password, c.partner, c.version]) ?? undefined)
+      return { ok: false, http: r.status, erro: e?.mensagem ?? mensagemHttpFrete(r.status), codigoErro: e?.codigo ?? null, incerto, ...(corpoErro ? { corpoErro } : {}), bruto: r.bruto }
     } catch (e) {
       const m = (e as Error)?.message ?? ''
       if (m.startsWith('TOKEN:')) return { ok: false, http: Number(m.slice(6)) || 0, erro: mensagemHttpFrete(Number(m.slice(6)) || 401), bruto: null }
@@ -451,13 +524,22 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     tiposDeCarga: () => rodar('GET', '/AnttTypes/LoadTypes'),
 
     rotaAutomatica(p) {
-      if (!p.filial.trim() || !so(p.ibgeOrigem) || !so(p.ibgeDestino)) return invalido('Informe filial, origem e destino.')
+      if (!p.filial.trim()) return invalido('Informe a filial.')
       if ((p.paradasIbge ?? []).length > 23) return invalido('No máximo 23 paradas.')
+      const comCep = p.formatoIbge === 'cep' || p.formatoIbge === 'sete_cep'
+      if (comCep && (so(p.cepOrigem ?? '').length !== 8 || so(p.cepDestino ?? '').length !== 8)) return invalido('CEP de origem e destino com 8 dígitos esperado.')
+      if (p.formatoIbge !== 'cep' && (!so(p.ibgeOrigem) || !so(p.ibgeDestino))) return invalido('Informe filial, origem e destino.')
       // IBGE sem os 2 primeiros dígitos e sem zeros à esquerda (mesma regra da VPR)
       const tira = (i: string) => so(i).slice(2).replace(/^0+/, '')
-      const corpo = { BranchCode: p.filial, OriginIBGECode: Number(tira(p.ibgeOrigem)), DestinyIBGECode: Number(tira(p.ibgeDestino)), RoundTrip: p.idaVolta, ...(p.identificador ? { TraceIdentifier: p.identificador } : {}), ...(p.paradasIbge?.length ? { RouteStopIBGE: p.paradasIbge.map((i) => Number(tira(i))) } : {}) }
+      const sete = p.formatoIbge === 'sete' || p.formatoIbge === 'sete_cep'
+      if (sete && ![p.ibgeOrigem, p.ibgeDestino, ...(p.paradasIbge ?? [])].every((i) => so(i).length === 7)) return invalido('IBGE de 7 dígitos esperado.')
+      const f = (i: string) => (sete ? so(i) : Number(tira(i)))
+      const ibge = p.formatoIbge === 'cep' ? {} : { OriginIBGECode: f(p.ibgeOrigem), DestinyIBGECode: f(p.ibgeDestino) }
+      const cep = comCep ? { OriginPostalCode: so(p.cepOrigem ?? ''), DestinyPostalCode: so(p.cepDestino ?? '') } : {}
+      const corpo = { BranchCode: p.filial, ...ibge, ...cep, RoundTrip: p.idaVolta, ...(p.identificador ? { TraceIdentifier: p.identificador } : {}), ...(p.paradasIbge?.length ? { RouteStopIBGE: p.paradasIbge.map((i) => f(i)) } : {}) }
       return rodar('POST', '/RouteRequest/RouteRequestAutomatic', { corpo, versao: '2.4' })
     },
+    consultarRotaPorIbgeCompleto: (o, d, e) => (so(o).length === 7 && so(d).length === 7 ? rodar('GET', `/Route/ByIBGE/${seg(so(o))}/${seg(so(d))}/${seg(e)}`) : invalido('IBGE de 7 dígitos esperado.')),
     consultarRotaPorIbge: (o, d, e) => rodar('GET', `/Route/byibge/${seg(so(o).slice(2).replace(/^0+/, ''))}/${seg(so(d).slice(2).replace(/^0+/, ''))}/${seg(e)}`),
     consultarRotaPorCep: (cep, e) => rodar('GET', `/Route/ByCEP/${seg(so(cep))}/${seg(e)}`),
     consultarRotaPorCodigo: (percurso, roteiro, e) => rodar('GET', `/Route/byroutecode/${seg(percurso)}/${seg(roteiro)}/${seg(e)}`),
@@ -478,7 +560,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     consultarStatusPorChave: (k) => (k.trim() ? rodar('GET', `/Shipping/StatusProcessing/ByOperationKey/${seg(k)}`, {}, lerStatusProcessamento) : invalido('Informe a chave da operação.')),
     consultarContratoPorViagem: (id) => (idViagem(id) ? rodar('GET', `/Shipping/ByShipping/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     consultarContratoPorIdentificador: (id) => rodar('GET', `/Shipping/ByIdentifier/${seg(id)}`),
-    consultarStatusPorIdentificador: (id) => rodar('GET', `/StatusProcessing/ByIdentifier/${seg(id)}`, {}, lerStatusProcessamento),
+    consultarStatusPorIdentificador: (id) => rodar('GET', `/Shipping/StatusProcessing/ByIdentifier/${seg(id)}`, {}, lerStatusProcessamento),
     cancelarContrato: (id) => (idViagem(id) ? rodar('PATCH', `/Shipping/Cancel/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     interromperContrato: (id) => (idViagem(id) ? rodar('PATCH', `/Shipping/Interruption/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     bloquearContrato: (id, b, m) => (idViagem(id) ? rodar('PATCH', `/Shipping/lockUnlock/${idViagem(id)}`, { corpo: bloqueio(b, m) }) : invalido('Código da viagem inválido.')),
@@ -495,10 +577,12 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     encerrarCiotAgregado: (ciot) => (!ciot.trim() ? invalido('Informe o CIOT.') : rodar('POST', '/Shipping/CIOTAggregate/ClosingCIOT/', { corpo: { TransportOperationIdentifierCode: ciot }, versao: '3.0' })),
 
     // D-F14: caminho "/PaymentAuthorization" (tabela do guia); o texto escreve "/Payment/Authorization".
+    // Guia 3.0 cap. 66 diz que Branch e BranchCode sao opcionais, mas o QA (24/11/2026) respondeu 728 "'Branch' should not be empty" sem Branch, e o Swagger marca
+    // todos os campos como NotNull/NotEmpty: Branch (numero) e OBRIGATORIO aqui; BranchCode so vai se informado. Valores corretos de Branch/BranchCode: pendentes da Karen (palpite: Branch 1, BranchCode "1").
     autorizarPagamento: (itens) =>
-      itens.length && itens.every((i) => i.identifier.trim() && i.branchCode.trim() && !Number.isNaN(new Date(i.dataPagamento).getTime()))
-        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, Branch: 0, BranchCode: i.branchCode, PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
-        : invalido('Dados da autorização de pagamento incompletos.'),
+      itens.length && itens.every((i) => i.identifier.trim() && Number.isInteger(i.branch) && i.branch >= 0 && !Number.isNaN(new Date(i.dataPagamento).getTime()))
+        ? rodar('POST', '/PaymentAuthorization', { corpo: itens.map((i) => ({ ...(i.shippingId != null ? { ShippingId: i.shippingId } : {}), Identifier: i.identifier, Branch: i.branch, ...(i.branchCode?.trim() ? { BranchCode: i.branchCode } : {}), PaymentDate: i.dataPagamento })) }, undefined, true) // dinheiro: timeout/5xx = INCERTO
+        : invalido('Dados da autorização de pagamento incompletos (Branch é obrigatório).'),
     consultarAutorizacaoPorLote: (l) => rodar('GET', `/PaymentAuthorization/ByBatchId/${seg(l)}`),
     consultarAutorizacaoPorIdentificador: (i) => rodar('GET', `/PaymentAuthorization/ByIdentifier/${seg(i)}`),
     consultarAutorizacaoPorViagem: (id) => (idViagem(id) ? rodar('GET', `/PaymentAuthorization/ByShippingId/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
@@ -532,6 +616,11 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
       const dia = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
       if (!dia.test(inicio) || !dia.test(fim) || Number.isNaN(new Date(inicio).getTime()) || Number.isNaN(new Date(fim).getTime()) || inicio > fim) return invalido('Informe as datas no formato AAAA-MM-DD, início até o fim.')
       return rodar('GET', `/Balance/Financial/GetByDateInicialDateFinal/${inicio}/${fim}`, { relatorio: true }) // base do Relatório (Repom.Relatorio.WebAPI)
+    },
+    consultarExtratoFinanceiro(inicio, fim) {
+      const dia = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
+      if (!dia.test(inicio) || !dia.test(fim) || Number.isNaN(new Date(inicio).getTime()) || Number.isNaN(new Date(fim).getTime()) || inicio > fim) return invalido('Informe as datas no formato AAAA-MM-DD, início até o fim.')
+      return rodar('GET', `/Statement/Financial/GetByCustomerStartDateEndDate/${inicio}/${fim}`, { relatorio: true })
     },
     adiantarSaldoFrete: nao('adiantar saldo de frete', 'D-F11'),
     alterarDocumentoQuitacao: nao('alterar documento na quitação', 'D-F13'),
