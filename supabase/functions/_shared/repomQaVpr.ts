@@ -70,12 +70,12 @@ export function conferirPreVoo(p: PedidoVale): RegraVpr[] {
     add('placa da carreta no padrão (7) e diferente da tração', placaPadrao(p.carretaPlaca) && normalizarPlaca(p.carretaPlaca) !== normalizarPlaca(p.placa))
     add('carretaNumeroEixos inteiro 1..15 (soma, se mais de uma carreta)', Number.isInteger(p.carretaNumeroEixos) && (p.carretaNumeroEixos as number) >= 1 && (p.carretaNumeroEixos as number) <= 15, String(p.carretaNumeroEixos))
   } else {
-    add('sem carreta: sem carretaPlaca, carretaNumeroEixos e utilizaCarreta', !('CarretaPlaca' in corpo) && !('CarretaNumeroEixos' in corpo) && !('UtilizaCarreta' in corpo))
+    add('sem carreta: sem carretaPlaca e carretaNumeroEixos; utilizaCarreta=false', !('CarretaPlaca' in corpo) && !('CarretaNumeroEixos' in corpo) && corpo.UtilizaCarreta === false)
   }
   add('nomeTransportador preenchido, até 100', !!p.nomeTransportador?.trim() && p.nomeTransportador.length <= 100, `${p.nomeTransportador?.length ?? 0} caracteres`)
   const dt = so(p.documentoTransportador)
   add('documentoTransportador é CPF ou CNPJ com dígito verificador válido', dt.length === 11 ? cpfValido(dt) : cnpjValido(dt), fim4(dt))
-  add('documentoSubcontratado ausente (só se o transportador não tiver RNTRC na placa)', !p.documentoSubcontratado && !('DocumentoSubcontratado' in corpo))
+  add('documentoSubcontratado ausente (só se o transportador não tiver RNTRC na placa)', !p.documentoSubcontratado && corpo.DocumentoSubcontratado === '')
   add('nomeMotorista preenchido, até 50', !!p.nomeMotorista?.trim() && p.nomeMotorista.length <= 50, `${p.nomeMotorista?.length ?? 0} caracteres`)
   add('documentoMotorista é CPF de 11 dígitos válido', cpfValido(p.documentoMotorista), fim4(so(p.documentoMotorista)))
   add('cnpjFilial de 14 dígitos válido', cnpjValido(p.cnpjFilial), fim4(so(p.cnpjFilial)))
@@ -84,6 +84,8 @@ export function conferirPreVoo(p: PedidoVale): RegraVpr[] {
   const cfg = (corpo.Configuracao ?? {}) as Obj
   add('configuracao com eixos suspensos inteiros (0 e 0)', Number.isInteger(cfg.EixosSuspensosIda) && Number.isInteger(cfg.EixosSuspensosVolta), `${cfg.EixosSuspensosIda}/${cfg.EixosSuspensosVolta}`)
   const proibidos = ['Pracas', 'PracasVolta', 'NumeroCartao'].filter((k) => Object.keys(corpo).some((x) => x.toLowerCase() === k.toLowerCase()))
+  const dc = (corpo.documento as { documentoCodigo: string; serie?: string }[] | undefined) ?? []
+  add('documento (CT-e do contrato-modelo): codigo até 100, serie até 10', dc.length === 1 && !!dc[0].documentoCodigo && dc[0].documentoCodigo.length <= 100 && (dc[0].serie ?? '').length <= 10, dc[0] ? `${dc[0].documentoCodigo.length}/${(dc[0].serie ?? '').length}` : 'ausente')
   add('NÃO envia praças, pracasVolta nem numeroCartao (em desuso)', proibidos.length === 0, proibidos.join(','))
   return r
 }
@@ -197,7 +199,7 @@ export async function montarPreVoo(d: DepsVpr): Promise<PreVoo> {
     ...(comCarreta ? { carretaPlaca: normalizarPlaca(mod.placas[1]), carretaNumeroEixos: eixos[1] as number } : {}),
     nomeTransportador: nomeT, documentoTransportador: mod.hiredNationalId,
     nomeMotorista: nomeM, documentoMotorista: principal.cpf, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: USUARIO_EMISSAO_VPR,
-    roteiro: { roteiroCodigo: mod.routeCode, percursoCodigo: mod.traceCode }, eixosSuspensosIda: 0, eixosSuspensosVolta: 0,
+    roteiro: { roteiroCodigo: mod.routeCode, percursoCodigo: mod.traceCode }, documentos: [{ codigo: mod.documento.numero, serie: mod.documento.serie }], eixosSuspensosIda: 0, eixosSuspensosVolta: 0,
   }
   const regras = conferirPreVoo(pedido)
   const falhas = regras.filter((x) => !x.ok)

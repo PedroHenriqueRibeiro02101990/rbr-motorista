@@ -128,7 +128,8 @@ export function montarCorpoVale(p: PedidoVale) {
     ...(comCarreta ? { CarretaPlaca: normalizarPlaca(p.carretaPlaca), CarretaNumeroEixos: p.carretaNumeroEixos } : {}),
     NomeTransportador: p.nomeTransportador.trim(),
     DocumentoTransportador: soDigitos(p.documentoTransportador),
-    ...(p.documentoSubcontratado ? { DocumentoSubcontratado: soDigitos(p.documentoSubcontratado) } : {}),
+    // campo SEMPRE presente (vazio quando não há subcontratado), como no exemplo do manual: a Repom respondeu erro 0 "Object reference not set" quando ele faltava
+    DocumentoSubcontratado: p.documentoSubcontratado ? soDigitos(p.documentoSubcontratado) : '',
     NomeMotorista: p.nomeMotorista.trim(),
     DocumentoMotorista: soDigitos(p.documentoMotorista),
     CnpjFilial: soDigitos(p.cnpjFilial),
@@ -136,7 +137,7 @@ export function montarCorpoVale(p: PedidoVale) {
     ...(p.roteiro ? { Roteiro: { RoteiroCodigo: p.roteiro.roteiroCodigo, PercursoCodigo: p.roteiro.percursoCodigo } } : {}),
     ...(p.documentos?.length ? { documento: p.documentos.map((d) => ({ documentoCodigo: d.codigo, ...(d.serie ? { serie: d.serie } : {}) })) } : {}),
     Configuracao: { EixosSuspensosIda: p.eixosSuspensosIda ?? 0, EixosSuspensosVolta: p.eixosSuspensosVolta ?? 0 },
-    ...(comCarreta ? { UtilizaCarreta: true } : {}),
+    UtilizaCarreta: comCarreta,
   }
 }
 

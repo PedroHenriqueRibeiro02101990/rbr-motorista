@@ -137,7 +137,7 @@ test('função desligada: 503 sem chamar nada', async () => {
 })
 
 test('regras do pre-voo: reprova praças/cartão, processo grande, CPF/CNPJ inválidos, placa fora do padrão; helpers', () => {
-  const ok: PedidoVale = { processoCodigoCliente: novoProcessoVpr(new Date('2026-11-25T16:40:05Z')), placa: 'BIS4025', numeroEixos: 5, nomeTransportador: 'A B', documentoTransportador: PRESTADOR, nomeMotorista: 'C D', documentoMotorista: MOTORISTA, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: 'U', roteiro: { roteiroCodigo: 143217, percursoCodigo: 1 } }
+  const ok: PedidoVale = { processoCodigoCliente: novoProcessoVpr(new Date('2026-11-25T16:40:05Z')), placa: 'BIS4025', numeroEixos: 5, nomeTransportador: 'A B', documentoTransportador: PRESTADOR, nomeMotorista: 'C D', documentoMotorista: MOTORISTA, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: 'U', roteiro: { roteiroCodigo: 143217, percursoCodigo: 1 }, documentos: [{ codigo: '660', serie: '1' }] }
   assert.equal(ok.processoCodigoCliente, 'RBV261125164005'); assert.ok(conferirPreVoo(ok).every((x) => x.ok))
   const ruim = conferirPreVoo({ ...ok, processoCodigoCliente: 'X'.repeat(17), placa: 'ABC', documentoMotorista: '12345678900', cnpjFilial: '11111111111111', documentoSubcontratado: PRESTADOR })
   assert.equal(ruim.filter((x) => !x.ok).length, 5)
