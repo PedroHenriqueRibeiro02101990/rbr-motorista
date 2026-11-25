@@ -132,6 +132,15 @@ export async function fluxoVpo(e: EntradaVpo, vpr: ClienteRepomVpr, deps: DepsFl
   return saida(saidaOp)
 }
 
+/** O que a emissão/cancelamento do vale (conta 9501) faz em operacao_ciot_vpo, de onde o MDF-e lê o IDVPO. O Frete (9520) NUNCA grava aqui: o contrato só referencia o número. */
+export function efeitoEmOperacaoCiotVpo(acao: string, s: SaidaFluxo): { gravar: { vpo_idvpo: string; vpo_valor: number | null } } | { limpar: true } | null {
+  if (s.status !== 200 || s.corpo.ok !== true) return null
+  const reg = s.corpo.registro as { idvpo?: string | null; valor?: number | null; estado?: string } | undefined
+  if (acao === "emitir" && reg?.estado === "emitido" && reg.idvpo) return { gravar: { vpo_idvpo: String(reg.idvpo), vpo_valor: reg.valor ?? null } }
+  if (acao === "cancelar" && reg?.estado === "cancelado") return { limpar: true }
+  return null
+}
+
 // ---------- repom-frete ----------
 
 export type AcaoFrete =
@@ -147,7 +156,7 @@ export interface EntradaFrete {
   valor?: number
   confirmacao?: Partial<ConfirmacaoHumana> & { previa_hash?: string }
   /** cadastro e validar: {recurso:'contratado'|'motorista'|'veiculo', metodo:'criar'|'consultar'|'alterar'|'bloquear', ...} */
-  recurso?: 'contratado' | 'motorista' | 'veiculo' | 'documento' | 'veiculo_tag' | 'cartao' | 'tipos_carga'
+  recurso?: 'contratado' | 'motorista' | 'veiculo' | 'documento' | 'cartao' | 'tipos_carga'
   metodo?: 'criar' | 'consultar' | 'alterar' | 'bloquear' | 'validar'
   chave?: string // documento, placa ou cartão
   corpo?: Record<string, unknown>
@@ -213,7 +222,6 @@ export async function fluxoFrete(e: EntradaFrete, frete: ClienteRepomFrete, deps
     const k = String(e.chave ?? '')
     if (e.acao === 'validar') {
       if (e.recurso === 'veiculo') return resp(await frete.validarVeiculo(k))
-      if (e.recurso === 'veiculo_tag') return resp(await frete.validarVeiculoPorTag(k))
       if (e.recurso === 'documento') return resp(await frete.validarDocumentoPrestador(k))
       if (e.recurso === 'cartao') return resp(await frete.validarCartao(k, String(e.dados?.documento ?? '')))
       return recusa(400, 'Recurso de validação desconhecido.')

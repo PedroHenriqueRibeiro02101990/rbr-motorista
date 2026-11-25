@@ -11,7 +11,7 @@ import { decidirLimite, inicioDoDia, limiteDiario, travaLiberada, valorMaximoOpe
 import type { DepsFluxo, SaidaFluxo } from "./repomFluxos.ts";
 
 const url = Deno.env.get("SUPABASE_URL")!;
-const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+export const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 export const segredo = async (nome: string): Promise<string | null> => {
   const { data, error } = await admin.rpc("repom_segredo", { p_nome: nome });
   if (error) throw new Error("Não consegui ler a configuração da Repom.");

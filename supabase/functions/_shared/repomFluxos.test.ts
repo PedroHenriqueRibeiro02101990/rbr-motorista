@@ -242,7 +242,7 @@ test('sanitizarPayload: sem nome, documento, placa, cartão, token ou senha; man
 // ---------- frete ----------
 const contrato: Omit<PedidoContratoFrete, 'identifier'> = {
   hiredNationalId: '16545346091', operationIdentifier: '1', cardNumber: 0, routeTraceCode: 4, routeRouteCode: 123997, issueDate: '2026-11-12T12:00:00Z', totalFreightValue: 1500, totalLoadWeight: 20000, totalLoadValue: 40000,
-  advanceMoneyValue: 300, branchCode: '1', ncm: '1005', anttCodeType: 1, vpr: { issue: false, oneWay: true, suspendedAxles: 0, returnSuspendedAxles: 0 }, entrega: { esperadaEm: '2026-11-15T12:00:00Z', tipoLocal: 'Branch' },
+  advanceMoneyValue: 300, branchCode: '1', ncm: '1005', anttCodeType: 1, entrega: { esperadaEm: '2026-11-15T12:00:00Z', tipoLocal: 'Branch' },
   motoristas: [{ cpf: '16545346091', principal: true }], documentos: [{ tipo: 'CTE', serie: '1', numero: '660', chave: '51220706315338003134550010000660901237179782', branchCode: '1' }], placas: ['LXL6808'],
   destinatario: { documento: '06315338003134', nome: 'Destinatario Teste', tipo: 'Company' },
 }

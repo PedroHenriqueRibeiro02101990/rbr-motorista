@@ -8,6 +8,8 @@ import { ambienteRepom } from "../_shared/repomClient.ts";
 import { criarRepomFreteClient } from "../_shared/repomFreteClient.ts";
 import { configFreteDoAmbiente } from "../_shared/repomFreteConfig.ts";
 import { RODADA_ROTA_INICIO } from "../_shared/repomQaAdiantamento.ts";
+import { criarRepomVprClient } from "../_shared/repomVprClient.ts";
+import { ACOES_VPR, executarQaVpr } from "../_shared/repomQaVpr.ts";
 import { BASE_QA_FIXA, TOKEN_QA_FIXO, chaveLigada, executarQaTeste } from "../_shared/repomQaTeste.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
@@ -26,6 +28,40 @@ Deno.serve(async (req) => {
     const ambiente = ambienteRepom(await segredo("REPOM_AMBIENTE"));
     const cfg = await configFreteDoAmbiente("qa", segredo); // só REPOM_QA_FRETE_*
     const frete = criarRepomFreteClient({ ...cfg, ambiente: "qa", urlBase: BASE_QA_FIXA, urlToken: TOKEN_QA_FIXO, limiteMs: 100_000 });
+    // Ações do VALE-PEDÁGIO (conta 9501): segredos PRÓPRIOS (nunca os do Frete). Os dados de teste do 9520 só são LIDOS.
+    if ((ACOES_VPR as readonly string[]).includes(String(corpo.acao ?? ""))) {
+      const login = (await segredo("REPOM_QA_VPR_VALEPEDAGIO_LOGIN")) ?? (await segredo("REPOM_VPR_VALEPEDAGIO_LOGIN")) ?? "";
+      const senha = (await segredo("REPOM_QA_VPR_VALEPEDAGIO_SENHA")) ?? (await segredo("REPOM_VPR_VALEPEDAGIO_SENHA")) ?? "";
+      const cfgVpr = { ambiente: "qa" as const, roteirizacaoLogin: "", roteirizacaoSenha: "", valePedagioLogin: login, valePedagioSenha: senha, limiteMs: 60_000 };
+      const ultima = async (processo?: string) => {
+        let q = admin.from("repom_requisicoes").select("response_json").eq("acao", "qa-teste-vpr-emitir").eq("status", "ok").order("criado_em", { ascending: false }).limit(1);
+        if (processo) q = q.eq("request_json->>processo", processo);
+        const { data } = await q;
+        const r = data?.[0]?.response_json as { processo?: string; codigoViagem?: string } | undefined;
+        return r?.processo ? { processo: r.processo, codigoViagem: r.codigoViagem ?? null } : null;
+      };
+      const saidaVpr = await executarQaVpr(corpo, {
+        ligado: true,
+        frete,
+        vpr: criarRepomVprClient({ ...cfgVpr, verboConsultaVale: "GET" }),
+        vprPost: criarRepomVprClient({ ...cfgVpr, verboConsultaVale: "POST" }),
+        agora: () => new Date(),
+        async historico(acao) {
+          const { data } = await admin.from("repom_requisicoes").select("status").eq("acao", "qa-teste-vpr-" + acao);
+          return (data ?? []).map((x: { status: string }) => x.status);
+        },
+        emissao: ultima,
+        async registrar(acao, request) {
+          const { data } = await admin.from("repom_requisicoes").insert({ acao: acao.slice(0, 60), ambiente: "qa", idempotency_key: crypto.randomUUID(), request_json: request, status: "pendente" }).select("id").maybeSingle();
+          return data?.id ?? null;
+        },
+        async concluir(id, r) {
+          if (!id) return;
+          await admin.from("repom_requisicoes").update({ status: r.status, http_status: r.http, response_json: r.resposta, erro: r.erro?.slice(0, 300) ?? null }).eq("id", id);
+        },
+      });
+      return J(saidaVpr.corpo, saidaVpr.status);
+    }
     const saida = await executarQaTeste(corpo, {
       ligado: true,
       ambiente,

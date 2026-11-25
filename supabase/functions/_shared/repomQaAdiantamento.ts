@@ -195,7 +195,6 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
       ibgeDestino: IBGE_DESTINO,
       cepOrigem: CEP_ORIGEM,
       cepDestino: CEP_DESTINO,
-      vpr: { issue: false, oneWay: true, suspendedAxles: 0, returnSuspendedAxles: 0 },
       entrega: { esperadaEm: dia(2), tipoLocal: m.tipoLocal },
       motoristas: m.motoristas,
       documentos: [{ tipo: 'CTE', serie: k.serie, numero: k.numero, chave: k.chave, branchCode: m.documento.branchCode }], // sem CheckDocument e sem DeliveryLocationType

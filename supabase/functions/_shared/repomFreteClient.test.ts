@@ -23,7 +23,7 @@ const ok = (corpo: unknown, status = 200) => ({ status, corpo })
 const contrato: PedidoContratoFrete = {
   identifier: 'C1', hiredNationalId: '165.453.460-91', operationIdentifier: '1', cardNumber: 0, routeTraceCode: 4, routeRouteCode: 123997, issueDate: '2026-11-12T12:00:00Z',
   totalFreightValue: 1500, totalLoadWeight: 20000, totalLoadValue: 40000, advanceMoneyValue: 300, branchCode: '1', ncm: '1005', anttCodeType: 1,
-  vpr: { issue: false, oneWay: true, suspendedAxles: 0, returnSuspendedAxles: 0 }, entrega: { esperadaEm: '2026-11-15T12:00:00Z', tipoLocal: 'Branch' },
+  entrega: { esperadaEm: '2026-11-15T12:00:00Z', tipoLocal: 'Branch' },
   motoristas: [{ cpf: '16545346091', principal: true }], documentos: [{ tipo: 'CTE', serie: '1', numero: '660', chave: '51220706315338003134550010000660901237179782', branchCode: '1' }],
   placas: ['lxl-6808'], destinatario: { documento: '06315338003134', nome: 'Destinatario Teste', tipo: 'Company' },
 }
@@ -147,11 +147,10 @@ test('cancelar, interromper, TAC-agregado, pagamento e quitação: caminhos e co
   await c.autorizarPagamento([{ shippingId: 1719704, identifier: '123987', branch: 1, branchCode: '1', dataPagamento: '2026-11-20' }])
   await c.quitarViagem({ branchCode: '1', shippingId: 1719704, documentos: [{ numero: '123', serie: '1', branchCode: '1', tipo: 'CTE', status: 'Delivered' }] })
   await c.cancelarQuitacao(1719704)
-  await c.consultarPracasVpr('6483')
   const reqs = m.chamadas.filter((x) => !ehToken(x)).map((x) => `${x.init.method} ${x.url.replace('https://qa.repom.com.br/Repom.Frete.WebAPI', '')}`)
   assert.deepEqual(reqs, [
     'PATCH /Shipping/Cancel/1719725', 'PATCH /Shipping/Interruption/1720343', 'POST /Shipping/CIOTAggregate/ClosingCIOT/?x-api-version=3.0', 'POST /Shipping/CIOTAggregate/CancelCIOT/?x-api-version=3',
-    'PATCH /Shipping/CIOTAggregate/ShippingRectification/?x-api-version=3', 'POST /PaymentAuthorization', 'POST /ShippingPayment', 'PATCH /ShippingPayment/Cancel/1719704', 'GET /VPR/TollList/ByShippingIdentifier/6483',
+    'PATCH /Shipping/CIOTAggregate/ShippingRectification/?x-api-version=3', 'POST /PaymentAuthorization', 'POST /ShippingPayment', 'PATCH /ShippingPayment/Cancel/1719704',
   ])
   const q = JSON.parse(m.chamadas.find((x) => x.url.endsWith('/ShippingPayment') && x.init.method === 'POST')!.init.body!)
   assert.equal(q.Documents[0].DocumentStatus, 'Delivered')

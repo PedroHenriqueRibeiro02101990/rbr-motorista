@@ -146,12 +146,14 @@ export type TipoDocumentoFrete = 'CTE' | 'NFe' | 'NFSe' | 'CRT' | 'OCC' | 'Roman
 export type LocalEntrega = 'Branch' | 'GasStation' | 'DigitalPayment' | 'Hired'
 export const TIPOS_DOCUMENTO: TipoDocumentoFrete[] = ['CTE', 'NFe', 'NFSe', 'CRT', 'OCC', 'Romaneio', 'MDFe']
 
+/** O Swagger do Shipping exige o nó VPR, mas o Frete (9520) NUNCA emite vale-pedágio: o vale é só da conta 9501 (repom-vpo). Valor fixo e neutro, sem entrada do chamador. */
+export const NO_VPR_FRETE = Object.freeze({ Issue: false, VPROneWay: true, VPRSuspendedAxleNumber: 0, VPRReturnSuspendedAxleNumber: 0 })
+
 export interface PedidoContratoFrete {
   identifier: string // código único do contrato no cliente (nossa chave de idempotência)
   hiredNationalId: string
   operationIdentifier: string
   cardNumber: number // 0 = viagem digital (conta digital)
-  vprCardNumber?: number
   routeTraceCode: number // BrazilianRouteTraceCode (percurso)
   routeRouteCode: number // BrazilianRouteRouteCode (roteiro)
   issueDate: string // ISO
@@ -167,7 +169,6 @@ export interface PedidoContratoFrete {
   cepOrigem?: string
   cepDestino?: string
   distanciaKm?: number
-  vpr: { issue: boolean; oneWay: boolean; suspendedAxles: number; returnSuspendedAxles: number }
   entrega: { esperadaEm: string; tipoLocal: LocalEntrega }
   motoristas: { cpf: string; principal: boolean }[]
   documentos: { tipo: TipoDocumentoFrete; serie: string; numero: string; chave?: string; branchCode: string }[]
@@ -218,7 +219,6 @@ export function montarCorpoContrato(p: PedidoContratoFrete) {
       HiredNationalId: so(p.hiredNationalId),
       OperationIdentifier: p.operationIdentifier.trim(),
       CardNumber: p.cardNumber,
-      ...(p.vprCardNumber != null ? { VPRCardNumber: p.vprCardNumber } : {}),
       BrazilianRouteTraceCode: p.routeTraceCode,
       BrazilianRouteRouteCode: p.routeRouteCode,
       IssueDate: new Date(p.issueDate).toISOString(),
@@ -234,7 +234,7 @@ export function montarCorpoContrato(p: PedidoContratoFrete) {
       ...(p.cepOrigem ? { BrazilianCEPSource: so(p.cepOrigem) } : {}),
       ...(p.cepDestino ? { BrazilianCEPDestination: so(p.cepDestino) } : {}),
       ...(p.distanciaKm != null ? { TravelledDistance: p.distanciaKm } : {}),
-      VPR: { Issue: p.vpr.issue, VPROneWay: p.vpr.oneWay, VPRSuspendedAxleNumber: p.vpr.suspendedAxles, VPRReturnSuspendedAxleNumber: p.vpr.returnSuspendedAxles },
+      VPR: { ...NO_VPR_FRETE },
       ShippingPayment: { ExpectedDeliveryDate: new Date(p.entrega.esperadaEm).toISOString(), ExpectedDeliveryLocationType: p.entrega.tipoLocal },
       Drivers: p.motoristas.map((m) => ({ Country: 'Brazil', NationalId: so(m.cpf), Main: m.principal })),
       Documents: p.documentos.map((d) => ({ BranchCode: d.branchCode, DocumentType: d.tipo, Series: d.serie, Number: d.numero, ...(d.chave ? { EletronicKey: so(d.chave) } : {}) })),
@@ -373,7 +373,6 @@ export interface ClienteRepomFrete {
   consultarSolicitacaoDeRota(identificador: string): Promise<ResultadoFrete<unknown>>
   // validações (antes de emitir)
   validarVeiculo(placa: string): Promise<ResultadoFrete<unknown>>
-  validarVeiculoPorTag(placa: string): Promise<ResultadoFrete<unknown>>
   validarDocumentoPrestador(documento: string): Promise<ResultadoFrete<unknown>>
   validarCartao(cartao: string, documento: string): Promise<ResultadoFrete<unknown>>
   // contrato / CIOT
@@ -395,7 +394,6 @@ export interface ClienteRepomFrete {
   adicionarImpostosPorIdentificador(identifier: string, impostos: { tipo: string; valor: number }[]): Promise<ResultadoFrete<unknown>>
   cadastrarMovimento(p: { codigoCliente: string; nome: string; tipo: 'D' | 'C'; incideSobreImposto: boolean; incideSobreFrete: boolean; liberaSaldo: boolean }): Promise<ResultadoFrete<unknown>>
   listarMovimentos(): Promise<ResultadoFrete<unknown>>
-  consultarPracasVpr(identifier: string): Promise<ResultadoFrete<unknown>>
   retificarCiotAgregado(p: { ciot: string; veiculos: { placa: string; rntrc: string }[]; quantidade: number; preco: number }): Promise<ResultadoFrete<unknown>>
   cancelarCiotAgregado(ciot: string, motivo: string): Promise<ResultadoFrete<unknown>>
   encerrarCiotAgregado(ciot: string): Promise<ResultadoFrete<unknown>>
@@ -577,7 +575,6 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     consultarSolicitacaoDeRota: (id) => rodar('GET', `/RouteRequest/${seg(id)}`),
 
     validarVeiculo: (pl) => rodar('GET', `/ShippingValidation/ByVehicles/${seg(pl.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}`), // uma placa por chamada (D-F10)
-    validarVeiculoPorTag: (pl) => rodar('GET', `/ShippingValidation/ByVehiclesTag/${seg(pl.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}`),
     validarDocumentoPrestador: (d) => (doc11(d, 'Documento') ? invalido('Documento inválido.') : rodar('GET', `/ShippingValidation/ByHiredDocument/Brazil/${so(d)}`)),
     validarCartao: (cartao, d) => (doc11(d, 'Documento') || !so(cartao) ? invalido('Cartão ou documento inválido.') : rodar('GET', `/ShippingValidation/ByCardNumberHiredDocument/${so(cartao)}/Brazil/${so(d)}`)),
 
@@ -602,7 +599,6 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     adicionarImpostosPorIdentificador: (ident, l) => rodar('PATCH', '/Shipping/AddTaxesByIdentifier', { corpo: [{ Identifier: ident, ShippingTaxes: taxas(l) }] }),
     cadastrarMovimento: (p) => rodar('POST', '/Movement/MovementRegistration', { corpo: { CodigoCliente: p.codigoCliente, NomeMovimento: p.nome, TipoMovimento: p.tipo, IncideSobreImposto: p.incideSobreImposto, IncideSobreFrete: p.incideSobreFrete, LiberaSaldo: p.liberaSaldo } }),
     listarMovimentos: () => rodar('GET', '/Movement/GetMovement'),
-    consultarPracasVpr: (ident) => rodar('GET', `/VPR/TollList/ByShippingIdentifier/${seg(ident)}`),
 
     retificarCiotAgregado: (p) => rodar('PATCH', '/Shipping/CIOTAggregate/ShippingRectification/', { corpo: { TransportOperationIdentifierCode: p.ciot, Vehicle: p.veiculos.map((v) => ({ CarLicensePlate: v.placa, RNTRC: v.rntrc })), QuantityRate: p.quantidade, PriceRate: p.preco }, versao: '3' }),
     cancelarCiotAgregado: (ciot, motivo) => (!ciot.trim() || !motivo.trim() ? invalido('Informe o CIOT e o motivo.') : rodar('POST', '/Shipping/CIOTAggregate/CancelCIOT/', { corpo: { TransportOperationIdentifierCode: ciot, Reason: motivo }, versao: '3' })),
