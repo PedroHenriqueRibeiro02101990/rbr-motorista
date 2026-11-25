@@ -354,6 +354,7 @@ export interface EntradaPiso {
   distanciaKm: number
   composicao: boolean // tem implemento (semirreboque/reboque)
   altoDesempenho?: boolean
+  tabela?: string | null // tabela escolhida na cotação (A/B/C/D); manda sobre a dedução por composição
   hoje: string // AAAA-MM-DD
 }
 export type ResultadoPiso =
@@ -366,12 +367,18 @@ const normal = (s: string | null | undefined) =>
 export function calcularPisoAntt(coefs: CoeficientePiso[], e: EntradaPiso): ResultadoPiso {
   if (!(e.eixos > 0)) return { ok: false, motivo: 'Número de eixos do veículo (cadastro) não informado.' }
   if (!(e.distanciaKm > 0)) return { ok: false, motivo: 'Distância da rota não informada na cotação.' }
-  const tabela = e.altoDesempenho ? (e.composicao ? 'C' : 'D') : e.composicao ? 'A' : 'B'
+  const escolhida = (e.tabela ?? '').toUpperCase()
+  const tabela = ['A', 'B', 'C', 'D'].includes(escolhida) ? escolhida : e.altoDesempenho ? (e.composicao ? 'C' : 'D') : e.composicao ? 'A' : 'B'
   const tipo = normal(e.tipoCarga) || 'carga geral'
   const candidatos = coefs
     .filter((c) => c.tabela === tabela && normal(c.tipo_carga) === tipo && Number(c.eixos) === e.eixos && c.data_vigencia <= e.hoje)
     .sort((a, b) => (a.data_vigencia < b.data_vigencia ? 1 : -1))
-  const c = candidatos[0]
+  let c = candidatos[0]
+  // Sem tabela escolhida e sem implemento: se a B não existe (2 ou 3 eixos), a regra da casa é a Tabela A.
+  if (!c && !['A', 'B', 'C', 'D'].includes(escolhida) && tabela === 'B' && (e.eixos === 2 || e.eixos === 3)) {
+    c = coefs.filter((x) => x.tabela === 'A' && normal(x.tipo_carga) === tipo && Number(x.eixos) === e.eixos && x.data_vigencia <= e.hoje).sort((a, b) => (a.data_vigencia < b.data_vigencia ? 1 : -1))[0]
+    if (c) { const piso = dinheiro(Number(c.cc_fixo) + Number(c.ccd_por_km) * e.distanciaKm); return { ok: true, piso, tabela: 'A', tipoCarga: c.tipo_carga, eixos: e.eixos, distanciaKm: e.distanciaKm, ccFixo: Number(c.cc_fixo), ccdPorKm: Number(c.ccd_por_km), vigencia: c.data_vigencia, fonte: c.fonte ?? null } }
+  }
   // C10: Tabela B só existe a partir de 4 eixos; com 2 ou 3 eixos orienta em vez de dar erro seco.
   if (!c && tabela === 'B' && (e.eixos === 2 || e.eixos === 3)) return { ok: false, motivo: 'Essa combinação não existe na Tabela B (veículo sem composição com 2 ou 3 eixos). Use a Tabela A ou revise os eixos.' }
   if (!c) return { ok: false, motivo: `Sem coeficiente da ANTT para tabela ${tabela}, "${e.tipoCarga ?? 'Carga Geral'}", ${e.eixos} eixos.` }
@@ -429,7 +436,7 @@ export interface DadosOperacaoCiot {
     destino: { lat: number; lon: number; ibge: number | null } | null
     distanciaKm: number | null
   }
-  carga: { tipoCarga: string | null; ncm: string | null; complexa: boolean; tabelaAntt: string | null }
+  carga: { tipoCarga: string | null; ncm: string | null; complexa: boolean; tabelaAntt: string | null; pisoGravado?: number | null }
   // pedagio = valor que vai no pedido (já decidido por decidirPedagio); pedagioDecisao = de onde veio, para a conferência.
   condicao: { valorTotal: number | null; adiantamento: number | null; pedagio: number | null; pedagioDecisao?: PedagioDecidido } | null
   datas: { inicio: Date | null; fim: Date | null }
@@ -486,16 +493,22 @@ export function pedidoDaOperacao(d: DadosOperacaoCiot): PreviaCiot {
   if (d.tracao && d.tracao.eixos == null) bloqueios.push(`Veículo ${d.tracao.placa} sem número de eixos no cadastro.`)
   for (const i of d.implementos) if (i.eixos == null) bloqueios.push(`Implemento ${i.placa} sem número de eixos no cadastro.`)
   const tabelaCotacao = (d.carga.tabelaAntt ?? '').toUpperCase()
-  const piso = calcularPisoAntt(d.coeficientes, {
+  let piso: ResultadoPiso = calcularPisoAntt(d.coeficientes, {
     tipoCarga: d.carga.tipoCarga,
     eixos,
     distanciaKm: d.rota.distanciaKm ?? 0,
     composicao: d.implementos.length > 0,
     altoDesempenho: tabelaCotacao === 'C' || tabelaCotacao === 'D',
+    tabela: tabelaCotacao,
     hoje: d.agora.toISOString().slice(0, 10),
   })
   const frete = d.condicao?.valorTotal ?? null
   let diferencaPiso: number | null = null
+  // Piso já gravado na operação (cotação com tabela A): vale quando a conta não fecha; vira aviso, nunca bloqueio.
+  if (!piso.ok && d.carga.pisoGravado != null && d.carga.pisoGravado > 0) {
+    avisos.push(`Piso mínimo da ANTT: ${piso.motivo} Usado o piso já gravado na operação (R$ ${d.carga.pisoGravado.toFixed(2)}).`)
+    piso = { ok: true, piso: d.carga.pisoGravado, tabela: tabelaCotacao || 'A', tipoCarga: d.carga.tipoCarga ?? 'Carga Geral', eixos, distanciaKm: d.rota.distanciaKm ?? 0, ccFixo: 0, ccdPorKm: 0, vigencia: '', fonte: 'operacoes.piso_minimo_valor' }
+  }
   if (!piso.ok) bloqueios.push(`Piso mínimo da ANTT: ${piso.motivo}`)
   else if (frete != null) {
     diferencaPiso = dinheiro(frete - piso.piso)
