@@ -362,7 +362,7 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     // EVIDÊNCIA (25/11/2026): ações FIXAS, só para o contrato EVIDENCIA (2167273); sem entrada livre. Cancelar: UMA tentativa (qualquer resultado conta).
     const sid = EVIDENCIA.shippingId
     const hora = () => d.agora().toISOString()
-    const idOk = (dados: unknown) => { const o = raiz(dados); const i = o ? primeiro(o, ['Identifier']) : undefined; return i == null || String(i) === EVIDENCIA.identifier }
+    const idOk = (dados: unknown) => { const o = raiz(dados); const i = o ? primeiro(o, ['Identifier']) : undefined; const sidLido = o ? primeiro(o, ['ShippingId']) : undefined; /* a Repom devolve o Identifier cortado em 17 caracteres: aceita prefixo (>=15) e exige ShippingId igual quando vier */ return (sidLido == null || Number(sidLido) === sid) && (i == null || String(i) === EVIDENCIA.identifier || (String(i).length >= 15 && EVIDENCIA.identifier.startsWith(String(i)))) }
     const resumoContrato = (dados: unknown) => { const o = raiz(dados); return { status: lerContratoQa(dados)?.status ?? null, shippingId: sid, identifier: EVIDENCIA.identifier, ciot: o ? (primeiro(o, ['CIOT']) ?? null) : null, adiantamento: o ? (primeiro(o, ['AdvanceMoneyValue']) ?? null) : null } }
     if (acao === 'consultar_contrato_por_id') {
       const h = hora()
