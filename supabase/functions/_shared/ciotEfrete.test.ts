@@ -373,6 +373,16 @@ test('C10: Tabela B com 2 ou 3 eixos orienta a usar a Tabela A', () => {
   assert.match(String((r as { motivo: string }).motivo), /Use a Tabela A/)
 })
 
+test('piso: cotação Tabela A com 3 eixos e sem implemento usa a Tabela A', () => {
+  const coefs = [{ tabela: 'A', tipo_carga: 'Carga Geral', eixos: 3, ccd_por_km: 5, cc_fixo: 100, data_vigencia: '2026-01-01' }]
+  const r = calcularPisoAntt(coefs, { eixos: 3, distanciaKm: 100, tabela: 'A', composicao: false, tipoCarga: 'Carga Geral', hoje: '2026-11-25' })
+  assert.equal(r.ok, true)
+  assert.equal((r as { piso: number; tabela: string }).tabela, 'A')
+  assert.equal((r as { piso: number }).piso, 600)
+  // sem tabela na cotação, também cai na A
+  assert.equal(calcularPisoAntt(coefs, { eixos: 3, distanciaKm: 100, composicao: false, tipoCarga: 'Carga Geral', hoje: '2026-11-25' }).ok, true)
+})
+
 // ---- Pedágio do CIOT: valor real do vale-pedágio ----
 import { decidirPedagio } from './ciotEfrete.ts'
 

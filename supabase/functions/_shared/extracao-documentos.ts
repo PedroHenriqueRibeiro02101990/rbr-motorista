@@ -22,10 +22,10 @@ export const CAMPOS_POR_TIPO: Record<Exclude<TipoDocumento, "outro">, Record<str
     especie_tipo: "string", carroceria: "string", quantidade_eixos: "integer", tara: "number", capacidade_carga: "number", pbt: "number",
     cmt: "number", uf: "string", exercicio: "integer", nome_proprietario: "string", cpf_cnpj_proprietario: "string", observacoes: "string",
   },
-  cnh: { nome: "string", cpf: "string", numero_registro: "string", categoria: "string", validade: "string", data_nascimento: "string", sexo: "string" },
+  cnh: { nome: "string", cpf: "string", numero_registro: "string", categoria: "string", validade: "string", data_nascimento: "string", primeira_habilitacao: "string", sexo: "string" },
   rg: { nome: "string", numero_rg: "string", orgao_emissor: "string", uf_emissor: "string", data_nascimento: "string", filiacao: "string", cpf: "string" },
   cpf: { nome: "string", cpf: "string", data_nascimento: "string" },
-  rntrc: { numero: "string", titular: "string", validade: "string", situacao: "string" },
+  rntrc: { numero: "string", titular: "string", validade: "string", situacao: "string", tipo_transportador: "string" },
   comprovante_residencia: {
     nome_titular: "string", logradouro: "string", numero: "string", complemento: "string", bairro: "string", cidade: "string",
     uf: "string", cep: "string", data_emissao: "string", emissor: "string",
@@ -74,10 +74,10 @@ const COMUM =
   'Para CADA campo devolva {valor, confianca (alta|media|baixa), trecho (texto de origem no documento), motivo_nulo}. Se o campo nao estiver legivel ou nao existir, valor=null e explique em motivo_nulo. NUNCA invente. "*.*" no documento significa vazio (null). Datas em YYYY-MM-DD.';
 export const PROMPTS_V2: Record<Exclude<TipoDocumento, "outro">, string> = {
   crlv: `Voce le um CRLV / CRLV-e brasileiro. PESO: o CRLV imprime PBT, capacidade e CMT em TONELADAS com ponto (ex.: 25.5, 16.33); devolva o numero impresso, sem converter. O CRLV digital NAO traz tara: devolva tara=null com motivo. Em caminhao trator o PBT e do cavalo sozinho (NUNCA e a tara) e a capacidade vem vazia. "especie_tipo" e a ESPECIE/TIPO impressa (ex.: CAMINHAO TRATOR, SEMIRREBOQUE, REBOQUE, CAMINHAO). ${COMUM}`,
-  cnh: `Voce le uma CNH brasileira (fisica ou digital). "sexo": M ou F somente se o documento trouxer o campo. CPF so numeros. ${COMUM}`,
+  cnh: `Voce le uma CNH brasileira (fisica ou digital). "primeira_habilitacao" e a data da 1a habilitacao, se constar. "sexo": M ou F somente se o documento trouxer o campo. CPF so numeros. ${COMUM}`,
   rg: `Voce le um RG brasileiro. CPF so numeros se existir. ${COMUM}`,
   cpf: `Voce le um comprovante de CPF. CPF so numeros. ${COMUM}`,
-  rntrc: `Voce le um comprovante/certificado de RNTRC da ANTT. "situacao" como aparece (ativo, inativo...). ${COMUM}`,
+  rntrc: `Voce le um comprovante/certificado de RNTRC da ANTT. "situacao" como aparece (ativo, inativo...). "tipo_transportador": TAC, ETC ou CTC. ${COMUM}`,
   comprovante_residencia: `Voce le um comprovante de residencia (agua, luz, gas, internet, fatura). "nome_titular" e o titular da conta, mesmo que seja familiar ou o dono da casa. CEP so numeros. "data_emissao" e a emissao/referencia. ${COMUM}`,
   dados_bancarios: `Voce le dados bancarios (cartao, extrato, comprovante de conta ou PIX). Nao copie numero completo de cartao. "tipo_conta": corrente, poupanca ou pagamento. ${COMUM}`,
   contrato_ciot_repom: `Voce le um contrato/CIOT da Repom. "ciot": o numero do CIOT exatamente como impresso (a Repom mostra 16 digitos). Valores em reais como impressos (ex.: R$ 24.210,33). Placa sem tracos. ${COMUM}`,
@@ -148,7 +148,7 @@ export function normalizarExtracao(tipo: TipoDocumento, bruto: Record<string, un
   const c = n.campos;
   // Datas sempre ISO: "12/05/2030" lido como MM/DD gravaria 5 de dezembro sem erro nenhum.
   const DATAS: Partial<Record<TipoDocumento, string[]>> = {
-    cnh: ["validade", "data_nascimento"], rg: ["data_nascimento"], cpf: ["data_nascimento"], rntrc: ["validade"],
+    cnh: ["validade", "data_nascimento", "primeira_habilitacao"], rg: ["data_nascimento"], cpf: ["data_nascimento"], rntrc: ["validade"],
     comprovante_residencia: ["data_emissao"], contrato_ciot_repom: ["data_emissao"],
   };
   for (const k of DATAS[tipo] ?? []) {

@@ -128,7 +128,7 @@ function enderecoPessoa(p: Pessoa | null, ibge: number | null): EnderecoEfrete |
 async function carregar(operacaoId: string, tentativa = 1): Promise<Contexto> {
   const { data: op, error } = await admin
     .from("operacoes")
-    .select("id, cotacao_id, veiculo_id, pessoa_alocada_id, carga_complexa, carga_complexa_eixo1_perigosa, carga_complexa_eixo2_superdimensionada, ncm, coleta_prevista, entrega_prevista, eh_teste, deleted_at")
+    .select("id, cotacao_id, veiculo_id, pessoa_alocada_id, carga_complexa, carga_complexa_eixo1_perigosa, carga_complexa_eixo2_superdimensionada, piso_minimo_valor, ncm, coleta_prevista, entrega_prevista, eh_teste, deleted_at")
     .eq("id", operacaoId)
     .maybeSingle();
   if (error || !op || op.deleted_at) throw new Error("Operação não encontrada.");
@@ -187,6 +187,7 @@ async function carregar(operacaoId: string, tentativa = 1): Promise<Contexto> {
       ncm: op.ncm ?? null,
       complexa: Boolean(op.carga_complexa || op.carga_complexa_eixo1_perigosa || op.carga_complexa_eixo2_superdimensionada),
       tabelaAntt: (c?.tabela_antt as string | null) ?? null,
+      pisoGravado: op.piso_minimo_valor != null ? Number(op.piso_minimo_valor) : null,
     },
     condicao: cond.data ? { valorTotal: cond.data.valor_total_contrato != null ? Number(cond.data.valor_total_contrato) : null, adiantamento: Number(cond.data.valor_adiantamento ?? 0), pedagio: pedagioDecisao.valor, pedagioDecisao } : null,
     datas: { inicio: op.coleta_prevista ? new Date(op.coleta_prevista) : null, fim: op.entrega_prevista ? new Date(op.entrega_prevista) : null },
