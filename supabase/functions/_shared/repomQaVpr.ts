@@ -8,9 +8,14 @@ import type { ClienteRepomFrete } from './repomFreteClient.ts'
 import { conferirModelo, lerModeloContrato } from './repomQaAdiantamento.ts'
 import { montarCorpoVale, normalizarPlaca, placaApta, type ClienteRepomVpr, type PedidoVale, type ResultadoVpr, type TagRepom, type ValeRepom } from './repomVprClient.ts'
 
-export const ACOES_VPR = ['tag_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'] as const
+export const ACOES_VPR = ['tag_vpr', 'rota_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'] as const
+export const MAX_ROTAS_VPR = 2
+/** Código da rota no NOSSO sistema (até 10): a rota da 9501 em QA. O 1/143217 do contrato do Frete NÃO existe na 9501 ("Roteiro inativo ou não cadastrado para o cliente"). */
+export const CODIGO_ROTA_CLIENTE_VPR = 'RBRQAV01'
+export const IBGE_ORIGEM_ROTA = '3550308' // São Paulo/SP
+export const IBGE_DESTINO_ROTA = '3304557' // Rio de Janeiro/RJ
 export type AcaoVpr = (typeof ACOES_VPR)[number]
-export const MAX_EMISSOES_VPR = 2
+export const MAX_EMISSOES_VPR = 4 // 2 da rodada 1 (usadas, erro 0) + 2 da rodada 2 (liberadas pelo Pedro)
 export const MAX_CANCELAMENTOS_VPR = 1
 /** Contrato-modelo da rodada de 17/11 (só leitura): de onde vêm prestador, motorista, placa e roteiro. */
 export const MODELO_SHIPPING_ID = 2166947
@@ -70,7 +75,7 @@ export function conferirPreVoo(p: PedidoVale): RegraVpr[] {
     add('placa da carreta no padrão (7) e diferente da tração', placaPadrao(p.carretaPlaca) && normalizarPlaca(p.carretaPlaca) !== normalizarPlaca(p.placa))
     add('carretaNumeroEixos inteiro 1..15 (soma, se mais de uma carreta)', Number.isInteger(p.carretaNumeroEixos) && (p.carretaNumeroEixos as number) >= 1 && (p.carretaNumeroEixos as number) <= 15, String(p.carretaNumeroEixos))
   } else {
-    add('sem carreta: sem carretaPlaca e carretaNumeroEixos; utilizaCarreta=false', !('CarretaPlaca' in corpo) && !('CarretaNumeroEixos' in corpo) && corpo.UtilizaCarreta === false)
+    add('sem carreta: CarretaPlaca "", CarretaNumeroEixos 0, utilizaCarreta=false', corpo.CarretaPlaca === '' && corpo.CarretaNumeroEixos === 0 && corpo.UtilizaCarreta === false)
   }
   add('nomeTransportador preenchido, até 100', !!p.nomeTransportador?.trim() && p.nomeTransportador.length <= 100, `${p.nomeTransportador?.length ?? 0} caracteres`)
   const dt = so(p.documentoTransportador)
@@ -153,7 +158,9 @@ export interface DepsVpr {
   vprPost: ClienteRepomVpr // mesmo vale, consulta por POST (verbo do manual); só usado se o GET não for aceito
   agora(): Date
   /** Quantas linhas de cada ação já foram registradas (qualquer status que tenha ido à Repom). */
-  historico(acao: 'emitir' | 'cancelar'): Promise<string[]>
+  historico(acao: 'emitir' | 'cancelar' | 'rota'): Promise<string[]>
+  /** Rota da 9501 já criada/confirmada (gravada em repom_requisicoes), ou null. */
+  rotaVpr(): Promise<{ roteiroCodigo: number; percursoCodigo: number } | null>
   /** Última emissão registrada (processo e codigoViagem), ou a de um processo dado. */
   emissao(processo?: string): Promise<{ processo: string; codigoViagem: string | null } | null>
   registrar(acao: string, request: unknown): Promise<string | null>
@@ -174,7 +181,9 @@ const tagSegura = (t: TagRepom): Obj => ({ nomeTag: t.nomeTag, numeroTag: t.nume
 type PreVoo = { ok: true; pedido: PedidoVale; regras: RegraVpr[]; tracao: string } | { ok: false; erro: string; regras?: RegraVpr[]; forma?: unknown }
 
 /** Lê (só leitura) e monta o pedido do vale com os mesmos dados do 17/11, e roda o PRE-VOO. Nada é enviado à conta 9501 aqui. */
-export async function montarPreVoo(d: DepsVpr): Promise<PreVoo> {
+export async function montarPreVoo(d: DepsVpr, rotaFixa?: { roteiroCodigo: number; percursoCodigo: number }): Promise<PreVoo> {
+  const rota = rotaFixa ?? (await d.rotaVpr())
+  if (!rota) return { ok: false, erro: 'A rota da 9501 ainda não existe: rode rota_vpr antes (o 1/143217 do Frete não vale na 9501).' }
   const lm = await d.frete.consultarContratoPorViagem(MODELO_SHIPPING_ID)
   if (!lm.ok) return { ok: false, erro: 'Não consegui ler o contrato-modelo do QA (só leitura).' }
   const m = lerModeloContrato(lm.dados)
@@ -199,7 +208,7 @@ export async function montarPreVoo(d: DepsVpr): Promise<PreVoo> {
     ...(comCarreta ? { carretaPlaca: normalizarPlaca(mod.placas[1]), carretaNumeroEixos: eixos[1] as number } : {}),
     nomeTransportador: nomeT, documentoTransportador: mod.hiredNationalId,
     nomeMotorista: nomeM, documentoMotorista: principal.cpf, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: USUARIO_EMISSAO_VPR,
-    roteiro: { roteiroCodigo: mod.routeCode, percursoCodigo: mod.traceCode }, documentos: [{ codigo: mod.documento.numero, serie: mod.documento.serie }], eixosSuspensosIda: 0, eixosSuspensosVolta: 0,
+    roteiro: rota, documentos: [{ codigo: mod.documento.numero, serie: mod.documento.serie }], eixosSuspensosIda: 0, eixosSuspensosVolta: 0,
   }
   const regras = conferirPreVoo(pedido)
   const falhas = regras.filter((x) => !x.ok)
@@ -213,6 +222,31 @@ export async function executarQaVpr(corpo: Obj, d: DepsVpr): Promise<SaidaQa> {
   if (!d.ligado) return { status: 503, corpo: { ok: false, desligado: true, erro: 'desligado' } }
   const parar = (erro: string, status = 422, extra: Obj = {}): SaidaQa => ({ status, corpo: { ok: false, parou: true, erro, ...extra } })
   const nome = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+
+  // ---------- ROTA da 9501 (roteirização, token PRÓPRIO client_credentials) ----------
+  if (acao === 'rota_vpr') {
+    if (nome.length < 3) return parar('A rota exige confirmacao.nome.', 400)
+    const pv0 = await montarPreVoo(d, { roteiroCodigo: 1, percursoCodigo: 1 }) // só para ler os eixos do conjunto; nada é enviado
+    if (!pv0.ok) return parar(pv0.erro, 422)
+    const eixos = pv0.pedido.numeroEixos + (pv0.pedido.carretaNumeroEixos ?? 0)
+    const id = await d.registrar('qa-teste-vpr-rota', { codigoRoteiroCliente: CODIGO_ROTA_CLIENTE_VPR, ibgeOrigem: IBGE_ORIGEM_ROTA, ibgeDestino: IBGE_DESTINO_ROTA, eixos, confirmado_por: nome.slice(0, 80) })
+    let criada = false
+    let cons = await d.vpr.consultarRota(CODIGO_ROTA_CLIENTE_VPR)
+    let cod: { roteiroCodigo: number; percursoCodigo: number } | null = cons.ok && cons.dados ? { roteiroCodigo: Number(cons.dados.codigoRoteiro), percursoCodigo: Number(cons.dados.codigoPercurso) } : null
+    if (!cons.ok) { await d.concluir(id, { status: 'erro', http: cons.http, resposta: null, erro: cons.erro }); return parar(`Consulta da rota na 9501 falhou: ${cons.erro}`, cons.http === 0 ? 502 : 422, { http: cons.http }) }
+    if (!cod) {
+      if ((await d.historico('rota')).length >= MAX_ROTAS_VPR + 1) { await d.concluir(id, { status: 'bloqueado', http: null, resposta: null, erro: 'limite' }); return parar(`Limite de ${MAX_ROTAS_VPR} criações de rota atingido.`, 429) }
+      const c = await d.vpr.criarRota({ codigoRoteiroCliente: CODIGO_ROTA_CLIENTE_VPR, origem: { ibge: IBGE_ORIGEM_ROTA, uf: 'SP' }, destino: { ibge: IBGE_DESTINO_ROTA, uf: 'RJ' }, idaVolta: false, tipoRota: 'mais_rapida', tipoVeiculo: 2 })
+      if (!c.ok) { await d.concluir(id, { status: 'erro', http: c.http, resposta: { numeroErro: c.numeroErro ?? null }, erro: c.erro }); return parar(`A Repom não criou a rota na 9501: ${c.erro}`, c.http === 0 ? 502 : 422, { http: c.http, numeroErro: c.numeroErro ?? null }) }
+      criada = true
+      cod = { roteiroCodigo: Number(c.dados.codigoRoteiroRepom), percursoCodigo: Number(c.dados.codigoPercursoRepom) }
+    }
+    if (!Number.isInteger(cod.roteiroCodigo) || !Number.isInteger(cod.percursoCodigo) || cod.roteiroCodigo <= 0 || cod.percursoCodigo <= 0) { await d.concluir(id, { status: 'erro', http: null, resposta: null, erro: 'códigos inválidos' }); return parar('A Repom devolveu códigos de rota inválidos.', 422) }
+    const ped = await d.vpr.consultarPedagio({ codigoRoteiro: String(cod.roteiroCodigo), codigoPercurso: String(cod.percursoCodigo), eixos })
+    const resposta = { roteiroCodigo: cod.roteiroCodigo, percursoCodigo: cod.percursoCodigo, criada, eixos, valorTotal: ped.ok ? ped.dados.valorTotal : null, pedagioHttp: ped.http, pedagioErro: ped.ok ? null : ped.erro }
+    await d.concluir(id, { status: 'ok', http: ped.http, resposta })
+    return { status: 200, corpo: { ok: true, rota: resposta } }
+  }
 
   // ---------- TAG (e PRE-VOO sem enviar) ----------
   if (acao === 'tag_vpr') {

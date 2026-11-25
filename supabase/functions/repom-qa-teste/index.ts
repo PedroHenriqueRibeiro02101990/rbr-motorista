@@ -32,7 +32,10 @@ Deno.serve(async (req) => {
     if ((ACOES_VPR as readonly string[]).includes(String(corpo.acao ?? ""))) {
       const login = (await segredo("REPOM_QA_VPR_VALEPEDAGIO_LOGIN")) ?? (await segredo("REPOM_VPR_VALEPEDAGIO_LOGIN")) ?? "";
       const senha = (await segredo("REPOM_QA_VPR_VALEPEDAGIO_SENHA")) ?? (await segredo("REPOM_VPR_VALEPEDAGIO_SENHA")) ?? "";
-      const cfgVpr = { ambiente: "qa" as const, roteirizacaoLogin: "", roteirizacaoSenha: "", valePedagioLogin: login, valePedagioSenha: senha, limiteMs: 60_000 };
+      // roteirização da 9501 (client_credentials), credencial DIFERENTE da do vale
+      const rotLogin = (await segredo("REPOM_QA_VPR_ROTEIRIZACAO_LOGIN")) ?? (await segredo("REPOM_VPR_ROTEIRIZACAO_LOGIN")) ?? "";
+      const rotSenha = (await segredo("REPOM_QA_VPR_ROTEIRIZACAO_SENHA")) ?? (await segredo("REPOM_VPR_ROTEIRIZACAO_SENHA")) ?? "";
+      const cfgVpr = { ambiente: "qa" as const, roteirizacaoLogin: rotLogin, roteirizacaoSenha: rotSenha, valePedagioLogin: login, valePedagioSenha: senha, limiteMs: 60_000 };
       const ultima = async (processo?: string) => {
         let q = admin.from("repom_requisicoes").select("response_json").eq("acao", "qa-teste-vpr-emitir").eq("status", "ok").order("criado_em", { ascending: false }).limit(1);
         if (processo) q = q.eq("request_json->>processo", processo);
@@ -46,6 +49,11 @@ Deno.serve(async (req) => {
         vpr: criarRepomVprClient({ ...cfgVpr, verboConsultaVale: "GET" }),
         vprPost: criarRepomVprClient({ ...cfgVpr, verboConsultaVale: "POST" }),
         agora: () => new Date(),
+        async rotaVpr() {
+          const { data } = await admin.from("repom_requisicoes").select("response_json").eq("acao", "qa-teste-vpr-rota").eq("status", "ok").order("criado_em", { ascending: false }).limit(1);
+          const r = data?.[0]?.response_json as { roteiroCodigo?: number; percursoCodigo?: number } | undefined;
+          return r && Number.isInteger(r.roteiroCodigo) && Number.isInteger(r.percursoCodigo) ? { roteiroCodigo: r.roteiroCodigo!, percursoCodigo: r.percursoCodigo! } : null;
+        },
         async historico(acao) {
           const { data } = await admin.from("repom_requisicoes").select("status").eq("acao", "qa-teste-vpr-" + acao);
           return (data ?? []).map((x: { status: string }) => x.status);

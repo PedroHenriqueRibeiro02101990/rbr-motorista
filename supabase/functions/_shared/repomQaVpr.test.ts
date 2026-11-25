@@ -24,7 +24,7 @@ const VALE: ValeRepom = { codigoViagem: '10164593', codigoViagemRepom: '105', id
 
 interface Opcoes {
   tag?: TagRepom[]; emitir?: ResultadoVpr<ValeRepom>; consultaGet?: ResultadoVpr<ValeRepom>; consultaPost?: ResultadoVpr<ValeRepom>
-  semNome?: boolean; histEmitir?: string[]; histCancelar?: string[]; emissao?: { processo: string; codigoViagem: string | null } | null; modelo?: unknown
+  semNome?: boolean; histEmitir?: string[]; histRota?: string[]; semRota?: boolean; rotaExiste?: boolean; histCancelar?: string[]; emissao?: { processo: string; codigoViagem: string | null } | null; modelo?: unknown
 }
 function montar(o: Opcoes = {}) {
   const chamadas: string[] = []
@@ -33,6 +33,9 @@ function montar(o: Opcoes = {}) {
     ambiente: 'qa',
     consultarTag: async () => { chamadas.push('tag'); return { ok: true, http: 200, dados: o.tag ?? TAG_OK, bruto: null } },
     emitirVale: async (p: PedidoVale) => { chamadas.push('emitir'); regs.push({ acao: 'corpo-emitido', request: p }); return o.emitir ?? { ok: true, http: 200, dados: VALE, bruto: { dataEmissao: '2026-11-25T16:40:00Z' } } },
+    consultarRota: async () => { chamadas.push('rota-consultar'); return { ok: true, http: 200, dados: o.rotaExiste ? { codigoRoteiro: '555', codigoPercurso: '7' } : null, bruto: null } },
+    criarRota: async () => { chamadas.push('rota-criar'); return { ok: true, http: 200, dados: { codigoRoteiroRepom: '555', codigoPercursoRepom: '7', distanciaKm: 430 }, bruto: null } },
+    consultarPedagio: async (p: { eixos: number }) => { chamadas.push('rota-pedagio-' + p.eixos); return { ok: true, http: 200, dados: { valorTotal: 99.9, valorIda: 99.9, valorVolta: null }, bruto: null } },
     cancelarVale: async () => { chamadas.push('cancelar'); return { ok: true, http: 200, dados: { cancelado: true }, bruto: null } },
     consultarVale: async () => { chamadas.push('consultar-' + verbo); return (verbo === 'GET' ? o.consultaGet : o.consultaPost) ?? { ok: true, http: 200, dados: VALE, bruto: null } },
   } as unknown as ClienteRepomVpr)
@@ -43,7 +46,8 @@ function montar(o: Opcoes = {}) {
       consultarMotorista: () => okF({ Name: 'MARIA MOTORISTA TESTE' }), consultarVeiculo: () => okF({ VehicleAxles: '5 eixos' }),
     } as unknown as DepsVpr['frete'],
     vpr: vpr('GET'), vprPost: vpr('POST'), agora: () => new Date('2026-11-25T16:40:05Z'),
-    historico: async (a) => (a === 'emitir' ? o.histEmitir : o.histCancelar) ?? [],
+    rotaVpr: async () => (o.semRota ? null : { roteiroCodigo: 555, percursoCodigo: 7 }),
+    historico: async (a) => (a === 'emitir' ? o.histEmitir : a === 'rota' ? o.histRota : o.histCancelar) ?? [],
     emissao: async () => (o.emissao === undefined ? { processo: 'RBV261125164005', codigoViagem: '10164593' } : o.emissao),
     registrar: async (acao, request) => { regs.push({ acao, request }); return 'id' + regs.length },
     concluir: async (_id, r) => { regs.push({ acao: 'concluir', request: null, resp: r }) },
@@ -53,7 +57,7 @@ function montar(o: Opcoes = {}) {
 const conf = { nome: 'Pedro' }
 
 test('lista fechada: só as 4 ações do vale; ação livre é recusada e nada é chamado', async () => {
-  assert.deepEqual([...ACOES_VPR], ['tag_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'])
+  assert.deepEqual([...ACOES_VPR], ['tag_vpr', 'rota_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'])
   const m = montar()
   const r = await executarQaVpr({ acao: 'qualquer', url: 'https://x', metodo: 'DELETE' }, m.d)
   assert.equal(r.status, 400); assert.deepEqual(m.chamadas, [])
@@ -70,13 +74,13 @@ test('tag_vpr: monta o pre-voo (sem enviar), consulta a TAG e devolve só finais
   assert.equal(c.pre_voo.pedido.documentoTransportador, '***4687'); assert.equal(txt.includes('1234567890'), false)
 })
 
-test('emitir: pre-voo ok + TAG apta => UMA emissão, processo <= 16, roteiro 1/143217, eixos inteiros, sem carreta nem praças', async () => {
+test('emitir: pre-voo ok + TAG apta => UMA emissão, processo <= 16, rota da 9501 (555/7), eixos inteiros, sem carreta nem praças', async () => {
   const m = montar()
   const r = await executarQaVpr({ acao: 'emitir_vpo_vpr', confirmacao: conf }, m.d)
   assert.equal(r.status, 200); assert.deepEqual(m.chamadas, ['tag', 'emitir'])
   const enviado = m.regs.find((x) => x.acao === 'corpo-emitido')!.request as PedidoVale
   assert.ok(enviado.processoCodigoCliente.length <= 16); assert.equal(enviado.cnpjFilial, CNPJ_FILIAL_VPR_QA)
-  assert.deepEqual(enviado.roteiro, { roteiroCodigo: 143217, percursoCodigo: 1 }); assert.equal(enviado.numeroEixos, 5); assert.equal(enviado.carretaPlaca, undefined)
+  assert.deepEqual(enviado.roteiro, { roteiroCodigo: 555, percursoCodigo: 7 }); assert.equal(enviado.numeroEixos, 5); assert.equal(enviado.carretaPlaca, undefined)
   assert.equal((r.corpo.vale as { idvpoAntt: string }).idvpoAntt, '05970272378087078761')
   const guardado = JSON.stringify(m.regs.filter((x) => x.acao !== 'corpo-emitido'))
   assert.equal(guardado.includes(PRESTADOR), false); assert.equal(guardado.includes(MOTORISTA), false)
@@ -100,7 +104,7 @@ test('emitir: pre-voo reprova (nome não lido, modelo de outra pessoa) => não c
 
 test('emitir: sem confirmacao.nome => 400; limite de 2 emissões => 429, sem chamar a Repom', async () => {
   const a = montar(); assert.equal((await executarQaVpr({ acao: 'emitir_vpo_vpr' }, a.d)).status, 400)
-  const b = montar({ histEmitir: ['ok', 'erro'] }); assert.equal(MAX_EMISSOES_VPR, 2)
+  const b = montar({ histEmitir: ['erro', 'erro', 'ok', 'erro'] }); assert.equal(MAX_EMISSOES_VPR, 4)
   assert.equal((await executarQaVpr({ acao: 'emitir_vpo_vpr', confirmacao: conf }, b.d)).status, 429); assert.deepEqual(b.chamadas, [])
 })
 
@@ -137,7 +141,7 @@ test('função desligada: 503 sem chamar nada', async () => {
 })
 
 test('regras do pre-voo: reprova praças/cartão, processo grande, CPF/CNPJ inválidos, placa fora do padrão; helpers', () => {
-  const ok: PedidoVale = { processoCodigoCliente: novoProcessoVpr(new Date('2026-11-25T16:40:05Z')), placa: 'BIS4025', numeroEixos: 5, nomeTransportador: 'A B', documentoTransportador: PRESTADOR, nomeMotorista: 'C D', documentoMotorista: MOTORISTA, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: 'U', roteiro: { roteiroCodigo: 143217, percursoCodigo: 1 }, documentos: [{ codigo: '660', serie: '1' }] }
+  const ok: PedidoVale = { processoCodigoCliente: novoProcessoVpr(new Date('2026-11-25T16:40:05Z')), placa: 'BIS4025', numeroEixos: 5, nomeTransportador: 'A B', documentoTransportador: PRESTADOR, nomeMotorista: 'C D', documentoMotorista: MOTORISTA, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: 'U', roteiro: { roteiroCodigo: 555, percursoCodigo: 7 }, documentos: [{ codigo: '660', serie: '1' }] }
   assert.equal(ok.processoCodigoCliente, 'RBV261125164005'); assert.ok(conferirPreVoo(ok).every((x) => x.ok))
   const ruim = conferirPreVoo({ ...ok, processoCodigoCliente: 'X'.repeat(17), placa: 'ABC', documentoMotorista: '12345678900', cnpjFilial: '11111111111111', documentoSubcontratado: PRESTADOR })
   assert.equal(ruim.filter((x) => !x.ok).length, 5)
@@ -157,4 +161,17 @@ test('nome do prestador vem do dono do veículo quando o cadastro de prestador n
   o.d.frete.consultarVeiculo = (() => okF({ VehicleAxles: '5', VehicleOwner: { NationalId: '99999999999', VehiclePersonalInformation: { Name: 'OUTRO DONO' } } })) as never
   const r = await executarQaVpr({ acao: 'tag_vpr' }, o.d)
   assert.equal(r.status, 422); assert.deepEqual(o.chamadas, [])
+})
+
+test('rota_vpr: consulta a rota da 9501; se não existe cria UMA vez, consulta o pedágio com os eixos do conjunto; existente não recria', async () => {
+  const a = montar(); const r = await executarQaVpr({ acao: 'rota_vpr', confirmacao: conf }, a.d)
+  assert.equal(r.status, 200); assert.deepEqual(a.chamadas, ['rota-consultar', 'rota-criar', 'rota-pedagio-5'])
+  assert.equal((r.corpo.rota as { roteiroCodigo: number; criada: boolean }).criada, true)
+  const b = montar({ rotaExiste: true }); await executarQaVpr({ acao: 'rota_vpr', confirmacao: conf }, b.d); assert.deepEqual(b.chamadas, ['rota-consultar', 'rota-pedagio-5'])
+  const c = montar({ histRota: ['erro', 'erro', 'pendente'] }); assert.equal((await executarQaVpr({ acao: 'rota_vpr', confirmacao: conf }, c.d)).status, 429); assert.ok(!c.chamadas.includes('rota-criar'))
+  assert.equal((await executarQaVpr({ acao: 'rota_vpr' }, montar().d)).status, 400)
+})
+
+test('sem rota da 9501 gravada: tag e emissão param antes de chamar a Repom', async () => {
+  for (const acao of ['tag_vpr', 'emitir_vpo_vpr']) { const m = montar({ semRota: true }); const r = await executarQaVpr({ acao, confirmacao: conf }, m.d); assert.equal(r.status, 422); assert.deepEqual(m.chamadas, []) }
 })

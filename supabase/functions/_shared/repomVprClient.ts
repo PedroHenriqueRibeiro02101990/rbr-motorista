@@ -125,7 +125,9 @@ export function montarCorpoVale(p: PedidoVale) {
     ProcessoCodigoCliente: p.processoCodigoCliente,
     Placa: normalizarPlaca(p.placa),
     NumeroEixos: p.numeroEixos,
-    ...(comCarreta ? { CarretaPlaca: normalizarPlaca(p.carretaPlaca), CarretaNumeroEixos: p.carretaNumeroEixos } : {}),
+    // chaves SEMPRE presentes como no exemplo do manual (sem carreta: "" e 0); a Repom respondeu NullReference com objetos/campos omitidos
+    CarretaPlaca: comCarreta ? normalizarPlaca(p.carretaPlaca) : '',
+    CarretaNumeroEixos: comCarreta ? (p.carretaNumeroEixos as number) : 0,
     NomeTransportador: p.nomeTransportador.trim(),
     DocumentoTransportador: soDigitos(p.documentoTransportador),
     // campo SEMPRE presente (vazio quando não há subcontratado), como no exemplo do manual: a Repom respondeu erro 0 "Object reference not set" quando ele faltava
