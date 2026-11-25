@@ -306,7 +306,7 @@ export async function fluxoFrete(e: EntradaFrete, frete: ClienteRepomFrete, deps
       async enviar() {
         const r =
           e.acao === 'autorizar_pagamento'
-            ? await frete.autorizarPagamento([{ shippingId: Number(contrato.codigo_contrato), identifier: contrato.chave_externa, branchCode: String(d.branchCode ?? ''), dataPagamento: String(d.dataPagamento ?? '') }])
+            ? await frete.autorizarPagamento([{ shippingId: Number(contrato.codigo_contrato), identifier: contrato.chave_externa, branch: Number(d.branch ?? 1), branchCode: String(d.branchCode ?? ''), dataPagamento: String(d.dataPagamento ?? '') }])
             : await frete.quitarViagem({ branchCode: String(d.branchCode ?? ''), shippingId: contrato.codigo_contrato!, pesoDescarregado: d.pesoDescarregado != null ? Number(d.pesoDescarregado) : undefined, documentos: (Array.isArray(d.documentos) ? d.documentos : []) as never })
         return r.ok ? { ok: true, patch: {} } : { ok: false, erro: r.erro, incerto: r.incerto }
       },
