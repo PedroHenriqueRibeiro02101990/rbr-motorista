@@ -318,12 +318,14 @@ test('frete: pagamento (autorizar) com contrato emitido, valor acima do máximo 
   let timeout = false
   const m = mock((c) => (ehTokenFrete(c) ? { status: 200, corpo: { access_token: 't' } } : timeout ? 'timeout' : { status: 200, corpo: { StatusCode: 200 } }))
   const frete = criarRepomFreteClient(freteCfg, m.fetchFn)
-  const dados = { branchCode: '1', dataPagamento: '2026-11-20' }
+  const dados = { branch: 1, branchCode: '1', dataPagamento: '2026-11-20' }
   assert.equal((await fluxoFrete({ acao: 'autorizar_pagamento', operacao_id: OP, valor: 5000, confirmacao: conf(), dados }, frete, deps(repo))).status, 422)
   assert.equal(m.chamadas.length, 0)
   timeout = true
   assert.equal((await fluxoFrete({ acao: 'autorizar_pagamento', operacao_id: OP, valor: 1500, confirmacao: conf(), dados }, frete, deps(repo))).status, 202)
   assert.equal(linhas.find((x) => x.tipo === 'pagamento')!.estado, 'enviado')
+  const envio = m.chamadas.find((c) => c.url.endsWith('/PaymentAuthorization'))!
+  assert.equal(JSON.parse(envio.init.body!)[0].Branch, 1) // Branch numerico obrigatorio (728 sem ele)
   timeout = false
   const again = await fluxoFrete({ acao: 'autorizar_pagamento', operacao_id: OP, valor: 1500, confirmacao: conf(), dados }, frete, deps(repo))
   assert.equal(again.status, 409) // sem como conferir pela API: vai ao portal, não reenvia

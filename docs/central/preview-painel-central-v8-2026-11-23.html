@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RBR Central - painel (prévia 7)</title>
+<style>
+:root{
+  --bg:#EEF0F8;--surface:#FFFFFF;--surface2:#F5F6FB;--surface3:#E8EBF5;
+  --ink:#12173D;--mut:#545E88;--faint:#8790B4;--line:#DDE1EF;--line2:#C5CCE2;
+  --navy:#1E2761;--navyd:#12173D;--gold:#B8863B;--goldt:#8A6020;--goldbg:#F7EEDB;
+  --btn:#1E2761;--btnink:#FFFFFF;--btn2:#2B3790;
+  --ice:#2B58C9;--icebg:#EAF0FD;--ok:#16774B;--okbg:#E4F3EA;--warn:#8F5F0A;--warnbg:#FBF1DD;--bad:#B3342A;--badbg:#FBE9E7;
+  --term:#0B0F2C;--termink:#C9D3F5;--termdim:#7480B0;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;--sans:"Segoe UI",system-ui,-apple-system,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0A0E26;--surface:#121839;--surface2:#0E1330;--surface3:#1A2250;
+  --ink:#E8ECFB;--mut:#A3ADD6;--faint:#7480B0;--line:#222B5A;--line2:#303A70;
+  --navy:#8FA4F5;--goldt:#E2B565;--goldbg:#2B2412;--btn:#B8863B;--btnink:#12173D;--btn2:#CC9A4C;
+  --ice:#8FB0FF;--icebg:#1A2552;--ok:#5FD39B;--okbg:#10301F;--warn:#F0BE62;--warnbg:#33260C;--bad:#FF8F84;--badbg:#3A1714;
+  --term:#060920}}
+:root[data-theme="dark"]{
+  --bg:#0A0E26;--surface:#121839;--surface2:#0E1330;--surface3:#1A2250;
+  --ink:#E8ECFB;--mut:#A3ADD6;--faint:#7480B0;--line:#222B5A;--line2:#303A70;
+  --navy:#8FA4F5;--goldt:#E2B565;--goldbg:#2B2412;--btn:#B8863B;--btnink:#12173D;--btn2:#CC9A4C;
+  --ice:#8FB0FF;--icebg:#1A2552;--ok:#5FD39B;--okbg:#10301F;--warn:#F0BE62;--warnbg:#33260C;--bad:#FF8F84;--badbg:#3A1714;
+  --term:#060920}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:112px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans);font-variant-numeric:tabular-nums}
+.wrap>*{min-width:0}
+.wrap{max-width:1200px;margin:0 auto;padding:18px 16px 56px;display:grid;gap:16px}
+
+/* topo RBR */
+.top{background:#12173D;color:#fff;border-bottom:3px solid var(--gold)}
+.top .in{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.wm{display:flex;flex-direction:column;line-height:.9;align-items:flex-start}
+.wm b{font-size:30px;font-weight:900;letter-spacing:.06em;color:#B8863B}
+.wm span{font-size:11px;font-weight:600;letter-spacing:.42em;color:#fff;margin-top:3px;padding-left:2px}
+.top h1{font-size:16px;margin:0;font-weight:600;color:#fff}
+.top .sub{font-size:12px;color:#A9B3E0}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;align-items:center}
+.chip{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:6px 10px;font-size:12px;display:flex;gap:7px;align-items:center;color:#E8ECFB}
+.chip b{color:#fff}
+.dot{width:8px;height:8px;border-radius:50%;background:#5FD39B}
+.dot.run{background:#8FB0FF;animation:p 1s infinite}
+@keyframes p{50%{opacity:.35}}
+.top button{background:transparent;color:#fff;border-color:rgba(255,255,255,.3)}
+.top button:hover{background:rgba(255,255,255,.1)}
+.top button.stop{background:#B3342A;border-color:#B3342A}
+.top button.stop:hover{background:#962b22}
+nav.nav{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+nav.nav .in{max-width:1200px;margin:0 auto;padding:8px 16px;display:flex;gap:6px;overflow-x:auto}
+nav.nav a{white-space:nowrap;text-decoration:none;color:var(--mut);font-weight:600;font-size:13px;padding:6px 12px;border-radius:99px;border:1px solid transparent;display:flex;gap:6px;align-items:center}
+nav.nav a:hover{background:var(--surface3);color:var(--ink)}
+nav.nav a.on{background:var(--navy);color:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) nav.nav a.on{color:#12173D}}
+:root[data-theme="dark"] nav.nav a.on{color:#12173D}
+nav.nav a i{font-style:normal;font-size:11px;background:var(--gold);color:#12173D;border-radius:99px;padding:0 6px;min-width:18px;text-align:center}
+
+/* base */
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line2);background:var(--surface);color:var(--ink);padding:7px 12px;font-weight:600}
+button:hover{background:var(--surface3)}
+button:focus-visible,a:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button.pri{background:var(--btn);border-color:var(--btn);color:var(--btnink)}
+button.pri:hover{background:var(--btn2)}
+button.dng{background:var(--bad);border-color:var(--bad);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+button.sm{font-size:12px;padding:5px 10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.hd{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.hd h2{font-size:16px;margin:0;line-height:1.2}
+.hd p{margin:2px 0 0;color:var(--mut);font-size:12.5px}
+.hd .stt{margin-left:auto;font-size:12px;font-weight:700;color:var(--mut);background:var(--surface3);border-radius:99px;padding:4px 10px;white-space:nowrap;align-self:center}
+.stt.wn{background:var(--warnbg);color:var(--warn)}.stt.bd{background:var(--badbg);color:var(--bad)}.stt.ok{background:var(--okbg);color:var(--ok)}
+.tg{padding:3px 9px;align-self:center;font-size:14px}
+.card.col>:not(.hd){display:none}
+.card.col .hd{margin-bottom:0}
+.ds{color:var(--mut);font-size:12.5px}
+.nm{font-weight:600}
+.lbl{font-size:11.5px;font-weight:700;color:var(--mut);letter-spacing:.05em;text-transform:uppercase;margin:14px 0 6px}
+.note{font-size:12px;color:var(--mut);margin-top:10px}
+.pill{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap;background:var(--surface3);color:var(--mut)}
+.pill.on,.pill.ok{background:var(--okbg);color:var(--ok)}.pill.wn{background:var(--warnbg);color:var(--warn)}.pill.bd{background:var(--badbg);color:var(--bad)}.pill.ic{background:var(--icebg);color:var(--ice)}
+.mini{font-size:11.5px;color:var(--mut);background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:2px 7px;display:inline-flex;align-items:center;gap:5px}
+.mini.cl{color:var(--ice);background:var(--icebg);border-color:transparent}.mini.wn{color:var(--warn);background:var(--warnbg);border-color:transparent}
+input[type=text],input[type=number],input[type=time],textarea{font:inherit;border:1px solid var(--line2);border-radius:7px;padding:5px 8px;background:var(--surface2);color:var(--ink)}
+input[type=number]{width:74px}input[type=time]{width:104px}
+textarea{width:100%;min-height:76px;resize:vertical;font-family:var(--mono);font-size:12.5px}
+select{font:inherit;border:1px solid var(--line2);border-radius:7px;padding:5px 8px;background:var(--surface2);color:var(--ink)}
+.sw{position:relative;width:38px;height:22px;flex-shrink:0;display:inline-block}
+.sw input{opacity:0;position:absolute;inset:0;cursor:pointer;margin:0}
+.sw i{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:.2s}
+.sw i::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+.sw input:checked+i{background:var(--ok)}.sw input:checked+i::after{left:19px}
+.sw input:focus-visible+i{outline:2px solid var(--gold);outline-offset:2px}
+.sw.lock input{pointer-events:none}
+.bar{height:6px;border-radius:99px;background:var(--surface3);overflow:hidden;margin:6px 0 2px}
+.bar i{display:block;height:100%;width:0;background:var(--navy);transition:width .4s}
+a.lk{color:var(--ice);font-weight:600;cursor:pointer}
+
+/* KPIs */
+.kp4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:980px){.kp4{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.kp4{grid-template-columns:minmax(0,1fr)}}
+.kc{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--line2);border-radius:12px;padding:14px;display:grid;gap:6px;align-content:start}
+.kc.on{border-top-color:var(--ok)}.kc.wn{border-top-color:var(--gold)}.kc.bd{border-top-color:var(--bad)}
+.kc .top2{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.kc .v{font-size:34px;font-weight:800;line-height:1;letter-spacing:-.01em}
+.kc .tx{font-size:12.5px;color:var(--mut)}.kc .tx b{color:var(--ink)}
+.kc .ft{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--mut)}
+.kc .ft input{width:62px;padding:2px 6px;font-size:12px}
+.kc svg{display:block;color:var(--navy)}
+
+/* quadro */
+.yday{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.yday span{font-size:12.5px;color:var(--mut);background:var(--surface2);border:1px solid var(--line);border-radius:7px;padding:4px 10px}
+.yday b{color:var(--ink)}
+.board{display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:12px;align-items:start}
+@media(max-width:1100px){.board{grid-template-columns:1fr 1fr}}@media(max-width:640px){.board{grid-template-columns:1fr}}
+.bc{background:var(--surface2);border-radius:12px;padding:10px;display:grid;gap:8px;align-content:start}
+.bc>h3{margin:2px 4px 2px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);display:flex;justify-content:space-between;align-items:center}
+.bc>h3 em{font-style:normal;font-size:12px;background:var(--surface3);color:var(--mut);border-radius:99px;padding:1px 8px}
+.bc.need>h3{color:var(--goldt)}.bc.need>h3 em{background:var(--gold);color:#12173D}
+.it{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:grid;gap:6px}
+.it.urg{border-left:4px solid var(--bad)}.it.hoje{border-left:4px solid var(--gold)}.it.espera{border-left:4px solid var(--line2)}
+.it.flash{animation:fl 1.4s}
+@keyframes fl{0%,60%{box-shadow:0 0 0 3px var(--gold)}100%{box-shadow:0 0 0 0 transparent}}
+.it .row1{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.it .acts{display:flex;gap:6px;flex-wrap:wrap}
+.sv{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.sv.urg{background:var(--badbg);color:var(--bad)}.sv.hoje{background:var(--warnbg);color:var(--warn)}.sv.espera{background:var(--surface3);color:var(--mut)}.sv.sug{background:var(--icebg);color:var(--ice)}
+.mt{display:flex;gap:6px;flex-wrap:wrap}
+details.aj{font-size:12.5px;color:var(--mut)}
+details.aj summary{cursor:pointer;font-weight:600;color:var(--ink)}
+details.aj .bx{display:grid;gap:8px;margin-top:8px}
+
+.px{display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px 120px auto;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line)}
+.px:last-child{border-bottom:0}.px.hd2{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);padding-top:2px}
+.px .nm{font-weight:700}.px .ds{font-size:12px;color:var(--mut)}.px .old{color:var(--warn)}
+.px .num{font-variant-numeric:tabular-nums}
+.ptab{background:var(--surface2);border-radius:12px;padding:6px 4px;overflow-x:auto}
+@media(max-width:760px){.px{grid-template-columns:1fr auto}.px.hd2{display:none}.px .c2,.px .c3,.px .c4{grid-column:1/-1}}
+.empty{color:var(--faint);font-size:12.5px;padding:6px 4px}
+.okline{color:var(--ok);font-weight:600;padding:6px 4px}
+
+/* pre-voo */
+.pf{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
+@media(max-width:860px){.pf{grid-template-columns:1fr}}
+.pfi{display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.pfi:first-child{border-top:0}
+.ck{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;background:var(--surface3);color:var(--faint)}
+.pfi.done .ck{background:var(--okbg);color:var(--ok)}
+.guard{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.guard:first-of-type{border-top:0}
+
+/* rota */
+.rt{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface2);padding:8px 4px}
+.rt svg{display:block;min-width:820px;width:100%;height:auto}
+.rt text{fill:var(--ink);font-family:var(--sans)}
+.rt .t2{fill:var(--mut)}
+.rt .road{stroke:var(--line2)}
+.rt .seg{fill:none;stroke-width:14;stroke-linecap:round}
+.rt .seg.ok{stroke:var(--ok)}.rt .seg.wn{stroke:var(--gold)}.rt .seg.bd{stroke:var(--bad)}
+.rt .mid{stroke:#fff;stroke-opacity:.7;stroke-width:2;stroke-dasharray:9 11;fill:none}
+.rt .stop{fill:var(--surface);stroke-width:4}
+.rt .stop.ok{stroke:var(--ok)}.rt .stop.wn{stroke:var(--gold)}.rt .stop.bd{stroke:var(--bad)}.rt .stop.f{stroke:var(--navy)}
+.rt g[data-st]{cursor:pointer}
+.rt g[data-st].sel .stop{fill:var(--navy)}
+.rt .flag{fill:var(--bad)}.rt .flagt{fill:#fff;font-size:11px;font-weight:700}
+.det{margin-top:10px;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.det.bd{background:var(--badbg);border-color:transparent}.det.ok{background:var(--okbg);border-color:transparent}
+.det span{flex:1;min-width:220px}
+.pj{display:grid;grid-template-columns:240px 1fr 84px;gap:10px;align-items:center;font-size:12.5px;margin:6px 0}
+.pj .b{height:16px;border-radius:5px;background:var(--surface3);overflow:hidden}.pj .b i{display:block;height:100%;background:var(--navy);opacity:.85}.pj .b i.g{background:var(--ok);opacity:1}
+.pj b{text-align:right}
+@media(max-width:700px){.pj{grid-template-columns:1fr 1fr 70px}}
+input[type=range]{width:100%;max-width:260px;accent-color:var(--gold)}
+
+/* limites */
+.gg{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.gc{border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:4px;justify-items:center;text-align:center;background:var(--surface2)}
+.gc .top3{display:flex;width:100%;justify-content:space-between;gap:8px;align-items:center;text-align:left}
+.gc svg{width:150px;height:auto}
+.gc .g-bg{stroke:var(--line2)}.gc .g-fg{stroke:var(--navy)}.gc .g-fg.warn{stroke:var(--gold)}.gc .g-fg.bad{stroke:var(--bad)}
+.gc text{fill:var(--ink);font-family:var(--sans)}
+.gc .lim{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:12.5px}
+.gc.off{opacity:.65}
+
+/* sdr */
+.sdrh{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.sdrh label{font-size:12.5px;color:var(--mut);display:flex;gap:6px;align-items:center}
+.sr{display:grid;grid-template-columns:1fr auto;gap:10px;padding:11px 0;border-top:1px solid var(--line);align-items:center}
+.sr:first-of-type{border-top:0}
+.sr .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+@media(max-width:700px){.sr{grid-template-columns:1fr}}
+
+/* jornada */
+.two2{display:grid;grid-template-columns:1.15fr .85fr;gap:20px}
+@media(max-width:860px){.two2{grid-template-columns:1fr}}
+.rb{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.rb:first-child{border-top:0}
+.pr{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.pr:first-child{border-top:0}
+.n{width:24px;height:24px;border-radius:50%;background:var(--surface3);color:var(--mut);display:grid;place-items:center;font-size:12px;font-weight:700}
+.chips2{display:flex;gap:6px;flex-wrap:wrap}
+.chip2{font-family:var(--mono);font-size:12px;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:2px 8px;display:inline-flex;gap:6px;align-items:center}
+.chip2 a{cursor:pointer;color:var(--faint);font-weight:700}
+.row{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .sp{margin-left:auto;color:var(--mut);font-size:12.5px}
+
+/* manual */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.sub2{border:1px solid var(--line);border-radius:10px;padding:14px}
+ol.steps{list-style:none;margin:0;padding:0}
+ol.steps li{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+ol.steps li:first-child{border-top:0}
+.st-ok .n{background:var(--okbg);color:var(--ok)}.st-run .n{background:var(--icebg);color:var(--ice)}
+.st-ok .pill{background:var(--okbg);color:var(--ok)}.st-run .pill{background:var(--icebg);color:var(--ice)}
+.term{background:var(--term);color:var(--termink);border-radius:10px;padding:12px 14px;font:12.5px/1.55 var(--mono);height:200px;overflow:auto;white-space:pre-wrap}
+.term .t{color:var(--termdim)}.term .g{color:#6EE7A8}.term .y{color:#F5C86B}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:2px 0 4px}
+@media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.kpi b{display:block;font-size:17px}.kpi span{font-size:11.5px;color:var(--mut)}
+
+dialog{border:1px solid var(--line2);border-radius:12px;background:var(--surface);color:var(--ink);padding:18px;max-width:460px;width:calc(100% - 32px)}
+dialog::backdrop{background:rgba(8,12,40,.6)}
+dialog h3{margin:0 0 6px;font-size:15px}dialog p{margin:0 0 14px;color:var(--mut);white-space:pre-line}
+dialog .bt{display:flex;gap:8px;justify-content:flex-end}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#12173D;color:#fff;border:1px solid var(--gold);padding:10px 16px;border-radius:9px;font-size:13px;z-index:50;max-width:calc(100% - 32px);opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+
+/* v6: lista de clientes */
+.lc{display:grid;grid-template-columns:1.3fr repeat(3,minmax(0,1fr));gap:12px}
+@media(max-width:980px){.lc{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.lc{grid-template-columns:minmax(0,1fr)}}
+.lk2{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:3px;align-content:start}
+.lk2 .v{font-size:26px;font-weight:800;line-height:1.1}.lk2 .tx{font-size:12.5px;color:var(--mut)}.lk2 .nm{font-size:13px}
+.lk2.big{background:#12173D;border-color:#12173D;grid-row:span 2;align-content:center;padding:18px}
+.lk2.big .nm{color:#C9D3F5;font-size:13px}.lk2.big .v{font-size:56px;color:#D9AE5E;letter-spacing:-.02em}.lk2.big .tx{color:#C9D3F5}
+@media(max-width:980px){.lk2.big{grid-column:1/-1;grid-row:auto}}
+.imp{display:flex;gap:16px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px;background:var(--surface)}
+.imp>div{flex:1;min-width:240px}
+button.big{font-size:15px;padding:12px 22px}
+.flt{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 8px;align-items:center}
+.flt input[type=text]{min-width:200px}
+.tb{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:780px;font-size:13px}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);padding:8px 10px;background:var(--surface2);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.rw{cursor:pointer}tr.rw:hover td{background:var(--surface2)}
+tr.dt td{background:var(--surface2);color:var(--mut);font-size:12.5px}
+.pg{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px;font-size:12.5px;color:var(--mut)}
+.hl{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:860px){.hl{grid-template-columns:1fr}}
+.hl h3{margin:0 0 6px;font-size:14px}
+.hl ul{margin:0;padding-left:18px;color:var(--mut);font-size:13px}.hl li{margin:3px 0}.hl li b{color:var(--ink)}
+.mp{display:grid;grid-template-columns:150px 1fr;gap:6px 10px;font-size:13px}
+.mp div:nth-child(odd){font-weight:600}.mp div:nth-child(even){color:var(--mut)}
+@media(max-width:560px){.mp{grid-template-columns:1fr}}
+pre.req{background:var(--term);color:var(--termink);border-radius:10px;padding:12px;font:12.5px/1.5 var(--mono);white-space:pre-wrap;margin:8px 0;min-height:60px}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <div class="wm" aria-label="RBR Cargo"><b>RBR</b><span>CARGO</span></div>
+  <div><h1>Central</h1><div class="sub">O que fazer agora, resultados e robôs</div></div>
+  <div class="chips">
+    <span class="chip"><span class="dot" id="dotPc"></span>PC conectado</span>
+    <span class="chip">Última LISTAS <b>20/11 00:11</b></span>
+    <span class="chip">Robôs <b id="chAg"></b></span>
+    <span class="chip">Fila TMS <b id="chFila"></b></span>
+    <span class="chip" style="background:var(--gold);color:#12173D;border-color:var(--gold)">Prévia com dados de exemplo</span>
+    <button id="stopAll" class="stop">Parar tudo</button>
+    <button id="theme" aria-label="Alternar tema claro e escuro">Tema</button>
+  </div>
+</div></header>
+<nav class="nav" aria-label="Seções"><div class="in" id="nav"></div></nav>
+
+<main class="wrap">
+
+<section id="kpis" aria-label="Resultados de hoje">
+  <div class="kp4" id="kp4"></div>
+</section>
+
+<section class="card" id="lista">
+  <div class="hd"><div><h2>Lista de clientes</h2><p>Veja os contatos achados e mande a lista para a base do TMS com um botão. Nada de abrir arquivo.</p></div><span class="stt" id="stt-lista"></span><button class="tg" data-tg="lista" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="lc" id="lcards"></div>
+  <div class="imp" id="imp"></div>
+  <div class="lbl">Contatos e empresas</div>
+  <div class="flt">
+    <input type="text" id="fq" placeholder="Buscar empresa, cidade ou e-mail" aria-label="Buscar">
+    <select id="fc" aria-label="Filtrar por contato"><option value="">Contato: todos</option><option value="com">Com e-mail</option><option value="setor">Do setor certo</option><option value="geral">Só geral (contato@)</option><option value="sem">Sem e-mail</option></select>
+    <select id="fv" aria-label="Filtrar por verificação"><option value="">Verificação: todas</option><option value="válido">Válido</option><option value="pendente">Pendente</option><option value="inválido">Inválido</option></select>
+    <select id="fs" aria-label="Filtrar por situação"><option value="">Situação: todas</option><option value="lista">Só na lista</option><option value="base">Já na base do TMS</option></select>
+    <span class="ds" id="fcount"></span>
+  </div>
+  <div class="tb"><table><thead><tr><th>Empresa</th><th>Cidade</th><th>Segmento</th><th>E-mail achado</th><th>Tipo</th><th>Verificação</th><th>Telefone</th><th>Nota</th><th>Situação</th></tr></thead><tbody id="tbody"></tbody></table></div>
+  <div class="pg"><button class="sm" id="pgP">Anterior</button><span id="pgI"></span><button class="sm" id="pgN">Próxima</button></div>
+  <div class="note">Mostrando uma amostra de exemplo. No sistema real a tabela lê direto o banco, por páginas, e a busca roda lá. Clique numa linha para ver de onde veio o e-mail.</div>
+</section>
+
+<section class="card" id="agora">
+  <div class="hd"><div><h2>Mesa de despacho</h2><p>Tudo que precisa de você e o estado de cada robô, no mesmo quadro. Ligue ou desligue direto no cartão.</p></div><span class="stt" id="stt-agora"></span><button class="tg" data-tg="agora" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="yday" id="yday"></div>
+  <div class="board" id="board"></div>
+</section>
+
+<section class="card" id="procs">
+  <div class="hd"><div><h2>Processos no PC</h2><p>Tudo da RBR que está rodando no seu computador agora, inclusive o que está escondido em segundo plano. O agente atualiza esta lista a cada minuto.</p></div><span class="stt" id="stt-procs"></span><button class="tg" data-tg="procs" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="ptab" id="ptab"></div>
+  <div class="note">Só aparecem programas da RBR que o agente reconhece (pasta D:\RBR\Sistema). O botão Encerrar não toca em nenhum outro programa do PC. Cada encerramento fica no Registro. Processo "sem dono" é o que está rodando mas nenhum robô da Central iniciou, por exemplo um .bat aberto na mão.</div>
+</section>
+
+<section class="card" id="preflight">
+  <div class="hd"><div><h2>Pronto para o primeiro envio?</h2><p>O robô de envio só liga quando tudo abaixo estiver certo. Assim a primeira campanha não sai com falha.</p></div><span class="stt" id="stt-preflight"></span><button class="tg" data-tg="preflight" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="pf">
+    <div><div class="bar"><i id="pfBar"></i></div><div id="pfList"></div><div class="note">No sistema real, cada item é verificado sozinho. Nesta prévia você marca na mão para ver o envio destravar.</div></div>
+    <div><div class="lbl" style="margin-top:0">Travas de segurança</div><div id="guards"></div></div>
+  </div>
+</section>
+
+<section class="card" id="rota">
+  <div class="hd"><div><h2>Rota da lista até a ligação</h2><p>Cada trecho mostra se a conversão está no esperado. Clique numa parada para ver o porquê e o que fazer.</p></div><span class="stt" id="stt-rota"></span><button class="tg" data-tg="rota" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="rt" id="rtbox"></div>
+  <div id="det"></div>
+  <div class="lbl">Projeção</div>
+  <div class="ds" style="margin-bottom:6px">Das empresas restantes, quantas verificar? Com a prioridade por nota, só as de maior chance gastam cota.</div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="ds">Verificar só as</span><input type="range" id="pctTop" min="5" max="100" value="30" aria-label="Percentual das melhores empresas"><b id="pctV">30%</b><span class="ds">melhores</span></div>
+  <div id="proj"></div>
+</section>
+
+<section class="card" id="limites">
+  <div class="hd"><div><h2>Limites de uso</h2><p>Cada serviço tem seu teto. Ao chegar nele, o robô pula essa etapa e segue, sem falhar.</p></div><span class="stt" id="stt-limites"></span><button class="tg" data-tg="limites" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="gg" id="gg"></div>
+  <div class="note">Valores de uso são de exemplo. Você pode mudar cada limite e bloquear um serviço aqui.</div>
+</section>
+
+<section class="card" id="sdr">
+  <div class="hd"><div><h2>Fila do SDR</h2><p>Quem respondeu e quem tem telefone com nota alta. Pedro ou José Carlos assume, um por vez.</p></div><span class="stt" id="stt-sdr"></span><button class="tg" data-tg="sdr" aria-expanded="true" aria-label="Abrir ou fechar">−</button></div>
+  <div class="sdrh">
+    <label>Nota mínima para ligar <input type="number" id="sdrCorte" min="0" max="100" value="70"></label>
+    <label>Máximo por dia <input type="number" id="sdrMax" min="1" value="10"></label>
+    <span class="mini" id="sdrCont"></span>
+  </div>
+  <div id="sdrList"></div>
+  <div class="note">Entra: respondeu e-mail (qualquer resposta) ou tem telefone válido com nota acima do corte. Fora: só abriu o e-mail, pedido de cotação do site ou anúncio (já vai para os leads do CRM) e quem pediu para sair. Lead quente vai primeiro para José Carlos, com cópia para Pedro.</div>
+</section>
+
+<section class="card col" id="jornada">
+  <div class="hd"><div><h2>Jornada do e-mail</h2><p>Do site da empresa até o contato certo para negociar frete</p></div><span class="stt" id="stt-jornada"></span><button class="tg" data-tg="jornada" aria-expanded="false" aria-label="Abrir ou fechar">+</button></div>
+  <div class="two2">
+    <div>
+      <div class="lbl" style="margin-top:0">Ordem de preferência</div>
+      <div class="ds" style="margin-bottom:4px">Com mais de um e-mail na empresa, o robô escolhe o primeiro desta lista e verifica só ele.</div>
+      <div id="prio"></div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-top:0">Descartados</div>
+      <div class="chips2" id="descartes"></div>
+      <div style="display:flex;gap:6px;margin-top:8px"><input type="text" id="novoDesc" placeholder="ex.: rh@" style="max-width:150px" aria-label="Novo prefixo a descartar"><button id="addDesc" class="sm">Adicionar</button></div>
+      <div class="rb" style="margin-top:8px"><label class="sw"><input type="checkbox" id="gmailLow" checked aria-label="Gmail e Hotmail em prioridade menor"><i></i></label><div><div class="nm" style="font-size:13px">Gmail, Hotmail e similares em prioridade menor</div><div class="ds">Entram só se não houver e-mail no domínio da empresa.</div></div><span></span></div>
+      <div class="rb"><label class="sw"><input type="checkbox" id="semContador" checked aria-label="Descartar e-mail do contador"><i></i></label><div><div class="nm" style="font-size:13px">Descartar o e-mail do contador</div><div class="ds">Ele não negocia frete pela empresa.</div></div><span></span></div>
+    </div>
+  </div>
+  <div class="lbl">Regras automáticas</div>
+  <div id="regras"></div>
+  <div class="note">Nada aqui busca nome de pessoa nem gasta limite de busca ou verificação em tentativa.</div>
+</section>
+
+<section class="card col" id="registro">
+  <div class="hd"><div><h2>Registro de alterações</h2><p>Tudo que foi ligado, desligado ou mudado, com opção de desfazer</p></div><span class="stt" id="stt-registro"></span><button class="tg" data-tg="registro" aria-expanded="false" aria-label="Abrir ou fechar">+</button></div>
+  <div id="auList"></div>
+</section>
+
+<section class="card col" id="manual">
+  <div class="hd"><div><h2>Fila do TMS e ao vivo</h2><p>Passos da lista, fila de tarefas do Claude e janela ao vivo. Para rodar algo, use o cartão do robô na Mesa de despacho.</p></div><span class="stt" id="stt-manual"></span><button class="tg" data-tg="manual" aria-expanded="false" aria-label="Abrir ou fechar">+</button></div>
+  <div class="grid">
+    <div class="sub2">
+      <div class="hd" style="margin-bottom:6px"><div><h2 style="font-size:15px">Garimpo e listas</h2><p>Passos do pipeline</p></div></div>
+      <div class="bar"><i id="bar-listas"></i></div>
+      <ol class="steps" id="steps-listas"></ol>
+      <div class="lbl">Último resultado do garimpo</div>
+      <div class="kpis"><div class="kpi"><b>35.703</b><span>empresas na base</span></div><div class="kpi"><b>1.885</b><span>sites achados (5%)</span></div><div class="kpi"><b>660</b><span>e-mails recuperados</span></div><div class="kpi"><b>29.227</b><span>ainda por tentar</span></div></div>
+    </div>
+    <div class="sub2">
+      <div class="hd" style="margin-bottom:6px"><div><h2 style="font-size:15px">Fila do TMS</h2><p>Tarefas do Claude, cada uma numa cópia própria do projeto</p></div></div>
+      <div class="bar"><i id="bar-tms"></i></div>
+      <ol class="steps" id="steps-tms"></ol>
+      <div class="lbl">Fila</div><div id="fila"></div>
+      <div class="lbl">Nova tarefa</div>
+      <input type="text" id="nt" placeholder="nome-sem-espacos (ex.: corrigir-tara)" aria-label="Nome da tarefa" style="width:100%">
+      <textarea id="np" placeholder="Cole aqui o prompt" aria-label="Prompt da tarefa" style="margin-top:8px"></textarea>
+      <div style="margin-top:8px"><button id="add" class="sm">Colocar na fila</button></div>
+      <div class="note">Termina em PR sem merge. Migrations e segredos continuam só no chat.</div>
+    </div>
+  </div>
+  <div class="lbl">Ao vivo</div>
+  <div class="term" id="term" role="log" aria-live="polite"><span class="t">Aguardando. Aperte Rodar.</span></div>
+  </section>
+
+
+<section class="card col" id="ajuda">
+  <div class="hd"><div><h2>Como mexer neste painel</h2><p>O que você muda sozinho aqui e como pedir o que ainda não existe</p></div><span class="stt" id="stt-ajuda"></span><button class="tg" data-tg="ajuda" aria-expanded="false" aria-label="Abrir ou fechar">+</button></div>
+  <div class="hl">
+    <div>
+      <h3>Dá para mudar aqui, sem programar</h3>
+      <ul>
+        <li><b>Ligar, desligar e rodar</b> qualquer robô (só no cartão dele)</li>
+        <li><b>Horário</b> da LISTAS e da fila do TMS (Ajustes do cartão)</li>
+        <li><b>Limites</b> de cada serviço e dos robôs</li>
+        <li><b>Metas</b> dos 4 números do topo</li>
+        <li><b>Ordem de preferência</b> dos e-mails e descartes (Jornada do e-mail)</li>
+        <li><b>Nota mínima</b> e máximo por dia do SDR</li>
+        <li><b>Aprovar ou rejeitar</b> sugestões, e desfazer no Registro</li>
+        <li><b>Enviar a lista</b> para a base do TMS</li>
+      </ul>
+      <h3 style="margin-top:14px">Precisa pedir (vira trabalho do Code)</h3>
+      <ul>
+        <li>Nova seção, novo cartão ou nova coluna</li>
+        <li>Mudar texto, cor ou posição de alguma coisa</li>
+        <li>Novo filtro ou nova coluna na tabela de contatos</li>
+        <li>Novo robô ou novo limite de serviço</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Onde fica cada coisa</h3>
+      <div class="mp">
+        <div>No Radar</div><div>Radar (visão do dia), Buscar clientes, Empresas, Aprovar envios, Caixa de e-mail</div>
+        <div>Na Central</div><div>Tudo abaixo. Jornada, Relatórios da IA e Ajustes do Radar passam para cá</div>
+        <div>Resultados</div><div>Os 4 números do dia, com meta</div>
+        <div>Lista de clientes</div><div>Contatos achados, tabela e botão de enviar</div>
+        <div>Mesa de despacho</div><div>Avisos, sugestões e todos os robôs</div>
+        <div>Pré-voo</div><div>Checklist e travas antes do primeiro envio</div>
+        <div>Rota</div><div>Funil e gargalo, com projeção</div>
+        <div>Limites</div><div>Uso e teto de cada serviço</div>
+        <div>SDR</div><div>Quem liga e quem assume</div>
+        <div>E-mail</div><div>Regras da jornada do e-mail</div>
+        <div>Registro</div><div>Histórico com desfazer</div>
+        <div>Ao vivo</div><div>Passos da lista, fila do TMS e janela ao vivo</div>
+      </div>
+    </div>
+  </div>
+  <div class="lbl">Pedir uma mudança</div>
+  <div class="ds" style="margin-bottom:8px">Escolha a seção, diga o que quer e copie o pedido. Cole no Claude (no chat ou no Code) que ele ajusta e mostra antes de aplicar.</div>
+  <div class="flt" style="margin-top:0">
+    <select id="rqS" aria-label="Seção"><option>Resultados</option><option selected>Lista de clientes</option><option>Mesa de despacho</option><option>Pré-voo</option><option>Rota</option><option>Limites</option><option>SDR</option><option>Jornada do e-mail</option><option>Registro</option><option>Execuções manuais</option><option>Painel inteiro</option></select>
+    <select id="rqT" aria-label="Tipo"><option>Trocar</option><option>Adicionar</option><option>Tirar</option><option>Corrigir erro</option></select>
+  </div>
+  <textarea id="rqX" placeholder="Ex.: na tabela de contatos, mostrar também o CNAE e o porte da empresa" aria-label="O que você quer" style="min-height:64px"></textarea>
+  <pre class="req" id="rqP" role="status">O pedido aparece aqui.</pre>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sm pri" id="rqG">Gerar pedido</button><button class="sm" id="rqC">Copiar pedido</button><span class="ds" id="rqOk" role="status"></span></div>
+  <div class="note">Regras que valem sempre: nada de flag de produção muda sem o seu OK, migrations só depois de "pode aplicar", e o Code abre PR sem merge para você ver antes.</div>
+</section>
+
+</main>
+
+<dialog id="dlg"><h3 id="dlgT"></h3><p id="dlgP"></p><div class="bt"><button id="dlgN">Cancelar</button><button id="dlgY" class="pri">Confirmar</button></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+// Tudo simulado: nenhum .bat roda e nada é gravado nesta prévia.
+const $=id=>document.getElementById(id);
+const fmt=n=>n.toLocaleString('pt-BR');
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const hhmm=()=>new Date().toTimeString().slice(0,5);
+let busy=false,cancel=false;
+
+/* ---------- dados ---------- */
+const R=[
+ {id:'listas',w:'pc',n:'Garimpo e listas',d:'Acha site, contato e e-mail das empresas, confere o resultado e deixa a lista pronta para enviar à base do TMS. No máximo 1 vez por dia.',on:true,time:'13:00',lim:[['Empresas por dia',400]],uses:'Usa verificador de e-mail e busca',cons:'roda todo dia no horário escolhido, até o seu limite de empresas por dia.',last:'ontem 13:02',late:true,again:true},
+ {id:'tms',w:'pc',n:'Central TMS (fila do Claude)',d:'Executa as tarefas da fila e abre PR sem merge.',on:false,time:'02:00',lim:[['Rodadas por tarefa',2]],uses:'Usa o plano do Claude (limite por noite em Limites)',claude:true,cons:'executa as tarefas da fila e gasta o plano do Claude.'},
+ {id:'freellm',w:'pc',n:'IA grátis (FreeLLMAPI)',d:'Fica ligado sem janela preta e liga junto com o Windows.',on:true,running:true,when:'ao entrar no Windows',cons:'os resumos e as explicações de erro deixam de funcionar.',last:'ligado há 3 h',noRun:true},
+ {id:'envio',w:'nuvem',n:'Prospecção: enviar e-mails',d:'1 por vez, segunda a sexta, 07h às 18h, intervalo de 8 a 25 min. Começa com 10 por dia e sobe sozinho até 30.',on:false,lim:[['Máximo por dia',10]],flag:'PROSPECCAO_ENVIO_LIBERADO',pre:true,noRun:true,cons:'envia até o máximo por dia, de segunda a sexta, das 07h às 18h.'},
+ {id:'leitura',w:'nuvem',n:'Prospecção: ler respostas',d:'Lê só as respostas das empresas contatadas e separa em quentes, para tratar e ignorar.',on:false,flag:'PROSPECCAO_LEITURA_LIBERADA',pre:true,noRun:true,cons:'lê as respostas das empresas contatadas e as separa.'},
+ {id:'resp',w:'nuvem',n:'Prospecção: responder sozinho',d:'Responde automaticamente quando a classificação for segura. Hoje fica desligado.',on:false,flag:'PROSPECCAO_RESPOSTA_AUTOMATICA_LIBERADA',dep:true,noRun:true,cons:'responde sozinho quando a classificação for segura.'}
+];
+const LOCK=[['Repom: consulta de tag','REPOM_CONSULTA_TAG_LIBERADA'],['Repom: integração completa','REPOM_API_LIBERADA'],['Encerramento automático de MDF-e','trigger da entrega, desligado em 05/10']];
+const GUARD=[
+ {id:'aprov',n:'Pedir minha aprovação antes de enviar',d:'Ligado: o robô só prepara rascunhos e espera você aprovar.',on:true,flag:'PROSPECCAO_APROVACAO_OBRIGATORIA',off:'Sem aprovação, o robô envia sozinho para as empresas.'},
+ {id:'teste',n:'Modo teste',d:'Todo envio vai só para os seus e-mails de teste, com [TESTE] no assunto.',on:true,flag:'PROSPECCAO_MODO_TESTE',off:'Fora do modo teste, os e-mails passam a ir para as empresas reais.'}
+];
+const PF=[
+ {n:'Base importada no Radar',d:'Hoje a tabela prospeccao_base tem 0 linhas.',done:false,tip:'Suba o CSV da pasta PARA-IMPORTAR na tela do Radar.'},
+ {n:'Textos da jornada aprovados e ativos',d:'14 textos, nenhum ativo.',done:false,tip:'Revise e ative os modelos.'},
+ {n:'Diagnóstico das caixas de e-mail rodado',d:'Nunca foi rodado.',done:false,tip:'Rode o diagnóstico das caixas.'},
+ {n:'Senhas SMTP e IMAP no Vault do Supabase',d:'Os valores você digita só lá, nunca no chat.',done:false,tip:'Cadastre no Vault.'},
+ {n:'SPF, DKIM e DMARC testados',d:'Teste de entrega no Gmail e no Hotmail.',done:false,tip:'Mande um teste para cada caixa.'},
+ {n:'Endereço descadastrar@ criado',d:'Para quem pedir para sair.',done:true}
+];
+const S=[
+ {n:'QuickEmailVerification',who:'Verifica e-mails no garimpo',unit:'dia',lim:95,used:42,on:true,note:'O plano dá 100 por dia; 95 deixa folga.'},
+ {n:'Verifalia',who:'Segunda verificação de e-mails',unit:'dia',lim:24,used:24,on:true,note:'Os que sobrarem ficam para amanhã.'},
+ {n:'Exa',who:'Busca de empresas e sites',unit:'mês',lim:900,used:311,on:true},
+ {n:'Tavily',who:'Busca de empresas e sites',unit:'mês',lim:1000,used:120,on:true},
+ {n:'Serper',who:'Busca no Google',unit:'mês',lim:0,used:0,on:false,nokey:true,note:'Falta a chave.'},
+ {n:'IA grátis (FreeLLMAPI)',who:'Resumos e explicação de erros',unit:'dia',lim:200,used:37,on:true},
+ {n:'Plano do Claude (TMS)',who:'Só tarefas de programação do TMS',unit:'noite',lim:2,used:0,on:true,claude:true}
+];
+const K=[
+ {n:'Sites achados hoje',v:94,meta:100,m7:96,sp:[88,91,97,99,95,96,94],why:'Perto do normal da semana.',do:'Nada a fazer.'},
+ {n:'E-mails do setor certo',v:38,meta:60,m7:52,sp:[61,58,55,50,49,44,38],why:'Muitos sites só mostram o contato@.',do:'Deixar a pergunta "com quem falo sobre fretes?" ligada.'},
+ {n:'E-mails verificados',v:119,meta:119,m7:115,sp:[110,119,119,112,119,119,119],why:'Os dois verificadores chegaram no limite do dia.',do:'Nada. Volta amanhã.'},
+ {n:'Leads na fila do SDR',v:4,meta:5,m7:3,sp:[2,3,3,4,3,2,4],why:'Dois leads quentes esperando alguém assumir.',do:'Abrir a Fila do SDR e assumir.'}
+];
+const FUN=[['Base',35703],['Site achado',1885],['E-mail no site',660],['Setor certo',540],['Verificado',410],['Contatado',380],['Respondeu',96],['Contato certo',58]];
+const EXP=[null,.08,.40,.80,.80,.90,.10,.50];
+const ACT=[null,'Pausar os segmentos que não rendem e revisar a busca do site.','Ler mais páginas do site (contato e fornecedores).','Revisar a ordem de preferência dos e-mails.','Esperar a cota de verificação ou subir a prioridade por nota.','Nada a fazer.','Melhorar o texto do primeiro e-mail.','Reforçar a pergunta "com quem falo sobre fretes?".'];
+const SDR=[
+ {emp:'Indústria Alfa Ltda',tel:'(11) 4002-1010',why:'Respondeu o e-mail: "pode ligar amanhã"',hot:true,own:null},
+ {emp:'Metalúrgica Beta',tel:'(19) 3555-2020',why:'Respondeu o e-mail pedindo valores',hot:true,own:null},
+ {emp:'Plásticos Gama',tel:'(11) 4777-3030',why:'Telefone válido, nota 88',hot:false,own:null},
+ {emp:'Embalagens Delta',tel:'(15) 3222-4040',why:'Telefone válido, nota 76',hot:false,own:'Pedro'}
+];
+let AG=[
+];
+let SUG=[
+ {t:'Resposta cita "Marcos, da logística" sem e-mail',e:'Indústria Alfa Ltda',b:['Procurar no site','Ignorar']},
+ {t:'Indicaram um e-mail de outro domínio (@gmail.com)',e:'Metalúrgica Beta',b:['Aprovar','Rejeitar']},
+ {t:'Resposta com tom hostil',e:'Plásticos Gama',b:['Ver resposta','Remover da lista']},
+ {t:'A Exa deve acabar no dia 18 neste ritmo. Reduzir o lote de buscas?',e:'Recurso',b:['Aprovar','Rejeitar','Adiar'],ap:2},
+ {t:'Segmento "Embalagens" acha site em 1,4% das empresas. Pausar e redirecionar a cota?',e:'Recurso',b:['Aprovar','Rejeitar','Adiar'],ap:0}
+];
+const P={
+ listas:[{n:'Base enriquecida',d:'Só roda se a base não existir',st:'ok',t:'pulada, já existe',skip:true},{n:'Garimpo de sites, contatos e e-mails',d:'Acha o site, pesquisa pela razão social, verifica e-mail',st:'idle',t:'pendente'},{n:'Conferir resultado e chaves',d:'Avisa se nenhum e-mail foi verificado',st:'idle',t:'pendente'},{n:'Preparar importação no Radar',d:'Copia o CSV para PARA-IMPORTAR',st:'idle',t:'pendente'}],
+ tms:[{n:'Rodar fila do Claude',d:'Até 3 rodadas por tarefa, PR sem merge',st:'idle',t:'pendente'},{n:'Resumo do que foi feito',d:'Concluídas, pendentes e fila',st:'idle',t:'pendente'}]
+};
+const fila=['painel-por-que-nao-emite','corrigir-tara-carreta'];
+const PRIO=[['logistica@'],['compras@','suprimentos@'],['expedicao@','transporte@','fretes@'],['comercial@','vendas@'],['contato@','atendimento@']];
+const DESC=['noreply@','webmaster@','juridico@','privacidade@'];
+const REG=[
+ {n:'Ler todos os e-mails que aparecem no site da empresa',d:'Páginas de contato e "Seja nosso fornecedor". Não gasta busca nem verificação.',on:true},
+ {n:'Verificar só o melhor e-mail de cada empresa',d:'1 verificação por empresa, o primeiro da ordem de preferência.',on:true},
+ {n:'Se só houver e-mail geral, perguntar "com quem falo sobre fretes?"',d:'A resposta revela o e-mail do setor certo.',on:true},
+ {n:'Cadastrar sozinho o contato indicado na resposta',d:'Só quando é do mesmo domínio, passa no verificador e não é genérico.',on:true},
+ {n:'Remover sozinho quem pedir para sair',d:'"Não quero receber" tira a empresa da lista na hora.',on:true,keep:true}
+];
+const AU=[];const openDet=new Set();
+
+/* ---------- helpers ---------- */
+function pfDone(i){return PF[i].done}
+function guardsOn(){return GUARD.every(g=>g.on)}
+function pfCount(){return PF.filter(x=>x.done).length+(guardsOn()?1:0)}
+function pfTotal(){return PF.length+1}
+function ready(){return pfCount()===pfTotal()}
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('show'),3600)}
+function log(msg,cls){const t=$('term');if(t.dataset.f!=='1'){t.innerHTML='';t.dataset.f='1'}t.insertAdjacentHTML('beforeend',`<span class="t">${new Date().toTimeString().slice(0,8)}</span> ${cls?`<span class="${cls}">${msg}</span>`:msg}\n`);t.scrollTop=t.scrollHeight}
+function audit(msg,undo){AU.unshift({t:hhmm(),msg,undo,done:false});drawAu()}
+function ask(t,p,o){o=o||{};return new Promise(res=>{const d=$('dlg');$('dlgT').textContent=t;$('dlgP').textContent=p;$('dlgY').className=o.danger?'dng':'pri';$('dlgY').textContent=o.yes||(o.single?'Entendi':'Confirmar');$('dlgN').style.display=o.single?'none':'';const done=v=>{d.close();$('dlgY').onclick=$('dlgN').onclick=null;res(v)};$('dlgY').onclick=()=>done(true);$('dlgN').onclick=()=>done(false);d.showModal()})}
+function jump(id,flash){const e=$(id);if(!e)return;if(e.classList.contains('col')){e.classList.remove('col');const b=e.querySelector('.tg');if(b){b.setAttribute('aria-expanded','true');b.textContent='−'}}e.scrollIntoView({block:'start'});if(flash){e.classList.add('flash');setTimeout(()=>e.classList.remove('flash'),1500)}}
+function focusRobot(id){openDet.add(id);drawBoard();const e=$('card-'+id);if(e){e.scrollIntoView({block:'center'});e.classList.add('flash');setTimeout(()=>e.classList.remove('flash'),1500)}}
+
+/* ---------- necessidades ---------- */
+function needs(){
+  const a=[];
+  R.forEach(r=>{if(r.on&&r.late&&!r.running)a.push({id:'late-'+r.id,sev:'urg',t:'A '+r.n+' não rodou hoje',w:'Era para rodar às '+r.time+'. O PC estava desligado ou você não estava logado.',why:'Sem rodar, hoje não entram e-mails novos e a fila só cresce.',acts:[['Rodar agora','run',r.id],['Mudar horário','robot',r.id]]})});
+  if(!ready())a.push({id:'pre',sev:'urg',t:'Faltam '+(pfTotal()-pfCount())+' itens para o primeiro envio',w:'O robô de envio fica travado até o checklist ficar completo.',why:'Enviar antes pode queimar o domínio ou mandar e-mail sem texto aprovado.',acts:[['Ver checklist','jump','preflight']]});
+  const hot=SDR.filter(x=>x.hot&&!x.own).length;
+  if(hot)a.push({id:'hot',sev:'urg',t:hot+(hot===1?' lead quente esperando':' leads quentes esperando')+' alguém assumir',w:'Respondeu o e-mail e pediu contato.',why:'Lead quente esfria em horas.',acts:[['Abrir a fila do SDR','jump','sdr']]});
+  if(LST.pend>0&&!LST.run)a.push({id:'imp',sev:'hoje',t:fmt(LST.pend)+' empresas da lista ainda não estão na base do TMS',w:LST.emails+' contatos achados esperando.',why:'Só entram na prospecção depois de enviadas para a base.',acts:[['Enviar para a base do TMS','imp']]});
+  AG.forEach(x=>a.push(x));
+  const o={urg:0,hoje:1,espera:2};a.sort((x,y)=>o[x.sev]-o[y.sev]);return a;
+}
+const SL={urg:'Urgente',hoje:'Hoje',espera:'Pode esperar'};
+
+/* ---------- mesa de despacho ---------- */
+function roboCard(r){
+  const st=r.running?'run':(r.on?'sched':'off');
+  let pill=['desligado',''];
+  if(st==='run')pill=[r.noRun&&r.id==='freellm'?'ativo':'rodando','ic'];
+  else if(r.on&&r.late)pill=['atrasado','bd'];
+  else if(r.on)pill=['ligado','on'];
+  const nxt=r.time&&r.on&&!r.running?`<span class="mini">próxima: ${r.late?'amanhã':'hoje'} ${r.time}</span>`:(r.when&&r.on?`<span class="mini">${r.when}</span>`:'');
+  const meta=`<span class="mini ${r.w==='nuvem'?'cl':''}">${r.w==='nuvem'?'Nuvem':'PC'}</span>${nxt}${r.uses?`<span class="mini ${r.claude?'wn':''}">${r.uses}</span>`:''}${r.last?`<span class="mini ${r.late?'wn':''}">${r.late?'Última: '+r.last:'Última: '+r.last}</span>`:''}`;
+  const aj=[];
+  if(r.time)aj.push(`<label class="ds">Horário diário <input type="time" value="${r.time}" data-rtime="${r.id}" aria-label="Horário de ${r.n}"></label>`);
+  (r.lim||[]).forEach((l,i)=>aj.push(`<label class="ds">${l[0]} <input type="number" min="0" value="${l[1]}" data-rlim="${r.id}:${i}" aria-label="${l[0]}"></label>`));
+  aj.push(`<div class="ds"><b>${r.on?'Se desligar':'Se ligar'}:</b> ${r.on?(r.id==='freellm'?r.cons:'o robô para de '+({garimpo:'garimpar',listas:'rodar sozinho',tms:'executar a fila',envio:'enviar',leitura:'ler respostas',resp:'responder'}[r.id]||'agir')+'.'):r.cons}</div>`);
+  if(r.flag)aj.push(`<div class="ds">Chave: <span style="font-family:var(--mono)">${r.flag}</span></div>`);
+  if(r.again)aj.push(`<button class="sm" data-force="${r.id}">Rodar de novo, mesmo já tendo rodado hoje</button>`);
+  if(r.id==='freellm')aj.push(`<button class="sm" data-ia="1">Testar agora</button>`);
+  const prog=r.running&&r.prog!=null?`<div class="bar"><i style="width:${Math.round(r.prog*100)}%"></i></div>`:'';
+  const acts=(r.running&&!r.noRun?`<button class="sm" data-pause="${r.id}">Pausar</button>`:(!r.noRun&&!r.running?`<button class="sm" data-now="${r.id}">Rodar agora</button>`:''));
+  return `<div class="it ${r.late&&r.on?'hoje':''}" id="card-${r.id}"><div class="row1"><div><div class="nm">${r.n}</div></div><label class="sw"><input type="checkbox" data-rb="${r.id}" ${r.on?'checked':''} aria-label="Ligar ou desligar ${r.n}"><i></i></label></div><div class="ds">${r.d}</div><div class="mt"><span class="pill ${pill[1]}">${pill[0]}</span>${meta}</div>${prog}${acts?`<div class="acts">${acts}</div>`:''}<details class="aj" data-det="${r.id}" ${openDet.has(r.id)?'open':''}><summary>Ajustes</summary><div class="bx">${aj.join('')}</div></details></div>`;
+}
+function needCard(x){
+  return `<div class="it ${x.sev}"><div class="row1"><span class="sv ${x.sev}">${SL[x.sev]}</span></div><div><div class="nm">${x.t}</div><div class="ds">${x.w}</div><div class="ds"><b>Por que importa:</b> ${x.why}</div></div><div class="acts">${x.acts.map((a,j)=>`<button class="sm ${j===0?'pri':''}" data-ag="${x.id}:${j}">${a[0]}</button>`).join('')}<button class="sm" data-snz="${x.id}">Adiar 1 dia</button></div></div>`;
+}
+function sugCard(g,i){
+  return `<div class="it"><div class="row1"><span class="sv sug">Sugestão</span><span class="ds">${g.e}</span></div><div class="nm">${g.t}</div>${g.ap>=2?`<div class="ds"><a class="lk" data-always="${i}" tabindex="0" role="button">Você aprovou ${g.ap} vezes este tipo. Aprovar sempre?</a></div>`:''}<div class="acts">${g.b.map(x=>`<button class="sm ${x==='Aprovar'||x==='Procurar no site'?'pri':''}" data-sg="${i}:${x}">${x}</button>`).join('')}</div></div>`;
+}
+function drawBoard(){
+  const nd=needs(),c1=nd.map(needCard).join('')+SUG.map(sugCard).join('');
+  const n1=nd.length+SUG.length;
+  const run=R.filter(r=>r.running),sch=R.filter(r=>r.on&&!r.running),off=R.filter(r=>!r.on);
+  const lockc=LOCK.map(l=>`<div class="it"><div class="row1"><div class="nm">${l[0]}</div><label class="sw lock"><input type="checkbox" disabled aria-label="${l[0]} travado"><i></i></label></div><div class="ds">Fiscal e Repom só mudam com o seu OK no chat, não por este painel.</div><div class="mt"><span class="pill">travado</span><span class="mini">${l[1]}</span></div></div>`).join('');
+  $('board').innerHTML=`<div class="bc need"><h3>Precisa de você <em>${n1}</em></h3>${c1||'<div class="okline">Nada esperando você. Os robôs cuidam do resto.</div>'}</div>
+  <div class="bc"><h3>Rodando agora <em>${run.length}</em></h3>${run.map(roboCard).join('')||'<div class="empty">Nada rodando.</div>'}</div>
+  <div class="bc"><h3>Ligados e agendados <em>${sch.length}</em></h3>${sch.map(roboCard).join('')||'<div class="empty">Nenhum robô ligado.</div>'}</div>
+  <div class="bc"><h3>Desligados e travados <em>${off.length+LOCK.length}</em></h3>${off.map(roboCard).join('')}${lockc}</div>`;
+  $('yday').innerHTML=`<span>Ontem: <b>41</b> contatos cadastrados sozinhos</span><span><b>9</b> saíram a pedido (removidos)</span><span><b>${n1}</b> esperando você</span><span>Respostas e caixa de e-mail: veja no Radar</span>`;
+  updStat();
+}
+document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.det){d.open?openDet.add(d.dataset.det):openDet.delete(d.dataset.det)}},true);
+
+/* ---------- KPIs ---------- */
+function spark(a){const w=96,h=26,mn=Math.min(...a),mx=Math.max(...a),d=mx-mn||1;const p=a.map((v,i)=>[2+i*(w-4)/(a.length-1),h-3-(v-mn)/d*(h-6)]);return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Últimos 7 dias"><polyline points="${p.map(q=>q.join(',')).join(' ')}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/><circle cx="${p[p.length-1][0]}" cy="${p[p.length-1][1]}" r="2.8" fill="currentColor"/></svg>`}
+function verd(k){const r=k.v/k.meta;return r>=1?['na meta ou acima','on']:r>=.8?['atenção','wn']:['abaixo','bd']}
+function drawK(){
+  $('kp4').innerHTML=K.map((k,i)=>{const [l,c]=verd(k);const dl=Math.round((k.v-k.m7)/k.m7*100);return `<div class="kc ${c}"><div class="top2"><span class="nm">${k.n}</span><span class="pill ${c}">${l}</span></div><div class="v">${fmt(k.v)}</div><div class="ft"><span>${dl>=0?'↑':'↓'} ${Math.abs(dl)}% vs média de 7 dias</span><span style="margin-left:auto">${spark(k.sp)}</span></div><div class="tx"><b>Por quê:</b> ${k.why}</div><div class="tx"><b>Fazer:</b> ${k.do}</div><div class="ft">Meta <input type="number" min="0" value="${k.meta}" data-km="${i}" aria-label="Meta de ${k.n}"></div></div>`}).join('');updStat();
+}
+
+/* ---------- pré-voo ---------- */
+function drawPf(){
+  const n=pfCount(),t=pfTotal();$('pfBar').style.width=(n/t*100)+'%';
+  const items=PF.map((x,i)=>({n:x.n,d:x.d,done:x.done,i,tip:x.tip})).concat([{n:'Modo teste e aprovação ligados',d:'As duas travas ao lado precisam estar ligadas no primeiro envio.',done:guardsOn(),calc:true}]);
+  $('pfList').innerHTML=items.map(x=>`<div class="pfi ${x.done?'done':''}"><span class="ck">${x.done?'✓':'○'}</span><div><div class="nm">${x.n}</div><div class="ds">${x.done?'Pronto.':x.d+(x.tip?' '+x.tip:'')}</div></div>${x.calc?'<span></span>':`<button class="sm" data-pf="${x.i}">${x.done?'Desmarcar':'Marcar feito'}</button>`}</div>`).join('');
+  $('guards').innerHTML=GUARD.map((g,i)=>`<div class="guard"><label class="sw"><input type="checkbox" data-gd="${i}" ${g.on?'checked':''} aria-label="${g.n}"><i></i></label><div><div class="nm">${g.n}</div><div class="ds">${g.d}</div><div class="mt" style="margin-top:4px"><span class="mini" style="font-family:var(--mono)">${g.flag}</span></div></div></div>`).join('');
+  updStat();
+}
+
+/* ---------- rota ---------- */
+let selSt=-1;
+function worst(){let w=-1,wr=9;FUN.forEach((f,i)=>{if(i){const r=(f[1]/FUN[i-1][1])/EXP[i];if(r<wr){wr=r;w=i}}});return wr<1?w:-1}
+function drawRota(){
+  const g=worst();if(selSt<0)selSt=g>=0?g:1;
+  const X=i=>60+i*(880/7),Y=110;
+  const cls=i=>{if(!i)return'f';const r=(FUN[i][1]/FUN[i-1][1])/EXP[i];return r>=1?'ok':r>=.75?'wn':'bd'};
+  let s=`<svg viewBox="0 0 1000 210" role="img" aria-label="Rota da base até o contato certo. ${g>=0?'Gargalo em '+FUN[g][0]+'.':'Sem gargalo.'}"><line class="road" x1="${X(0)}" y1="${Y}" x2="${X(7)}" y2="${Y}" stroke-width="16" stroke-linecap="round"/>`;
+  for(let i=1;i<8;i++)s+=`<line class="seg ${cls(i)}" x1="${X(i-1)}" y1="${Y}" x2="${X(i)}" y2="${Y}"/>`;
+  s+=`<line class="mid" x1="${X(0)}" y1="${Y}" x2="${X(7)}" y2="${Y}"/>`;
+  FUN.forEach((f,i)=>{
+    const cv=i?Math.round(f[1]/FUN[i-1][1]*1000)/10:null;
+    s+=`<g data-st="${i}" class="${i===selSt?'sel':''}" tabindex="0" role="button" aria-label="${f[0]}: ${fmt(f[1])}"><circle class="stop ${cls(i)}" cx="${X(i)}" cy="${Y}" r="12"/><text x="${X(i)}" y="${Y-30}" text-anchor="middle" font-size="13" font-weight="700">${f[0]}</text><text x="${X(i)}" y="${Y+40}" text-anchor="middle" font-size="15" font-weight="700">${fmt(f[1])}</text>${i?`<text class="t2" x="${X(i)}" y="${Y+58}" text-anchor="middle" font-size="11.5">${String(cv).replace('.',',')}% (esp. ${Math.round(EXP[i]*100)}%)</text>`:''}${i===g?`<rect class="flag" x="${X(i)-32}" y="${Y-72}" width="64" height="20" rx="10"/><text class="flagt" x="${X(i)}" y="${Y-58}" text-anchor="middle">gargalo</text>`:''}</g>`;
+  });
+  $('rtbox').innerHTML=s+'</svg>';
+  const f=FUN[selSt],cv=selSt?Math.round(f[1]/FUN[selSt-1][1]*1000)/10:null;
+  if(!selSt)$('det').innerHTML=`<div class="det"><span><b>${f[0]}:</b> ${fmt(f[1])} empresas. É o ponto de partida da rota.</span></div>`;
+  else{const r=(f[1]/FUN[selSt-1][1])/EXP[selSt];const c=r<.75?'bd':r>=1?'ok':'';$('det').innerHTML=`<div class="det ${c}"><span><b>${f[0]}:</b> ${String(cv).replace('.',',')}% passaram da etapa anterior, esperado ${Math.round(EXP[selSt]*100)}%. <b>Fazer:</b> ${ACT[selSt]}</span>${r<1?'<button class="sm" data-goto="agora">Ver sugestões</button>':''}</div>`}
+  updStat();
+}
+function drawProj(){
+  const rem=29227,cap=(S[0].on?S[0].lim:0)+(S[1].on?S[1].lim:0),p=+$('pctTop').value;$('pctV').textContent=p+'%';
+  if(!cap){$('proj').innerHTML='<div class="ds" style="margin-top:8px">Sem verificador liberado, não há projeção.</div>';return}
+  const a=Math.ceil(rem/cap),b=Math.ceil(rem*p/100/cap),mx=Math.max(a,b);
+  $('proj').innerHTML=`<div class="pj"><span>Todas as ${fmt(rem)} restantes</span><span class="b"><i style="width:${a/mx*100}%"></i></span><b>${fmt(a)} dias</b></div><div class="pj"><span>Só as ${p}% melhores (${fmt(Math.round(rem*p/100))})</span><span class="b"><i class="g" style="width:${b/mx*100}%"></i></span><b>${fmt(b)} dias</b></div><div class="ds">Capacidade: ${fmt(cap)} verificações por dia (QuickEmailVerification mais Verifalia).</div>`;
+}
+
+/* ---------- limites ---------- */
+function drawS(){
+  $('gg').innerHTML=S.map((s,i)=>{
+    const pct=s.lim?Math.min(100,Math.round(s.used/s.lim*100)):0;let c='',lab='ok',pc='on';
+    if(s.nokey){lab='sem chave';pc=''}else if(!s.on){lab='bloqueado';pc=''}else if(s.used>=s.lim){lab='limite atingido';pc='bd';c='bad'}else if(pct>=80){lab='perto do limite';pc='wn';c='warn'}
+    const arc='M10 62 A50 50 0 0 1 110 62';
+    return `<div class="gc ${s.on&&!s.nokey?'':'off'}"><div class="top3"><div><div class="nm">${s.n}</div><div class="ds">${s.who}</div></div><label class="sw"><input type="checkbox" data-sv="${i}" ${s.on&&!s.nokey?'checked':''} ${s.nokey?'disabled':''} aria-label="Usar ${s.n}"><i></i></label></div>
+    <svg viewBox="0 0 120 74" role="img" aria-label="${s.n}: ${pct}% do limite"><path class="g-bg" d="${arc}" fill="none" stroke-width="10" stroke-linecap="round"/>${pct>0?`<path class="g-fg ${c}" d="${arc}" fill="none" stroke-width="10" stroke-linecap="round" pathLength="100" stroke-dasharray="${pct} 100"/>`:''}<text x="60" y="56" text-anchor="middle" font-size="17" font-weight="800">${s.nokey?'-':fmt(s.used)}</text><text x="60" y="70" text-anchor="middle" font-size="9.5" class="t2" style="fill:var(--mut)">${s.nokey?'':'de '+fmt(s.lim)+' por '+s.unit}</text></svg>
+    <span class="pill ${pc}">${lab}</span>${s.note?`<div class="ds">${s.note}</div>`:''}<label class="lim">Limite <input type="number" min="0" value="${s.lim}" data-sl="${i}" ${s.nokey?'disabled':''} aria-label="Limite de ${s.n}"></label></div>`;
+  }).join('');
+  drawProj();updStat();
+}
+
+/* ---------- sdr ---------- */
+function drawSdr(){
+  const max=+$('sdrMax').value||10,hoje=SDR.length;
+  $('sdrCont').textContent=hoje+' na fila hoje, teto de '+max;
+  $('sdrList').innerHTML=SDR.length?SDR.map((x,i)=>`<div class="sr"><div><div class="nm">${x.emp} ${x.hot?'<span class="pill bd">quente</span>':''}</div><div class="ds">${x.why} &middot; ${x.tel}</div>${x.own?`<div class="ds"><b>Com ${x.own}</b></div>`:''}</div><div class="acts">${x.own?`<button class="sm" data-sdr="dev:${i}">Devolver à fila</button><button class="sm pri" data-sdr="fim:${i}">Concluir</button>`:`<select data-sel="${i}" aria-label="Quem assume ${x.emp}"><option ${x.hot?'selected':''}>José Carlos</option><option ${x.hot?'':'selected'}>Pedro</option></select><button class="sm pri" data-sdr="as:${i}">Assumir</button><button class="sm" data-sdr="no:${i}">Sem interesse</button>`}</div></div>`).join(''):'<div class="okline">Fila vazia.</div>';
+  updStat();
+}
+
+/* ---------- jornada / registro / manual ---------- */
+function drawJ(){
+  $('prio').innerHTML=PRIO.map((g,i)=>`<div class="pr"><span class="n">${i+1}</span><div class="chips2">${g.map(x=>`<span class="chip2">${x}</span>`).join('')}</div><span style="display:flex;gap:4px"><button class="sm" data-pu="${i}" ${i===0?'disabled':''} aria-label="Subir">↑</button><button class="sm" data-pd="${i}" ${i===PRIO.length-1?'disabled':''} aria-label="Descer">↓</button></span></div>`).join('');
+  $('descartes').innerHTML=DESC.map((d,i)=>`<span class="chip2">${d}<a data-dd="${i}" role="button" tabindex="0" aria-label="Remover ${d}">×</a></span>`).join('')||'<span class="ds">Nenhum.</span>';
+  $('regras').innerHTML=REG.map((r,i)=>`<div class="rb"><label class="sw"><input type="checkbox" data-rg="${i}" ${r.on?'checked':''} aria-label="${r.n}"><i></i></label><div><div class="nm">${r.n}</div><div class="ds">${r.d}</div></div><span class="pill ${r.on?'on':''}">${r.on?'ligada':'desligada'}</span></div>`).join('');updStat();
+}
+function drawAu(){
+  $('auList').innerHTML=AU.length?AU.map((a,i)=>`<div class="row"><span class="ds" style="min-width:44px">${a.t}</span><span>${a.msg}</span><span class="sp">${a.undo&&!a.done?`<button class="sm" data-un="${i}">Desfazer</button>`:(a.done?'desfeito':'')}</span></div>`).join(''):'<div class="ds">Nenhuma alteração nesta sessão.</div>';updStat();
+}
+function drawSteps(){
+  for(const k in P){$('steps-'+k).innerHTML=P[k].map((s,i)=>`<li class="${s.st==='ok'?'st-ok':s.st==='run'?'st-run':''}"><span class="n">${s.st==='ok'?'✓':i+1}</span><div><div class="nm">${s.n}</div><div class="ds">${s.d}</div></div><span class="pill">${s.st==='run'?'rodando':s.t}</span></li>`).join('')}
+  $('fila').innerHTML=fila.length?fila.map((f,i)=>`<div class="row"><span style="font-family:var(--mono);font-size:12.5px">${f}.txt</span><span class="sp"><a class="lk" data-del="${i}" role="button" tabindex="0">remover</a></span></div>`).join(''):'<div class="ds">Fila vazia.</div>';
+  $('chFila').textContent=fila.length+(fila.length===1?' tarefa':' tarefas');
+}
+
+
+/* ---------- v6: lista de clientes ---------- */
+const LST={setor:420,geral:240,total:35703,sites:1885,emails:660,comEmail:612,escolhidos:540,validos:410,tels:1020,naBase:0,pend:35703,lote:null,run:false,prog:0,loteN:0,res:null,auto:false};
+const NMS=['Alfa','Beta','Gama','Delta','Ômega','Sigma','Atlas','Nova','Prime','União','Norte','Brasil'],TPS=['Metalúrgica','Indústria','Plásticos','Embalagens','Química','Têxtil','Alimentos','Autopeças'],CDS=[['Guarulhos','SP'],['Campinas','SP'],['Osasco','SP'],['Sorocaba','SP'],['Betim','MG'],['Joinville','SC'],['Curitiba','PR'],['Contagem','MG']];
+const PRF=['logistica@','compras@','expedicao@','fretes@','comercial@','contato@','atendimento@'];
+const LIN=Array.from({length:52},(_,i)=>{
+  const emp=TPS[i%8]+' '+NMS[(i*5)%12]+(i%3?' Ltda':' S.A.'),c=CDS[(i*3)%8],dom=(TPS[i%8]+NMS[(i*5)%12]).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'').slice(0,12)+'.com.br';
+  const has=i%5!==3,pref=PRF[(i*2)%7],tipo=has?(pref==='contato@'||pref==='atendimento@'?'geral':'setor'):null;
+  const ver=has?['válido','válido','pendente','válido','inválido'][i%5]:null;
+  return {emp,cid:c[0]+'/'+c[1],seg:['Metal','Diversos','Plástico','Embalagem','Química','Têxtil','Alimentos','Autopeças'][i%8],mail:has?pref+dom:null,tipo,ver,tel:i%4===1?null:'(11) 4'+(100+i*7)+'-'+(1000+i*13),nota:55+((i*17)%45),pg:['/contato','/fornecedores','/fale-conosco','/transporte'][i%4],dt:'21/11'};
+});
+const LF={q:'',c:'',v:'',s:'',pg:0,open:-1};
+function lstRows(){
+  return LIN.map((r,i)=>Object.assign({i,st:LST.naBase?'base':'lista'},r)).filter(r=>{
+    const q=LF.q.trim().toLowerCase();
+    if(q&&!(r.emp+' '+r.cid+' '+(r.mail||'')).toLowerCase().includes(q))return false;
+    if(LF.c==='com'&&!r.mail)return false;if(LF.c==='sem'&&r.mail)return false;if(LF.c==='setor'&&r.tipo!=='setor')return false;if(LF.c==='geral'&&r.tipo!=='geral')return false;
+    if(LF.v&&r.ver!==LF.v)return false;if(LF.s&&r.st!==LF.s)return false;return true});
+}
+function drawLista(){
+  const c=(cls,n,v,t)=>`<div class="lk2 ${cls}"><div class="nm">${n}</div><div class="v">${v}</div><div class="tx">${t}</div></div>`;
+  $('lcards').innerHTML=c('big','Contatos achados',fmt(LST.emails),'e-mails em '+fmt(LST.comEmail)+' empresas')
+   +c('','Do setor certo',fmt(LST.setor),'compras@, logistica@ e parecidos')
+   +c('','Gerais',fmt(LST.geral),'contato@ e atendimento@')
+   +c('','Empresas com contato',fmt(LST.comEmail),'de '+fmt(LST.total)+' na lista')
+   +c('','Telefones válidos',fmt(LST.tels),'para a fila do SDR')
+   +c('','Na base do TMS',fmt(LST.naBase),LST.naBase?'enviadas'+(LST.lote?' (lote '+LST.lote+')':''):'nada enviado ainda')
+   +c('','Esperando envio',fmt(LST.pend),LST.pend?'ainda não estão na base':'tudo na base');
+  let h;
+  if(LST.run){h=`<div><div class="nm">Enviando para a base do TMS...</div><div class="ds">Lote ${LST.loteN} de ${LST.lotes}. Não feche o PC.</div><div class="bar"><i style="width:${Math.round(LST.prog*100)}%"></i></div></div><button class="pri big" disabled>Enviando</button>`}
+  else if(LST.pend>0){h=`<div><div class="nm">Pronto para enviar: ${fmt(LST.pend)} empresas e ${fmt(LST.emails)} contatos</div><div class="ds">Vai para a tabela prospeccao_base do TMS. Não apaga nada, não envia e-mail e não liga nenhum robô de envio. Empresas repetidas são atualizadas, não duplicadas.</div>${LST.res?`<div class="ds" style="margin-top:4px">${LST.res}</div>`:''}</div><button class="pri big" data-imp="1">Enviar para a base do TMS</button>`}
+  else{h=`<div><div class="nm" style="color:var(--ok)">Tudo na base do TMS</div><div class="ds">${LST.res||''}</div></div>${LST.lote?'<button data-imp-undo="1">Desfazer este envio</button>':''}`}
+  h+=`<label style="display:flex;gap:8px;align-items:center;flex-basis:100%;border-top:1px solid var(--line);padding-top:10px"><span class="sw"><input type="checkbox" id="impAuto" ${LST.auto?'checked':''} aria-label="Enviar sozinho quando a LISTAS terminar"><i></i></span><span><b>Enviar sozinho quando a LISTAS terminar</b><br><span class="ds">Desligado por padrão. Ligado, você só acompanha aqui.</span></span></label>`;
+  $('imp').innerHTML=h;
+  const rows=lstRows(),pp=8,np=Math.max(1,Math.ceil(rows.length/pp));if(LF.pg>=np)LF.pg=np-1;
+  const pv=rows.slice(LF.pg*pp,LF.pg*pp+pp);
+  $('tbody').innerHTML=pv.map(r=>{
+    const vc=r.ver==='válido'?'on':r.ver==='inválido'?'bd':r.ver?'wn':'';
+    return `<tr class="rw" data-row="${r.i}" tabindex="0" role="button" aria-expanded="${LF.open===r.i}"><td><b>${r.emp}</b></td><td>${r.cid}</td><td>${r.seg}</td><td>${r.mail||'<span class="ds">não achado</span>'}</td><td>${r.tipo?(r.tipo==='setor'?'setor certo':'geral'):''}</td><td>${r.ver?`<span class="pill ${vc}">${r.ver}</span>`:''}</td><td>${r.tel||''}</td><td>${r.nota}</td><td><span class="pill ${r.st==='base'?'on':''}">${r.st==='base'?'na base':'na lista'}</span></td></tr>`+(LF.open===r.i?`<tr class="dt"><td colspan="9">${r.mail?`Achado em ${r.pg} do site. ${r.ver==='válido'?'Verificado em '+r.dt+' (QuickEmailVerification).':r.ver==='inválido'?'Reprovado na verificação. O robô tenta o próximo e-mail da ordem de preferência.':'Ainda não verificado.'}`:'Nenhum e-mail encontrado no site. O robô tenta endereços prováveis e a busca na internet.'}</td></tr>`:'');
+  }).join('')||'<tr><td colspan="9" class="ds">Nenhuma empresa com esses filtros.</td></tr>';
+  $('fcount').textContent=rows.length+' de '+LIN.length+' na amostra';
+  $('pgI').textContent='Página '+(LF.pg+1)+' de '+np;$('pgP').disabled=LF.pg===0;$('pgN').disabled=LF.pg>=np-1;
+  updStat();
+}
+async function startImport(){
+  if(LST.run||LST.pend<=0)return;
+  const ok=await ask('Enviar a lista para a base do TMS?','Vão '+fmt(LST.pend)+' empresas e '+fmt(LST.emails)+' contatos para a base. Não apaga nada, não envia e-mail e as flags de envio continuam como estão. Dá para desfazer este envio depois.',{yes:'Enviar'});
+  if(!ok)return;
+  LST.run=true;LST.prog=0;LST.lotes=Math.ceil(LST.pend/5000);const total=LST.pend;drawLista();drawBoard();
+  log('==== ENVIO DA LISTA PARA O TMS começou ====','y');toast('Enviando a lista para o TMS. Acompanhe aqui mesmo.');
+  for(let b=1;b<=LST.lotes;b++){await wait(420);LST.loteN=b;LST.prog=b/LST.lotes;log(`   lote ${b} de ${LST.lotes}: ${fmt(Math.min(5000,total-(b-1)*5000))} empresas`);drawLista()}
+  const lote='L'+new Date().toISOString().slice(5,10).replace('-','')+'-1';
+  LST.naBase=total;LST.pend=0;LST.lote=lote;LST.run=false;LST.res='Último envio: '+fmt(total)+' empresas, 0 repetidas, 0 erros, às '+hhmm()+'.';
+  PF[0].done=true;log('==== ENVIO CONCLUÍDO: '+fmt(total)+' empresas ====','g');
+  audit('Lista enviada para a base do TMS: '+fmt(total)+' empresas (lote '+lote+')',()=>{LST.naBase=0;LST.pend=total;LST.lote=null;LST.res='Envio desfeito: lote '+lote+' removido da base.';PF[0].done=false;drawLista();drawPf();drawBoard()});
+  toast('Pronto: '+fmt(total)+' empresas na base do TMS.');drawLista();drawPf();drawBoard();
+}
+function undoImport(){const a=AU.findIndex(x=>x.msg.startsWith('Lista enviada')&&!x.done&&x.undo);if(a>=0){AU[a].undo();AU[a].done=true;log('Desfeito: '+AU[a].msg,'y');drawAu();toast('Envio desfeito.')}}
+function genReq(){
+  const x=$('rqX').value.trim()||'(escreva aqui o que você quer)';
+  $('rqP').textContent='PEDIDO DE ALTERAÇÃO NA CENTRAL\nSeção: '+$('rqS').value+'\nTipo: '+$('rqT').value+'\nO que eu quero: '+x+'\n\nRegras: mostrar o antes e o depois antes de aplicar; não mudar nenhuma flag de produção; migrations só depois do meu "pode aplicar"; abrir PR sem merge; manter o padrão RBR da v6.';
+}
+
+/* ---------- status e navegação ---------- */
+const SEC=[['kpis','Resultados'],['lista','Lista'],['agora','Despacho'],['preflight','Pré-voo'],['rota','Rota'],['limites','Limites'],['sdr','SDR'],['jornada','E-mail'],['registro','Registro'],['manual','Ao vivo'],['ajuda','Como mexer']];
+function updStat(){
+  const set=(id,t,c)=>{const e=$('stt-'+id);if(e){e.textContent=t;e.className='stt '+(c||'')}};
+  const nd=needs().length+SUG.length;
+  set('agora',nd?nd+' esperando você':'tudo em dia',nd?'wn':'ok');
+  set('preflight',pfCount()+' de '+pfTotal(),ready()?'ok':'wn');
+  const g=worst();set('rota',g>=0?'gargalo: '+FUN[g][0].toLowerCase():'sem gargalo',g>=0?'bd':'ok');
+  const lim=S.filter(s=>s.on&&s.lim&&s.used>=s.lim).length;set('limites',lim?lim+' no limite hoje':'tudo dentro do limite',lim?'wn':'');
+  set('sdr',SDR.filter(x=>!x.own).length+' esperando','');
+  set('jornada',PRIO.length+' níveis, '+REG.filter(r=>r.on).length+' regras');
+  set('registro',AU.length+(AU.length===1?' alteração':' alterações'));set('manual','fila e passos');set('ajuda','guia e pedidos');set('lista',LST.naBase?fmt(LST.naBase)+' na base do TMS':fmt(LST.pend)+' para enviar',LST.pend?'wn':'ok');
+  const on=R.filter(r=>r.on).length;$('chAg').textContent=on+' de '+R.length+' ligados';
+  const nv=$('nav');if(nv&&!nv.dataset.b){nv.dataset.b='1';nv.innerHTML=SEC.map(s=>`<a href="#${s[0]}" data-nv="${s[0]}">${s[1]}<i data-bd="${s[0]}" hidden></i></a>`).join('')}
+  const b=nv.querySelector('[data-bd="agora"]');if(b){b.textContent=nd;b.hidden=!nd}
+}
+
+/* ---------- execução simulada ---------- */
+async function run(id,force){
+  if(busy){toast('Já tem uma execução em andamento no PC.');return}
+  const r=R.find(x=>x.id===id);if(!r)return;
+  busy=true;cancel=false;r.running=true;r.prog=0;r.late=false;$('dotPc').classList.add('run');drawBoard();
+  toast(r.n+' começou. Acompanhe em Ao vivo, no fim da página.');
+  log(`==== ${r.n.toUpperCase()} começou ====`,'y');
+  const steps=P[id];
+  if(steps){
+    steps.forEach(s=>{if(!(s.skip&&!force&&id==='listas')){s.st='idle';s.t='pendente'}});drawSteps();
+    for(let i=0;i<steps.length;i++){
+      if(cancel){log('Pausado por você.','y');break}
+      const s=steps[i];
+      if(s.skip&&!force&&id==='listas'){log(`[${i+1}/${steps.length}] ${s.n} - já feita, pulando.`);r.prog=(i+1)/steps.length;continue}
+      s.st='run';drawSteps();$('bar-'+id).style.width=(i/steps.length*100)+'%';r.prog=i/steps.length;drawBoard();
+      log(`[${i+1}/${steps.length}] ${s.n}`);
+      if(id==='listas'&&i===1){for(const m of ['E1 outras unidades da Receita: 1.171 sites','E3 endereços prováveis + DNS: 510 confirmados','E5 busca na internet: pulada (sem chave)','E6 verificação de e-mail: dentro do limite do dia']){await wait(450);log('   '+m)}}
+      else if(id==='tms'&&i===0){for(const f of fila){await wait(500);log(`   tarefa ${f}: rodada 1 ...`);await wait(500);log(`   ${f} concluída (PR aberto, sem merge)`,'g')}if(!fila.length)log('   Fila vazia.')}
+      else await wait(700);
+      s.st='ok';s.t='concluída agora';log(`[${i+1}/${steps.length}] ${s.n} - concluída`,'g');
+    }
+    $('bar-'+id).style.width=cancel?'0%':'100%';drawSteps();
+  }else{for(let i=1;i<=3;i++){if(cancel)break;await wait(700);r.prog=i/3;drawBoard()}log(r.n+': execução simulada concluída','g')}
+  if(!cancel)log(`==== ${r.n.toUpperCase()} CONCLUÍDO ====`,'g');
+  r.running=false;r.prog=null;r.last=cancel?r.last:'agora';busy=false;$('dotPc').classList.remove('run');drawBoard();
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('button,a,g[data-st],tr[data-row]')||e.target;const d=t.dataset||{};
+  if(d.tg){const el=$(d.tg);const c=el.classList.toggle('col');t.setAttribute('aria-expanded',String(!c));t.textContent=c?'+':'−'}
+  if(d.goto)jump(d.goto,true);
+  if(d.st!==undefined){selSt=+d.st;drawRota()}
+  if(d.run)run(d.run,false);
+  if(d.force)run(d.force,true);
+  if(d.now)run(d.now,false);
+  if(d.pause){cancel=true;toast('Vai parar ao fim da etapa atual.')}
+  if(d.del!==undefined){fila.splice(+d.del,1);drawSteps()}
+  if(d.imp)startImport();
+  if(d.impUndo!==undefined)undoImport();
+  if(d.ia){log('IA grátis: teste ok (resposta em 1,2 s)','g');toast('IA grátis respondeu em 1,2 s.')}
+  if(d.row!==undefined){LF.open=LF.open===+d.row?-1:+d.row;drawLista()}
+  if(t.id==='pgP'){LF.pg=Math.max(0,LF.pg-1);drawLista()}
+  if(t.id==='pgN'){LF.pg++;drawLista()}
+  if(t.id==='rqG')genReq();
+  if(t.id==='rqC'){genReq();const tx=$('rqP').textContent;const ok=()=>{$('rqOk').textContent='Copiado. Cole no Claude.';setTimeout(()=>$('rqOk').textContent='',3500)};const fb=()=>{const r=document.createRange();r.selectNodeContents($('rqP'));const s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand('copy');ok()}catch(_){$('rqOk').textContent='Selecione o texto e copie com Ctrl+C.'}};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(tx).then(ok,fb);else fb()}
+  if(d.pf!==undefined){const x=PF[+d.pf];x.done=!x.done;audit('Checklist: '+x.n+(x.done?' marcado como feito':' desmarcado'),null);drawPf();drawBoard()}
+  if(d.snz){const i=AG.findIndex(x=>x.id===d.snz);if(i>=0){const x=AG[i];AG.splice(i,1);audit('Adiado por 1 dia: '+x.t,null)}else toast('Este aviso volta sozinho enquanto o problema existir.');drawBoard()}
+  if(d.ag){const [id,j]=d.ag.split(':');const x=needs().find(z=>z.id===id);if(x){const a=x.acts[+j];
+    if(a[1]==='jump')jump(a[2],true);
+    else if(a[1]==='robot')focusRobot(a[2]);
+    else if(a[1]==='run')run(a[2],false);
+    else if(a[1]==='imp')startImport();
+    else if(a[1]==='done'){const k=AG.findIndex(z=>z.id===id);if(k>=0)AG.splice(k,1);audit(a[2],null);log(a[2],'g');toast(a[2]);drawBoard()}}}
+  if(d.sg){const [i,a]=d.sg.split(/:(.+)/);const g=SUG[+i];if(g){log('Sugestão "'+g.t+'": '+a,'g');audit('Sugestão: '+a+' ('+g.e+')',null);SUG.splice(+i,1);drawBoard()}}
+  if(d.always!==undefined){const g=SUG[+d.always];log('Este tipo de sugestão agora é aprovado sozinho. Desfaça no Registro.','g');audit('Aprovar sempre: '+g.t,null);SUG.splice(+d.always,1);drawBoard()}
+  if(d.sdr){const [a,i]=d.sdr.split(':');const x=SDR[+i];if(x){
+    if(a==='as'){const sel=document.querySelector(`[data-sel="${i}"]`);x.own=sel?sel.value:'Pedro';audit(x.emp+': assumido por '+x.own,()=>{x.own=null;drawSdr();drawBoard()})}
+    if(a==='dev'){audit(x.emp+': devolvido à fila',null);x.own=null}
+    if(a==='fim'){audit(x.emp+': ligação concluída',null);SDR.splice(+i,1)}
+    if(a==='no'){audit(x.emp+': sem interesse, saiu da fila',null);SDR.splice(+i,1)}
+    drawSdr();drawBoard()}}
+  if(d.pu!==undefined){const i=+d.pu;[PRIO[i-1],PRIO[i]]=[PRIO[i],PRIO[i-1]];audit('Ordem de preferência alterada',null);drawJ()}
+  if(d.pd!==undefined){const i=+d.pd;[PRIO[i+1],PRIO[i]]=[PRIO[i],PRIO[i+1]];audit('Ordem de preferência alterada',null);drawJ()}
+  if(d.dd!==undefined){audit('Descarte removido: '+DESC[+d.dd],null);DESC.splice(+d.dd,1);drawJ()}
+  if(t.id==='addDesc'){let v=$('novoDesc').value.trim().toLowerCase();if(v){if(!v.endsWith('@'))v+='@';DESC.push(v);$('novoDesc').value='';audit('Descartar também: '+v,null);drawJ()}}
+  if(d.un!==undefined){const a=AU[+d.un];if(a&&a.undo&&!a.done){a.undo();a.done=true;log('Desfeito: '+a.msg,'y');drawAu()}}
+  if(t.id==='add'){const n=$('nt').value.trim().replace(/[^a-z0-9-]/gi,'-').toLowerCase();if(!n||!$('np').value.trim()){toast('Informe o nome e cole o prompt.');return}fila.push(n);$('nt').value='';$('np').value='';drawSteps();log('Tarefa '+n+' colocada na fila.','g')}
+  if(t.id==='stopAll'){const ok=await ask('Parar tudo?','Desliga todos os robôs do PC e da nuvem. As travas de aprovação e de modo teste continuam como estão.',{danger:true,yes:'Parar tudo'});if(!ok)return;cancel=true;R.forEach(r=>{r.on=false});audit('Parar tudo: todos os robôs desligados',null);drawAll()}
+  if(t.id==='theme'){const cur=document.documentElement.dataset.theme||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');const nx=cur==='dark'?'light':'dark';document.documentElement.dataset.theme=nx;try{localStorage.setItem('rbr-tema',nx)}catch(_){}}
+});
+document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('g[data-st],a[role=button],tr[data-row]')){e.preventDefault();e.target.dispatchEvent(new MouseEvent('click',{bubbles:true}))}});
+
+document.addEventListener('change',async e=>{
+  const t=e.target,d=t.dataset||{};
+  if(d.rb){
+    const r=R.find(x=>x.id===d.rb),want=t.checked;
+    if(want&&r.pre&&!ready()){await ask('Ainda não dá para ligar',`Faltam ${pfTotal()-pfCount()} itens no checklist do primeiro envio. O robô fica travado até ficar tudo certo.`,{single:true,yes:'Ver checklist'});drawBoard();jump('preflight',true);return}
+    if(want&&r.dep&&!(R.find(x=>x.id==='envio').on&&R.find(x=>x.id==='leitura').on)){await ask('Ainda não dá para ligar','Responder sozinho depende de enviar e de ler respostas estarem ligados.',{single:true});drawBoard();return}
+    if(want&&r.id==='envio'){const ok=await ask('Ligar o envio de e-mails?',guardsOn()?'Com o modo teste ligado, todo e-mail vai só para os seus e-mails de teste. Com a aprovação ligada, nada sai sem você aprovar.':'Atenção: uma das travas está desligada. E-mails podem ir para empresas reais.',{danger:!guardsOn(),yes:'Ligar'});if(!ok){drawBoard();return}}
+    r.on=want;if(!want&&r.running)cancel=true;
+    audit(r.n+': '+(want?'ligado':'desligado'),()=>{r.on=!want;drawBoard()});
+    log(r.n+': '+(want?'ligado':'desligado')+(r.flag?' (chave '+r.flag+' = "'+(want?'sim':'nao')+'")':''),want?'g':'y');
+    drawBoard();
+  }
+  if(d.gd!==undefined){
+    const g=GUARD[+d.gd],want=t.checked;
+    if(!want){const ok=await ask('Desligar "'+g.n+'"?',g.off,{danger:true,yes:'Desligar'});if(!ok){drawPf();return}}
+    g.on=want;audit(g.n+': '+(want?'ligado':'desligado'),()=>{g.on=!want;drawPf();drawBoard()});drawPf();drawBoard();
+  }
+  if(d.rtime){const r=R.find(x=>x.id===d.rtime);const o=r.time;r.time=t.value;audit(r.n+': horário '+o+' para '+t.value,()=>{r.time=o;drawBoard()});drawBoard()}
+  if(d.rlim){const [id,i]=d.rlim.split(':');const r=R.find(x=>x.id===id);const o=r.lim[+i][1];r.lim[+i][1]=+t.value;audit(r.n+': '+r.lim[+i][0]+' de '+o+' para '+t.value,()=>{r.lim[+i][1]=o;drawBoard()});drawBoard()}
+  if(d.sv!==undefined){const s=S[+d.sv],o=s.on;s.on=t.checked;audit(s.n+': '+(s.on?'liberado':'bloqueado')+' para os robôs',()=>{s.on=o;drawS()});drawS()}
+  if(d.sl!==undefined){const s=S[+d.sl],o=s.lim;s.lim=+t.value;audit(s.n+': limite '+fmt(o)+' para '+fmt(s.lim),()=>{s.lim=o;drawS()});drawS()}
+  if(d.km!==undefined){const k=K[+d.km],o=k.meta;k.meta=+t.value||1;audit(k.n+': meta '+o+' para '+k.meta,()=>{k.meta=o;drawK()});drawK()}
+  if(d.rg!==undefined){const r=REG[+d.rg];if(r.keep&&!t.checked){const ok=await ask('Desligar a remoção automática?','Quem pedir para sair continuaria na lista até você tirar na mão. Isso pode gerar reclamação.',{danger:true,yes:'Desligar'});if(!ok){t.checked=true;return}}const o=!t.checked;r.on=t.checked;audit('Regra "'+r.n+'": '+(r.on?'ligada':'desligada'),()=>{r.on=o;drawJ()});drawJ()}
+  if(t.id==='impAuto'){LST.auto=t.checked;audit('Enviar sozinho depois da LISTAS: '+(t.checked?'ligado':'desligado'),()=>{LST.auto=!t.checked;drawLista()});drawLista()}
+  if(t.id==='fc'){LF.c=t.value;LF.pg=0;drawLista()}
+  if(t.id==='fv'){LF.v=t.value;LF.pg=0;drawLista()}
+  if(t.id==='fs'){LF.s=t.value;LF.pg=0;drawLista()}
+  if(t.id==='sdrMax'||t.id==='sdrCorte'){audit('SDR: '+(t.id==='sdrMax'?'máximo por dia':'nota mínima')+' agora '+t.value,null);drawSdr()}
+  if(t.id==='gmailLow'||t.id==='semContador')audit(t.id==='gmailLow'?'Gmail e Hotmail em prioridade menor: '+(t.checked?'sim':'não'):'Descartar e-mail do contador: '+(t.checked?'sim':'não'),null);
+});
+$('pctTop').addEventListener('input',drawProj);
+$('fq').addEventListener('input',e=>{LF.q=e.target.value;LF.pg=0;drawLista()});
+
+
+/* ---------- Processos no PC ---------- */
+let PROC=[
+ {id:'p1',n:'Agente RBR',a:'agente_rbr.py',dono:'Central',ini:'07:02',min:912,mem:'48 MB',ok:true,prot:true},
+ {id:'p2',n:'Garimpo de sites',a:'garimpo.py',dono:'Robô Garimpo',ini:'21:40',min:96,mem:'210 MB',ok:true},
+ {id:'p3',n:'IA grátis (FreeLLM)',a:'freellm.exe',dono:'Robô IA grátis',ini:'07:05',min:909,mem:'1,1 GB',ok:true},
+ {id:'p4',n:'Listas (enriquecimento)',a:'listas.bat',dono:'sem dono',ini:'ontem 23:10',min:1220,mem:'380 MB',ok:false},
+ {id:'p5',n:'Radar da madrugada',a:'radar_madrugada.py',dono:'sem dono',ini:'ontem 02:00',min:2150,mem:'95 MB',ok:false}
+];
+const dur=m=>m>=1440?Math.floor(m/1440)+' d '+Math.floor(m%1440/60)+' h':m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min';
+function drawProc(){
+  const orf=PROC.filter(p=>!p.ok).length;
+  $('ptab').innerHTML=`<div class="px hd2"><span>Processo</span><span class="c2">Começou</span><span class="c3">Rodando há</span><span class="c4">Quem iniciou</span><span></span></div>`+
+  (PROC.map(p=>`<div class="px"><div><div class="nm">${p.n}</div><div class="ds">${p.a} · ${p.mem}</div></div><span class="c2 num">${p.ini}</span><span class="c3 num ${p.min>1440?'old':''}">${dur(p.min)}</span><span class="c4"><span class="pill ${p.ok?'':'wn'}">${p.dono}</span></span>${p.prot?'<button class="sm" disabled title="O agente não encerra a si mesmo por aqui">Protegido</button>':`<button class="sm ${p.ok?'':'pri'}" data-kill="${p.id}">Encerrar</button>`}</div>`).join('')||'<div class="empty">Nada da RBR rodando no PC.</div>');
+  $('stt-procs').innerHTML=orf?`<span class="pill wn">${orf} sem dono</span>`:`<span class="pill">${PROC.length} rodando</span>`;
+}
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('[data-kill]');if(!b)return;const p=PROC.find(x=>x.id===b.dataset.kill);if(!p)return;
+  const ok=await ask('Encerrar '+p.n+'?',p.ok?'O robô para agora. Se ele estiver no meio de um lote, o lote fica pela metade e pode ser retomado depois.':'Este processo não foi iniciado pela Central. Ao encerrar, o trabalho em andamento dele é interrompido.',{danger:true,yes:'Encerrar'});
+  if(!ok)return;PROC=PROC.filter(x=>x.id!==p.id);audit('Processo encerrado no PC: '+p.n+' ('+p.a+')',null);drawProc()});
+function drawAll(){drawProc();drawK();drawLista();genReq();drawBoard();drawPf();drawRota();drawS();drawSdr();drawJ();drawAu();drawSteps();updStat()}
+try{const th=localStorage.getItem('rbr-tema');if(th)document.documentElement.dataset.theme=th}catch(_){}
+drawAll();
+// destaque da seção atual no menu
+const obs=new IntersectionObserver(es=>{es.forEach(en=>{if(en.isIntersecting){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.nv===en.target.id))}})},{rootMargin:'-120px 0px -65% 0px'});
+SEC.forEach(s=>{const el=$(s[0]);if(el)obs.observe(el)});
+</script>
+</body>
+</html>

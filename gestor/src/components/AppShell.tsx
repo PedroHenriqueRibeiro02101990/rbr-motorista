@@ -10,6 +10,7 @@ import AjudaFlutuante from '@rbr/shared/AjudaFlutuante'
 import { BiometriaToggle } from '@rbr/shared/biometria'
 import { podeVerNoMenu } from '../lib/menuPorPapel'
 import { useRadarAcesso } from '../radar/useRadarAcesso'
+import { useCentralAcesso } from '../central/useCentralAcesso'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 
@@ -154,11 +155,13 @@ export default function AppShell({
   // Radar: com PROSPECCAO_UI_LIBERADA = nao só o usuário do Pedro vê; com sim, todo gestor_rbr.
   const radar = useRadarAcesso(pessoa.papel)
   const prospeccaoLiberada = radar.visivel
+  // Central: só o administrador (Pedro), conferido no banco.
+  const central = useCentralAcesso(pessoa.papel)
   const enxuto = MENU_FUNCAO[pessoa.papel]
   const principal = enxuto ?? NAV_PRINCIPAL.filter((i) => podeVerNoMenu(pessoa.papel, i.to))
   const mais = enxuto
     ? []
-    : [...NAV_MAIS, ...(prospeccaoLiberada ? [{ to: '/radar', label: radar.emTeste ? 'Radar (em teste)' : 'Radar', end: false }] : [])].filter((i) => podeVerNoMenu(pessoa.papel, i.to))
+    : [...NAV_MAIS, ...(prospeccaoLiberada ? [{ to: '/radar', label: radar.emTeste ? 'Radar (em teste)' : 'Radar', end: false }] : []), ...(central.visivel ? [{ to: '/central', label: central.emTeste ? 'Central (em teste)' : 'Central', end: false }] : []), ...(central.fila ? [{ to: '/fila-sdr', label: central.emTeste ? 'Fila do SDR (em teste)' : 'Fila do SDR', end: false }] : [])].filter((i) => podeVerNoMenu(pessoa.papel, i.to))
   // "Mais" abre sozinho quando a tela atual é uma das que moram nele.
   const [maisAberto, setMaisAberto] = useState(false)
   const dentroDeMais = mais.some((i) => pathname.startsWith(i.to))
