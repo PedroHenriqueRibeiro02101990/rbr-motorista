@@ -234,7 +234,7 @@ export function montarCorpoContrato(p: PedidoContratoFrete) {
       ...(p.cepOrigem ? { BrazilianCEPSource: so(p.cepOrigem) } : {}),
       ...(p.cepDestino ? { BrazilianCEPDestination: so(p.cepDestino) } : {}),
       ...(p.distanciaKm != null ? { TravelledDistance: p.distanciaKm } : {}),
-      VPR: { Issue: p.vpr.issue, VPROneWay: p.vpr.oneWay, VPRSuspendedAxleNumber: String(p.vpr.suspendedAxles), VPRReturnSuspendedAxleNumber: String(p.vpr.returnSuspendedAxles) },
+      VPR: { Issue: p.vpr.issue, VPROneWay: p.vpr.oneWay, VPRSuspendedAxleNumber: p.vpr.suspendedAxles, VPRReturnSuspendedAxleNumber: p.vpr.returnSuspendedAxles },
       ShippingPayment: { ExpectedDeliveryDate: new Date(p.entrega.esperadaEm).toISOString(), ExpectedDeliveryLocationType: p.entrega.tipoLocal },
       Drivers: p.motoristas.map((m) => ({ Country: 'Brazil', NationalId: so(m.cpf), Main: m.principal })),
       Documents: p.documentos.map((d) => ({ BranchCode: d.branchCode, DocumentType: d.tipo, Series: d.serie, Number: d.numero, ...(d.chave ? { EletronicKey: so(d.chave) } : {}) })),

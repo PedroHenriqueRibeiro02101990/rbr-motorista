@@ -6,10 +6,17 @@ import type { PedidoContratoFrete, TipoDocumentoFrete } from './repomFreteClient
 export const PREFIXO_IDENTIFIER = 'RBRQA'
 export const FRETE_TOTAL = 3500 // acima do piso da ANTT (no CPN1377: R$ 1.000 rejeitada, R$ 3.500 aceita)
 export const ADIANTAMENTO = 10
-export const SEST_PF = 10.5 // 1,5% de 20% do frete (3.500 x 20% = 700; 1,5% = 10,50): suposição de cálculo; a Repom diz se a base está certa
+// Impostos do prestador PESSOA FÍSICA (valores FICTÍCIOS de QA; base = 20% do frete = 700,00). Guia 3.0 (cap. 35/36): Taxes é obrigatório quando o cliente calcula os impostos e o exemplo do guia manda os QUATRO
+// (IRRF=1, SEST=2, SENAT=3, INSS=34); o QA (25/11/2026) recusou o contrato com só o SEST: '"3-SENAT" não informado. Verifique o parâmetro "SENAT"'.
+export const SEST_PF = 10.5 // 1,5% de 700
+export const SENAT_PF = 7 // 1,0% de 700
+export const INSS_PF = 77 // 11% de 700
+export const IRRF_PF = 0 // base abaixo da faixa de isenção
+export const IMPOSTOS_PF = [{ tipo: 'IRRF', valor: IRRF_PF }, { tipo: 'SEST', valor: SEST_PF }, { tipo: 'SENAT', valor: SENAT_PF }, { tipo: 'INSS', valor: INSS_PF }] as const
 export const PISO = { distanceTravel: 300, emptyReturn: true, highPerformanceTransport: false, veichleComposition: false } as const
 export const FINAIS_MODELO = { prestadorCpf: '4687', motoristaCpf: '2853', placa: 'BIS4025' } as const
-export const MAX_TENTATIVAS_EMISSAO = 2
+/** 4 (era 2): +2 emissões autorizadas pelo Pedro em 25/11/2026 porque as 2 tentativas da rodada 2 (rota 148993) foram gastas antes de o corpo estar completo (faltavam SENAT, IRRF e INSS em Taxes); o corpo foi auditado contra o guia 3.0 e o Swagger v3. Voltar a 2 no fim. */
+export const MAX_TENTATIVAS_EMISSAO = 4
 /** IBGE da rota de teste de 17/11 (a consulta da rota por código não devolve IBGE: o Swagger só traz Name/Distance/RoundTrip). Exigidos pela Repom na emissão (725). */
 export const IBGE_ORIGEM = '3550308' // São Paulo/SP
 export const IBGE_DESTINO = '3304557' // Rio de Janeiro/RJ
@@ -194,7 +201,7 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
       documentos: [{ tipo: 'CTE', serie: k.serie, numero: k.numero, chave: k.chave, branchCode: m.documento.branchCode }], // sem CheckDocument e sem DeliveryLocationType
       placas: m.placas,
       destinatario: m.destinatario,
-      impostos: [{ tipo: 'SEST', valor: SEST_PF }], // prestador pessoa física
+      impostos: IMPOSTOS_PF.map((t) => ({ tipo: t.tipo, valor: t.valor })), // prestador pessoa física: IRRF, SEST, SENAT e INSS (os quatro, como no exemplo do guia)
       pisoFrete: { ...PISO, distanceTravel: distancia },
     },
   }

@@ -103,7 +103,7 @@ test('contrato: validação, corpo (array) com os nomes do guia e viagem digital
   assert.equal(c.CardNumber, 0)
   assert.equal(c.HiredNationalId, '16545346091')
   assert.deepEqual(c.Vehicles, [{ Country: 'Brazil', LicensePlate: 'LXL6808' }])
-  assert.equal((c.VPR as Record<string, unknown>).VPRSuspendedAxleNumber, '0')
+  assert.equal((c.VPR as Record<string, unknown>).VPRSuspendedAxleNumber, 0)
   assert.equal('CIOTShippingType' in c, false)
   const tac = montarCorpoContrato({ ...contrato, ciotTacAgregado: { contratoExistenteId: 0 } })[0]! as Record<string, unknown>
   assert.equal(tac.CIOTShippingType, 3)

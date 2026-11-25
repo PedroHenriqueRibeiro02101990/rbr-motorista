@@ -60,13 +60,15 @@ test('pedido: frete 3.500, adiantamento 10, SEST, NCM de 4, CardNumber 0, sem Ch
   if (!('modelo' in lm)) throw new Error('modelo')
   const { pedido } = montarPedidoAdiantamento(lm.modelo, AGORA, 5, () => 0.5)
   assert.equal(pedido.totalFreightValue, FRETE_TOTAL); assert.equal(pedido.totalFreightValue, 3500); assert.equal(pedido.advanceMoneyValue, ADIANTAMENTO); assert.equal(pedido.advanceMoneyValue, 10)
-  assert.equal(pedido.cardNumber, 0); assert.equal(pedido.ncm.length, 4); assert.deepEqual(pedido.impostos, [{ tipo: 'SEST', valor: 10.5 }])
+  assert.equal(pedido.cardNumber, 0); assert.equal(pedido.ncm.length, 4); assert.deepEqual(pedido.impostos, [{ tipo: 'IRRF', valor: 0 }, { tipo: 'SEST', valor: 10.5 }, { tipo: 'SENAT', valor: 7 }, { tipo: 'INSS', valor: 77 }])
   assert.match(pedido.identifier, /^RBRQA/); assert.equal(pedido.hiredNationalId, '11122224687')
   assert.equal(validarContratoFrete(pedido as PedidoContratoFrete), null)
   const corpo = montarCorpoContrato(pedido)[0] as Record<string, unknown>
   assert.deepEqual(Object.keys(corpo.MinimumFreightCost as object), ['DistanceTravel', 'EmptyReturn', 'HighPerformanceTransport', 'VeichleComposition'])
   const d0 = (corpo.Documents as Record<string, unknown>[])[0]
   assert.equal('CheckDocument' in d0, false); assert.equal('DeliveryLocationType' in d0, false); assert.equal(chaveValida(String(d0.EletronicKey)), true)
+  assert.deepEqual(corpo.Taxes, [{ Type: 'IRRF', Value: 0 }, { Type: 'SEST', Value: 10.5 }, { Type: 'SENAT', Value: 7 }, { Type: 'INSS', Value: 77 }])
+  assert.deepEqual(corpo.VPR, { Issue: false, VPROneWay: true, VPRSuspendedAxleNumber: 0, VPRReturnSuspendedAxleNumber: 0 })
   assert.equal(corpo.AdvanceMoneyValue, 10); assert.equal(corpo.LoadBrazilianANTTCodeType, 5)
 })
 
@@ -158,14 +160,14 @@ test('emitir: falha que NÃO é saldo (documento, imposto, piso, veículo) expli
 
 test('emitir: guardas — nome, máximo de 2 tentativas, contrato já emitido, modelo que não confere, sem "carga geral", resultado sem OperationKey', async () => {
   assert.equal((await executarQaTeste({ acao: 'emitir_adiantamento' }, montar().deps)).status, 400)
-  for (const hist of [['erro', 'erro'], ['ok'], ['erro', 'ok']]) { const m = montar({ hist }); assert.equal((await executarQaTeste(EMITIR, m.deps)).corpo.parou, true); assert.ok(!m.chamadas.includes('emitir')) }
+  for (const hist of [['erro', 'erro', 'erro', 'erro'], ['ok'], ['erro', 'ok']]) { const m = montar({ hist }); assert.equal((await executarQaTeste(EMITIR, m.deps)).corpo.parou, true); assert.ok(!m.chamadas.includes('emitir')) }
   const outro = montar({ modelo: { ...MODELO_GET, Vehicles: [{ LicensePlate: 'ZZZ9999' }] } })
   assert.equal((await executarQaTeste(EMITIR, outro.deps)).corpo.parou, true); assert.ok(!outro.chamadas.includes('emitir'))
   const semGeral = montar({ tipos: [{ CodeType: 1, Description: 'Granel' }] })
   assert.equal((await executarQaTeste(EMITIR, semGeral.deps)).corpo.parou, true); assert.ok(!semGeral.chamadas.includes('emitir'))
   const semChave = montar({ emitir: ok({ operationKey: null }) })
   assert.equal((await executarQaTeste(EMITIR, semChave.deps)).corpo.parou, true)
-  assert.equal(MAX_TENTATIVAS_EMISSAO, 2)
+  assert.equal(MAX_TENTATIVAS_EMISSAO, 4)
 })
 
 test('emitir: ainda em processamento depois de 8 consultas -> para e manda conferir pelo identificador (não conta como resposta sobre saldo)', async () => {
@@ -260,10 +262,10 @@ test('criar_rota: recusa da Repom para e mostra o corpo do erro (corpoErro) sem 
   assert.equal(r2.corpo.parou, true); assert.match(JSON.stringify(r2.corpo), /Origem inválida/)
 })
 
-test('emitir (tentativa 2, a última): com 1 tentativa anterior com erro de validação, ainda emite; com 2 anteriores, recusa', async () => {
-  const ok2 = montar({ hist: ['erro'] })
+test('emitir (limite 4): com 3 tentativas anteriores com erro, ainda emite; com 4 anteriores, recusa', async () => {
+  const ok2 = montar({ hist: ['erro', 'erro', 'erro'] })
   assert.equal((await executarQaTeste(EMITIR, ok2.deps)).status, 200)
-  const nao = montar({ hist: ['erro', 'erro'] })
+  const nao = montar({ hist: ['erro', 'erro', 'erro', 'erro'] })
   assert.equal((await executarQaTeste(EMITIR, nao.deps)).corpo.parou, true); assert.ok(!nao.chamadas.includes('emitir'))
 })
 
