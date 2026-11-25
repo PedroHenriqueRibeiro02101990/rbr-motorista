@@ -1,8 +1,8 @@
 // Regras da função temporária repom-qa-teste (sem Deno, sem rede; testes em repomQaTeste.test.ts).
 // Só QA, só o contrato 2166947 (RBRC4943103), ações FIXAS (token, consultar_contrato, sequencia), UMA tentativa por ação de dinheiro,
 // para no primeiro problema. Só funciona com o segredo REPOM_QA_TESTE_LIBERADO=sim. A resposta nunca leva credencial nem corpo bruto.
-import { lerRotaCriada, situacaoProcessamento, type ClienteRepomFrete, type ResultadoFrete } from './repomFreteClient.ts'
-import { ADIANTAMENTO, FILIAL_ROTA, FINAIS_MODELO, FRETE_TOTAL, IBGE_DESTINO, IBGE_ORIGEM, MAX_TENTATIVAS_EMISSAO, MAX_TENTATIVAS_ROTA, PREFIXO_IDENTIFIER, SEST_PF, VARIANTES_IBGE_ROTA, classificarFalhaEmissao, eixosDoVeiculo, novoTraceIdentifier, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
+import { corpoErroSeguro, lerRotaCriada, situacaoProcessamento, type ClienteRepomFrete, type ResultadoFrete } from './repomFreteClient.ts'
+import { ADIANTAMENTO, CEP_DESTINO, CEP_ORIGEM, FILIAL_ROTA, FINAIS_MODELO, FRETE_TOTAL, IBGE_DESTINO, IBGE_ORIGEM, MAX_TENTATIVAS_EMISSAO, MAX_TENTATIVAS_ROTA, PREFIXO_IDENTIFIER, SEST_PF, VARIANTES_IBGE_ROTA, classificarFalhaEmissao, eixosDoVeiculo, novoTraceIdentifier, conferirModelo, escolherCargaGeral, lerModeloContrato, lerTiposCarga, montarPedidoAdiantamento } from './repomQaAdiantamento.ts'
 
 export const BASE_QA_FIXA = 'https://qa.repom.com.br/Repom.Frete.Webapi'
 export const TOKEN_QA_FIXO = `${BASE_QA_FIXA}/Token`
@@ -29,7 +29,7 @@ export function montarCombos(achados: Combo[]): Combo[] {
   }
   return lista.slice(0, LIMITE_RODADA)
 }
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'criar_rota', 'consultar_rota', 'emitir_adiantamento', 'cancelar_adiantamento'] as const
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'criar_rota', 'consultar_rota', 'emitir_adiantamento', 'cancelar_adiantamento', 'ler_rota_ibge', 'consultar_emissao'] as const
 /** Janela fixa da consulta de saldo/extrato (só leitura). */
 export const SALDO_INICIO = '2026-11-01'
 
@@ -227,16 +227,22 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     }
     return fim(200, { parou: true, encontrada: false, identificadores: tids, motivo: 'A Repom não devolveu rota para nenhum dos identificadores tentados.' })
   }
+  if (acao === 'ler_rota_ibge') {
+    // SÓ LEITURA (rodada 2, autorizada pelo Pedro em 24/11/2026): GET /Route/ByIBGE SP 3550308 -> RJ 3304557, 5 eixos, IBGE completo; não gasta tentativa
+    const r = await passo('rota_byibge', { origem: IBGE_ORIGEM, destino: IBGE_DESTINO, eixos: 5 }, () => d.frete.consultarRotaPorIbgeCompleto(IBGE_ORIGEM, IBGE_DESTINO, 5), (dados) => ({ resposta: resumirResposta(dados) }))
+    return fim(r.e.ok ? 200 : 404, { ok: r.e.ok })
+  }
   if (acao === 'criar_rota') {
     const nomeR = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
     if (nomeR.length < 3) return parar('A criação da rota exige confirmacao.nome.', 400)
     const hist = await d.historico('criar-rota')
     if (hist.includes('ok') || (await d.rotaCriada())) return parar('Já existe uma rota criada por este teste; não crio outra.')
     if (hist.length >= MAX_TENTATIVAS_ROTA) return parar(`Já foram ${hist.length} tentativas de criar a rota (máximo ${MAX_TENTATIVAS_ROTA}); não repito.`)
-    const formato = VARIANTES_IBGE_ROTA[hist.length]!
+    const formato = VARIANTES_IBGE_ROTA[hist.length]
+    if (!formato) return parar(`Já usei os ${VARIANTES_IBGE_ROTA.length} corpos diferentes de criação de rota desta rodada; não repito um corpo igual.`)
     const traceId = novoTraceIdentifier(d.agora())
-    const idLinha = await d.registrar('qa-teste-criar-rota', { tentativa: hist.length + 1, max: MAX_TENTATIVAS_ROTA, formato_ibge: formato, filial: FILIAL_ROTA, origem: IBGE_ORIGEM, destino: IBGE_DESTINO, ida_e_volta: true, traceIdentifier: traceId, confirmado_por: nomeR })
-    const cr = await d.frete.rotaAutomatica({ filial: FILIAL_ROTA, ibgeOrigem: IBGE_ORIGEM, ibgeDestino: IBGE_DESTINO, idaVolta: true, identificador: traceId, formatoIbge: formato })
+    const idLinha = await d.registrar('qa-teste-criar-rota', { tentativa: hist.length + 1, max: MAX_TENTATIVAS_ROTA, formato_ibge: formato, filial: FILIAL_ROTA, origem: IBGE_ORIGEM, destino: IBGE_DESTINO, cep_origem: CEP_ORIGEM, cep_destino: CEP_DESTINO, ida_e_volta: true, traceIdentifier: traceId, confirmado_por: nomeR })
+    const cr = await d.frete.rotaAutomatica({ filial: FILIAL_ROTA, ibgeOrigem: IBGE_ORIGEM, ibgeDestino: IBGE_DESTINO, idaVolta: true, identificador: traceId, formatoIbge: formato, cepOrigem: CEP_ORIGEM, cepDestino: CEP_DESTINO })
     const base = { tentativa: hist.length + 1, formato_ibge: formato, traceIdentifier: traceId }
     if (!cr.ok) {
       const e = etapaDe('criar_rota', cr, base)
@@ -303,8 +309,9 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     }
     const chave = em.dados.operationKey
     if (!chave) {
-      await fecha('erro', em.http, { resultado: 'sem_operation_key' }, 'A Repom aceitou o pedido mas não devolveu a chave da operação.')
-      return fim(502, { parou: true, identifier: pedido.identifier, motivo: 'A Repom aceitou o pedido mas não devolveu a OperationKey; confira o contrato pelo identificador antes de qualquer nova tentativa.' })
+      const brutoSeguro = corpoErroSeguro(em.bruto) // corpo bruto sem credenciais/documentos/sequências longas, para entender o formato desconhecido
+      await fecha('erro', em.http, { resultado: 'sem_operation_key', corpo_201: brutoSeguro }, 'A Repom aceitou o pedido mas não devolveu a chave da operação.')
+      return fim(502, { parou: true, identifier: pedido.identifier, corpo_201: brutoSeguro, motivo: 'A Repom aceitou o pedido mas não devolveu a OperationKey; confira o contrato pelo identificador antes de qualquer nova tentativa.' })
     }
     // a emissão é assíncrona: consultar o processamento (até 8 vezes, 4 s entre elas)
     let final: 'emitido' | 'erro' | 'processando' = 'processando'
@@ -338,6 +345,15 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     await fecha('ok', 200, { resultado: 'emitido_com_adiantamento', shippingId, ciot, status: statusContrato, adiantamento_no_contrato: adiant }, null)
     etapas.push({ etapa: 'emitir', ok: true, http: 200, detalhe: { identifier: pedido.identifier, shippingId, ciot, status: statusContrato, adiantamento_no_contrato: adiant } })
     return fim(200, { identifier: pedido.identifier, resultado: 'emitido_com_adiantamento', credito_chegou: true, shippingId, ciot, status: statusContrato })
+  }
+  if (acao === 'consultar_emissao') {
+    // SÓ LEITURA (rodada 2): status do processamento e do contrato da ÚLTIMA emissão do teste, por identificador; não gasta tentativa
+    const ident = await d.ultimaEmissao()
+    if (!ident || !ident.startsWith(PREFIXO_IDENTIFIER)) return parar('Não há emissão do teste para consultar.')
+    const st = await passo('status_emissao', { identifier: ident }, () => d.frete.consultarStatusPorIdentificador(ident), (itens) => ({ itens: itens.map((x) => ({ status: x.status, shippingId: x.shippingId, erros: x.erros.map(curto).slice(0, 5), situacao: situacaoProcessamento(x) })) }))
+    const ct = await passo('contrato_emissao', { identifier: ident }, () => d.frete.consultarContratoPorIdentificador(ident), (dados) => { const o = raiz(dados); return { status: lerContratoQa(dados)?.status ?? null, shippingId: o ? (Number(primeiro(o, ['ShippingId'])) || null) : null, ciot: o ? (primeiro(o, ['CIOT']) ?? null) : null, adiantamento: o ? (primeiro(o, ['AdvanceMoneyValue']) ?? null) : null } })
+    const erros = st.r.ok ? st.r.dados.flatMap((x) => x.erros) : []
+    return fim(200, { identifier: ident, ok: st.e.ok || ct.e.ok, ...(erros.length ? { resultado: classificarFalhaEmissao(erros) } : {}) })
   }
   if (acao === 'cancelar_adiantamento') {
     const nomeC = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()

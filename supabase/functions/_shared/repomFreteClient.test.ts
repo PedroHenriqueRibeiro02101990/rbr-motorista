@@ -238,3 +238,27 @@ test('corpo do erro não reconhecido é guardado sem credenciais, sem documentos
 test('erro aninhado {Response:{StatusCode,Message}} é lido', () => {
   assert.deepEqual(lerErroFrete({ Response: { StatusCode: 404, Message: 'Route not found' } }), { mensagem: 'Route not found', codigo: null })
 })
+
+test('rodada 2: rota automatica so com CEP, IBGE 7 + CEP, e leitura /Route/ByIBGE com IBGE completo e 5 eixos', async () => {
+  const m = mock((c) => (ehToken(c) ? ok({ access_token: 't' }) : ok({ Status: 1, RouteCode: '1', TraceCodeRepom: '2' })))
+  const c = criarRepomFreteClient(cfg, m.fetchFn)
+  const base = { filial: '1', ibgeOrigem: '3550308', ibgeDestino: '3304557', idaVolta: true, identificador: 'RQ25000001', cepOrigem: '01001000', cepDestino: '20010000' }
+  await c.rotaAutomatica({ ...base, formatoIbge: 'cep' })
+  assert.deepEqual(JSON.parse(m.chamadas.filter((y) => !ehToken(y)).at(-1)!.init.body!), { BranchCode: '1', OriginPostalCode: '01001000', DestinyPostalCode: '20010000', RoundTrip: true, TraceIdentifier: 'RQ25000001' })
+  await c.rotaAutomatica({ ...base, formatoIbge: 'sete_cep' })
+  assert.deepEqual(JSON.parse(m.chamadas.filter((y) => !ehToken(y)).at(-1)!.init.body!), { BranchCode: '1', OriginIBGECode: '3550308', DestinyIBGECode: '3304557', OriginPostalCode: '01001000', DestinyPostalCode: '20010000', RoundTrip: true, TraceIdentifier: 'RQ25000001' })
+  assert.equal((await c.rotaAutomatica({ ...base, formatoIbge: 'cep', cepDestino: '123' })).ok, false)
+  await c.consultarRotaPorIbgeCompleto('3550308', '3304557', 5)
+  assert.match(m.chamadas.filter((y) => !ehToken(y)).at(-1)!.url, /\/Route\/ByIBGE\/3550308\/3304557\/5/)
+  assert.equal((await c.consultarRotaPorIbgeCompleto('50308', '3304557', 5)).ok, false)
+})
+
+test('lerOperationKey: reconhece a chave na Message, em campo OperationKey, em string pura ou em qualquer lugar do corpo', () => {
+  const u = '1c3e55cd-7436-44cc-8222-8e5bb887dd54'
+  assert.equal(lerOperationKey({ Message: `OperationKey: ${u}` }), u)
+  assert.equal(lerOperationKey({ OperationKey: u }), u)
+  assert.equal(lerOperationKey({ Data: { operationKey: u } }), u)
+  assert.equal(lerOperationKey(u), u)
+  assert.equal(lerOperationKey([{ Message: `ok ${u}` }]), u)
+  assert.equal(lerOperationKey({ Message: 'sem chave' }), null)
+})

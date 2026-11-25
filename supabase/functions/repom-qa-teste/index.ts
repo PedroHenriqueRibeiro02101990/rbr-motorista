@@ -7,6 +7,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ambienteRepom } from "../_shared/repomClient.ts";
 import { criarRepomFreteClient } from "../_shared/repomFreteClient.ts";
 import { configFreteDoAmbiente } from "../_shared/repomFreteConfig.ts";
+import { RODADA_ROTA_INICIO } from "../_shared/repomQaAdiantamento.ts";
 import { BASE_QA_FIXA, TOKEN_QA_FIXO, chaveLigada, executarQaTeste } from "../_shared/repomQaTeste.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
@@ -52,7 +53,10 @@ Deno.serve(async (req) => {
       hoje: () => new Date().toISOString().slice(0, 10),
       amanha: () => new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10), // dia seguinte (AAAA-MM-DD, formato do guia); a Repom recusa a data de hoje
       async historico(acao) {
-        const { data } = await admin.from("repom_requisicoes").select("status").eq("acao", `qa-teste-${acao}`);
+        // Rodada 2 (24/11/2026): as tentativas de criar rota feitas antes de RODADA_ROTA_INICIO (22:23 e 22:24) não contam, por autorização do Pedro.
+        let q = admin.from("repom_requisicoes").select("status").eq("acao", `qa-teste-${acao}`);
+        if (acao === "criar-rota") q = q.gte("criado_em", RODADA_ROTA_INICIO);
+        const { data } = await q;
         return (data ?? []).map((x: { status: string }) => x.status);
       },
       async registrar(acao, request) {

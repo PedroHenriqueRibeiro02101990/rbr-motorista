@@ -283,8 +283,24 @@ export function lerRotaCriada(bruto: unknown): { routeCode: number; traceCode: n
 }
 
 export function lerOperationKey(bruto: unknown): string | null {
+  const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
   const m = String((bruto as { Message?: unknown } | null)?.Message ?? '').match(/OperationKey:\s*([0-9a-f-]{36})/i)
-  return m ? m[1]! : null
+  if (m) return m[1]!
+  // rodada 2 (24/11/2026): a Repom devolveu 201 sem a chave no formato "Message: OperationKey: <uuid>". Procura a chave em qualquer campo (OperationKey/operationKey/Data/...) e, por último, o 1º UUID do corpo.
+  const rec = (x: unknown, n: number): string | null => {
+    if (n > 5 || x == null) return null
+    if (typeof x === 'string') return /^\s*[0-9a-f-]{36}\s*$/i.test(x) && UUID.test(x) ? x.trim() : null
+    if (typeof x !== 'object') return null
+    if (Array.isArray(x)) { for (const y of x) { const r = rec(y, n + 1); if (r) return r } return null }
+    const o = x as Record<string, unknown>
+    for (const k of Object.keys(o)) if (/operation.?key/i.test(k) && typeof o[k] === 'string' && UUID.test(String(o[k]))) return String(o[k]).match(UUID)![0]
+    for (const v of Object.values(o)) { const r = rec(v, n + 1); if (r) return r }
+    return null
+  }
+  const achado = rec(bruto, 0)
+  if (achado) return achado
+  const t = typeof bruto === 'string' ? bruto : JSON.stringify(bruto ?? null)
+  return t.match(UUID)?.[0] ?? null
 }
 export function lerStatusProcessamento(bruto: unknown): StatusProcessamento[] {
   const r = ((bruto as { Result?: unknown } | null)?.Result ?? null) as Record<string, unknown> | null
@@ -326,7 +342,9 @@ export interface ClienteRepomFrete {
   bloquearVeiculo(placa: string, bloquear: boolean, motivo: string): Promise<ResultadoFrete<unknown>>
   tiposDeCarga(): Promise<ResultadoFrete<unknown>>
   // rota
-  rotaAutomatica(p: { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador?: string; paradasIbge?: string[]; /** 'sem2' (padrão, texto do guia: sem os 2 primeiros dígitos e sem zeros, número) ou 'sete' (7 dígitos completos, texto; Swagger: string só com números) */ formatoIbge?: 'sem2' | 'sete' }): Promise<ResultadoFrete<unknown>>
+  rotaAutomatica(p: { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador?: string; paradasIbge?: string[]; /** 'sem2' (padrão, texto do guia: sem os 2 primeiros dígitos e sem zeros, número), 'sete' (7 dígitos completos, texto; Swagger: string só com números), 'cep' (SÓ OriginPostalCode/DestinyPostalCode, sem IBGE: o guia cap. 26 manda UM conjunto de dados por ponto) ou 'sete_cep' (IBGE de 7 dígitos + CEP) */ formatoIbge?: 'sem2' | 'sete' | 'cep' | 'sete_cep'; cepOrigem?: string; cepDestino?: string }): Promise<ResultadoFrete<unknown>>
+  /** Leitura GET /Route/ByIBGE/{origem}/{destino}/{eixos} com o IBGE COMPLETO de 7 dígitos (Swagger v3: inteiros; a recusa 'IBGE 50308 não encontrada' mostrou que a Repom procura o IBGE completo). */
+  consultarRotaPorIbgeCompleto(ibgeOrigem: string, ibgeDestino: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorIbge(ibgeOrigem: string, ibgeDestino: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorCep(cep: string, eixos: number): Promise<ResultadoFrete<unknown>>
   consultarRotaPorCodigo(percurso: number, roteiro: number, eixos: number): Promise<ResultadoFrete<unknown>>
@@ -506,16 +524,22 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     tiposDeCarga: () => rodar('GET', '/AnttTypes/LoadTypes'),
 
     rotaAutomatica(p) {
-      if (!p.filial.trim() || !so(p.ibgeOrigem) || !so(p.ibgeDestino)) return invalido('Informe filial, origem e destino.')
+      if (!p.filial.trim()) return invalido('Informe a filial.')
       if ((p.paradasIbge ?? []).length > 23) return invalido('No máximo 23 paradas.')
+      const comCep = p.formatoIbge === 'cep' || p.formatoIbge === 'sete_cep'
+      if (comCep && (so(p.cepOrigem ?? '').length !== 8 || so(p.cepDestino ?? '').length !== 8)) return invalido('CEP de origem e destino com 8 dígitos esperado.')
+      if (p.formatoIbge !== 'cep' && (!so(p.ibgeOrigem) || !so(p.ibgeDestino))) return invalido('Informe filial, origem e destino.')
       // IBGE sem os 2 primeiros dígitos e sem zeros à esquerda (mesma regra da VPR)
       const tira = (i: string) => so(i).slice(2).replace(/^0+/, '')
-      const sete = p.formatoIbge === 'sete'
+      const sete = p.formatoIbge === 'sete' || p.formatoIbge === 'sete_cep'
       if (sete && ![p.ibgeOrigem, p.ibgeDestino, ...(p.paradasIbge ?? [])].every((i) => so(i).length === 7)) return invalido('IBGE de 7 dígitos esperado.')
       const f = (i: string) => (sete ? so(i) : Number(tira(i)))
-      const corpo = { BranchCode: p.filial, OriginIBGECode: f(p.ibgeOrigem), DestinyIBGECode: f(p.ibgeDestino), RoundTrip: p.idaVolta, ...(p.identificador ? { TraceIdentifier: p.identificador } : {}), ...(p.paradasIbge?.length ? { RouteStopIBGE: p.paradasIbge.map((i) => f(i)) } : {}) }
+      const ibge = p.formatoIbge === 'cep' ? {} : { OriginIBGECode: f(p.ibgeOrigem), DestinyIBGECode: f(p.ibgeDestino) }
+      const cep = comCep ? { OriginPostalCode: so(p.cepOrigem ?? ''), DestinyPostalCode: so(p.cepDestino ?? '') } : {}
+      const corpo = { BranchCode: p.filial, ...ibge, ...cep, RoundTrip: p.idaVolta, ...(p.identificador ? { TraceIdentifier: p.identificador } : {}), ...(p.paradasIbge?.length ? { RouteStopIBGE: p.paradasIbge.map((i) => f(i)) } : {}) }
       return rodar('POST', '/RouteRequest/RouteRequestAutomatic', { corpo, versao: '2.4' })
     },
+    consultarRotaPorIbgeCompleto: (o, d, e) => (so(o).length === 7 && so(d).length === 7 ? rodar('GET', `/Route/ByIBGE/${seg(so(o))}/${seg(so(d))}/${seg(e)}`) : invalido('IBGE de 7 dígitos esperado.')),
     consultarRotaPorIbge: (o, d, e) => rodar('GET', `/Route/byibge/${seg(so(o).slice(2).replace(/^0+/, ''))}/${seg(so(d).slice(2).replace(/^0+/, ''))}/${seg(e)}`),
     consultarRotaPorCep: (cep, e) => rodar('GET', `/Route/ByCEP/${seg(so(cep))}/${seg(e)}`),
     consultarRotaPorCodigo: (percurso, roteiro, e) => rodar('GET', `/Route/byroutecode/${seg(percurso)}/${seg(roteiro)}/${seg(e)}`),
@@ -536,7 +560,7 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     consultarStatusPorChave: (k) => (k.trim() ? rodar('GET', `/Shipping/StatusProcessing/ByOperationKey/${seg(k)}`, {}, lerStatusProcessamento) : invalido('Informe a chave da operação.')),
     consultarContratoPorViagem: (id) => (idViagem(id) ? rodar('GET', `/Shipping/ByShipping/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     consultarContratoPorIdentificador: (id) => rodar('GET', `/Shipping/ByIdentifier/${seg(id)}`),
-    consultarStatusPorIdentificador: (id) => rodar('GET', `/StatusProcessing/ByIdentifier/${seg(id)}`, {}, lerStatusProcessamento),
+    consultarStatusPorIdentificador: (id) => rodar('GET', `/Shipping/StatusProcessing/ByIdentifier/${seg(id)}`, {}, lerStatusProcessamento),
     cancelarContrato: (id) => (idViagem(id) ? rodar('PATCH', `/Shipping/Cancel/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     interromperContrato: (id) => (idViagem(id) ? rodar('PATCH', `/Shipping/Interruption/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     bloquearContrato: (id, b, m) => (idViagem(id) ? rodar('PATCH', `/Shipping/lockUnlock/${idViagem(id)}`, { corpo: bloqueio(b, m) }) : invalido('Código da viagem inválido.')),

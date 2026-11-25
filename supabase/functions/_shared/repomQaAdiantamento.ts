@@ -18,14 +18,18 @@ export const CEP_ORIGEM = '01001000'
 export const CEP_DESTINO = '20010000'
 /** Rota PRÓPRIA do cliente 9520, criada em QA por POST /RouteRequest/RouteRequestAutomatic (a de 17/11, percurso 1 / roteiro 143217, era do cliente 9501/VPR). */
 export const FILIAL_ROTA = '1'
-export const MAX_TENTATIVAS_ROTA = 2
+/** RODADA 2 de 24/11/2026 (autorizada pelo Pedro; vale as 6 tentativas de escrita da rodada, rota + contrato). O limite voltou ao valor antigo (2) no fim da rodada: ver o commit. As 2 tentativas das 22:23 e 22:24 NÃO contam (veja RODADA_ROTA_INICIO). */
+export const MAX_TENTATIVAS_ROTA = 2 // voltou de 6 (rodada 2 de 24/11/2026, autorizada pelo Pedro) para 2 no fim da rodada
+/** Só linhas de qa-teste-criar-rota criadas a partir deste instante contam para o limite (rodada nova). */
+export const RODADA_ROTA_INICIO = '2026-11-24T23:00:00Z'
 /** Swagger: TraceIdentifier tem MaximumLength(10). "RQ" + ddHHmmss (UTC) = 10 caracteres, único por segundo. */
 export function novoTraceIdentifier(agora: Date): string {
   const p2 = (n: number) => String(n).padStart(2, '0')
   return `RQ${p2(agora.getUTCDate())}${p2(agora.getUTCHours())}${p2(agora.getUTCMinutes())}${p2(agora.getUTCSeconds())}`
 }
 /** 'sete' = 7 dígitos (exemplo do guia cap. 40 e Swagger); 'sem2' = texto do guia (sem os 2 primeiros dígitos). A 1ª tentativa usa 'sete'; a 2ª, a outra. */
-export const VARIANTES_IBGE_ROTA = ['sete', 'sem2'] as const
+/** Rodada 2: corpos DIFERENTES entre si e dos de 22:23 ('sete') e 22:24 ('sem2'): 1) só CEP (guia cap. 26: um conjunto por ponto), 2) IBGE de 7 dígitos + CEP, 3) só IBGE de 7 dígitos de novo (a de 22:23 deu timeout sem resposta). */
+export const VARIANTES_IBGE_ROTA = ['cep', 'sete_cep', 'sete'] as const
 /** Eixos do veículo na consulta da rota: lê VehicleAxles (texto como "5" ou "5 eixos"); sem leitura, 5 (como na leitura de 24/11). */
 export function eixosDoVeiculo(dados: unknown): number {
   const o = Array.isArray(dados) ? dados[0] : dados
@@ -167,7 +171,7 @@ export function montarPedidoAdiantamento(m: ModeloContrato, agora: Date, anttCod
     pedido: {
       identifier,
       hiredNationalId: m.hiredNationalId,
-      operationIdentifier: operacao,
+      operationIdentifier: (m.operationIdentifier || operacao).slice(0, 10), // rodada 2: a Repom respondeu 400 "Operação não encontrada" com o QAhhmmss inventado; vale a operação cadastrada do contrato-modelo de 17/11 (Swagger: OperationIdentifier MaximumLength(10), GET /Operation)
       cardNumber: 0, // conta digital (viagem digital)
       routeTraceCode: opcoes.rota?.traceCode ?? m.traceCode,
       routeRouteCode: opcoes.rota?.routeCode ?? m.routeCode,

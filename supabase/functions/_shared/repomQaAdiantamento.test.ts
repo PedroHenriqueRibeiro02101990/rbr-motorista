@@ -228,20 +228,21 @@ test('emitir sem rota criada: para antes de qualquer chamada de emissão', async
 })
 
 const CRIAR = { acao: 'criar_rota', confirmacao: { nome: 'Pedro' } }
-test('criar_rota: 1ª tentativa com IBGE de 7 dígitos, TraceIdentifier de até 10 caracteres; guarda RouteCode/TraceCode, lê eixos do veículo e confirma pela consulta', async () => {
+test('criar_rota: 1ª tentativa da rodada 2 só com CEP (sem IBGE), TraceIdentifier de até 10 caracteres; guarda RouteCode/TraceCode, lê eixos do veículo e confirma pela consulta', async () => {
   const m = montar({ rotaCriada: null, histRota: [] })
   const r = await executarQaTeste(CRIAR, m.deps)
   assert.equal(r.status, 200); assert.equal(r.corpo.routeCode, 666); assert.equal(r.corpo.traceCode, 555); assert.equal(r.corpo.eixos, 6); assert.equal(r.corpo.confirmada, true); assert.equal(r.corpo.distancia_km, 432.4)
   const a = (m.args.criar as { filial: string; ibgeOrigem: string; ibgeDestino: string; idaVolta: boolean; identificador: string; formatoIbge: string }[])[0]!
-  assert.equal(a.filial, '1'); assert.equal(a.ibgeOrigem, '3550308'); assert.equal(a.ibgeDestino, '3304557'); assert.equal(a.idaVolta, true); assert.equal(a.formatoIbge, 'sete'); assert.ok(a.identificador.length <= 10)
+  assert.equal(a.filial, '1'); assert.equal(a.ibgeOrigem, '3550308'); assert.equal(a.ibgeDestino, '3304557'); assert.equal(a.idaVolta, true); assert.equal(a.formatoIbge, 'cep'); assert.ok(a.identificador.length <= 10)
   assert.ok(m.chamadas.includes('rota:555/666/6'))
   assert.equal(m.linhas.find((l) => l.acao === 'qa-teste-criar-rota')?.status, 'ok')
 })
-test('criar_rota: 2ª tentativa usa o IBGE sem os 2 primeiros dígitos; 3ª e rota já criada recusam; exige confirmacao.nome', async () => {
+test('criar_rota: 2ª tentativa IBGE 7 + CEP; 3ª (limite 2) e rota já criada recusam; exige confirmacao.nome', async () => {
   const seg = montar({ rotaCriada: null, histRota: ['erro'] })
   await executarQaTeste(CRIAR, seg.deps)
-  assert.equal((seg.args.criar as { formatoIbge: string }[])[0]!.formatoIbge, 'sem2')
-  const terc = montar({ rotaCriada: null, histRota: ['erro', 'erro'] })
+  assert.equal((seg.args.criar as { formatoIbge: string; cepOrigem: string; cepDestino: string }[])[0]!.formatoIbge, 'sete_cep')
+  assert.equal((seg.args.criar as { cepOrigem: string }[])[0]!.cepOrigem, '01001000')
+  const terc = montar({ rotaCriada: null, histRota: ['erro', 'erro'] }) // limite voltou a 2 no fim da rodada 2
   assert.equal((await executarQaTeste(CRIAR, terc.deps)).corpo.parou, true); assert.ok(!terc.chamadas.includes('criar_rota'))
   const ja = montar({ histRota: ['ok'] })
   assert.equal((await executarQaTeste(CRIAR, ja.deps)).corpo.parou, true); assert.ok(!ja.chamadas.includes('criar_rota'))
