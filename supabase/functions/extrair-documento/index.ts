@@ -20,6 +20,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 import { tratarCadastro } from "./cadastro.ts";
+import { tratarFila } from "./fila.ts";
 import { chamarGemini, MENSAGEM_OCUPADA, textoDaResposta } from "../_shared/geminiResiliente.ts";
 import { normalizarTipoVeiculo, sugerirTara } from "../_shared/regrasExternas.ts";
 const CORS_HEADERS = {
@@ -303,6 +304,7 @@ Deno.serve(async (req)=>{
     const corpo = await req.json();
     // Modo novo (cadastro por documentos / CIOT e VPO): varios arquivos, classificacao e confianca por campo. O fluxo antigo abaixo nao muda.
     if (corpo?.modo === "cadastro") return await tratarCadastro(req, corpo, jsonResponse);
+    if (["consultar_fila", "agente_pegar", "agente_resultado"].includes(corpo?.modo)) return await tratarFila(req, corpo, jsonResponse);
     const { tipo, path, documento_id } = corpo;
     if (!PROMPTS[tipo]) {
       return jsonResponse({
