@@ -22,3 +22,6 @@ Depois PARAR.
 - Correções: OperationIdentifier do contrato-modelo (a Repom recusou o inventado: "Operação não encontrada"); leitor de OperationKey tolerante; caminho `/Shipping/StatusProcessing/ByIdentifier`.
 - Ação só de leitura `consultar_emissao` (status + contrato da última emissão); `ler_rota_ibge` (byibge, só leitura).
 - Fim: interruptor apagado, limites de rota e emissão em 2, função desativada (410 confirmado).
+
+## Rodada 3 (25/11/2026)
+- Auditoria do corpo do Shipping: docs/repom/AUDITORIA-CORPO-SHIPPING-2026-11-25.md. Taxes com os 4 impostos (IRRF, SEST, SENAT, INSS); limite de emissao 4 (+2 autorizadas pelo Pedro); voltar a 2 no fim.
