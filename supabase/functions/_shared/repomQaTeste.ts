@@ -29,7 +29,10 @@ export function montarCombos(achados: Combo[]): Combo[] {
   }
   return lista.slice(0, LIMITE_RODADA)
 }
-export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'criar_rota', 'consultar_rota', 'emitir_adiantamento', 'cancelar_adiantamento', 'ler_rota_ibge', 'consultar_emissao'] as const
+export const ACOES_QA = ['token', 'consultar_contrato', 'sequencia', 'ler_autorizacao', 'rodada_autorizar', 'saldo', 'ler_modelo', 'criar_rota', 'consultar_rota', 'emitir_adiantamento', 'cancelar_adiantamento', 'ler_rota_ibge', 'consultar_emissao', 'baixar_comprovante', 'consultar_contrato_por_id', 'cancelar_contrato'] as const
+/** EVIDÊNCIA da homologação (25/11/2026): as 3 ações novas valem SÓ para este contrato emitido pelo teste (RBRQA261125131716). Nunca para o 2166947. */
+export const EVIDENCIA = { shippingId: 2167273, identifier: 'RBRQA261125131716' } as const
+export const MOTIVO_CANCELAMENTO_EVIDENCIA = 'Teste de homologacao QA - cancelamento do contrato de teste'
 /** Janela fixa da consulta de saldo/extrato (só leitura). */
 export const SALDO_INICIO = '2026-11-01'
 
@@ -40,7 +43,7 @@ export interface DepsQaTeste {
   ambiente: 'qa' | 'prd'
   frete: ClienteRepomFrete
   /** status das linhas anteriores de repom_requisicoes para esta ação ('quitar' | 'autorizar') */
-  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada' | 'emitir-adiantamento' | 'criar-rota'): Promise<string[]>
+  historico(acao: 'quitar' | 'autorizar' | 'autorizar-rodada' | 'emitir-adiantamento' | 'criar-rota' | 'cancelar-contrato'): Promise<string[]>
   /** TraceIdentifier das tentativas de criar_rota (qualquer status, mais recente primeiro), para conferir quando o resultado ficou incerto. */
   tentativasRota(): Promise<string[]>
   /** Rota própria do 9520 criada por este teste (última com status ok em qa-teste-criar-rota), com os eixos do veículo; null se não existe. */
@@ -354,6 +357,39 @@ export async function executarQaTeste(corpo: Record<string, unknown>, d: DepsQaT
     const ct = await passo('contrato_emissao', { identifier: ident }, () => d.frete.consultarContratoPorIdentificador(ident), (dados) => { const o = raiz(dados); return { status: lerContratoQa(dados)?.status ?? null, shippingId: o ? (Number(primeiro(o, ['ShippingId'])) || null) : null, ciot: o ? (primeiro(o, ['CIOT']) ?? null) : null, adiantamento: o ? (primeiro(o, ['AdvanceMoneyValue']) ?? null) : null } })
     const erros = st.r.ok ? st.r.dados.flatMap((x) => x.erros) : []
     return fim(200, { identifier: ident, ok: st.e.ok || ct.e.ok, ...(erros.length ? { resultado: classificarFalhaEmissao(erros) } : {}) })
+  }
+  if (acao === 'baixar_comprovante' || acao === 'consultar_contrato_por_id' || acao === 'cancelar_contrato') {
+    // EVIDÊNCIA (25/11/2026): ações FIXAS, só para o contrato EVIDENCIA (2167273); sem entrada livre. Cancelar: UMA tentativa (qualquer resultado conta).
+    const sid = EVIDENCIA.shippingId
+    const hora = () => d.agora().toISOString()
+    const idOk = (dados: unknown) => { const o = raiz(dados); const i = o ? primeiro(o, ['Identifier']) : undefined; return i == null || String(i) === EVIDENCIA.identifier }
+    const resumoContrato = (dados: unknown) => { const o = raiz(dados); return { status: lerContratoQa(dados)?.status ?? null, shippingId: sid, identifier: EVIDENCIA.identifier, ciot: o ? (primeiro(o, ['CIOT']) ?? null) : null, adiantamento: o ? (primeiro(o, ['AdvanceMoneyValue']) ?? null) : null } }
+    if (acao === 'consultar_contrato_por_id') {
+      const h = hora()
+      const c = await passo('consultar_contrato_por_id', { shippingId: sid }, () => d.frete.consultarContratoPorViagem(sid), resumoContrato)
+      if (c.r.ok && !idOk(c.r.dados)) return parar('O contrato lido não tem o identificador esperado.')
+      return fim(c.e.ok ? 200 : 502, { hora: h, caminho: `GET /Shipping/ByShipping/${sid}`, http: c.e.http, ...(c.r.ok ? resumoContrato(c.r.dados) : {}) })
+    }
+    if (acao === 'baixar_comprovante') {
+      const h = hora()
+      const b = await passo('baixar_comprovante', { shippingId: sid }, () => d.frete.baixarComprovanteContrato(sid), (a) => (a ? { tamanho: a.tamanho, pdf: a.pdf, origem: a.origem } : { sem_arquivo: true }))
+      if (!b.r.ok) return fim(b.e.http && b.e.http < 500 ? 422 : 502, { parou: true, hora: h, caminho: `GET /Shipping/DownloadShippingFile/${sid}`, http: b.e.http, motivo: 'A Repom recusou o download do comprovante.' })
+      if (!b.r.dados) return parar('A Repom respondeu sem arquivo (nem PDF nem base64).', 422)
+      return fim(200, { hora: h, caminho: `GET /Shipping/DownloadShippingFile/${sid}`, http: b.e.http, shippingId: sid, arquivo: { tamanho: b.r.dados.tamanho, pdf: b.r.dados.pdf, origem: b.r.dados.origem, base64: b.r.dados.base64 } })
+    }
+    // cancelar_contrato
+    const nomeE = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()
+    if (nomeE.length < 3) return parar('O cancelamento exige confirmacao.nome.', 400)
+    if ((await d.historico('cancelar-contrato')).length) return parar('O cancelamento deste contrato já foi tentado uma vez; não tento de novo.')
+    const antes = await passo('consultar_antes_de_cancelar', { shippingId: sid }, () => d.frete.consultarContratoPorViagem(sid), resumoContrato)
+    if (!antes.r.ok) return parar(`Não consegui ler o contrato ${sid} antes de cancelar: ${curto(antes.r.erro)}`, 502)
+    if (!idOk(antes.r.dados)) return parar('O contrato lido não tem o identificador esperado; não cancelo.')
+    const stAntes = lerContratoQa(antes.r.dados)?.status ?? null
+    if (/cancel/i.test(stAntes ?? '')) return fim(200, { shippingId: sid, status: stAntes, ja_cancelado: true })
+    const h = hora()
+    const canc = await passo('cancelar-contrato', { shippingId: sid, confirmado_por: nomeE }, () => d.frete.cancelarContratoComMotivo(sid, MOTIVO_CANCELAMENTO_EVIDENCIA))
+    if (!canc.r.ok) return fim(canc.e.http && canc.e.http < 500 ? 422 : 502, { parou: true, hora: h, caminho: `PATCH /Shipping/Cancel/${sid}`, http: canc.e.http, shippingId: sid, status_antes: stAntes, motivo: 'A Repom recusou o cancelamento (não repito).' })
+    return fim(200, { hora: h, caminho: `PATCH /Shipping/Cancel/${sid}`, http: canc.e.http, shippingId: sid, status_antes: stAntes, cancelamento_aceito: true })
   }
   if (acao === 'cancelar_adiantamento') {
     const nomeC = String((corpo.confirmacao as Obj | undefined)?.nome ?? '').trim()

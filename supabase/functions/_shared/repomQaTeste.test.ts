@@ -45,7 +45,7 @@ test('fora de QA ou ação desconhecida: recusa sem chamar nada', async () => {
   const prd = montar({ ambiente: 'prd' })
   assert.equal((await executarQaTeste(SEQ, prd.deps)).status, 403); assert.equal(prd.chamadas.length, 0)
   const m = montar()
-  for (const acao of ['quitar', 'cancelar_contrato', '', 'emitir']) assert.equal((await executarQaTeste({ acao }, m.deps)).status, 400)
+  for (const acao of ['quitar', 'cancelar', '', 'emitir']) assert.equal((await executarQaTeste({ acao }, m.deps)).status, 400)
   assert.equal(m.chamadas.length, 0)
 })
 

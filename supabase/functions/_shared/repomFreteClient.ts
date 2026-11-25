@@ -316,7 +316,28 @@ export function lerStatusProcessamento(bruto: unknown): StatusProcessamento[] {
 
 // ---------- cliente ----------
 
-type Req = { query?: Record<string, string | number>; corpo?: unknown; versao?: string; relatorio?: boolean }
+type Req = { query?: Record<string, string | number>; corpo?: unknown; versao?: string; relatorio?: boolean; arquivo?: boolean }
+
+/** Arquivo (PDF) devolvido pela Repom: bytes brutos ou base64 dentro de um JSON. `pdf` = os bytes começam com %PDF. */
+export interface ArquivoBaixado { base64: string; tamanho: number; pdf: boolean; origem: 'bruto' | 'json' }
+const bytesParaBase64 = (b: Uint8Array): string => { let t = ''; for (let i = 0; i < b.length; i += 0x8000) t += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(t) }
+const base64ParaBytes = (b64: string): Uint8Array | null => { try { const t = atob(b64.replace(/\s+/g, '')); return Uint8Array.from(t, (c) => c.charCodeAt(0)) } catch { return null } }
+const ehPdf = (b: Uint8Array) => b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46
+/** Interpreta a resposta de um download: PDF bruto -> { arquivo }; JSON com base64 (texto puro ou em algum campo) -> { arquivo }; qualquer outro JSON volta como está (para o leitor de erros). */
+export function interpretarDownload(contentType: string, bytes: Uint8Array): { arquivo: ArquivoBaixado } | { json: unknown } | null {
+  if (ehPdf(bytes)) return { arquivo: { base64: bytesParaBase64(bytes), tamanho: bytes.length, pdf: true, origem: 'bruto' } }
+  let j: unknown
+  try { j = JSON.parse(new TextDecoder().decode(bytes)) } catch { return bytes.length && !/json|text|xml/i.test(contentType) ? { arquivo: { base64: bytesParaBase64(bytes), tamanho: bytes.length, pdf: false, origem: 'bruto' } } : null }
+  const acha = (x: unknown, n: number): Uint8Array | null => {
+    if (n > 4 || x == null) return null
+    if (typeof x === 'string') { const b = x.length > 200 && /^[A-Za-z0-9+/=\s]+$/.test(x) ? base64ParaBytes(x) : null; return b && b.length > 100 ? b : null }
+    if (typeof x !== 'object') return null
+    for (const v of Object.values(x as Record<string, unknown>)) { const r = acha(v, n + 1); if (r) return r }
+    return null
+  }
+  const b = acha(j, 0)
+  return b ? { arquivo: { base64: bytesParaBase64(b), tamanho: b.length, pdf: ehPdf(b), origem: 'json' } } : { json: j }
+}
 
 export interface ClienteRepomFrete {
   readonly ambiente: 'qa' | 'prd'
@@ -362,6 +383,10 @@ export interface ClienteRepomFrete {
   consultarContratoPorIdentificador(identifier: string): Promise<ResultadoFrete<unknown>>
   consultarStatusPorIdentificador(identifier: string): Promise<ResultadoFrete<StatusProcessamento[]>>
   cancelarContrato(shippingId: number | string): Promise<ResultadoFrete<unknown>>
+  /** PATCH /Shipping/Cancel/{id} com o corpo { Reason } que o Swagger v3 marca como obrigatório. */
+  cancelarContratoComMotivo(shippingId: number | string, motivo: string): Promise<ResultadoFrete<unknown>>
+  /** GET /Shipping/DownloadShippingFile/{id}: comprovante de emissão em PDF (bytes ou base64). null se a Repom respondeu sem arquivo. */
+  baixarComprovanteContrato(shippingId: number | string): Promise<ResultadoFrete<ArquivoBaixado | null>>
   interromperContrato(shippingId: number | string): Promise<ResultadoFrete<unknown>>
   bloquearContrato(shippingId: number | string, bloquear: boolean, motivo: string): Promise<ResultadoFrete<unknown>>
   adicionarDocumento(shippingId: number | string, doc: { branchCode: string; tipo: TipoDocumentoFrete; serie: string; numero: string; chave?: string }): Promise<ResultadoFrete<unknown>>
@@ -460,6 +485,11 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
       if (o.corpo !== undefined) headers['content-type'] = 'application/json'
       const r = await http(url, { method: metodo, headers, body: o.corpo === undefined ? undefined : JSON.stringify(o.corpo) })
       if (r.status === 401 && tentativa === 0) continue
+      if (o.arquivo) {
+        const rr = r as unknown as { headers?: { get(n: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }
+        const it = interpretarDownload(rr.headers?.get('content-type') ?? '', new Uint8Array(await rr.arrayBuffer()))
+        return { status: r.status, bruto: it && 'arquivo' in it ? { __arquivo: it.arquivo } : (it?.json ?? null) }
+      }
       return { status: r.status, bruto: r.status === 204 ? null : await r.json().catch(() => null) }
     }
     throw new Error('TOKEN:401')
@@ -561,6 +591,8 @@ export function criarRepomFreteClient(config: ConfigRepomFrete, fetchFn: Fetch =
     consultarContratoPorViagem: (id) => (idViagem(id) ? rodar('GET', `/Shipping/ByShipping/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     consultarContratoPorIdentificador: (id) => rodar('GET', `/Shipping/ByIdentifier/${seg(id)}`),
     consultarStatusPorIdentificador: (id) => rodar('GET', `/Shipping/StatusProcessing/ByIdentifier/${seg(id)}`, {}, lerStatusProcessamento),
+    cancelarContratoComMotivo: (id, motivo) => (!idViagem(id) ? invalido('Código da viagem inválido.') : !motivo.trim() ? invalido('Informe o motivo.') : rodar('PATCH', `/Shipping/Cancel/${idViagem(id)}`, { corpo: { Reason: motivo.trim().slice(0, 200) } })),
+    baixarComprovanteContrato: (id) => (idViagem(id) ? rodar('GET', `/Shipping/DownloadShippingFile/${idViagem(id)}`, { arquivo: true }, (b) => ((b as { __arquivo?: ArquivoBaixado } | null)?.__arquivo ?? null)) : invalido('Código da viagem inválido.')),
     cancelarContrato: (id) => (idViagem(id) ? rodar('PATCH', `/Shipping/Cancel/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     interromperContrato: (id) => (idViagem(id) ? rodar('PATCH', `/Shipping/Interruption/${idViagem(id)}`) : invalido('Código da viagem inválido.')),
     bloquearContrato: (id, b, m) => (idViagem(id) ? rodar('PATCH', `/Shipping/lockUnlock/${idViagem(id)}`, { corpo: bloqueio(b, m) }) : invalido('Código da viagem inválido.')),
