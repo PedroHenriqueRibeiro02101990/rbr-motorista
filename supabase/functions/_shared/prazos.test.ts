@@ -26,9 +26,9 @@ test('MDF-e: cancela em 24 h e viagem não iniciada; encerra em 30 dias', () => 
   assert.equal(podeEncerrarMdfe(t0, t0 + 30 * D).pode, true)
   assert.equal(podeEncerrarMdfe(t0, t0 + 30 * D + 1).pode, false)
 })
-test('CIOT: cancela até 24 h antes do início; encerra em 5 dias (30 para TAC-Agregado)', () => {
-  assert.equal(podeCancelarCiot(t0 + 24 * H, t0).pode, true)
-  assert.equal(podeCancelarCiot(t0 + 24 * H - 1, t0).pode, false)
+test('CIOT: cancela até 24 h depois de emitido; encerra em 5 dias (30 para TAC-Agregado)', () => {
+  assert.equal(podeCancelarCiot(t0, t0 + 24 * H).pode, true)
+  assert.equal(podeCancelarCiot(t0, t0 + 24 * H + 1).pode, false)
   assert.equal(podeEncerrarCiot(t0, t0 + 5 * D).pode, true)
   assert.equal(podeEncerrarCiot(t0, t0 + 5 * D + 1).pode, false)
   assert.equal(podeEncerrarCiot(t0, t0 + 30 * D, true).pode, true)

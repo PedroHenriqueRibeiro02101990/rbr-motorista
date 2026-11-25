@@ -125,8 +125,8 @@ function CiotEfreteAtivo({ operacaoId, ehTeste, docs, placa, onMudou, demo, onPr
 
   const linhas = useMemo(() => montarConferencia(previa), [previa])
   const passos = useMemo(() => passosAntesDoCiot(docs, ehTeste, demo === true), [docs, ehTeste, demo])
-  const inicioViagem = pedido?.data_inicio_viagem ?? null
-  const naoCancela = useMemo(() => motivoNaoCancela(docs, inicioViagem), [docs, inicioViagem])
+  const emitidoEm = pedido?.emitido_em ?? null
+  const naoCancela = useMemo(() => motivoNaoCancela(docs, emitidoEm, new Date(), pedido?.status), [docs, emitidoEm, pedido?.status])
 
   if (pedido === undefined) return null
   return (

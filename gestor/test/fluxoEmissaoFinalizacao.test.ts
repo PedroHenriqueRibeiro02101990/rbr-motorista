@@ -110,12 +110,12 @@ test('cancelamento: CT-e só com MDF-e inativo e até 7 dias; depois, substitui�
   assert.equal(podeSubstituirCte(BASE, BASE + 61 * DIA).pode, false)
 })
 
-test('cancelamento: MDF-e até 24 h e sem viagem iniciada; CIOT até 24 h antes do início', () => {
+test('cancelamento: MDF-e até 24 h e sem viagem iniciada; CIOT até 24 h depois de emitido', () => {
   assert.equal(podeCancelarMdfe(BASE, BASE + 23 * H, false).pode, true)
   assert.equal(podeCancelarMdfe(BASE, BASE + 25 * H, false).pode, false)
   assert.equal(podeCancelarMdfe(BASE, BASE + H, true).pode, false)
-  assert.equal(podeCancelarCiot(BASE + 48 * H, BASE).pode, true)
-  assert.equal(podeCancelarCiot(BASE + 10 * H, BASE).pode, false)
+  assert.equal(podeCancelarCiot(BASE, BASE + 23 * H).pode, true)
+  assert.equal(podeCancelarCiot(BASE, BASE + 25 * H).pode, false)
 })
 
 test('cancelar a operação inteira: ordem MDF-e, CIOT, VPO, averbação, CT-e; para no primeiro que trava', () => {
