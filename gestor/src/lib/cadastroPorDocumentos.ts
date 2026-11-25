@@ -257,22 +257,36 @@ export function veiculosParaCorrigir(vs: { id?: string; placa: string; tara_kg: 
 }
 
 // ---- Etapa 32: leitura resistente (estado de cada documento) ----
-export type EstadoLeitura = 'enviando' | 'lendo' | 'lido' | 'falhou_ia' | 'nao_reconhecido' | 'erro_arquivo'
-export interface ResultadoLeitura { sucesso?: boolean; tipo?: string; normalizado?: unknown; codigo?: string; erro?: string; aviso?: string }
+export type EstadoLeitura = 'enviando' | 'lendo' | 'lido' | 'parcial' | 'falhou_ia' | 'nao_reconhecido' | 'erro_arquivo'
+export interface ResultadoLeitura {
+  sucesso?: boolean; tipo?: string; normalizado?: unknown; codigo?: string; erro?: string; aviso?: string
+  /** 25/11: leitura sem IA / fila da IA gratuita. 'texto' = leu pelo texto do PDF; 'parcial' = leu parte; 'ia' = IA gratuita */
+  origem_leitura?: 'texto' | 'parcial' | 'ia'; na_fila?: boolean; leitura_id?: string; campos_faltantes?: string[]; ia_gratis?: boolean
+}
+
+export const MSG_OCUPADA = 'A leitura automatica esta ocupada agora. Tente de novo em instantes.'
+export const MSG_FOTO_SEM_LEITURA = 'Foto nao pode ser lida agora; envie o PDF original (CNH digital, CRLV-e) ou preencha manualmente.'
+export const AVISO_PARCIAL = 'Li parte do documento pelo texto; confira e preencha o que falta.'
+/** Tempo maximo esperando a fila da IA gratuita (o Agente no PC le a foto); depois disso, preenchimento manual com o que ja foi lido. */
+export const ESPERA_FILA_MS = 60_000
+export const INTERVALO_FILA_MS = 3_000
+export const ehFoto = (path: string) => !/\.pdf$|\.xml$/i.test(path)
 
 /** Traduz o resultado de UM arquivo da funcao em estado do cartao. Falha da IA NUNCA vira "tipo nao reconhecido". */
-export function estadoDaLeitura(r: ResultadoLeitura | null | undefined, falhaDeTransporte = false): { estado: EstadoLeitura; mensagem?: string } {
-  if (falhaDeTransporte || !r) return { estado: 'falhou_ia', mensagem: 'A leitura automatica esta ocupada agora. Tente de novo em instantes.' }
+export function estadoDaLeitura(r: ResultadoLeitura | null | undefined, falhaDeTransporte = false, foto = false): { estado: EstadoLeitura; mensagem?: string } {
+  if (falhaDeTransporte || !r) return { estado: 'falhou_ia', mensagem: foto ? MSG_FOTO_SEM_LEITURA : MSG_OCUPADA }
   if (r.sucesso === false) {
     if (r.codigo === 'erro_leitura') return { estado: 'erro_arquivo', mensagem: r.erro }
-    return { estado: 'falhou_ia', mensagem: r.erro ?? 'A leitura automatica esta ocupada agora. Tente de novo em instantes.' }
+    return { estado: 'falhou_ia', mensagem: r.erro ?? (foto ? MSG_FOTO_SEM_LEITURA : MSG_OCUPADA) }
   }
+  if (r.na_fila) return { estado: 'lendo', mensagem: r.aviso }
   if (!r.normalizado) return { estado: 'nao_reconhecido', mensagem: r.aviso }
+  if (r.origem_leitura === 'parcial') return { estado: 'parcial', mensagem: r.aviso ?? AVISO_PARCIAL }
   return { estado: 'lido' }
 }
 
 export const ROTULO_ESTADO: Record<EstadoLeitura, string> = {
-  enviando: 'Enviando...', lendo: 'Lendo...', lido: 'Lido', falhou_ia: 'Nao foi possivel ler agora', nao_reconhecido: 'Outro (nao reconhecido)', erro_arquivo: 'Arquivo com problema',
+  enviando: 'Enviando...', lendo: 'Lendo...', lido: 'Lido', parcial: 'Lido em parte - confira', falhou_ia: 'Nao foi possivel ler agora', nao_reconhecido: 'Outro (nao reconhecido)', erro_arquivo: 'Arquivo com problema',
 }
 
 /** Texto do resumo quando nada sera criado: explica a causa quando e falha de leitura. */

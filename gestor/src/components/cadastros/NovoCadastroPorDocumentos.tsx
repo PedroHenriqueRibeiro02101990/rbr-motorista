@@ -4,7 +4,7 @@ import { Modal, Botao, Aviso } from '../financeiro/ui'
 import { LinhaStatus, useStatusAcao } from '../StatusAcao'
 import { rodarComLimite } from '../../../../supabase/functions/_shared/geminiResiliente.ts'
 import CampoPeso from '../campos/CampoPeso'
-import { estadoDaLeitura, ROTULO_ESTADO, textoResumoVazio, type EstadoLeitura, type ResultadoLeitura, achadosDoPayload, montarPayload, titularesDoPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
+import { estadoDaLeitura, ehFoto, ESPERA_FILA_MS, INTERVALO_FILA_MS, MSG_FOTO_SEM_LEITURA, MSG_OCUPADA, ROTULO_ESTADO, textoResumoVazio, type EstadoLeitura, type ResultadoLeitura, achadosDoPayload, montarPayload, titularesDoPayload, REPOM_CADASTRO_HABILITADO, resumoDoQueSeraCriado, temBloqueio, type DocumentoLido } from '../../lib/cadastroPorDocumentos'
 import { conferenciaCruzada, TIPOS_DOCUMENTO, type Normalizado } from '../../../../supabase/functions/_shared/extracao-documentos.ts'
 import { montarCorpoMotoristaRepom, montarCorpoVeiculoRepom, preChecagemRepom } from '../../../../supabase/functions/_shared/repomCadastro.ts'
 import { formatarKg } from '../../../../supabase/functions/_shared/unidades-br.ts'
@@ -19,7 +19,7 @@ const ROTULO_TIPO: Record<string, string> = {
 const COR_CONFIANCA = { alta: '#15803d', media: '#b45309', baixa: '#b91c1c' } as const
 const CAMPOS_PESO = new Set(['tara', 'capacidade_carga', 'pbt', 'cmt'])
 
-interface Item { nome: string; path: string; tipo: string; normalizado: Normalizado | null; edicoes: Record<string, string | number | null>; erro?: string; url?: string; estado: EstadoLeitura }
+interface Item { nome: string; path: string; tipo: string; normalizado: Normalizado | null; edicoes: Record<string, string | number | null>; erro?: string; url?: string; estado: EstadoLeitura; faltantes?: string[]; iaGratis?: boolean; origem?: string }
 const limpa = (n: string) => n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80)
 
 export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, onPreencherManual }: { onFechar: () => void; quem?: string | null; aoConcluir?: () => void; onPreencherManual?: () => void }) {
@@ -53,15 +53,49 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
 
   // UM arquivo por chamada: cada documento tem o proprio estado e os outros nao esperam por ele.
   async function lerUm(path: string, tipo?: string) {
-    setItem(path, { estado: 'lendo', erro: undefined })
+    setItem(path, { estado: 'lendo', erro: undefined, iaGratis: false })
+    const foto = ehFoto(path)
     try {
       const { data, error } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'cadastro', bucket: BUCKET, arquivos: [{ path, tipo }] } })
       const x = (data as { resultados?: ResultadoLeitura[] } | null)?.resultados?.[0]
-      const e = estadoDaLeitura(x, Boolean(error) || !data)
-      setItem(path, { estado: e.estado, tipo: x?.tipo ?? tipo ?? 'outro', normalizado: (x?.normalizado as Normalizado | null) ?? null, erro: e.mensagem })
+      const e = estadoDaLeitura(x, Boolean(error) || !data, foto)
+      setItem(path, {
+        estado: e.estado, tipo: x?.tipo ?? tipo ?? 'outro', normalizado: (x?.normalizado as Normalizado | null) ?? null, erro: e.mensagem,
+        faltantes: x?.campos_faltantes ?? [], origem: x?.origem_leitura, iaGratis: x?.ia_gratis === true,
+      })
+      // Foto/scan (ou PDF lido so em parte): o Agente no PC le com a IA gratuita. Consulta em segundo plano para nao prender os outros arquivos.
+      if (x?.na_fila && x.leitura_id) void aguardarFila(path, x.leitura_id, tipo, (x.normalizado as Normalizado | null) ?? null, x.campos_faltantes ?? [], foto)
     } catch {
-      setItem(path, { estado: 'falhou_ia', erro: estadoDaLeitura(null, true).mensagem })
+      setItem(path, { estado: 'falhou_ia', erro: estadoDaLeitura(null, true, foto).mensagem })
     }
+  }
+
+  // Consulta curta (a cada 3 s, ate 60 s). Sem resposta: preenchimento manual com o que ja foi lido (nada se perde).
+  async function aguardarFila(path: string, leituraId: string, tipo: string | undefined, parcial: Normalizado | null, faltantes: string[], foto: boolean) {
+    const limite = Date.now() + ESPERA_FILA_MS
+    while (Date.now() < limite) {
+      await new Promise((r) => setTimeout(r, INTERVALO_FILA_MS))
+      try {
+        const { data } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'consultar_fila', ids: [leituraId] } })
+        const l = (data as { leituras?: { status: string; tipo?: string; normalizado?: Normalizado | null; mensagem?: string }[] } | null)?.leituras?.[0]
+        if (l?.status === 'ok') {
+          if (!l.normalizado) { setItem(path, { estado: 'nao_reconhecido', tipo: 'outro', erro: 'Documento nao reconhecido; escolha o tipo na lista.' }); return }
+          setItem(path, { estado: 'lido', tipo: l.tipo ?? tipo ?? 'outro', normalizado: l.normalizado, erro: undefined, faltantes: [], iaGratis: true, origem: 'ia' })
+          return
+        }
+        if (l?.status === 'erro') break
+      } catch { /* queda de rede momentanea: segue tentando ate o limite */ }
+    }
+    // Ultima reserva (Gemini): so se ligada no ambiente. Nunca antes do FreeLLM e nunca atrasa o caminho normal.
+    if (import.meta.env.VITE_LEITURA_RESERVA_GEMINI === '1') {
+      try {
+        const { data } = await supabase.functions.invoke('extrair-documento', { body: { modo: 'cadastro', bucket: BUCKET, arquivos: [{ path, tipo, reserva: true }] } })
+        const x = (data as { resultados?: ResultadoLeitura[] } | null)?.resultados?.[0]
+        if (x?.sucesso && x.normalizado && !x.na_fila) { setItem(path, { estado: 'lido', tipo: x.tipo ?? tipo ?? 'outro', normalizado: x.normalizado as Normalizado, erro: undefined, faltantes: [], origem: 'ia' }); return }
+      } catch { /* segue para o manual */ }
+    }
+    if (parcial) setItem(path, { estado: 'parcial', normalizado: parcial, faltantes, erro: 'Li parte do documento pelo texto; a leitura automatica esta ocupada. Preencha os campos que faltam.' })
+    else setItem(path, { estado: 'falhou_ia', erro: foto ? MSG_FOTO_SEM_LEITURA : MSG_OCUPADA })
   }
 
   async function aoSoltar(files: FileList | File[]) {
@@ -164,7 +198,7 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
                 <li key={i.path || i.nome}>
                   <button type="button" onClick={() => setSel(idx)} className="w-full text-left rounded px-2 py-1.5 text-xs" style={{ background: idx === sel ? 'var(--rbr-surface-2, #eef2f7)' : 'transparent', border: '1px solid var(--rbr-border)' }}>
                     <div className="font-semibold truncate">{i.nome}</div>
-                    <div>{i.estado === 'lido' ? (ROTULO_TIPO[i.tipo] ?? i.tipo) : ROTULO_ESTADO[i.estado]}</div>
+                    <div>{i.estado === 'lido' ? (ROTULO_TIPO[i.tipo] ?? i.tipo) : ROTULO_ESTADO[i.estado]}{i.estado === 'lido' && i.iaGratis ? ' (IA gratuita)' : ''}</div>
                   </button>
                 </li>
               ))}
@@ -182,22 +216,24 @@ export default function NovoCadastroPorDocumentos({ onFechar, quem, aoConcluir, 
                   </label>
                   {atual.estado === 'falhou_ia' && (
                     <div role="alert" className="rounded border p-2 flex flex-col gap-1" style={{ borderColor: COR_CONFIANCA.media }}>
-                      <div className="font-semibold">A leitura automatica esta ocupada.</div>
+                      <div className="font-semibold">{atual.erro ?? 'A leitura automatica esta ocupada.'}</div>
                       <div className="flex gap-3 items-center">
                         <Botao onClick={() => void lerUm(atual.path, atual.tipo === 'outro' ? undefined : atual.tipo)}>Tentar de novo</Botao>
                         <button type="button" className="underline font-semibold" onClick={onPreencherManual ?? onFechar}>Preencher manualmente</button>
                       </div>
                     </div>
                   )}
-                  {atual.estado === 'lendo' && <div style={{ color: 'var(--rbr-muted)' }}>Lendo o documento...</div>}
-                  {atual.erro && atual.estado !== 'falhou_ia' && <Aviso tipo="atencao">{atual.erro}</Aviso>}
+                  {atual.estado === 'lendo' && <div style={{ color: 'var(--rbr-muted)' }}>{atual.erro ?? 'Lendo o documento...'}</div>}
+                  {atual.iaGratis && <Aviso tipo="atencao">Lido por IA gratuita - confira todos os campos com o documento.</Aviso>}
+                  {atual.estado === 'parcial' && <Aviso tipo="atencao">{atual.erro ?? 'Li parte do documento; confira e preencha o que falta.'}{atual.faltantes?.length ? ` Faltam: ${atual.faltantes.map((f) => f.replace(/_/g, ' ')).join(', ')}.` : ''}</Aviso>}
+                  {atual.erro && atual.estado !== 'falhou_ia' && atual.estado !== 'lendo' && atual.estado !== 'parcial' && <Aviso tipo="atencao">{atual.erro}</Aviso>}
                   {atual.normalizado?.avisos.map((a) => <Aviso key={a} tipo="atencao">{a}</Aviso>)}
                   {atual.normalizado && Object.entries(atual.normalizado.campos).map(([k, c]) => {
                     const editado = k in atual.edicoes
                     const vazioOuBaixo = c.valor === null || c.confianca === 'baixa'
                     return (
                       <div key={k} className="flex flex-col gap-0.5" style={{ borderLeft: `3px solid ${COR_CONFIANCA[c.confianca]}`, paddingLeft: 6 }}>
-                        <span className="font-semibold">{k.replace(/_/g, ' ')}{vazioOuBaixo && !editado ? ' (confira: obrigatorio)' : ''}</span>
+                        <span className="font-semibold">{k.replace(/_/g, ' ')}{vazioOuBaixo && !editado ? (atual.faltantes?.includes(k) ? ' (falta: preencha)' : ' (confira: obrigatorio)') : ''}</span>
                         {CAMPOS_PESO.has(k) ? (
                           <CampoPeso rotulo={k === 'tara' ? 'Tara' : 'Peso'} value={editado ? (atual.edicoes[k] as number | null) : (c.valor as number | null)} onChange={(e) => editar(sel, k, e.target.value === '' ? null : Number(e.target.value))} className="border rounded px-1.5 py-1" style={{ borderColor: 'var(--rbr-border)' }} />
                         ) : (

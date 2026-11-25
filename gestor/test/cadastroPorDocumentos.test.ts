@@ -118,3 +118,23 @@ test('sem CPF valido o motorista bloqueia (a RPC o ignoraria em silencio); sem R
   assert.ok(a2.some((x) => x.campo === 'proprietario' && x.nivel === 'bloqueio'))
   assert.ok(!a2.some((x) => x.campo === 'titular')) // o aviso "o titular sou eu" nao existe mais: titular so vem do CRLV
 })
+
+// ---- 25/11/2026: leitura sem IA, sucesso parcial e fila da IA gratuita ----
+import { MSG_FOTO_SEM_LEITURA, ehFoto } from '../src/lib/cadastroPorDocumentos.ts'
+test('(25/11) arquivo na fila fica "lendo"; leitura parcial vira "parcial" (nao erro); foto que falha diz para enviar o PDF', () => {
+  assert.equal(estadoDaLeitura({ sucesso: true, na_fila: true, leitura_id: 'x', normalizado: null }).estado, 'lendo')
+  const p = estadoDaLeitura({ sucesso: true, origem_leitura: 'parcial', normalizado: {}, campos_faltantes: ['validade'] })
+  assert.equal(p.estado, 'parcial'); assert.equal(ROTULO_ESTADO.parcial, 'Lido em parte - confira')
+  assert.equal(estadoDaLeitura({ sucesso: true, origem_leitura: 'texto', normalizado: {} }).estado, 'lido')
+  const f = estadoDaLeitura(null, true, true)
+  assert.equal(f.estado, 'falhou_ia'); assert.equal(f.mensagem, MSG_FOTO_SEM_LEITURA)
+  assert.match(MSG_FOTO_SEM_LEITURA, /envie o PDF original \(CNH digital, CRLV-e\) ou preencha manualmente/)
+  assert.equal(estadoDaLeitura(null, true, false).mensagem, 'A leitura automatica esta ocupada agora. Tente de novo em instantes.')
+  assert.equal(ehFoto('x/123-cnh.jpg'), true); assert.equal(ehFoto('x/123-crlv.PDF'), false)
+})
+test('(25/11) a tela consulta a fila (60 s, a cada 3 s), mostra o selo da IA gratuita e destaca o que falta', () => {
+  const f = readFileSync(new URL('../src/components/cadastros/NovoCadastroPorDocumentos.tsx', import.meta.url), 'utf8')
+  for (const t of ["modo: 'consultar_fila'", 'ESPERA_FILA_MS', 'Lido por IA gratuita - confira', 'falta: preencha', "reserva: true"]) assert.ok(f.includes(t), t)
+  const l = readFileSync(new URL('../src/lib/cadastroPorDocumentos.ts', import.meta.url), 'utf8')
+  assert.match(l, /ESPERA_FILA_MS = 60_000/); assert.match(l, /INTERVALO_FILA_MS = 3_000/)
+})
