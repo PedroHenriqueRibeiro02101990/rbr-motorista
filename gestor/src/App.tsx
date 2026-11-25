@@ -28,6 +28,8 @@ import Alteracoes from './pages/Alteracoes'
 import MeusClientes from './pages/MeusClientes'
 import PropostaPublica from './pages/PropostaPublica'
 import RadarApp from './radar/RadarApp'
+import CentralApp from './central/CentralApp'
+import FilaSdrApp from './central/FilaSdrApp'
 
 // Demonstração sem login, só no build de preview (VITE_DEMO_CIOT=true); em produção a rota nem é montada.
 const DEMO_CIOT = import.meta.env.VITE_DEMO_CIOT === 'true'
@@ -84,6 +86,9 @@ export default function App() {
       <Routes>
         {/* Radar (prospecção ativa): tela própria, com menu lateral próprio; quem pode ver é decidido dentro dele (flag + usuário do Pedro). */}
         <Route path="/radar/*" element={<RadarApp papel={auth.pessoa.papel} pessoaId={auth.pessoa.id} />} />
+        {/* Central (controle dos robôs): tela própria; o banco confere se é o administrador. */}
+        <Route path="/fila-sdr" element={<FilaSdrApp papel={auth.pessoa.papel} pessoaId={auth.pessoa.id} />} />
+        <Route path="/central/*" element={<CentralApp papel={auth.pessoa.papel} pessoaId={auth.pessoa.id} />} />
         <Route path="*" element={
       <AppShell pessoa={auth.pessoa} onSignOut={auth.signOut}>
         <Routes>
