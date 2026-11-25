@@ -33,3 +33,5 @@ Fontes: Guia Técnico 3.0 (cap. 34-36, 44, 60, 66) e Swagger v3 de QA (`Repom.Fr
 | 3 | limite de 2 emissões por rota, já gasto | limite 4 (+2 autorizadas), motivo no código |
 
 Sem diferença: Identifier, operação do modelo, CardNumber 0, rota 1/148993, IBGE, CEP, distância 885, NCM, ANTT, VPR.Issue false, pagamento, motorista, CT-e novo com DV, placa, destinatário, MinimumFreightCost. O payload da emissão de 17/11 (CPN1377 / 2166947) não está guardado no repositório nem em `repom_requisicoes`; só o GET do modelo (prestador, motorista, placa, rota 1/143217, NCM, documento, destinatário), que a emissão reaproveita. Se o GET mostrar débitos de IRRF/SEST/SENAT/INSS em `AccountingAdjustments`, confirma os quatro impostos naquele contrato (não lido nesta rodada). Os valores dos impostos não são validados pelo Swagger, só `>= 0`; a Repom pode recusar a base.
+
+- Fim da rodada 3: emissao RBRQA261125131716 (corpo com 4 impostos) aceita, processamento Pending sem erro por ~4 min, sem contrato (Shipping not found); 1 de 4 emissoes usada; limite voltou a 2; interruptor apagado.
