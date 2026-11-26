@@ -1,0 +1,13 @@
+{
+  "name": "Calculadora RBR",
+  "short_name": "Calculadora RBR",
+  "description": "Frete certo, na hora.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1E2761",
+  "icons": [
+    { "src": "/logo-rbr-cargo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo-rbr-cargo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
