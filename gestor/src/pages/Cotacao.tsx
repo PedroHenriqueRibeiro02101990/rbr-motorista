@@ -22,6 +22,7 @@ import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
 import PedagioSugerido from '../components/cotacao/PedagioSugerido'
 import CalcularPedagioRepom, { REPOM_FRONT_LIGADO } from '@rbr/shared/CalcularPedagioRepom'
+import CalculoCotacaoRota, { type DadosPedagioUsado } from '@rbr/shared/CalculoCotacaoRota'
 import { divisorPreco, precoPorLucro } from '../../../supabase/functions/_shared/precoCotacao.ts'
 import { CancelarCotacaoModal, ConfirmarConversaoModal, ProgramarOperacoesModal, rotuloOperacao, type ResumoConversao } from '../components/cotacao/ConversaoModais'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
@@ -599,12 +600,10 @@ export default function Cotacao() {
   // Cotação antiga (antes da composição de preço): tem valor total salvo mas não tem frete do motorista.
   const [precoLegado, setPrecoLegado] = useState<{ valorTotal: number | null; lucro: number | null } | null>(null)
 
-  const [rotaCalculando, setRotaCalculando] = useState(false)
-  const [rotaErro, setRotaErro] = useState<string | null>(null)
-  const [rotaResultado, setRotaResultado] = useState<RotaCalculada | null>(null)
-
   const [form, setForm] = useState<CotacaoFormState | null>(null)
   const pedagioRepomRef = useRef<{ valor: string; consultadoEm: string } | null>(null)
+  // Ida/volta/ambiente/rodovias do pedágio vindo do cálculo novo (CalculoCotacaoRota); só vão ao banco se o valor do campo continua o usado.
+  const pedagioCalculoRef = useRef<{ valor: string; dados: DadosPedagioUsado } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingStatus, setEditingStatus] = useState<StatusCotacao>('rascunho')
   const [papelUsuario, setPapelUsuario] = useState<string | null>(null)
@@ -1101,8 +1100,7 @@ export default function Cotacao() {
     setXmlError(null)
     setShowNovoCliente(false)
     setClienteFiltro('')
-    setRotaErro(null)
-    setRotaResultado(null)
+    pedagioCalculoRef.current = null
     setShowPerda(false)
     setMotivoPerda('')
     setDetalhePerda('')
@@ -1483,46 +1481,6 @@ export default function Cotacao() {
     }
   }
 
-  // Calculadora opcional: distância real pela rota (OpenStreetMap, grátis). O Qualp segue sendo a
-  // fonte principal — a distância dele pode ser digitada direto no campo.
-  async function calcularRota() {
-    if (!form) return
-    if (!origem.cidade || !origem.uf || !form.cidade_destino.trim() || !form.uf_destino.trim()) {
-      setRotaErro('Preencha cidade/UF de origem e destino antes de calcular.')
-      return
-    }
-    setRotaCalculando(true)
-    setRotaErro(null)
-    setRotaResultado(null)
-    try {
-      const { data, error } = await supabase.functions.invoke('calcular-rota-frete', {
-        body: {
-          cidade_origem: origem.cidade,
-          uf_origem: origem.uf,
-          cidade_destino: form.cidade_destino.trim(),
-          uf_destino: form.uf_destino.trim().toUpperCase(),
-          tipo_carga: form.tipo_carga || undefined,
-          eixos: form.eixos ? Number(form.eixos) : undefined,
-          tabela: form.tabela || undefined,
-        },
-      })
-      if (error || !data?.sucesso) {
-        setRotaErro(data?.erro ?? error?.message ?? 'Não consegui calcular a rota agora.')
-        return
-      }
-      setRotaResultado(data as RotaCalculada)
-    } catch (e) {
-      setRotaErro(e instanceof Error ? e.message : 'Erro ao chamar o cálculo de rota.')
-    } finally {
-      setRotaCalculando(false)
-    }
-  }
-
-  function usarDistanciaCalculada() {
-    if (!rotaResultado) return
-    setForm((f) => (f ? { ...f, distancia_km: String(rotaResultado.distancia_km) } : f))
-  }
-
   function usarPisoComoFrete() {
     if (pisoReferencia == null) return
     setForm((f) => (f ? { ...f, valor_frete_motorista: String(round2(pisoReferencia)) } : f))
@@ -1677,6 +1635,17 @@ export default function Cotacao() {
         : pedagioRepomRef.current && pedagioRepomRef.current.valor === String(f.pedagio)
         ? { pedagio_origem: 'repom', pedagio_consultado_em: pedagioRepomRef.current.consultadoEm }
         : { pedagio_origem: numOrNull(f.pedagio) != null ? 'manual' : null, pedagio_consultado_em: null }),
+      ...(pedagioCalculoRef.current && pedagioCalculoRef.current.valor === String(f.pedagio)
+        ? {
+            pedagio_origem: 'repom',
+            pedagio_consultado_em: pedagioCalculoRef.current.dados.consultadoEm,
+            pedagio_ida: pedagioCalculoRef.current.dados.pedagio_ida,
+            pedagio_volta: pedagioCalculoRef.current.dados.pedagio_volta,
+            incluir_volta: pedagioCalculoRef.current.dados.incluir_volta,
+            pedagio_ambiente: pedagioCalculoRef.current.dados.pedagio_ambiente,
+            rota_descricao: pedagioCalculoRef.current.dados.rota_descricao,
+          }
+        : {}),
       pedagio_pracas: pracasPedagio.length > 0 ? (pracasPedagio as unknown as Json) : null,
       piso_antt_calculado: pisoInfo != null ? round2(pisoInfo.calculado) : pisoSalvo,
       xml_danfe_url: f.xml_danfe_url.trim() || null,
@@ -3895,37 +3864,22 @@ export default function Cotacao() {
               </div>
             )}
 
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <button
-                type="button"
-                onClick={calcularRota}
-                disabled={rotaCalculando}
-                className="text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
-                style={{ background: 'var(--rbr-navy)', color: '#fff' }}
-              >
-                {rotaCalculando ? 'Calculando…' : 'Calcular Piso ANTT + Pedágio'}
-              </button>
-              <span className="text-[11px] text-[color:var(--rbr-muted)]">
-                Calcula a distância pela rota (grátis, OpenStreetMap) e o piso ANTT. Pedágio segue estimado manualmente —
-                confira antes de emitir, ou detalhe pelas praças abaixo.
-              </span>
-            </div>
-            {rotaResultado && (
-              <div className="text-xs flex items-center gap-2 flex-wrap -mt-2">
-                <span>
-                  {rotaResultado.distancia_km.toLocaleString('pt-BR')} km · ~{rotaResultado.duracao_horas.toLocaleString('pt-BR')} h
-                </span>
-                <button type="button" onClick={usarDistanciaCalculada} className="underline font-semibold">
-                  usar essa distância
-                </button>
-                <span className="text-[11px] text-[color:var(--rbr-muted)]">(estimativa OpenStreetMap — pode divergir do Qualp)</span>
-              </div>
-            )}
-            {rotaErro && (
-              <span className="text-xs -mt-2" style={{ color: 'var(--rbr-danger)' }}>
-                {rotaErro}
-              </span>
-            )}
+            <CalculoCotacaoRota
+              cidadeOrigem={origem.cidade}
+              ufOrigem={origem.uf}
+              cidadeDestino={form.cidade_destino.trim()}
+              ufDestino={form.uf_destino.trim().toUpperCase()}
+              tipoCarga={form.tipo_carga}
+              eixos={form.eixos}
+              tabela={form.tabela || 'A'}
+              onUsarKm={(km) => setForm((f) => (f ? { ...f, distancia_km: String(km) } : f))}
+              onUsarPiso={(v) => setPisoSalvo(round2(v))}
+              onUsarPedagio={(total, dados) => {
+                pedagioRepomRef.current = { valor: String(total), consultadoEm: dados.consultadoEm }
+                pedagioCalculoRef.current = { valor: String(total), dados }
+                setForm((f) => (f ? { ...f, pedagio: String(total) } : f))
+              }}
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 rounded-lg p-2.5" style={{ background: 'var(--rbr-muted-bg)' }}>
               <div>

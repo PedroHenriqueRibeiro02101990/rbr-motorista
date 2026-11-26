@@ -9,6 +9,7 @@ import { AvisoDocumentoCliente } from '@rbr/shared/DocumentoCliente'
 import { useContratoAgenciador } from '../components/ContratoAgenciador'
 import DeclaracaoCarga from '../components/DeclaracaoCarga'
 import CalcularPedagioRepom, { REPOM_FRONT_LIGADO } from '@rbr/shared/CalcularPedagioRepom'
+import CalculoCotacaoRota, { type DadosPedagioUsado } from '@rbr/shared/CalculoCotacaoRota'
 
 type Pessoa = Database['public']['Tables']['pessoas']['Row']
 type Cotacao = Database['public']['Tables']['cotacoes']['Row']
@@ -163,16 +164,9 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
     motivo_superdimensionada: string | null
   } | null>(null)
 
-  // Cálculo de rota/piso ANTT — tipo_carga e eixos usados no cálculo vêm
-  // direto do form (persistidos na cotação, não são mais locais).
-  const [calculoLoading, setCalculoLoading] = useState(false)
-  const [calculoErro, setCalculoErro] = useState<string | null>(null)
-  const [calculoResultado, setCalculoResultado] = useState<{
-    distancia_km: number
-    duracao_horas: number
-    piso_antt_minimo?: number
-    piso_antt_erro?: string
-  } | null>(null)
+  // Cálculo de rota/piso/pedágio (shared/CalculoCotacaoRota.tsx): só preenche os campos quando o usuário clica em "Usar esse valor".
+  // Guarda ida/volta/ambiente do pedágio usado; só vai ao banco se o valor do campo continua igual ao usado.
+  const pedagioCalculoRef = useRef<{ valor: string; dados: DadosPedagioUsado } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -215,8 +209,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
     setProdutosXml([])
     setIaResultado(null)
     setIaErro(null)
-    setCalculoResultado(null)
-    setCalculoErro(null)
+    pedagioCalculoRef.current = null
     setFormOpen(true)
   }
 
@@ -258,8 +251,7 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
     setProdutosXml([])
     setIaResultado(null)
     setIaErro(null)
-    setCalculoResultado(null)
-    setCalculoErro(null)
+    pedagioCalculoRef.current = null
     setFormOpen(true)
   }
 
@@ -364,43 +356,6 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
     }
   }
 
-  async function handleCalcularRota() {
-    if (!form.cidade_origem || !form.uf_origem || !form.cidade_destino || !form.uf_destino) {
-      setCalculoErro('Preencha cidade/UF de origem e destino antes de calcular.')
-      return
-    }
-    setCalculoLoading(true)
-    setCalculoErro(null)
-    setCalculoResultado(null)
-    try {
-      const { data, error } = await supabase.functions.invoke('calcular-rota-frete', {
-        body: {
-          cidade_origem: form.cidade_origem,
-          uf_origem: form.uf_origem,
-          cidade_destino: form.cidade_destino,
-          uf_destino: form.uf_destino,
-          tipo_carga: form.tipo_carga || undefined,
-          eixos: form.eixos ? Number(form.eixos) : undefined,
-        },
-      })
-      if (error || !data?.sucesso) {
-        setCalculoErro(await mensagemErroFuncao(error, data, 'Não consegui calcular a rota agora.'))
-        return
-      }
-      setCalculoResultado(data)
-    } catch (e) {
-      setCalculoErro(e instanceof Error ? e.message : 'Erro ao chamar o cálculo de rota.')
-    } finally {
-      setCalculoLoading(false)
-    }
-  }
-
-  function usarPisoCalculado() {
-    if (calculoResultado?.piso_antt_minimo != null) {
-      setForm((f) => ({ ...f, piso_antt_calculado: calculoResultado.piso_antt_minimo!.toString() }))
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.cliente_id) {
@@ -424,6 +379,18 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
         : pedagioRepomRef.current && pedagioRepomRef.current.valor === String(form.pedagio)
         ? { pedagio_origem: 'repom', pedagio_consultado_em: pedagioRepomRef.current.consultadoEm }
         : { pedagio_origem: toNumberOrNull(form.pedagio) != null ? 'manual' : null, pedagio_consultado_em: null }),
+      // Ida, volta, ambiente e rodovias do pedágio do cálculo novo (colunas da migração 20261126-1100): só se o valor do campo continua o usado.
+      ...(pedagioCalculoRef.current && pedagioCalculoRef.current.valor === String(form.pedagio)
+        ? {
+            pedagio_origem: 'repom',
+            pedagio_consultado_em: pedagioCalculoRef.current.dados.consultadoEm,
+            pedagio_ida: pedagioCalculoRef.current.dados.pedagio_ida,
+            pedagio_volta: pedagioCalculoRef.current.dados.pedagio_volta,
+            incluir_volta: pedagioCalculoRef.current.dados.incluir_volta,
+            pedagio_ambiente: pedagioCalculoRef.current.dados.pedagio_ambiente,
+            rota_descricao: pedagioCalculoRef.current.dados.rota_descricao,
+          }
+        : {}),
       valor_seguro_tag: toNumberOrNull(form.valor_seguro_tag),
       lucro_rbr: toNumberOrNull(form.lucro_rbr),
       xml_danfe_url: form.xml_danfe_url,
@@ -706,50 +673,21 @@ export default function Cotacoes({ pessoa }: { pessoa: Pessoa }) {
                 </span>
               </label>
             </div>
-            <button
-              type="button"
-              onClick={handleCalcularRota}
-              disabled={calculoLoading}
-              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold disabled:opacity-60"
-              style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy)' }}
-            >
-              {calculoLoading ? 'Calculando…' : '📍 Calcular distância e piso ANTT'}
-            </button>
-
-            {calculoErro && <div className="text-xs text-[color:var(--rbr-danger)]">{calculoErro}</div>}
-
-            {calculoResultado && (
-              <div className="text-xs rounded-xl p-2.5 flex flex-col gap-1" style={{ background: 'var(--rbr-muted-bg)', color: 'var(--rbr-navy-dark)' }}>
-                <div>
-                  <strong>Distância:</strong> {calculoResultado.distancia_km} km{' '}
-                  <strong>· Tempo estimado:</strong> {calculoResultado.duracao_horas} h
-                </div>
-                {calculoResultado.piso_antt_minimo != null && (
-                  <div className="flex items-center gap-2">
-                    <span>
-                      <strong>Piso ANTT mínimo:</strong> {formatMoney(calculoResultado.piso_antt_minimo)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={usarPisoCalculado}
-                      className="text-[11px] font-bold underline"
-                      style={{ color: 'var(--rbr-navy)' }}
-                    >
-                      Usar esse valor
-                    </button>
-                  </div>
-                )}
-                {calculoResultado.piso_antt_erro && (
-                  <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
-                    {calculoResultado.piso_antt_erro}
-                  </div>
-                )}
-                <div className="text-[11px]" style={{ color: 'var(--rbr-muted)' }}>
-                  Distância estimada por rota rodoviária (OpenStreetMap) — pode divergir um pouco da rota real do
-                  motorista. Confira antes de fechar preço muito no limite.
-                </div>
-              </div>
-            )}
+            <CalculoCotacaoRota
+              cidadeOrigem={form.cidade_origem}
+              ufOrigem={form.uf_origem}
+              cidadeDestino={form.cidade_destino}
+              ufDestino={form.uf_destino}
+              tipoCarga={form.tipo_carga}
+              eixos={form.eixos}
+              tabela="A"
+              onUsarKm={() => {}}
+              onUsarPiso={(v) => setForm((f) => ({ ...f, piso_antt_calculado: v.toString() }))}
+              onUsarPedagio={(total, dados) => {
+                pedagioCalculoRef.current = { valor: String(total), dados }
+                setForm((f) => ({ ...f, pedagio: String(total) }))
+              }}
+            />
           </div>
 
           <div className="flex flex-col gap-2 bg-white border rounded-xl p-3" style={{ borderColor: 'var(--rbr-border)' }}>

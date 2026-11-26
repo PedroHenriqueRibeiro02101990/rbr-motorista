@@ -2340,6 +2340,11 @@ export type Database = {
           pedagio: number | null
           pedagio_pracas: Json | null
           pedagio_origem: string | null
+          pedagio_ida: number | null
+          pedagio_volta: number | null
+          incluir_volta: boolean
+          pedagio_ambiente: string | null
+          rota_descricao: string | null
           pedagio_consultado_em: string | null
           perdida_em: string | null
           peso_bruto_kg: number | null
@@ -2430,6 +2435,11 @@ export type Database = {
           pedagio?: number | null
           pedagio_pracas?: Json | null
           pedagio_origem?: string | null
+          pedagio_ida?: number | null
+          pedagio_volta?: number | null
+          incluir_volta?: boolean
+          pedagio_ambiente?: string | null
+          rota_descricao?: string | null
           pedagio_consultado_em?: string | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
@@ -2520,6 +2530,11 @@ export type Database = {
           pedagio?: number | null
           pedagio_pracas?: Json | null
           pedagio_origem?: string | null
+          pedagio_ida?: number | null
+          pedagio_volta?: number | null
+          incluir_volta?: boolean
+          pedagio_ambiente?: string | null
+          rota_descricao?: string | null
           pedagio_consultado_em?: string | null
           perdida_em?: string | null
           peso_bruto_kg?: number | null
@@ -6904,6 +6919,9 @@ export type Database = {
       }
       piso_antt_coeficientes: {
         Row: {
+          a_confirmar: boolean
+          observacao: string | null
+          vigencia_fim: string | null
           cc_fixo: number
           ccd_por_km: number
           criado_em: string
@@ -6916,6 +6934,9 @@ export type Database = {
           tipo_carga: string
         }
         Insert: {
+          a_confirmar?: boolean
+          observacao?: string | null
+          vigencia_fim?: string | null
           cc_fixo: number
           ccd_por_km: number
           criado_em?: string
@@ -6928,6 +6949,9 @@ export type Database = {
           tipo_carga: string
         }
         Update: {
+          a_confirmar?: boolean
+          observacao?: string | null
+          vigencia_fim?: string | null
           cc_fixo?: number
           ccd_por_km?: number
           criado_em?: string
