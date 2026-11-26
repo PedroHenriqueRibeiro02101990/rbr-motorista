@@ -47,3 +47,10 @@ test('CORS restrito: origem desconhecida nao recebe Allow-Origin e nunca "*"', (
   assert.equal(corsPara('https://qualquer.com', '')['Access-Control-Allow-Origin'], undefined)
   assert.notEqual(corsPara('https://rbr-motorista.vercel.app', '')['Access-Control-Allow-Origin'], '*')
 })
+
+test('CORS: dominio final da Calculadora e previews rbr-*-rbr4.vercel.app liberados', () => {
+  assert.equal(corsPara('https://rbr-calculadora.vercel.app', '')['Access-Control-Allow-Origin'], 'https://rbr-calculadora.vercel.app')
+  assert.equal(corsPara('https://rbr-calculadora-git-feat-repom-qa-2026-11-24-rbr4.vercel.app', '')['Access-Control-Allow-Origin'], 'https://rbr-calculadora-git-feat-repom-qa-2026-11-24-rbr4.vercel.app')
+  assert.equal(corsPara('https://rbr-calculadora-abc123-rbr4.vercel.app', '')['Access-Control-Allow-Origin'], 'https://rbr-calculadora-abc123-rbr4.vercel.app')
+  assert.equal(corsPara('https://outro-projeto.vercel.app', '')['Access-Control-Allow-Origin'], undefined)
+})

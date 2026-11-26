@@ -2,7 +2,7 @@
 // CORS restrito ao domínio do app: nunca "*". Origens permitidas: produção, os previews do time na Vercel e o que vier em REPOM_CORS_ORIGENS
 // (lista separada por vírgula; variável de ambiente da função, não é segredo).
 
-const ORIGENS_FIXAS = ['https://rbr-motorista.vercel.app']
+const ORIGENS_FIXAS = ['https://rbr-motorista.vercel.app', 'https://rbr-calculadora.vercel.app']
 const PADRAO_PREVIEW = /^https:\/\/rbr-[a-z0-9-]+-rbr4\.vercel\.app$/
 
 export function origemPermitida(origem: string | null | undefined, extras: string | null | undefined): boolean {
