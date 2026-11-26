@@ -1,7 +1,7 @@
 // node --test supabase/functions/_shared/repomQaVpr.test.ts   (sem rede: tudo com mock)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ACOES_VPR, CNPJ_FILIAL_VPR_QA, cnpjValido, conferirPreVoo, cpfValido, executarQaVpr, lerEixosVeiculo, lerNome, MAX_EMISSOES_VPR, novoProcessoVpr, pedidoSanitizado, type DepsVpr } from './repomQaVpr.ts'
+import { ACOES_VPR, CNPJ_FILIAL_VPR_QA, cnpjValido, conferirPreVoo, cpfValido, executarQaVpr, lerEixosVeiculo, lerParVpr, lerNome, MAX_EMISSOES_VPR, novoProcessoVpr, pedidoSanitizado, type DepsVpr } from './repomQaVpr.ts'
 import { dvChaveAcesso } from './repomQaAdiantamento.ts'
 import type { ClienteRepomVpr, PedidoVale, ResultadoVpr, TagRepom, ValeRepom } from './repomVprClient.ts'
 
@@ -176,4 +176,18 @@ test('rota_vpr: consulta a rota da 9501; se não existe cria UMA vez, consulta o
 
 test('sem rota da 9501 gravada: tag e emissão param antes de chamar a Repom', async () => {
   for (const acao of ['tag_vpr', 'emitir_vpo_vpr']) { const m = montar({ semRota: true }); const r = await executarQaVpr({ acao, confirmacao: conf }, m.d); assert.equal(r.status, 422); assert.deepEqual(m.chamadas, []) }
+})
+
+const CNPJ_PAR = '09524157000190'
+test('par da planilha: só tração da lista com a carreta dela e documento válido; o corpo usa as placas do par e os eixos lidos do cadastro', async () => {
+  assert.equal(lerParVpr(undefined), null)
+  assert.equal(typeof lerParVpr({ tracao: 'AAA0A00', carreta: 'NPJ5072', documento: CNPJ_PAR }), 'string') // tração fora da lista
+  assert.equal(typeof lerParVpr({ tracao: 'FPU2C10', carreta: 'SUM8I91', documento: CNPJ_PAR }), 'string') // carreta de outro par
+  assert.equal(typeof lerParVpr({ tracao: 'FPU2C10', carreta: 'NPJ5072', documento: '11111111111111' }), 'string') // documento inválido
+  assert.deepEqual(lerParVpr({ tracao: 'fpu2c10', carreta: 'npj-5072', documento: '09.524.157/0001-90' }), { tracao: 'FPU2C10', carreta: 'NPJ5072', documento: CNPJ_PAR })
+  const a = montar(); const r = await executarQaVpr({ acao: 'emitir_vpo_vpr', confirmacao: conf, par: { tracao: 'FPU2C10', carreta: 'NPJ5072', documento: CNPJ_PAR } }, a.d)
+  assert.equal(r.status, 200)
+  const emitido = a.regs.find((x) => x.acao === 'corpo-emitido')?.request as PedidoVale
+  assert.equal(emitido.placa, 'FPU2C10'); assert.equal(emitido.carretaPlaca, 'NPJ5072'); assert.equal(emitido.documentoTransportador, CNPJ_PAR); assert.equal(emitido.carretaNumeroEixos, 5)
+  const b = montar(); assert.equal((await executarQaVpr({ acao: 'tag_vpr', par: { tracao: 'ZZZ9Z99', carreta: 'NPJ5072', documento: CNPJ_PAR } }, b.d)).status, 400); assert.deepEqual(b.chamadas, [])
 })

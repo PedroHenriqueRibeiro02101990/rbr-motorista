@@ -15,6 +15,20 @@ export const CODIGO_ROTA_CLIENTE_VPR = 'RBRQAV01'
 export const IBGE_ORIGEM_ROTA = '3550308' // São Paulo/SP
 export const IBGE_DESTINO_ROTA = '3304557' // Rio de Janeiro/RJ
 export type AcaoVpr = (typeof ACOES_VPR)[number]
+/** Conjuntos da planilha PRESTADOR OK ANTT liberados para o teste (lista fechada de placas; o documento do transportador vem no pedido e passa pelo PRE-VOO). */
+export const CARRETA_DO_PAR_VPR: Record<string, string> = { FPU2C10: 'NPJ5072', EHX9J93: 'SUM8I91', QIB4852: 'QTL9584' }
+export interface ParVpr { tracao: string; carreta?: string; documento: string }
+/** Lê `par` do pedido: só tração da lista (com a carreta dela) e o documento (CPF/CNPJ válido). Devolve null se não houver; string se for inválido. */
+export function lerParVpr(v: unknown): ParVpr | null | string {
+  if (v == null) return null
+  if (!ehObj(v)) return 'par inválido'
+  const tracao = normalizarPlaca(String(v.tracao ?? '')); const documento = so(v.documento)
+  const carreta = v.carreta ? normalizarPlaca(String(v.carreta)) : ''
+  if (!(tracao in CARRETA_DO_PAR_VPR)) return 'tração fora da lista liberada'
+  if (carreta !== CARRETA_DO_PAR_VPR[tracao]) return 'carreta não é a do par da lista'
+  if (!(documento.length === 11 ? cpfValido(documento) : cnpjValido(documento))) return 'documento do transportador inválido'
+  return { tracao, carreta, documento }
+}
 export const MAX_EMISSOES_VPR = 4 // 2 da rodada 1 (usadas, erro 0) + 2 da rodada 2 (liberadas pelo Pedro)
 export const MAX_CANCELAMENTOS_VPR = 1
 /** Contrato-modelo da rodada de 17/11 (só leitura): de onde vêm prestador, motorista, placa e roteiro. */
@@ -180,7 +194,7 @@ const tagSegura = (t: TagRepom): Obj => ({ nomeTag: t.nomeTag, numeroTag: t.nume
 type PreVoo = { ok: true; pedido: PedidoVale; regras: RegraVpr[]; tracao: string } | { ok: false; erro: string; regras?: RegraVpr[]; forma?: unknown }
 
 /** Lê (só leitura) e monta o pedido do vale com os mesmos dados do 17/11, e roda o PRE-VOO. Nada é enviado à conta 9501 aqui. */
-export async function montarPreVoo(d: DepsVpr, rotaFixa?: { roteiroCodigo: number; percursoCodigo: number }): Promise<PreVoo> {
+export async function montarPreVoo(d: DepsVpr, rotaFixa?: { roteiroCodigo: number; percursoCodigo: number }, par?: ParVpr): Promise<PreVoo> {
   const rota = rotaFixa ?? (await d.rotaVpr())
   if (!rota) return { ok: false, erro: 'A rota da 9501 ainda não existe: rode rota_vpr antes (o 1/143217 do Frete não vale na 9501).' }
   const lm = await d.frete.consultarContratoPorViagem(MODELO_SHIPPING_ID)
@@ -190,22 +204,25 @@ export async function montarPreVoo(d: DepsVpr, rotaFixa?: { roteiroCodigo: numbe
   const conf = conferirModelo(m.modelo)
   if (conf) return { ok: false, erro: conf }
   const mod = m.modelo
+  // com `par` (planilha ANTT): tração + carreta e documento do transportador do par; motorista, CT-e e filial continuam os do modelo
+  const placas = par ? [par.tracao, par.carreta].filter((x): x is string => !!x) : mod.placas
+  const docTransp = par ? par.documento : mod.hiredNationalId
   const principal = mod.motoristas.find((x) => x.principal) ?? mod.motoristas[0]
-  const [ctd, mot, ...veis] = await Promise.all([d.frete.consultarContratadoPorDocumento(mod.hiredNationalId), d.frete.consultarMotorista(principal.cpf), ...mod.placas.slice(0, 2).map((p) => d.frete.consultarVeiculo(p))])
+  const [ctd, mot, ...veis] = await Promise.all([d.frete.consultarContratadoPorDocumento(docTransp), d.frete.consultarMotorista(principal.cpf), ...placas.slice(0, 2).map((p) => d.frete.consultarVeiculo(p))])
   const dono = veis[0]?.ok ? lerDonoVeiculo(veis[0].dados) : { doc: '', nome: '' }
-  const nomeT = (ctd.ok ? lerNome(ctd.dados) : '') || (dono.doc === so(mod.hiredNationalId) ? dono.nome : '')
+  const nomeT = (ctd.ok ? lerNome(ctd.dados) : '') || (dono.doc === so(docTransp) ? dono.nome : '')
   const nomeM = mot.ok ? lerNome(mot.dados) : ''
   if (!nomeT) return { ok: false, erro: 'Não li o nome do prestador no cadastro de teste (só leitura).', forma: { http: ctd.http, resposta: ctd.ok ? formaDaResposta(ctd.dados) : null, contrato_modelo: formaDaResposta(lm.dados), motorista_http: mot.http, motorista: mot.ok ? formaDaResposta(mot.dados) : null, veiculo: veis[0]?.ok ? formaDaResposta(veis[0].dados) : null } }
   if (!nomeM) return { ok: false, erro: 'Não li o nome do motorista no cadastro de teste (só leitura).', forma: { http: mot.http, resposta: mot.ok ? formaDaResposta(mot.dados) : null } }
   const eixos = veis.map((v) => (v.ok ? lerEixosVeiculo(v.dados) : null))
   if (eixos[0] == null) return { ok: false, erro: 'Não li os eixos da tração no cadastro do veículo (só leitura).', forma: { http: veis[0]?.http, resposta: veis[0]?.ok ? formaDaResposta(veis[0].dados) : null } }
-  const comCarreta = mod.placas.length > 1
+  const comCarreta = placas.length > 1
   if (comCarreta && eixos[1] == null) return { ok: false, erro: 'Não li os eixos da carreta no cadastro do veículo (só leitura).', forma: { http: veis[1]?.http, resposta: veis[1]?.ok ? formaDaResposta(veis[1].dados) : null } }
   const pedido: PedidoVale = {
     processoCodigoCliente: novoProcessoVpr(d.agora()),
-    placa: normalizarPlaca(mod.placas[0]), numeroEixos: eixos[0],
-    ...(comCarreta ? { carretaPlaca: normalizarPlaca(mod.placas[1]), carretaNumeroEixos: eixos[1] as number } : {}),
-    nomeTransportador: nomeT, documentoTransportador: mod.hiredNationalId,
+    placa: normalizarPlaca(placas[0]), numeroEixos: eixos[0],
+    ...(comCarreta ? { carretaPlaca: normalizarPlaca(placas[1]), carretaNumeroEixos: eixos[1] as number } : {}),
+    nomeTransportador: nomeT, documentoTransportador: docTransp,
     nomeMotorista: nomeM, documentoMotorista: principal.cpf, cnpjFilial: CNPJ_FILIAL_VPR_QA, usuarioEmissao: USUARIO_EMISSAO_VPR,
     roteiro: rota, documentos: [{ codigo: mod.documento.numero, serie: mod.documento.serie }], eixosSuspensosIda: 0, eixosSuspensosVolta: 0,
   }
@@ -247,9 +264,12 @@ export async function executarQaVpr(corpo: Obj, d: DepsVpr): Promise<SaidaQa> {
     return { status: 200, corpo: { ok: true, rota: resposta } }
   }
 
+  const par = lerParVpr(corpo.par)
+  if (typeof par === 'string') return parar(par, 400)
+
   // ---------- TAG (e PRE-VOO sem enviar) ----------
   if (acao === 'tag_vpr') {
-    const pv = await montarPreVoo(d)
+    const pv = await montarPreVoo(d, undefined, par ?? undefined)
     if (!pv.ok) return parar(pv.erro, 422, { pre_voo: { aprovado: false, regras: pv.regras ?? [] }, forma_da_leitura: pv.forma ?? null })
     const id = await d.registrar('qa-teste-vpr-tag', { placa: pv.tracao })
     const t = await d.vpr.consultarTag(pv.pedido.placa)
@@ -264,7 +284,7 @@ export async function executarQaVpr(corpo: Obj, d: DepsVpr): Promise<SaidaQa> {
     if (nome.length < 3) return parar('A emissão exige confirmacao.nome.', 400)
     const hist = await d.historico('emitir')
     if (hist.length >= MAX_EMISSOES_VPR) return parar(`Limite de ${MAX_EMISSOES_VPR} emissões do vale nesta função atingido.`, 429)
-    const pv = await montarPreVoo(d)
+    const pv = await montarPreVoo(d, undefined, par ?? undefined)
     if (!pv.ok) return parar(pv.erro, 422, { pre_voo: { aprovado: false, regras: pv.regras ?? [] }, forma_da_leitura: pv.forma ?? null })
     const t = await d.vpr.consultarTag(pv.pedido.placa)
     if (!t.ok) return parar(`Consulta de TAG falhou antes de emitir: ${t.erro}. Nada foi emitido.`, t.http === 0 ? 502 : 422)
