@@ -8,7 +8,7 @@ import type { ClienteRepomFrete } from './repomFreteClient.ts'
 import { conferirModelo, lerModeloContrato } from './repomQaAdiantamento.ts'
 import { montarCorpoVale, normalizarPlaca, placaApta, type ClienteRepomVpr, type PedidoVale, type ResultadoVpr, type TagRepom, type ValeRepom } from './repomVprClient.ts'
 
-export const ACOES_VPR = ['tag_vpr', 'rota_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'] as const
+export const ACOES_VPR = ['tag_vpr', 'tag_placas', 'rota_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'] as const
 export const MAX_ROTAS_VPR = 2
 /** Código da rota no NOSSO sistema (até 10): a rota da 9501 em QA. O 1/143217 do contrato do Frete NÃO existe na 9501 ("Roteiro inativo ou não cadastrado para o cliente"). */
 export const CODIGO_ROTA_CLIENTE_VPR = 'RBRQAV01'
@@ -17,19 +17,23 @@ export const IBGE_DESTINO_ROTA = '3304557' // Rio de Janeiro/RJ
 export type AcaoVpr = (typeof ACOES_VPR)[number]
 /** Conjuntos da planilha PRESTADOR OK ANTT liberados para o teste (lista fechada de placas; o documento do transportador vem no pedido e passa pelo PRE-VOO). */
 export const CARRETA_DO_PAR_VPR: Record<string, string> = { FPU2C10: 'NPJ5072', EHX9J93: 'SUM8I91', QIB4852: 'QTL9584' }
-export interface ParVpr { tracao: string; carreta?: string; documento: string }
+export interface ParVpr { tracao: string; carreta?: string; documento: string; /** dados da planilha (sem cadastro no Frete): nome/rótulo do transportador e eixos da tração */ nome?: string; eixos?: number }
 /** Lê `par` do pedido: só tração da lista (com a carreta dela) e o documento (CPF/CNPJ válido). Devolve null se não houver; string se for inválido. */
 export function lerParVpr(v: unknown): ParVpr | null | string {
   if (v == null) return null
   if (!ehObj(v)) return 'par inválido'
   const tracao = normalizarPlaca(String(v.tracao ?? '')); const documento = so(v.documento)
   const carreta = v.carreta ? normalizarPlaca(String(v.carreta)) : ''
-  if (!(tracao in CARRETA_DO_PAR_VPR)) return 'tração fora da lista liberada'
-  if (carreta !== CARRETA_DO_PAR_VPR[tracao]) return 'carreta não é a do par da lista'
+  if (!placaPadrao(tracao)) return 'placa da tração inválida'
+  if (carreta && carreta !== CARRETA_DO_PAR_VPR[tracao]) return 'carreta não é a do par da lista'
   if (!(documento.length === 11 ? cpfValido(documento) : cnpjValido(documento))) return 'documento do transportador inválido'
-  return { tracao, carreta, documento }
+  const nome = typeof v.nome === 'string' ? v.nome.trim().replace(/\s+/g, ' ') : ''
+  if (nome.length > 100) return 'nome do transportador acima de 100'
+  const eixos = v.eixos == null ? undefined : Number(v.eixos)
+  if (eixos !== undefined && !(Number.isInteger(eixos) && eixos >= 1 && eixos <= 15)) return 'eixos inválidos'
+  return { tracao, ...(carreta ? { carreta } : {}), documento, ...(nome ? { nome } : {}), ...(eixos !== undefined ? { eixos } : {}) }
 }
-export const MAX_EMISSOES_VPR = 4 // 2 da rodada 1 (usadas, erro 0) + 2 da rodada 2 (liberadas pelo Pedro)
+export const MAX_EMISSOES_VPR = 8 // 4 usadas (3 com erro 0 e 1 com "Placa não possui tag") + 4 extras liberadas pelo Pedro em 26/11/2026 (só QA)
 export const MAX_CANCELAMENTOS_VPR = 1
 /** Contrato-modelo da rodada de 17/11 (só leitura): de onde vêm prestador, motorista, placa e roteiro. */
 export const MODELO_SHIPPING_ID = 2166947
@@ -210,11 +214,12 @@ export async function montarPreVoo(d: DepsVpr, rotaFixa?: { roteiroCodigo: numbe
   const principal = mod.motoristas.find((x) => x.principal) ?? mod.motoristas[0]
   const [ctd, mot, ...veis] = await Promise.all([d.frete.consultarContratadoPorDocumento(docTransp), d.frete.consultarMotorista(principal.cpf), ...placas.slice(0, 2).map((p) => d.frete.consultarVeiculo(p))])
   const dono = veis[0]?.ok ? lerDonoVeiculo(veis[0].dados) : { doc: '', nome: '' }
-  const nomeT = (ctd.ok ? lerNome(ctd.dados) : '') || (dono.doc === so(docTransp) ? dono.nome : '')
+  const nomeT = par?.nome || (ctd.ok ? lerNome(ctd.dados) : '') || (dono.doc === so(docTransp) ? dono.nome : '')
   const nomeM = mot.ok ? lerNome(mot.dados) : ''
   if (!nomeT) return { ok: false, erro: 'Não li o nome do prestador no cadastro de teste (só leitura).', forma: { http: ctd.http, resposta: ctd.ok ? formaDaResposta(ctd.dados) : null, contrato_modelo: formaDaResposta(lm.dados), motorista_http: mot.http, motorista: mot.ok ? formaDaResposta(mot.dados) : null, veiculo: veis[0]?.ok ? formaDaResposta(veis[0].dados) : null } }
   if (!nomeM) return { ok: false, erro: 'Não li o nome do motorista no cadastro de teste (só leitura).', forma: { http: mot.http, resposta: mot.ok ? formaDaResposta(mot.dados) : null } }
   const eixos = veis.map((v) => (v.ok ? lerEixosVeiculo(v.dados) : null))
+  if (par?.eixos) eixos[0] = par.eixos // eixos da tração informados (planilha ANTT não traz eixos)
   if (eixos[0] == null) return { ok: false, erro: 'Não li os eixos da tração no cadastro do veículo (só leitura).', forma: { http: veis[0]?.http, resposta: veis[0]?.ok ? formaDaResposta(veis[0].dados) : null } }
   const comCarreta = placas.length > 1
   if (comCarreta && eixos[1] == null) return { ok: false, erro: 'Não li os eixos da carreta no cadastro do veículo (só leitura).', forma: { http: veis[1]?.http, resposta: veis[1]?.ok ? formaDaResposta(veis[1].dados) : null } }
@@ -266,6 +271,19 @@ export async function executarQaVpr(corpo: Obj, d: DepsVpr): Promise<SaidaQa> {
 
   const par = lerParVpr(corpo.par)
   if (typeof par === 'string') return parar(par, 400)
+
+  // ---------- TAG de várias placas (só consulta, nada é emitido; pausa curta entre chamadas) ----------
+  if (acao === 'tag_placas') {
+    const lista = Array.isArray(corpo.placas) ? corpo.placas.map((x) => normalizarPlaca(String(x))) : []
+    if (!lista.length || lista.length > 10 || lista.some((x) => !placaPadrao(x))) return parar('Informe de 1 a 10 placas no padrão em "placas".', 400)
+    const placas: Obj[] = []
+    for (const pl of lista) {
+      const t = await d.vpr.consultarTag(pl)
+      placas.push({ placa: pl, http: t.http, apta: t.ok ? placaApta(t.dados) : null, operadoras_ativas: t.ok ? t.dados.filter((x) => x.codigoStatusTag === 1).map((x) => x.nomeTag) : [], operadoras_aptas: t.ok ? t.dados.filter((x) => x.apto).map((x) => x.nomeTag) : [], erro: t.ok ? null : t.erro })
+      await new Promise((r) => setTimeout(r, 400))
+    }
+    return { status: 200, corpo: { ok: true, placas } }
+  }
 
   // ---------- TAG (e PRE-VOO sem enviar) ----------
   if (acao === 'tag_vpr') {

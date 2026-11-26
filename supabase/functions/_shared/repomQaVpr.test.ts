@@ -58,7 +58,7 @@ function montar(o: Opcoes = {}) {
 const conf = { nome: 'Pedro' }
 
 test('lista fechada: só as 4 ações do vale; ação livre é recusada e nada é chamado', async () => {
-  assert.deepEqual([...ACOES_VPR], ['tag_vpr', 'rota_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'])
+  assert.deepEqual([...ACOES_VPR], ['tag_vpr', 'tag_placas', 'rota_vpr', 'emitir_vpo_vpr', 'consultar_vpo_vpr', 'cancelar_vpo_vpr'])
   const m = montar()
   const r = await executarQaVpr({ acao: 'qualquer', url: 'https://x', metodo: 'DELETE' }, m.d)
   assert.equal(r.status, 400); assert.deepEqual(m.chamadas, [])
@@ -103,9 +103,9 @@ test('emitir: pre-voo reprova (nome não lido, modelo de outra pessoa) => não c
   }
 })
 
-test('emitir: sem confirmacao.nome => 400; limite de 2 emissões => 429, sem chamar a Repom', async () => {
+test('emitir: sem confirmacao.nome => 400; limite de 8 emissões => 429, sem chamar a Repom', async () => {
   const a = montar(); assert.equal((await executarQaVpr({ acao: 'emitir_vpo_vpr' }, a.d)).status, 400)
-  const b = montar({ histEmitir: ['erro', 'erro', 'ok', 'erro'] }); assert.equal(MAX_EMISSOES_VPR, 4)
+  const b = montar({ histEmitir: ['erro', 'erro', 'ok', 'erro', 'erro', 'erro', 'erro', 'erro'] }); assert.equal(MAX_EMISSOES_VPR, 8)
   assert.equal((await executarQaVpr({ acao: 'emitir_vpo_vpr', confirmacao: conf }, b.d)).status, 429); assert.deepEqual(b.chamadas, [])
 })
 
@@ -181,7 +181,7 @@ test('sem rota da 9501 gravada: tag e emissão param antes de chamar a Repom', a
 const CNPJ_PAR = '09524157000190'
 test('par da planilha: só tração da lista com a carreta dela e documento válido; o corpo usa as placas do par e os eixos lidos do cadastro', async () => {
   assert.equal(lerParVpr(undefined), null)
-  assert.equal(typeof lerParVpr({ tracao: 'AAA0A00', carreta: 'NPJ5072', documento: CNPJ_PAR }), 'string') // tração fora da lista
+  assert.equal(typeof lerParVpr({ tracao: 'AAA0A00', carreta: 'NPJ5072', documento: CNPJ_PAR }), 'string') // carreta não é a do par
   assert.equal(typeof lerParVpr({ tracao: 'FPU2C10', carreta: 'SUM8I91', documento: CNPJ_PAR }), 'string') // carreta de outro par
   assert.equal(typeof lerParVpr({ tracao: 'FPU2C10', carreta: 'NPJ5072', documento: '11111111111111' }), 'string') // documento inválido
   assert.deepEqual(lerParVpr({ tracao: 'fpu2c10', carreta: 'npj-5072', documento: '09.524.157/0001-90' }), { tracao: 'FPU2C10', carreta: 'NPJ5072', documento: CNPJ_PAR })
@@ -190,4 +190,15 @@ test('par da planilha: só tração da lista com a carreta dela e documento vál
   const emitido = a.regs.find((x) => x.acao === 'corpo-emitido')?.request as PedidoVale
   assert.equal(emitido.placa, 'FPU2C10'); assert.equal(emitido.carretaPlaca, 'NPJ5072'); assert.equal(emitido.documentoTransportador, CNPJ_PAR); assert.equal(emitido.carretaNumeroEixos, 5)
   const b = montar(); assert.equal((await executarQaVpr({ acao: 'tag_vpr', par: { tracao: 'ZZZ9Z99', carreta: 'NPJ5072', documento: CNPJ_PAR } }, b.d)).status, 400); assert.deepEqual(b.chamadas, [])
+})
+test('tag_placas: só consulta (nenhuma emissão), 1 a 10 placas válidas; par com nome/eixos da planilha dispensa o cadastro do Frete', async () => {
+  const a = montar(); const r = await executarQaVpr({ acao: 'tag_placas', placas: ['ehx9j93', 'QIB4852'] }, a.d)
+  assert.equal(r.status, 200); assert.deepEqual(a.chamadas, ['tag', 'tag']); assert.equal((r.corpo.placas as unknown[]).length, 2)
+  assert.equal((await executarQaVpr({ acao: 'tag_placas', placas: [] }, montar().d)).status, 400)
+  assert.equal((await executarQaVpr({ acao: 'tag_placas', placas: ['XX'] }, montar().d)).status, 400)
+  assert.equal((await executarQaVpr({ acao: 'tag_placas', placas: Array(11).fill('EHX9J93') }, montar().d)).status, 400)
+  assert.deepEqual(lerParVpr({ tracao: 'EHX9J93', documento: CNPJ_PAR, nome: 'PRESTADOR RNTRC 1', eixos: 2 }), { tracao: 'EHX9J93', documento: CNPJ_PAR, nome: 'PRESTADOR RNTRC 1', eixos: 2 })
+  const b = montar({ semNome: true }); const e = await executarQaVpr({ acao: 'emitir_vpo_vpr', confirmacao: conf, par: { tracao: 'EHX9J93', documento: CNPJ_PAR, nome: 'PRESTADOR RNTRC 1', eixos: 3 } }, b.d)
+  assert.equal(e.status, 200); const ped = b.regs.find((x) => x.acao === 'corpo-emitido')?.request as PedidoVale
+  assert.equal(ped.placa, 'EHX9J93'); assert.equal(ped.nomeTransportador, 'PRESTADOR RNTRC 1'); assert.equal(ped.numeroEixos, 3); assert.equal(ped.carretaPlaca, undefined)
 })
