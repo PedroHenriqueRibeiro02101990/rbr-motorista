@@ -24,3 +24,88 @@ Historico de emissoes da funcao (repom_requisicoes, qa-teste-vpr-emitir):
 Limite nao foi alterado (depende de autorizacao do Pedro). Consultar, cancelar e consultar nao rodaram: nao ha codigoViagem.
 
 [5] Encerramento: segredo REPOM_QA_TESTE_LIBERADO apagado; a funcao repom-qa-teste responde "desligado" (HTTP 503).
+
+
+[6] RODADA 4 (26/11/2026): limite de emissoes 4 -> 8 (QA, autorizado pelo Pedro). Interruptor religado.
+TAG (GET /api/RepomVeiculo/tags/placa) de TODAS as placas da planilha PRESTADOR OK ANTT.xlsx (so consulta, em lotes com pausa; documentos nao gravados aqui):
+PLACA | TIPO | PRESTADOR | RNTRC | OPERADORA ATIVA | APTA
+QTL9584 | IMPLEMENTO | CTC | 001828233 | - | NAO
+QIB4852 | TRACAO | CTC | 001828233 | Tag Veloe | SIM
+FPU2C10 | TRACAO | ETC | 011646868 | - | NAO
+NPJ5072 | IMPLEMENTO | ETC | 011646868 | - | NAO
+GKP0C43 | TRACAO | TAC | 052519566 | - | NAO
+EHX9J93 | TRACAO | ETC | 012301392 | Tag Sem Parar | SIM
+SUM8I91 | IMPLEMENTO | ETC | 012301392 | - | NAO
+RTS7I31 | TRACAO | ETC | 000050780 | Tag Sem Parar | SIM
+RTS7I32 | TRACAO | ETC | 000050780 | Tag Sem Parar | SIM
+RUX2B07 | TRACAO | ETC | 000050780 | Tag Sem Parar | SIM
+RUX2B08 | TRACAO | ETC | 000050780 | Tag Sem Parar | SIM
+JBG5B81 | TRACAO | ETC | 000050780 | Tag Sem Parar | SIM
+JAW4C51 | TRACAO | ETC | 000050780 | Tag Sem Parar | SIM
+QIH1994 | TRACAO | ETC | 011481929 | Tag Sem Parar | SIM
+NAG5110 | TRACAO | ETC | 045052520 | - | NAO
+LJY1053 | TRACAO | ETC | 045190379 | Tag Sem Parar | SIM
+EMU7313 | TRACAO | ETC | 045190379 | - | NAO
+OGT9661 | TRACAO | ETC | 048084170 | Tag Sem Parar | SIM
+MGY3379 | TRACAO | ETC | 000407609 | - | NAO
+NKG4404 | TRACAO | ETC | 009639727 | Tag Sem Parar | SIM
+EMU3349 | TRACAO | ETC | 005830067 | - | NAO
+CUD8217 | TRACAO | ETC | 047402373 | - | NAO
+DPC7290 | TRACAO | ETC | 007318673 | - | NAO
+GPQ6618 | TRACAO | TAC | 046437064 | - | NAO
+BIS4025 | TRACAO | TAC | 012287698 | Tag Sem Parar | SIM
+CPN1377 | TRACAO | TAC | 012092645 | - | NAO
+BWH3818 | TRACAO | TAC | 001401781 | - | NAO
+EFU2514 | TRACAO | TAC | 046054851 | Tag Sem Parar | SIM
+AJE5040 | TRACAO | TAC | 048061979 | - | NAO
+EDY4851 | TRACAO | TAC | 050113311 | - | NAO
+DKY5542 | TRACAO | TAC | 007867634 | Tag Sem Parar | SIM
+BWH3713 | TRACAO | TAC | 001046132 | Tag Sem Parar | SIM
+DTE7444 | TRACAO | TAC | 048230954 | - | NAO
+(Planilha: sem coluna de nome nem de eixos; so documento, RNTRC, placa, tipo de veiculo e tipo de prestador.)
+
+[7] EMISSOES DA RODADA 4 (PRE-VOO aprovado em todas; corpo = Postman: Pracas [], NumeroCartao "", UtilizaCarreta "false", carreta ""/0, Subcontratado ""; rota 148993/4; tracao sem carreta)
+Premissas: a planilha nao tem nome nem eixos. Nome enviado = "PRESTADOR RNTRC <rntrc>" (rotulo, nao nome real); eixos = 2 (cavalo solo, igual a BIS4025 do cadastro).
+Obs.: na 1a passada QIB4852 voltou "nao apta" na checagem pre-emissao e EFU2514 deu erro transitorio na consulta de TAG (nada emitido); ambas voltaram aptas na reconsulta e foram emitidas na 2a passada.
+
+[7.EHX9J93] ETC RNTRC 012301392 doc ***0114
+ PRE-VOO: aprovado=True regras=15 falhas=[] erro=None
+ pedido sanitizado: {"processoCodigoCliente": "RBV261126112307", "placa": "EHX9J93", "numeroEixos": 2, "nomeTransportador": "PRESTADORâ€¦", "documentoTransportador": "***0114", "nomeMotorista": "Motoristaâ€¦", "documentoMotorista": "***2853", "cnpjFilial": "***0104", "usuarioEmissao": "RBR QA Homologacao", "roteiro": {"RoteiroCodigo": 148993, "PercursoCodigo": 4}, "configuracao": {"EixosSuspensosIda": 0, "EixosSuspensosVolta": 0}}
+ EMISSAO: {"ok": false, "parou": true, "erro": "A Repom recusou a emissÃ£o: VPR: Placa nÃ£o possui tag cadastrada", "http": 200, "numeroErro": "316", "processo": "RBV261126112343", "incerto": false}
+
+[7.QIB4852] CTC RNTRC 001828233 doc ***0111
+ PRE-VOO: aprovado=True regras=15 falhas=[] erro=None
+ pedido sanitizado: {"processoCodigoCliente": "RBV261126112422", "placa": "QIB4852", "numeroEixos": 2, "nomeTransportador": "PRESTADORâ€¦", "documentoTransportador": "***0111", "nomeMotorista": "Motoristaâ€¦", "documentoMotorista": "***2853", "cnpjFilial": "***0104", "usuarioEmissao": "RBR QA Homologacao", "roteiro": {"RoteiroCodigo": 148993, "PercursoCodigo": 4}, "configuracao": {"EixosSuspensosIda": 0, "EixosSuspensosVolta": 0}}
+ EMISSAO: {"ok": false, "parou": true, "erro": "A placa nÃ£o estÃ¡ com TAG ativa (codigoStatusTag 1) e apta (Sim). Nada foi emitido.", "tags": [{"nomeTag": "Tag Edenred", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag GestÃ£o de PedÃ¡gio", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag ConectCar", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag MoveMais", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag Sem Parar", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag Veloe", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag Strada", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}, {"nomeTag": "Tag Sicoob", "numeroTag": null, "codigoStatusTag": 5, "statusTag": "NÃ£o Localizado", "apto": false, "observacao": "Placa nÃ£o possui Tag ou estÃ¡ com restriÃ§Ãµes"}]}
+
+[7.EFU2514] TAC RNTRC 046054851 doc ***6881
+ PRE-VOO: aprovado=True regras=15 falhas=[] erro=None
+ pedido sanitizado: {"processoCodigoCliente": "RBV261126112633", "placa": "EFU2514", "numeroEixos": 2, "nomeTransportador": "PRESTADORâ€¦", "documentoTransportador": "***6881", "nomeMotorista": "Motoristaâ€¦", "documentoMotorista": "***2853", "cnpjFilial": "***0104", "usuarioEmissao": "RBR QA Homologacao", "roteiro": {"RoteiroCodigo": 148993, "PercursoCodigo": 4}, "configuracao": {"EixosSuspensosIda": 0, "EixosSuspensosVolta": 0}}
+ EMISSAO: {"ok": false, "parou": true, "erro": "Consulta de TAG falhou antes de emitir: Unexpected error. Nada foi emitido."}
+
+[7.DKY5542] TAC RNTRC 007867634 doc ***4812
+ PRE-VOO: aprovado=True regras=15 falhas=[] erro=None
+ pedido sanitizado: {"processoCodigoCliente": "RBV261126112802", "placa": "DKY5542", "numeroEixos": 2, "nomeTransportador": "PRESTADORâ€¦", "documentoTransportador": "***4812", "nomeMotorista": "Motoristaâ€¦", "documentoMotorista": "***2853", "cnpjFilial": "***0104", "usuarioEmissao": "RBR QA Homologacao", "roteiro": {"RoteiroCodigo": 148993, "PercursoCodigo": 4}, "configuracao": {"EixosSuspensosIda": 0, "EixosSuspensosVolta": 0}}
+ EMISSAO: {"ok": false, "parou": true, "erro": "A Repom recusou a emissÃ£o: VPR: Placa nÃ£o possui tag cadastrada", "http": 200, "numeroErro": "316", "processo": "RBV261126112841", "incerto": false}
+
+[7b.QIB4852] CTC RNTRC 001828233 doc ***0111
+ pedido sanitizado: {"processoCodigoCliente": "RBV261126113011", "placa": "QIB4852", "numeroEixos": 2, "nomeTransportador": "PRESTADORâ€¦", "documentoTransportador": "***0111", "nomeMotorista": "Motoristaâ€¦", "documentoMotorista": "***2853", "cnpjFilial": "***0104", "usuarioEmissao": "RBR QA Homologacao", "roteiro": {"RoteiroCodigo": 148993, "PercursoCodigo": 4}, "configuracao": {"EixosSuspensosIda": 0, "EixosSuspensosVolta": 0}}
+ EMISSAO: {"ok": false, "parou": true, "erro": "A Repom recusou a emissÃ£o: VPR: Placa nÃ£o possui tag cadastrada", "http": 200, "numeroErro": "316", "processo": "RBV261126113011", "incerto": false}
+
+[7b.EFU2514] TAC RNTRC 046054851 doc ***6881
+ pedido sanitizado: {"processoCodigoCliente": "RBV261126113049", "placa": "EFU2514", "numeroEixos": 2, "nomeTransportador": "PRESTADORâ€¦", "documentoTransportador": "***6881", "nomeMotorista": "Motoristaâ€¦", "documentoMotorista": "***2853", "cnpjFilial": "***0104", "usuarioEmissao": "RBR QA Homologacao", "roteiro": {"RoteiroCodigo": 148993, "PercursoCodigo": 4}, "configuracao": {"EixosSuspensosIda": 0, "EixosSuspensosVolta": 0}}
+ EMISSAO: {"ok": false, "parou": true, "erro": "A Repom recusou a emissÃ£o: VPR: Placa nÃ£o possui tag cadastrada", "http": 200, "numeroErro": "316", "processo": "RBV261126113049", "incerto": false}
+
+[8] RESULTADO: 4 placas diferentes (+ a BIS4025 da rodada anterior) com TAG ativa e apta na consulta (tags/placa) foram RECUSADAS na emissao com numeroErro 316 "VPR: Placa nao possui tag cadastrada". Nenhum codigoViagem; consultar/cancelar nao rodaram. Limite de 8 emissoes esgotado.
+Placa | Operadora (consulta TAG) | Processo | Resultado
+BIS4025 | Sem Parar (status 1, apta) | RBV261125233517 | 316 Placa nao possui tag cadastrada
+EHX9J93 | Sem Parar (status 1, apta) | RBV261126112343 | 316
+DKY5542 | Sem Parar (status 1, apta) | RBV261126112841 | 316
+QIB4852 | Veloe (status 1, apta) | RBV261126113011 | 316
+EFU2514 | Sem Parar (status 1, apta) | RBV261126113049 | 316
+(Antes: RBV261125203910, RBV261125204056 e RBV261125222629 deram erro 0 NullReference, com o corpo antigo.)
+
+[9] INTERRUPTOR: REPOM_QA_TESTE_LIBERADO NAO foi confirmado como apagado (a exclusao foi interrompida). Pode estar ainda ligado ("sim"). Sem emissoes restantes (limite 8 esgotado). Apagar no vault e conferir o 503 quando houver aprovacao.
+
+TEXTO PARA A KAREN (Repom):
+Karen, na conta 9501 (QA), com o corpo ja igual ao Postman (Pracas [], NumeroCartao "", UtilizaCarreta texto, rota 148993/4 criada na 9501), o POST /api/RepomViagem/ValePedagio nao da mais erro 0; agora devolve HTTP 200, result.status=false, numeroErro 316 "VPR: Placa nao possui tag cadastrada" para 5 placas diferentes que a consulta GET /api/RepomVeiculo/tags/placa mostra com TAG ativa (codigoStatusTag 1) e apta: BIS4025 (Sem Parar) RBV261125233517; EHX9J93 (Sem Parar) RBV261126112343; DKY5542 (Sem Parar) RBV261126112841; QIB4852 (Veloe) RBV261126113011; EFU2514 (Sem Parar) RBV261126113049. Horarios em UTC: 25/11 23:35 e 26/11 11:2x a 11:3x. Podem conferir: (1) o que a emissao exige alem da consulta de TAG (tag vinculada ao CNPJ filial 69115969000104 / ao cliente 9501?); (2) se a emissao por TAG precisa de habilitacao da operadora (Sem Parar/Veloe) na 9501; (3) se o QA tem TAG de teste liberada para alguma placa; (4) log dos 5 processos. Obrigada.
