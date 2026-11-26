@@ -1,7 +1,7 @@
 {
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../shared ../supabase/functions/_shared",
   "rewrites": [
-    { "source": "/((?!sw\.js|manifest\.webmanifest|.*\.png|assets/).*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
