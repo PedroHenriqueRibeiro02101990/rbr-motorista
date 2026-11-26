@@ -106,8 +106,8 @@ test('emitir vale: corpo do manual (tração + carreta somada, sem praças próp
   const corpo = montarCorpoVale(pedido) as Record<string, unknown>
   assert.equal(corpo.Placa, 'ABC1D23')
   assert.equal(corpo.DocumentoTransportador, '00000000000100')
-  assert.equal(corpo.UtilizaCarreta, true)
-  assert.equal('Pracas' in corpo || 'pracas' in corpo, false)
+  assert.equal(corpo.UtilizaCarreta, 'true')
+  assert.deepEqual(corpo.Pracas, []); assert.equal(corpo.NumeroCartao, '') // Postman: Pracas vazio e cartao vazio
   const m = mock((c) => (ehTokenVale(c) ? { status: 200, corpo: tokenVale() } : { status: 200, corpo: valeOk }))
   const r = await criarRepomVprClient(cfg, m.fetchFn).emitirVale(pedido)
   assert.ok(r.ok)

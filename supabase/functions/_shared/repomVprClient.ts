@@ -128,6 +128,7 @@ export function montarCorpoVale(p: PedidoVale) {
     // chaves SEMPRE presentes como no exemplo do manual (sem carreta: "" e 0); a Repom respondeu NullReference com objetos/campos omitidos
     CarretaPlaca: comCarreta ? normalizarPlaca(p.carretaPlaca) : '',
     CarretaNumeroEixos: comCarreta ? (p.carretaNumeroEixos as number) : 0,
+    NumeroCartao: '', // Postman da Repom: "sempre enviar vazio"
     NomeTransportador: p.nomeTransportador.trim(),
     DocumentoTransportador: soDigitos(p.documentoTransportador),
     // campo SEMPRE presente (vazio quando não há subcontratado), como no exemplo do manual: a Repom respondeu erro 0 "Object reference not set" quando ele faltava
@@ -139,7 +140,8 @@ export function montarCorpoVale(p: PedidoVale) {
     ...(p.roteiro ? { Roteiro: { RoteiroCodigo: p.roteiro.roteiroCodigo, PercursoCodigo: p.roteiro.percursoCodigo } } : {}),
     ...(p.documentos?.length ? { documento: p.documentos.map((d) => ({ documentoCodigo: d.codigo, ...(d.serie ? { serie: d.serie } : {}) })) } : {}),
     Configuracao: { EixosSuspensosIda: p.eixosSuspensosIda ?? 0, EixosSuspensosVolta: p.eixosSuspensosVolta ?? 0 },
-    UtilizaCarreta: comCarreta,
+    Pracas: [] as number[], // Postman: "quando o roteiro for enviado no objeto Roteiro, o array Pracas deve ser vazio" (omitido = NullReference na Repom)
+    UtilizaCarreta: comCarreta ? 'true' : 'false', // o Postman manda texto
   }
 }
 
@@ -222,6 +224,8 @@ export interface ClienteRepomVpr {
   emitirVale(p: PedidoVale): Promise<ResultadoVpr<ValeRepom>>
   cancelarVale(codigoViagem: string | number, usuario: string): Promise<ResultadoVpr<{ cancelado: true }>>
   consultarVale(codigoViagem: string | number): Promise<ResultadoVpr<ValeRepom>>
+  /** GET /api/RepomViagem/ProcessoCodigoCliente?processoCodigoCliente= (existe no Postman da Repom; o manual não cita). */
+  consultarValePorProcesso(processo: string): Promise<ResultadoVpr<ValeRepom>>
   /** UMA chamada de token da API pedida (não consulta nada). Só para o diagnóstico do repom-status. */
   verificarToken(api: 'roteirizacao' | 'vale'): Promise<boolean>
 }
@@ -382,6 +386,18 @@ export function criarRepomVprClient(config: ConfigRepomVpr, fetchFn: Fetch = (u,
         const r = await chamar('vale', 'POST', `${urlVale}/api/RepomViagem/CancelaViagem`, { viagemCodigo: cod, usuario: usuario.trim() })
         const ok = r.status >= 200 && r.status < 300 && (r.bruto as { result?: { status?: unknown } } | null)?.result?.status === true
         return ok ? { ok: true, http: r.status, dados: { cancelado: true as const }, bruto: r.bruto } : erroDaResposta(r)
+      } catch (e) {
+        return falha(e)
+      }
+    },
+
+    async consultarValePorProcesso(processo) {
+      if (!processo || processo.length > 20 || !/^[A-Za-z0-9]+$/.test(processo)) return { ok: false, http: 0, erro: 'Código do processo inválido.', bruto: null }
+      if (semCredVale()) return { ok: false, http: 0, erro: 'Credenciais da Repom não configuradas.', bruto: null }
+      try {
+        const r = await chamar('vale', 'GET', `${urlVale}/api/RepomViagem/ProcessoCodigoCliente?processoCodigoCliente=${encodeURIComponent(processo)}`)
+        const dados = sucesso(r) ? lerVale(r.bruto) : null
+        return dados ? { ok: true, http: r.status, dados, bruto: r.bruto } : erroDaResposta(r)
       } catch (e) {
         return falha(e)
       }

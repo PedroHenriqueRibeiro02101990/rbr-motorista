@@ -36,6 +36,7 @@ function montar(o: Opcoes = {}) {
     consultarRota: async () => { chamadas.push('rota-consultar'); return { ok: true, http: 200, dados: o.rotaExiste ? { codigoRoteiro: '555', codigoPercurso: '7' } : null, bruto: null } },
     criarRota: async () => { chamadas.push('rota-criar'); return { ok: true, http: 200, dados: { codigoRoteiroRepom: '555', codigoPercursoRepom: '7', distanciaKm: 430 }, bruto: null } },
     consultarPedagio: async (p: { eixos: number }) => { chamadas.push('rota-pedagio-' + p.eixos); return { ok: true, http: 200, dados: { valorTotal: 99.9, valorIda: 99.9, valorVolta: null }, bruto: null } },
+    consultarValePorProcesso: async () => { chamadas.push('consultar-processo'); return o.consultaGet ?? { ok: true, http: 200, dados: VALE, bruto: null } },
     cancelarVale: async () => { chamadas.push('cancelar'); return { ok: true, http: 200, dados: { cancelado: true }, bruto: null } },
     consultarVale: async () => { chamadas.push('consultar-' + verbo); return (verbo === 'GET' ? o.consultaGet : o.consultaPost) ?? { ok: true, http: 200, dados: VALE, bruto: null } },
   } as unknown as ClienteRepomVpr)
@@ -120,8 +121,9 @@ test('emitir: timeout/rede (incerto) NÃO repete; recusa de negócio mostra nume
 test('consultar: usa GET; se o GET não for aceito (405 sem erro de negócio) tenta o POST do manual uma vez e registra o verbo', async () => {
   const a = montar(); const ra = await executarQaVpr({ acao: 'consultar_vpo_vpr' }, a.d)
   assert.equal(ra.corpo.verbo_que_funcionou, 'GET'); assert.deepEqual(a.chamadas, ['consultar-GET'])
-  const b = montar({ consultaGet: { ok: false, http: 405, erro: 'x', bruto: null } }); const rb = await executarQaVpr({ acao: 'consultar_vpo_vpr', por: 'processo' }, b.d)
+  const b = montar({ consultaGet: { ok: false, http: 405, erro: 'x', bruto: null } }); const rb = await executarQaVpr({ acao: 'consultar_vpo_vpr' }, b.d)
   assert.equal(rb.corpo.verbo_que_funcionou, 'POST'); assert.deepEqual(b.chamadas, ['consultar-GET', 'consultar-POST'])
+  const pr = montar(); assert.equal((await executarQaVpr({ acao: 'consultar_vpo_vpr', por: 'processo' }, pr.d)).status, 200); assert.deepEqual(pr.chamadas, ['consultar-processo'])
   const c = montar({ consultaGet: { ok: false, http: 200, erro: 'A Repom não encontrou esse vale-pedágio.', numeroErro: '205', bruto: null } }); const rc = await executarQaVpr({ acao: 'consultar_vpo_vpr' }, c.d)
   assert.equal(rc.status, 422); assert.deepEqual(c.chamadas, ['consultar-GET'])
   const e = montar({ emissao: { processo: 'RBV1', codigoViagem: null } }); assert.equal((await executarQaVpr({ acao: 'consultar_vpo_vpr' }, e.d)).status, 404)

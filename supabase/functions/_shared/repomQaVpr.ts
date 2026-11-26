@@ -75,7 +75,7 @@ export function conferirPreVoo(p: PedidoVale): RegraVpr[] {
     add('placa da carreta no padrão (7) e diferente da tração', placaPadrao(p.carretaPlaca) && normalizarPlaca(p.carretaPlaca) !== normalizarPlaca(p.placa))
     add('carretaNumeroEixos inteiro 1..15 (soma, se mais de uma carreta)', Number.isInteger(p.carretaNumeroEixos) && (p.carretaNumeroEixos as number) >= 1 && (p.carretaNumeroEixos as number) <= 15, String(p.carretaNumeroEixos))
   } else {
-    add('sem carreta: CarretaPlaca "", CarretaNumeroEixos 0, utilizaCarreta=false', corpo.CarretaPlaca === '' && corpo.CarretaNumeroEixos === 0 && corpo.UtilizaCarreta === false)
+    add('sem carreta: CarretaPlaca "", CarretaNumeroEixos 0, UtilizaCarreta "false"', corpo.CarretaPlaca === '' && corpo.CarretaNumeroEixos === 0 && corpo.UtilizaCarreta === 'false')
   }
   add('nomeTransportador preenchido, até 100', !!p.nomeTransportador?.trim() && p.nomeTransportador.length <= 100, `${p.nomeTransportador?.length ?? 0} caracteres`)
   const dt = so(p.documentoTransportador)
@@ -88,10 +88,9 @@ export function conferirPreVoo(p: PedidoVale): RegraVpr[] {
   add('roteiro (RoteiroCodigo e PercursoCodigo) inteiros > 0', !!p.roteiro && Number.isInteger(p.roteiro.roteiroCodigo) && p.roteiro.roteiroCodigo > 0 && Number.isInteger(p.roteiro.percursoCodigo) && p.roteiro.percursoCodigo > 0, p.roteiro ? `${p.roteiro.percursoCodigo}/${p.roteiro.roteiroCodigo}` : '')
   const cfg = (corpo.Configuracao ?? {}) as Obj
   add('configuracao com eixos suspensos inteiros (0 e 0)', Number.isInteger(cfg.EixosSuspensosIda) && Number.isInteger(cfg.EixosSuspensosVolta), `${cfg.EixosSuspensosIda}/${cfg.EixosSuspensosVolta}`)
-  const proibidos = ['Pracas', 'PracasVolta', 'NumeroCartao'].filter((k) => Object.keys(corpo).some((x) => x.toLowerCase() === k.toLowerCase()))
   const dc = (corpo.documento as { documentoCodigo: string; serie?: string }[] | undefined) ?? []
   add('documento (CT-e do contrato-modelo): codigo até 100, serie até 10', dc.length === 1 && !!dc[0].documentoCodigo && dc[0].documentoCodigo.length <= 100 && (dc[0].serie ?? '').length <= 10, dc[0] ? `${dc[0].documentoCodigo.length}/${(dc[0].serie ?? '').length}` : 'ausente')
-  add('NÃO envia praças, pracasVolta nem numeroCartao (em desuso)', proibidos.length === 0, proibidos.join(','))
+  add('Pracas é array VAZIO e NumeroCartao é vazio (como no Postman da Repom; praças só com roteirizador próprio)', Array.isArray(corpo.Pracas) && (corpo.Pracas as unknown[]).length === 0 && corpo.NumeroCartao === '')
   return r
 }
 
@@ -292,9 +291,9 @@ export async function executarQaVpr(corpo: Obj, d: DepsVpr): Promise<SaidaQa> {
     if (!e || !e.codigoViagem) return parar('Não há emissão do vale registrada com codigoViagem (a API não consulta por processo; sem o código não há o que consultar).', 404)
     const id = await d.registrar('qa-teste-vpr-consultar', { por, processo: e.processo })
     let verbo: 'GET' | 'POST' = 'GET'
-    let r: ResultadoVpr<ValeRepom> = await d.vpr.consultarVale(e.codigoViagem)
+    let r: ResultadoVpr<ValeRepom> = por === 'processo' ? await d.vpr.consultarValePorProcesso(e.processo) : await d.vpr.consultarVale(e.codigoViagem)
     // o manual diz POST; o curl dele é um GET sem corpo. Só se o GET não for aceito (405/404/400 sem erro de negócio) tenta o POST do manual, uma vez.
-    if (!r.ok && [400, 404, 405].includes(r.http) && !r.numeroErro) { verbo = 'POST'; r = await d.vprPost.consultarVale(e.codigoViagem) }
+    if (por === 'codigo' && !r.ok && [400, 404, 405].includes(r.http) && !r.numeroErro) { verbo = 'POST'; r = await d.vprPost.consultarVale(e.codigoViagem) }
     await d.concluir(id, { status: r.ok ? 'ok' : 'erro', http: r.http, resposta: r.ok ? { verbo, ...valeSeguro(r.dados, r.bruto) } : { verbo, numeroErro: r.numeroErro ?? null }, erro: r.ok ? undefined : r.erro })
     if (!r.ok) return parar(`Consulta recusada: ${r.erro}`, 422, { http: r.http, verbo, numeroErro: r.numeroErro ?? null })
     return { status: 200, corpo: { ok: true, http: r.http, verbo_que_funcionou: verbo, por, processo: e.processo, vale: valeSeguro(r.dados, r.bruto) } }
