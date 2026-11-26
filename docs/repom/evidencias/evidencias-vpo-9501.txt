@@ -113,3 +113,10 @@ Karen, na conta 9501 (QA), com o corpo ja igual ao Postman (Pracas [], NumeroCar
 [10] 26/11/2026 ~13:16 UTC (10:16 Brasilia): Karen (Repom) disse que o 316 nao deveria ocorrer e pediu uma tentativa. Limite 8 -> 9 (autorizado pelo Pedro). BIS4025 sozinha, mesmo corpo das tentativas anteriores, PRE-VOO 15/15, TAG Sem Parar ativa e apta.
 EMISSAO COM SUCESSO: processo RBV261126131638, codigoViagem 10174874, codigoViagemRepom 2, idvpoAntt 20 digitos (***0011), valor R$ 120,84, tipoEmissao "Pedagio Eletronico", statusCarga "carregado", 6 pracas, dataEmissao 2026-11-26T10:16:42Z.
 Conclusao: o 316 era do lado da Repom (Karen disse que nao era para acontecer); o corpo igual ao Postman funciona. Cancelamento ainda NAO feito (prazo padrao 3 h).
+
+[11] CONSULTA, CANCELAMENTO E COMPROVANTES (26/11/2026) - processo RBV261126131638, codigoViagem 10174874, conta 9501 QA
+Consulta 1 (GET /api/RepomViagem/ID?ID=10174874, ~13:36 UTC): HTTP 200, statusCarga "carregado", viagemAtiva true, valor 120.84, 6 pracas, dataEmissao 2026-11-26T10:16:42Z, dataCancelamento null, idvpoAntt 20 digitos (***0011).
+Cancelamento (UMA vez, POST /api/RepomViagem/CancelaViagem, 13:37:54 UTC): corpo sanitizado {"viagemCodigo":"10174874","usuario":"RBR QA Homologacao"}; resposta: HTTP 200, cancelado true, ja_estava_cancelado false.
+Consulta 2 (GET /api/RepomViagem/ID?ID=10174874): HTTP 200, statusCarga "cancelado", viagemAtiva false, dataCancelamento 2026-11-26T10:34:26Z, valor 120.84, 6 pracas.
+PDF do comprovante EMITIDO (vpo-9501-RBV261126131638-emitido.pdf): nao consta na API (sem endpoint de comprovante/PDF/impressao no Postman da VPR e no manual da API v2.0; busca por pdf, comprovante, imprim, recibo, download: 0 resultados). O PDF so sai pelo portal Repom Express (Viagens > Imprimir Comprovante); nao foi acessado.
+PDF do comprovante CANCELADO (vpo-9501-RBV261126131638-cancelado.pdf): nao consta na API (idem).
