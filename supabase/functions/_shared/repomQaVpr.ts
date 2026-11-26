@@ -270,7 +270,11 @@ export async function executarQaVpr(corpo: Obj, d: DepsVpr): Promise<SaidaQa> {
   // ---------- TAG (e PRE-VOO sem enviar) ----------
   if (acao === 'tag_vpr') {
     const pv = await montarPreVoo(d, undefined, par ?? undefined)
-    if (!pv.ok) return parar(pv.erro, 422, { pre_voo: { aprovado: false, regras: pv.regras ?? [] }, forma_da_leitura: pv.forma ?? null })
+    if (!pv.ok) {
+      // com `par`: a TAG da tração é consultada mesmo se o cadastro de teste não trouxer nome/eixos (só leitura; nada é emitido)
+      const tp = par ? await d.vpr.consultarTag(par.tracao) : null
+      return parar(pv.erro, 422, { pre_voo: { aprovado: false, regras: pv.regras ?? [] }, forma_da_leitura: pv.forma ?? null, ...(tp ? { tag_da_tracao: { placa: par!.tracao, http: tp.http, apta_para_vale: tp.ok ? placaApta(tp.dados) : null, tags: tp.ok ? tp.dados.map(tagSegura) : [] } } : {}) })
+    }
     const id = await d.registrar('qa-teste-vpr-tag', { placa: pv.tracao })
     const t = await d.vpr.consultarTag(pv.pedido.placa)
     await d.concluir(id, { status: t.ok ? 'ok' : 'erro', http: t.http, resposta: t.ok ? { tags: t.dados.length, apta: placaApta(t.dados) } : null, erro: t.ok ? undefined : t.erro })

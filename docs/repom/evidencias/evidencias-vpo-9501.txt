@@ -1,0 +1,26 @@
+EVIDENCIAS VPO 9501 (QA) - rodada 3, 26/11/2026
+Somente QA. Sem segredo, sem token, documentos so pelos 4 finais, nomes so pelo primeiro nome.
+
+[1] Escolha do conjunto (planilha PRESTADOR OK ANTT.xlsx)
+Pares tracao+implemento testados com a funcao repom-qa-teste (acao tag_vpr, so leitura):
+- FPU2C10 + NPJ5072 (ETC): consulta de TAG falhou (http 0); prestador e veiculos nao constam no cadastro de teste do Frete 9520 (404).
+- EHX9J93 + SUM8I91 (ETC): TAG Sem Parar ativa (status 1) e apta; prestador e veiculos nao constam no cadastro de teste (404).
+- QIB4852 + QTL9584 (CTC): TAG Veloe ativa (status 1) e apta; prestador e veiculos nao constam no cadastro de teste (404).
+Sem nome do prestador e sem eixos reais em nenhuma fonte (a planilha so tem documento, RNTRC e placa), nenhum par gera corpo com dados reais.
+Regra do Pedro: sem par utilizavel, usar a BIS4025 sozinha (tracao TAC, RNTRC 012287698, na planilha).
+
+[2] PRE-VOO da BIS4025 (26/11/2026): APROVADO, 15 de 15 regras. TAG da tracao: Tag Sem Parar, status 1 Ativa, apto Sim.
+
+[3] Corpo enviado (POST /api/RepomViagem/ValePedagio), sanitizado:
+{"ProcessoCodigoCliente":"RBV2611261105xx (gerado na emissao)","Placa":"BIS4025","NumeroEixos":2,"CarretaPlaca":"","CarretaNumeroEixos":0,"NumeroCartao":"","NomeTransportador":"Prestador...","DocumentoTransportador":"***4687","DocumentoSubcontratado":"","NomeMotorista":"Motorista...","DocumentoMotorista":"***2853","CnpjFilial":"***0104","UsuarioEmissao":"RBR QA Homologacao","Roteiro":{"RoteiroCodigo":148993,"PercursoCodigo":4},"documento":[{"documentoCodigo":"660","serie":"1"}],"Pracas":[],"Configuracao":{"EixosSuspensosIda":0,"EixosSuspensosVolta":0},"UtilizaCarreta":"false"}
+Diferencas ja corrigidas contra o Postman: Pracas [] (antes omitido), NumeroCartao "" (antes omitido), UtilizaCarreta texto (antes boolean), carreta "" e 0, DocumentoSubcontratado "".
+
+[4] Emissao: NAO FOI FEITA nesta rodada. O limite de 4 emissoes ja estava esgotado.
+Historico de emissoes da funcao (repom_requisicoes, qa-teste-vpr-emitir):
+1. RBV261125203910 (25/11 20:39 UTC) erro 0 NullReference
+2. RBV261125204056 (25/11 20:40 UTC) erro 0 NullReference
+3. RBV261125222629 (25/11 22:26 UTC) erro 0 NullReference
+4. RBV261125233517 (25/11 23:35 UTC) "VPR: Placa nao possui tag cadastrada" (erro diferente; o NullReference nao voltou)
+Limite nao foi alterado (depende de autorizacao do Pedro). Consultar, cancelar e consultar nao rodaram: nao ha codigoViagem.
+
+[5] Encerramento: segredo REPOM_QA_TESTE_LIBERADO apagado; a funcao repom-qa-teste responde "desligado" (HTTP 503).
