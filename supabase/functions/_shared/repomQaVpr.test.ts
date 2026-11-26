@@ -103,9 +103,9 @@ test('emitir: pre-voo reprova (nome não lido, modelo de outra pessoa) => não c
   }
 })
 
-test('emitir: sem confirmacao.nome => 400; limite de 8 emissões => 429, sem chamar a Repom', async () => {
+test('emitir: sem confirmacao.nome => 400; limite de 9 emissões => 429, sem chamar a Repom', async () => {
   const a = montar(); assert.equal((await executarQaVpr({ acao: 'emitir_vpo_vpr' }, a.d)).status, 400)
-  const b = montar({ histEmitir: ['erro', 'erro', 'ok', 'erro', 'erro', 'erro', 'erro', 'erro'] }); assert.equal(MAX_EMISSOES_VPR, 8)
+  const b = montar({ histEmitir: ['erro', 'erro', 'ok', 'erro', 'erro', 'erro', 'erro', 'erro', 'erro'] }); assert.equal(MAX_EMISSOES_VPR, 9)
   assert.equal((await executarQaVpr({ acao: 'emitir_vpo_vpr', confirmacao: conf }, b.d)).status, 429); assert.deepEqual(b.chamadas, [])
 })
 

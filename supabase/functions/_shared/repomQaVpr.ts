@@ -33,7 +33,7 @@ export function lerParVpr(v: unknown): ParVpr | null | string {
   if (eixos !== undefined && !(Number.isInteger(eixos) && eixos >= 1 && eixos <= 15)) return 'eixos inválidos'
   return { tracao, ...(carreta ? { carreta } : {}), documento, ...(nome ? { nome } : {}), ...(eixos !== undefined ? { eixos } : {}) }
 }
-export const MAX_EMISSOES_VPR = 8 // 4 usadas (3 com erro 0 e 1 com "Placa não possui tag") + 4 extras liberadas pelo Pedro em 26/11/2026 (só QA)
+export const MAX_EMISSOES_VPR = 9 // +1 liberada pelo Pedro em 26/11/2026 (Karen pediu uma tentativa agora); antes: 4 usadas (3 com erro 0 e 1 com "Placa não possui tag") + 4 extras liberadas pelo Pedro em 26/11/2026 (só QA)
 export const MAX_CANCELAMENTOS_VPR = 1
 /** Contrato-modelo da rodada de 17/11 (só leitura): de onde vêm prestador, motorista, placa e roteiro. */
 export const MODELO_SHIPPING_ID = 2166947
