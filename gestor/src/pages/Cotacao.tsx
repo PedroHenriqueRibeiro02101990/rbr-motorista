@@ -22,6 +22,7 @@ import { useConfirmacao } from '../components/Confirmacao'
 import TipoCotacao, { TIPO_LABEL, type TipoCotacaoValor } from '../components/cotacao/TipoCotacao'
 import PedagioSugerido from '../components/cotacao/PedagioSugerido'
 import CalcularPedagioRepom, { REPOM_FRONT_LIGADO } from '@rbr/shared/CalcularPedagioRepom'
+import { divisorPreco, precoPorLucro } from '../../../supabase/functions/_shared/precoCotacao.ts'
 import { CancelarCotacaoModal, ConfirmarConversaoModal, ProgramarOperacoesModal, rotuloOperacao, type ResumoConversao } from '../components/cotacao/ConversaoModais'
 import { EditorParcelas, PreviaRegra } from '../components/financeiro/PrazoEditor'
 import { type CondicaoPrazo, type RegraPrazo, FORMA_LABEL as FORMA_PAGTO_LABEL, descreverRegra, regraDeCondicao, lerParametro, whatsappLink } from '../lib/financeiro'
@@ -119,15 +120,9 @@ function calcularCustoDestino(
   const custo = round2(frete + pedagio)
   const custoPreco = round2(custo + custoFin * repasse)
   const margemFrac = (numOrNull(d.margem_pct) ?? 0) / 100
-  const fator = 1 + margemFrac
-  const divisor = 1 - aliquota * fator
-  if (divisor <= 0) {
-    return { custo, valorFinal: null, imposto: null, lucro: null, erro: 'Margem alta demais pra essa alíquota de imposto — revise o %.' }
-  }
-  const valorFinal = round2((custoPreco * fator) / divisor)
-  const imposto = round2(valorFinal * aliquota)
-  const lucro = round2(valorFinal - custo - custoFin - imposto)
-  return { custo, valorFinal, imposto, lucro, erro: null }
+  const r = precoPorLucro({ custo, lucroFrac: margemFrac, aliquota, custoPreco, custoFin })
+  if (!r.ok) return { custo, valorFinal: null, imposto: null, lucro: null, erro: r.erro }
+  return { custo, valorFinal: r.valorFinal, imposto: r.imposto, lucro: r.lucro, erro: null }
 }
 
 type FormaCalculo = 'fixo' | 'por_km' | 'por_dia' | 'por_unidade' | 'pct_valor_nf'
@@ -492,12 +487,11 @@ function calcularComposicao(
     valorFinal = round2(manual)
   } else {
     const lucroFrac = (numOrNull(f.lucro_pct) ?? lucroPadrao * 100) / 100
-    const fator = 1 + lucroFrac
-    const divisor = 1 - aliquota * fator
-    if (divisor <= 0) {
+    if (divisorPreco(aliquota, lucroFrac) <= 0) {
       return { ...vazio, custo, custoFinanceiro, giro, erro: 'Com esse lucro % e essa alíquota não dá pra fechar o valor final — revise os percentuais.' }
     }
-    valorFinal = round2((custoPreco * fator) / divisor)
+    const pr = precoPorLucro({ custo, lucroFrac, aliquota, custoPreco, custoFin: custoFinanceiro })
+    valorFinal = pr.ok ? pr.valorFinal : 0
   }
   const imposto = round2(valorFinal * aliquota)
   const custoComImposto = round2(custo + custoFinanceiro + imposto)

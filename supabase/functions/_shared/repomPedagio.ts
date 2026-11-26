@@ -2,7 +2,7 @@
 // valor) -> grava cache -> devolve. "Repositório" injetado: em produção é o Supabase (service_role), nos testes um objeto em memória.
 import { chaveCanonicaRota, codigoRoteiroDe, type ClienteRepom, type PedidoRotaRepom, type TipoRota } from './repomClient.ts'
 
-export interface RotaCache { id: string; codigo_roteiro_repom: string; codigo_percurso_repom: string; descricao_percurso: string | null }
+export interface RotaCache { id: string; codigo_roteiro_repom: string; codigo_percurso_repom: string; descricao_percurso: string | null; distancia_km?: number | null }
 export interface PedagioCache { valor_total: number; valor_ida: number | null; valor_volta: number | null; consultado_em: string; validade_dias: number }
 
 export interface Repositorio {
@@ -33,6 +33,7 @@ export interface SaidaPedagio {
   descricaoPercurso?: string | null
   consultadoEm?: string
   doCache?: boolean
+  distanciaKmRepom?: number | null // distancia que a Repom devolveu ao cadastrar a rota (so referencia)
   erro?: string
   limite?: boolean // true = o limite diário barrou a consulta (a função responde 429)
 }
@@ -61,7 +62,7 @@ export async function pedagioPorRota(e: EntradaPedagio, repo: Repositorio, repom
   if (rota) {
     const cache = await repo.buscarPedagio(rota.id, e.eixos, susIda, susVolta)
     if (cache && validoNoCache(cache.consultado_em, cache.validade_dias, agora))
-      return { ok: true, valor: cache.valor_total, valorIda: cache.valor_ida, valorVolta: cache.valor_volta, descricaoPercurso: rota.descricao_percurso, consultadoEm: cache.consultado_em, doCache: true }
+      return { ok: true, valor: cache.valor_total, valorIda: cache.valor_ida, valorVolta: cache.valor_volta, descricaoPercurso: rota.descricao_percurso, consultadoEm: cache.consultado_em, doCache: true, distanciaKmRepom: rota.distancia_km ?? null }
   }
   if (antesDeChamar) {
     const recusa = await antesDeChamar()
@@ -72,9 +73,10 @@ export async function pedagioPorRota(e: EntradaPedagio, repo: Repositorio, repom
     const r = await repom.cadastrarRota(pedido)
     if (!r.ok) return { ok: false, erro: r.erro }
     rota = await repo.gravarRota({ chave_hash: hash, codigo_roteiro_repom: r.dados.codigoRoteiroRepom, codigo_percurso_repom: r.dados.codigoPercursoRepom, distancia_km: r.dados.distanciaKm })
+    rota = { ...rota, distancia_km: rota.distancia_km ?? r.dados.distanciaKm }
   }
   const p = await repom.consultarPedagio({ codigoRoteiro: rota.codigo_roteiro_repom, codigoPercurso: rota.codigo_percurso_repom, eixos: e.eixos, eixosSuspensosIda: susIda || undefined, eixosSuspensosVolta: susVolta || undefined })
   if (!p.ok) return { ok: false, erro: p.erro }
   await repo.gravarPedagio({ rota_id: rota.id, eixos: e.eixos, eixos_suspensos_ida: susIda, eixos_suspensos_volta: susVolta, valor_total: p.dados.valorTotal, valor_ida: p.dados.valorIda, valor_volta: p.dados.valorVolta }, p.dados.descricaoPercurso)
-  return { ok: true, valor: p.dados.valorTotal, valorIda: p.dados.valorIda, valorVolta: p.dados.valorVolta, descricaoPercurso: p.dados.descricaoPercurso, consultadoEm: new Date(agora).toISOString(), doCache: false }
+  return { ok: true, valor: p.dados.valorTotal, valorIda: p.dados.valorIda, valorVolta: p.dados.valorVolta, descricaoPercurso: p.dados.descricaoPercurso, consultadoEm: new Date(agora).toISOString(), doCache: false, distanciaKmRepom: rota.distancia_km ?? null }
 }
